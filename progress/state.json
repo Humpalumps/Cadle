@@ -1,26 +1,26 @@
 {
- "updated": "2026-08-20 10:05",
- "status": "<b>Wave 4 running (fix-first)</b>: wave-3 critics returned 13 verdicts before the usage limit hit — scores climbing every wave. Five pieces are one gap from WIN (movement 8.3, combat 8, camera 8, grass 7.3, water 7.2). Wave 4 skips redundant re-judging: builders start immediately from the stored verdicts, then fresh critics.",
+ "updated": "2026-08-20 12:30",
+ "status": "<b>Wave 5 running (fix-first + gated)</b>: wave 4 died with zero agents (model limit) so no fixes landed; wave 5 relaunches from the same stored verdicts with a new safeguard — every builder must pass <code>node tools/gate.mjs</code> (white blobs, screen jitter, pointer lock, at both quality levels) before reporting done, and no critic may award WIN while the gate fails. Code is backed up on GitHub with <code>v0.1.1-stable</code> as the revert point.",
  "kpis": [
   {
-   "label": "fps @1080p high, idle (uncapped)",
-   "value": "152"
+   "label": "GitHub backup",
+   "value": "v0.1.1-stable"
   },
   {
-   "label": "frame ms mean / p99 (idle)",
-   "value": "6.6 / 16.4"
+   "label": "regression gate",
+   "value": "blobs · jitter · pointer lock"
   },
   {
-   "label": "draw calls / tris",
-   "value": "139 / 1.3M"
+   "label": "assets preloaded",
+   "value": "43 in 2.6 s"
   },
   {
    "label": "errors",
    "value": "0"
   },
   {
-   "label": "wave 1b verdicts",
-   "value": "12 LOSE · 3 TOSSUP"
+   "label": "open bug",
+   "value": "TAA jitter @ q=high"
   }
  ],
  "pieces": [
@@ -286,6 +286,9 @@
   }
  ],
  "log": [
+  "Wave 5 launched (wf_c90dc398-1cd) with the regression gate mandatory for builders and blocking WIN for critics. Wave 4 died 0/29 on the model limit — no work lost.",
+  "Bugs hunted down: pointer lock escaped because requestPointerLock({unadjustedMovement}) rejects on some drivers and Chrome blocks relock for ~1.3 s — fixed with a single Input.lock() path. Screen jitter isolated by freezing the world: q=low flat at 1.15, q=high drifting 1.17→3.21 — TAA is not converging (postfx builder owns the fix). Blob check now runs at q=low too, where the user still saw them.",
+  "Code backed up to github.com/Humpalumps/FPS-RPG — tags v0.1.0-stable and v0.1.1-stable are one-command revert points.",
   "Wave 4 launched fix-first (wf_cd5c7899-156): 13 builders start from stored wave-3 verdicts, then fresh critics; lighting/abilities/hud critic-first. Wave 3 scores: movement 8.3, camera 8, combat 8, grass 7.3, water 7.2, enemies 6 (up from 4), terrain 5.5, sky regressed to 4 (cloud spikes — redirected).",
   "Prod-grade asset plumbing: new core Assets preloader loads all 43 generated assets (10 tex, 3 GLBs, 30 audio) in ~2.6 s behind the start screen with GPU pre-upload — zero mid-game streaming hitches. GLBs decimated 380k→57k/38k/31k tris (~3 MB each); total asset payload ~24 MB. CLAUDE.md now carries hard asset perf budgets + a style-coherence palette rule; the between-wave coherence agent judges style unity.",
   "Magnific MCP live: 6 seamless 2k terrain albedos + 28 gunshot/explosion takes + field & night themes generated, tiling-verified, committed under public/assets/ (ASSETS.md). X/GitHub research done: TECHNIQUES.md ranks N8AO (CC0), Quick_Grass (MIT), shadow-map god rays, hex tiling, octahedral impostors, volumetric clouds — licenses verified.",
