@@ -495,7 +495,7 @@ export class Vegetation {
       trunk.castShadow = false; leaves.castShadow = true; trunk.receiveShadow = leaves.receiveShadow = true; leaves.customDepthMaterial = leafDepth; imp.receiveShadow = false;
       trunk.name = 'tree-trunk-' + i; leaves.name = 'tree-leaves-' + i; imp.name = 'tree-impostor-' + i;
       sc.add(trunk, leaves, imp);
-      const lod = new InstLOD({ near: [trunk, leaves], far: imp, nearDist: 46 * Q, band: 10, color: true }); this.lods.push(lod); // tight band: less cross-fade overlap, less near overdraw
+      const lod = new InstLOD({ near: [trunk, leaves], far: imp, nearDist: 62 * Q, band: 14, color: true }); this.lods.push(lod); // 46 m put flat impostor quads in the mid-field — the "toy trees" read; 62 m keeps real canopies through the whole readable range
       return { spec: sp, lod, trunk, leaves, imp };
     });
   }

@@ -366,7 +366,7 @@ export class Terrain {
     console.log(`[terrain] preview ready in ${(t1 - t0).toFixed(0)} ms, ${L} levels x ${n} cells`);
     // real asset albedos (ASSETS.md): fetched + resized in parallel with the worker bake, merged over the procedural
     // layers when both land (procedural stays the fallback + its height supplies the macro shading / blend alpha source)
-    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.93]];  // [layer, file, sRGB gain]
+    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.84]];  // [layer, file, sRGB gain]
     const imgP = Promise.all(ASSET_LAYERS.map(([l, nm, mul]) =>
       fetch(`/assets/tex/${nm}.jpg`).then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then((bl) => createImageBitmap(bl, { resizeWidth: R, resizeHeight: R, resizeQuality: 'high' }))
