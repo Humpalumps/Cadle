@@ -1,0 +1,6 @@
+[
+  { "wait": 4 },
+  { "eval": "(() => { const its=[...window.__game.game.world.colliders.items].filter(c=>c.type==='box'&&c.walkable); const st=its.filter(c=>Math.abs((c.box.max.x-c.box.min.x)-3.2)<0.1); return st.map(c=>({x0:+c.box.min.x.toFixed(1),x1:+c.box.max.x.toFixed(1),z0:+c.box.min.z.toFixed(2),z1:+c.box.max.z.toFixed(2),top:+c.box.max.y.toFixed(2)})); })()" },
+  { "eval": "(() => { const g=window.__game.game; const rocks=[...g.world.colliders.items].filter(c=>c.type==='sphere'&&c.r<0.6&&c.r>0.4); return rocks.slice(0,8).map(c=>({x:+c.pos.x.toFixed(1),y:+c.pos.y.toFixed(2),z:+c.pos.z.toFixed(1),r:+c.r.toFixed(2),ground:+g.terrain.heightAt(c.pos.x,c.pos.z).toFixed(2)})); })()" },
+  { "eval": "(() => { const g=window.__game.game; return {bed:+g.terrain.heightAt(-190,-70).toFixed(2), wl:g.terrain.waterLevel, waterH:(g.world.water?.heightAt?.(-190,-70) ?? g.world.water?.level ?? 'none')}; })()" }
+]

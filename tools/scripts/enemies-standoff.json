@@ -1,0 +1,19 @@
+[
+  { "wait": 5 },
+  { "hour": 13 },
+  { "eval": "(()=>{const g=__game.game;__game.teleport(0,null,20);__game.look(3.1416,0);g.enemies.clear();return 'setup'})()" },
+  { "wait": 0.5 },
+  { "eval": "(()=>{const g=__game.game;window.__s={min:9e9,hp0:g.player.health};__game.spawn('hound',3,28);__game.spawn('hound',-4,30);__game.spawn('hound',0,33);window.__si=setInterval(()=>{const p=g.player.position;for(const e of g.enemies.list){const d=Math.hypot(e.position.x-p.x,e.position.z-p.z);if(d<window.__s.min)window.__s.min=d;}},40);return 'hounds+sampler'})()" },
+  { "wait": 3 },
+  { "burst": { "name": "hound-dance", "n": 6, "interval": 0.5 } },
+  { "wait": 7 },
+  { "eval": "(()=>{clearInterval(window.__si);const g=__game.game;return {minD:+window.__s.min.toFixed(2),hp0:window.__s.hp0,hp1:g.player.health,alive:g.enemies.list.length}})()" },
+  { "shot": "hound-standoff" },
+  { "eval": "(()=>{const g=__game.game;g.enemies.clear();window.__s={min:9e9,hp0:g.player.health};__game.spawn('golem',0,32);window.__si=setInterval(()=>{const p=g.player.position;for(const e of g.enemies.list){const d=Math.hypot(e.position.x-p.x,e.position.z-p.z);if(d<window.__s.min)window.__s.min=d;}},40);return 'golem+sampler'})()" },
+  { "wait": 6 },
+  { "burst": { "name": "golem-slam", "n": 5, "interval": 0.4 } },
+  { "wait": 5 },
+  { "eval": "(()=>{clearInterval(window.__si);const g=__game.game;return {golemMinD:+window.__s.min.toFixed(2),hp0:window.__s.hp0,hp1:g.player.health}})()" },
+  { "shot": "golem-standoff" },
+  { "eval": "(()=>{__game.game.enemies.clear();return 'cleared'})()" }
+]

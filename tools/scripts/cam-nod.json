@@ -1,0 +1,17 @@
+[
+  { "wait": 4.5 },
+  { "eval": "(()=>{const g=__game.game,c=g.player.view;window.__tr={a:[],on:false,t0:0};setInterval(()=>{const T=window.__tr;if(!T.on||T.a.length>9000)return;T.a.push([+(performance.now()-T.t0).toFixed(1),+c.landDip.toFixed(4),+(g.camera.rotation.x*57.2958).toFixed(2),+c.eye.y.toFixed(3),+c.fov.toFixed(2)]);},7);window.__rec=(on)=>{window.__tr.a=[];window.__tr.t0=performance.now();window.__tr.on=on;};return 'installed'})()" },
+
+  { "log": "8m real drop: view-pitch nod trace" },
+  { "eval": "(()=>{const g=__game;g.look(0,0);const h=g.game.terrain.heightAt(25,25);window.__rec(true);g.teleport(25,h+8,25);return h})()" },
+  { "wait": 2.2 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const li=a.findIndex(s=>s[1]>0.001);const maxDip=Math.max(...a.map(s=>s[1]));const minVP=Math.min(...a.map(s=>s[2]));const endVP=a[a.length-1][2];return {drop8_landIdx:li,maxDip_m:maxDip,viewPitchNod_minDeg:minVP,viewPitchSettled:endVP,trace:a.filter((s,i)=>li>=0&&i>=li-2&&i<li+46&&i%2===0)}})()" },
+
+  { "log": "double jump landing: view-pitch nod trace" },
+  { "eval": "window.__rec(true), 'on'" },
+  { "key": "Space", "down": true }, { "key": "Space", "down": false },
+  { "wait": 0.38 },
+  { "key": "Space", "down": true }, { "key": "Space", "down": false },
+  { "wait": 2.2 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const li=a.findIndex(s=>s[1]>0.001);const maxDip=Math.max(...a.map(s=>s[1]));const minVP=Math.min(...a.map(s=>s[2]));const maxFov=Math.max(...a.map(s=>s[4]));return {dj_maxDip_m:maxDip,dj_viewPitchNod_minDeg:minVP,dj_apexFovMax:maxFov,trace:a.filter((s,i)=>li>=0&&i>=li-2&&i<li+36&&i%2===0).map(s=>[s[0],s[1],s[2]])}})()" }
+]

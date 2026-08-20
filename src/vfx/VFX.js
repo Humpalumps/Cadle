@@ -1,0 +1,432 @@
+import * as THREE from 'three';
+import { ParticlePool } from './Particles.js';
+import { Brush } from './Brush.js';
+import { Tracers, Decals, Sigils } from './Extras.js';
+import { makeAtlas, makeDecals, makeSigil, TEX } from './Textures.js';
+
+/**
+ * VFX: GPU/instanced particle system + decals + tracers + beams + light flashes. FF14 flavor: aether sparkles,
+ * glowing sigils/rings, soft additive wisps; Destiny flavor: crisp muzzle flashes, sparks, impact dust, tracers.
+ *
+ * API (all pooled, zero per-frame allocation, few draw calls total):
+ *   vfx.emit(preset, position, opts?)            burst of particles.   presets (minimum): 'muzzle','impact-terrain','impact-rock',
+ *        'impact-enemy','sparks','dust','explosion','aether-burst','death','ring','sigil','heal','spark-trail','jump','land','slide','levelup','pickup'
+ *        extra: 'impact-prop' (=rock), 'impact-water', 'trail' (projectile trail, for attach), 'aura' (orbiting motes), 'charge' (converging motes),
+ *               'heal-motes', 'flash' (glow pop), 'blood' (= impact-enemy)
+ *        opts: { dir:Vector3, normal:Vector3, count, color:Color|hex, scale, speed, spread, element, crit, radius, duration }
+ *   vfx.tracer(from, to, { color, width=0.05, duration=0.1, element, speed=320, len=7, hdr }) — hdr/width auto-boost with daylight
+ *   vfx.beam(from, to, { color, width, duration })            persistent-ish line (fusion/lasers)
+ *   vfx.decal(point, normal, { type:'bullet'|'scorch'|'sigil', size })   (capped pool 200, oldest recycled)
+ *   vfx.flash(position, { color, intensity=3, distance=8, duration=0.06 })   pooled PointLight flash (max 4 live; 2 on q=low)
+ *   vfx.attach(preset, object3d|{position[,velocity,alive]}|Vector3, opts{ rate, duration, until:()=>bool, offset:Vector3, color, element, scale }) -> handle { stop() }
+ *   vfx.shockwave(position, { radius, color, duration, normal })
+ *   vfx.sigil(position, { normal, color, size, duration })    rotating rune ring mesh
+ *   vfx.showcase()   emits every preset in a row in front of the camera (critics / harness);  vfx.stats() -> live counts;  vfx.clear()
+ *   vfx.stress(n=5000)   perf validation: n long-lived (8-12 s) particles in a cloud ahead of the camera (then measure a perf window)
+ *
+ * Listens (so other systems don't have to call vfx directly):
+ *   'combat:hit' -> impact-enemy sparks at point (+ crit variant), 'combat:impact' -> impact-<surface> + decal,
+ *   'combat:explosion' -> explosion + shockwave + flash + scorch decal, 'combat:kill'/'enemy:death' -> death dissolve burst (deduped),
+ *   'player:land' (impact>8 -> dust), 'player:slide' -> dust trail while sliding,
+ *   'player:jump' (2nd jump -> aether puff)
+ *
+ * Colors per element: kinetic #ffe9c4, solar #ff8a3d, arc #7fd8ff, void #b070ff, stasis #9fd8ff, strand #7cff9c
+ * Draw calls: alpha pool 1 + additive pool 1 + tracers 1 + decals 1 + sigils 1 (instanced pool of 6) — all frustumCulled=false, hidden when empty.
+ */
+export const ELEMENT_COLORS = { kinetic: 0xffe9c4, solar: 0xff8a3d, arc: 0x7fd8ff, void: 0xb070ff, stasis: 0x9fd8ff, strand: 0x7cff9c };
+const AETHER = 0x9f7bff, GOLD = 0xffd27a, DUST = 0x857458, DIRT = 0x4a3a28;
+const QMUL = { low: 0.5, medium: 0.75, high: 1, ultra: 1.25 };
+const EMIT_RATE = { trail: 90, 'spark-trail': 70, slide: 45, aura: 30, charge: 40, 'heal-motes': 22, dust: 6, sparks: 8, 'exp-smoke': 11 };
+
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();
+const NOPTS = {};
+
+export class VFX {
+  constructor(game) {
+    this.game = game; this.brush = new Brush(); this.emitters = []; this._dead = new WeakMap(); this.lights = []; this._lit = [1, 1, 1];
+    this.mult = QMUL[game.quality] ?? 1; this.day = 1; // 0 night .. 1 full daylight; boosts gun-feedback HDR/size so it reads at noon
+  }
+  init() {
+    const { scene, seed } = this.game;
+    const atlas = this.atlas = makeAtlas(seed);
+    this.decalAtlas = makeDecals(seed); this.sigilTex = makeSigil(seed);
+    const cap = Math.round(this.mult * 16384);
+    this.add = new ParticlePool(scene, atlas, { capacity: cap, additive: true, renderOrder: 11 });
+    this.alpha = new ParticlePool(scene, atlas, { capacity: Math.round(cap * 0.3), additive: false, renderOrder: 10 });
+    this.tracers = new Tracers(scene, 256);
+    this.decals = new Decals(scene, this.decalAtlas, this.mult < 1 ? 100 : 200);
+    this.sigils = new Sigils(scene, this.sigilTex, 6);
+    // pooled flash lights: always in the scene (intensity 0) so shader programs never recompile on light count changes
+    const nl = this.mult < 0.75 ? 2 : 4;
+    for (let i = 0; i < nl; i++) {
+      const l = new THREE.PointLight(0xffffff, 0, 8, 2); l.castShadow = false; l.position.set(0, -1000, 0); l.name = 'vfx-flash';
+      scene.add(l); this.lights.push({ light: l, t: 1, dur: 1, i0: 0 });
+    }
+    for (let i = 0; i < 48; i++) this.emitters.push({ live: false, preset: '', obj: null, opts: null, pos: new THREE.Vector3(), prev: new THREE.Vector3(), dir: new THREE.Vector3(), acc: 0, t: 0, rate: 30, handle: null });
+    this._anchors = []; this._ai = 0; for (let i = 0; i < 48; i++) this._anchors.push(new THREE.Vector3()); // pooled static positions for attach() (event vectors get reused by combat; 48 = emitter pool size)
+    this._bind();
+  }
+
+  // ------------------------------------------------------------------ frame
+  update(dt, t) {
+    const { camera, renderer, sky } = this.game;
+    // min screen width for thin sparks/tracers (1.5 px), in world m per m depth
+    const minW = 1.5 * 2 * Math.tan(camera.fov * 0.00872665) / (renderer.domElement.height || 1080);
+    this.add.material.uniforms.uMinW.value = minW; this.alpha.material.uniforms.uMinW.value = minW; this.tracers.material.uniforms.uMinW.value = minW * 2.2; // tracers: ~3.3px min so autorifle lines read in daylight
+    // approximate scene light for dust/smoke tint: ambient + sun
+    if (sky) {
+      const si = sky.sunIntensity ?? 1, sc = sky.sunColor, ac = sky.ambientColor;
+      this.day = Math.max(0, Math.min(1, si));
+      this.tracers.material.uniforms.uDark.value = 0.5 * this.day; // dark tracer rim only in daylight (night additive is already hot)
+      const L = this._lit;
+      L[0] = Math.min(1.6, 0.18 + (ac ? ac.r * 0.35 : 0.2) + (sc ? sc.r : 1) * si * 0.85);
+      L[1] = Math.min(1.6, 0.18 + (ac ? ac.g * 0.35 : 0.2) + (sc ? sc.g : 1) * si * 0.85);
+      L[2] = Math.min(1.6, 0.18 + (ac ? ac.b * 0.35 : 0.25) + (sc ? sc.b : 1) * si * 0.85);
+    }
+    this._updateEmitters(dt);
+    this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt); this.decals.update(dt); this.sigils.update(dt);
+    for (const f of this.lights) {
+      if (f.t >= f.dur) continue;
+      f.t += dt; const k = Math.max(0, 1 - f.t / f.dur);
+      f.light.intensity = f.i0 * k * k;
+      if (f.t >= f.dur) { f.light.intensity = 0; f.light.position.y = -1000; }
+    }
+  }
+  _updateEmitters(dt) {
+    for (const e of this.emitters) {
+      if (!e.live) continue;
+      const o = e.obj;
+      if (o.alive === false || (e.opts.until && !e.opts.until()) || (e.opts.duration && e.t >= e.opts.duration)) { e.live = false; continue; }
+      e.t += dt;
+      e.prev.copy(e.pos);
+      if (o.isObject3D) o.getWorldPosition(e.pos); else if (o.isVector3) e.pos.copy(o); else if (o.position) e.pos.copy(o.position); else e.pos.set(0, 0, 0);
+      if (e.opts.offset) e.pos.add(e.opts.offset);
+      if (e.t === dt) e.prev.copy(e.pos);
+      if (o.velocity && o.velocity.lengthSq() > 1e-4) e.dir.copy(o.velocity).normalize().negate();
+      else if (e.prev.distanceToSquared(e.pos) > 1e-6) e.dir.subVectors(e.prev, e.pos).normalize();
+      else e.dir.set(0, 1, 0);
+      e.acc += e.rate * dt;
+      const n = e.acc | 0; e.acc -= n;
+      for (let i = 0; i < n; i++) { _v3.lerpVectors(e.prev, e.pos, (i + 1) / n); e.opts.dir = e.dir; this._emit(e.preset, _v3, e.opts); }
+    }
+  }
+
+  // ------------------------------------------------------------------ public API
+  emit(preset, p, opts = NOPTS) { this._emit(preset, p, opts); }
+  _emit(preset, p, o) {
+    const fn = PRESETS[preset]; if (!fn) return;
+    const base = BASE_COUNT[preset] ?? 1;
+    const k = (o.count ? o.count / base : 1) * this.mult, s = o.scale ?? 1;
+    fn(this, p, o, k, s, this._col(o, PRESET_COLOR[preset] ?? AETHER));
+  }
+  _col(o, fallback) { return _c.set(o.color ?? (o.element && ELEMENT_COLORS[o.element]) ?? fallback); }
+  _anchor(p) { const a = this._anchors[this._ai = (this._ai + 1) % this._anchors.length]; a.copy(p); return a; }
+  tracer(from, to, o = NOPTS) {
+    const c = this._col(o, 0xffe9c4), h = o.hdr ?? (7 + 10 * this.day), len = o.len ?? 7; // noon: ~17x HDR core so it survives tonemap over bright grass/sky
+    // a tracer dies when its tail passes `to`: clamp speed so even point-blank shots stay on screen >= ~0.12 s (else noon gunfire reads as nothing)
+    const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+    const spd = Math.min(o.speed ?? 320, (dist + len) / 0.12);
+    this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, (o.width ?? 0.05) * (1 + 0.5 * this.day), o.duration ?? 0.1, spd, len, o.alpha ?? 1, o.core ?? 0.5, false);
+  }
+  beam(from, to, o = NOPTS) { const c = this._col(o, 0x7fd8ff), h = o.hdr ?? 4; this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, o.width ?? 0.08, o.duration ?? 0.25, 0, 0, o.alpha ?? 1, o.core ?? 0.7, true); }
+  decal(p, n, o = NOPTS) {
+    const type = o.type ?? 'bullet';
+    if (type === 'sigil') return this.sigil(p, { normal: n, color: o.color, size: o.size ?? 2.5, duration: o.duration ?? 10 });
+    if (type === 'scorch') this.decals.add(p, n, o.size ?? 2.5, 1, o.life ?? 60, 0.12, 0.1, 0.09, o.rot);
+    else this.decals.add(p, n, o.size ?? 0.16, 0, o.life ?? 45, 0.28, 0.26, 0.24, o.rot);
+  }
+  flash(p, o = NOPTS) {
+    let f = null; for (const x of this.lights) if (x.t >= x.dur) { f = x; break; }
+    if (!f) { f = this.lights[0]; for (const x of this.lights) if (x.t / x.dur > f.t / f.dur) f = x; }
+    if (!f) return;
+    const c = this._col(o, 0xffe2b0);
+    f.t = 0; f.dur = o.duration ?? 0.06; f.i0 = (o.intensity ?? 3) * 9 * (0.5 + 0.5 * this.day); // candela-ish, halved at night (night exposure is high: full power blows out to a structureless orb)
+    f.light.color.copy(c); f.light.distance = o.distance ?? 8; f.light.intensity = f.i0; f.light.position.copy(p);
+  }
+  attach(preset, obj, o = NOPTS) {
+    let e = null; for (const x of this.emitters) if (!x.live) { e = x; break; }
+    if (!e) return { stop() {} };
+    e.live = true; e.preset = preset; e.obj = obj; e.opts = Object.assign({}, o); e.t = 0; e.acc = 0; e.rate = o.rate ?? EMIT_RATE[preset] ?? 20;
+    if (obj.isObject3D) obj.getWorldPosition(e.pos); else if (obj.isVector3) e.pos.copy(obj); else if (obj.position) e.pos.copy(obj.position);
+    if (e.opts.offset) e.pos.add(e.opts.offset);
+    e.prev.copy(e.pos);
+    e.handle = { stop: () => { e.live = false; }, get alive() { return e.live; } };
+    return e.handle;
+  }
+  shockwave(p, o = NOPTS) {
+    const r = o.radius ?? 3, c = this._col(o, 0xffffff), b = this.brush;
+    if (o.normal) { _v3.set(p.x + o.normal.x * 0.55, p.y + o.normal.y * 0.55, p.z + o.normal.z * 0.55); b.reset(this.add, _v3).axis(o.normal).flat(); } // lift over grass
+    else b.reset(this.add, p).rot();
+    b.tex(TEX.RING).size(r * 0.12, r * 0.12, 2 / 0.12).life(o.duration ?? 0.45).color(0xffffff, c).hdr(3.5 + 1.5 * this.day, 1.8).alpha(0.95).fade(0, 0.15).burst(1);
+  }
+  sigil(p, o = NOPTS) { return this.sigils.add(p, o.normal, { color: this._col(o, GOLD), size: o.size ?? 3, duration: o.duration ?? 1.5, spin: o.spin ?? 1.2, hdr: o.hdr ?? 2.2 }); }
+  stats() { return { additive: this.add.n, alpha: this.alpha.n, tracers: this.tracers.n, decals: this.decals.n, sigils: this.sigils.items.filter((s) => s.live).length, emitters: this.emitters.filter((e) => e.live).length, day: this.day }; }
+  // Perf validation: spawn n long-lived (8-12 s) particles in a cloud ahead of the camera, then measure with a perfWindow.
+  stress(n = 5000) {
+    const cam = this.game.camera, b = this.brush;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), p = new THREE.Vector3().copy(cam.position).addScaledVector(fwd, 12); // debug path: allocations fine
+    b.reset(this.add, p).jitter(7).spread(3.14).speed(0.4, 2.5).life(8, 12).size(0.05, 0.12, 0.6).tex(TEX.STAR).color(0xffffff, AETHER).hdr(2, 1).rot().spin(2).swirl(0.5, 1.5, true).gravity(-0.2).drag(0.3).fade(0.05, 0.8).burst(Math.round(n * 0.7));
+    b.reset(this.alpha, p).jitter(7).spread(3.14).speed(0.3, 1.5).life(8, 12).size(0.2, 0.4, 1.5).tex(TEX.SMOKE).color(0x555048).lit(this._lit).alpha(0.4).rot().spin(1).gravity(-0.1).drag(0.3).fade(0.05, 0.8).burst(n - Math.round(n * 0.7));
+    return this.stats();
+  }
+  clear() { this.add.clear(); this.alpha.clear(); this.tracers.n = 0; this.decals.clear(); for (const e of this.emitters) e.live = false; this.sigils.clear(); }
+  // Critics / harness: every preset in a row 6 m ahead of the camera, 2 m apart (left -> right), plus a tracer + beam + decals.
+  showcase(names = SHOWCASE, spacing = 2.2, dist = 6) {
+    const cam = this.game.camera, T = this.game.terrain;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion); fwd.y = 0; fwd.normalize();   // (debug path: allocations fine)
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x), p = new THREE.Vector3(); // right = screen-right, so the list reads left -> right
+    const list = typeof names === 'string' ? names.split(',') : names;
+    for (let i = 0; i < list.length; i++) {
+      p.copy(cam.position).addScaledVector(fwd, dist).addScaledVector(right, (i - (list.length - 1) / 2) * spacing);
+      p.y = (T?.heightAt ? T.heightAt(p.x, p.z) : p.y - 1.6) + 0.05;
+      const nm = list[i].trim(); const n = this._up;
+      if (nm === 'tracer') this.tracer(p.clone().addScaledVector(right, -1.5).setY(p.y + 1.2), p.clone().addScaledVector(right, 1.5).addScaledVector(fwd, 3).setY(p.y + 1.4), { element: 'kinetic', speed: 40, len: 1.5 });
+      else if (nm === 'beam') this.beam(p.clone().addScaledVector(right, -1.5).setY(p.y + 1), p.clone().addScaledVector(right, 1.5).addScaledVector(fwd, 3).setY(p.y + 1.6), { element: 'arc', duration: 1.2 });
+      else if (nm === 'decal') { this.decal(p, n, { type: 'bullet', size: 0.3 }); this.decal(p.clone().addScaledVector(right, 0.8), n, { type: 'scorch', size: 1.4 }); }
+      else if (nm === 'flash') { this.flash(p.clone().setY(p.y + 1), { color: 0xff8a3d, intensity: 2.5, duration: 0.2 }); this.emit('flash', p.clone().setY(p.y + 1), { color: 0xff8a3d }); } // was intensity 6/0.4 s: blew out to a giant white orb at night
+      else this.emit(nm, GROUNDED.has(nm) ? p : p.setY(p.y + 1.0), { normal: n, dir: fwd, element: nm === 'impact-enemy' ? 'arc' : undefined });
+    }
+    return list.length;
+  }
+
+  // ------------------------------------------------------------------ events
+  _bind() {
+    const ev = this.game.events, T = this.game.terrain;
+    ev.on('combat:hit', (e) => {
+      if (!e?.point || e.target?.kind === 'player') return;
+      const n = e.normal ?? (e.dir ? _v.copy(e.dir).negate() : this._up);
+      this._emit('impact-enemy', e.point, { normal: n, element: e.element, crit: e.crit, scale: e.crit ? 1.35 : 1 });
+    });
+    ev.on('combat:impact', (e) => {
+      if (!e?.point) return;
+      const n = e.normal ?? this._up, s = e.surface;
+      const preset = s === 'water' ? 'impact-water' : (s === 'prop' || s === 'rock') ? 'impact-rock' : 'impact-terrain';
+      this._emit(preset, e.point, { normal: n, element: e.element });
+      if (s !== 'water') this.decal(e.point, n, { type: 'bullet', size: 0.12 + Math.random() * 0.08 });
+    });
+    ev.on('combat:explosion', (e) => {
+      if (!e?.point) return;
+      const r = e.radius ?? 3, p = e.point;
+      const gy = T?.heightAt ? T.heightAt(p.x, p.z) : -1e9, onGround = p.y - gy < r * 0.6;
+      const n = onGround && T?.normalAt ? T.normalAt(p.x, p.z, _v) : null;
+      this._emit('explosion', p, { radius: r, element: e.element, normal: n });
+      if (onGround) { _v2.set(p.x, gy, p.z); this.decal(_v2, n, { type: 'scorch', size: r * 1.4 }); } // bigger so it peeks through 1 m grass
+    });
+    ev.on('combat:kill', (e) => { const t = e?.target; if (!t?.position || t.kind === 'player') return; this._dead.set(t, this.game.time); this._death(e.point ?? t.position, t.element ?? t.def?.element, t.radius ?? 0.5); });
+    ev.on('enemy:death', (e) => {
+      const en = e?.enemy; if (!en) return; if (en.target && this.game.time - (this._dead.get(en.target) ?? -9) < 0.5) return; // already handled via combat:kill
+      this._death(en.center ?? en.position, en.def?.element ?? en.element, en.target?.radius ?? 0.5);
+    });
+    ev.on('weapon:fire', (e) => {
+      // weapons draws tracers only when the shot hit something; misses into the sky/haze got zero feedback -> draw one to ~70 m
+      if (!e || e.hit?.point || !e.origin || !e.dir) return;
+      _v.copy(e.origin).addScaledVector(e.dir, 70);
+      this.tracer(this.game.player?.weapons?.muzzleWorld ?? e.origin, _v, { element: e.weapon?.element, width: 0.04, len: 8 });
+    });
+    const P = this.game.player;
+    ev.on('player:land', (e) => { const imp = e?.impact ?? 0; if (imp > 8) this._emit('land', P.position, { scale: Math.min(2.5, imp / 9) }); });
+    ev.on('player:jump', (e) => { if ((e?.n ?? 1) >= 2) this._emit('jump', P.position, NOPTS); });
+    ev.on('player:slide', () => { const c = P.controller; this.attach('slide', c, { until: () => c.sliding, rate: 40 }); });
+  }
+  _death(p, element, radius) { this._emit('death', p, { element, scale: Math.max(0.6, Math.min(3, radius / 0.5)) }); }
+  get _up() { return UP; }
+}
+const UP = new THREE.Vector3(0, 1, 0);
+const GROUNDED = new Set(['impact-terrain', 'impact-rock', 'impact-water', 'sparks', 'dust', 'ring', 'sigil', 'heal', 'levelup', 'jump', 'land']);
+const SHOWCASE = ['muzzle', 'impact-terrain', 'impact-rock', 'impact-enemy', 'explosion', 'aether-burst', 'death', 'sigil', 'heal', 'levelup', 'pickup', 'jump', 'land', 'ring', 'tracer', 'beam', 'decal', 'flash'];
+
+// ====================================================================================================================
+// PRESETS — art direction lives here. fn(vfx, p, opts, k=count mult, s=scale, c=element/override color)
+// ====================================================================================================================
+const BASE_COUNT = { muzzle: 8, 'impact-terrain': 10, 'impact-rock': 14, 'impact-enemy': 12, sparks: 14, dust: 6, explosion: 30, 'aether-burst': 40, death: 36, pickup: 10, jump: 14, land: 8, levelup: 40 };
+const PRESET_COLOR = { muzzle: 0xffe9c4, 'impact-enemy': 0xb070ff, 'aether-burst': AETHER, death: AETHER, ring: 0xffffff, sigil: GOLD, heal: 0x9fffc0, 'heal-motes': 0x9fffc0, levelup: GOLD, pickup: 0xfff0a0, jump: 0x9fd8ff, trail: 0xffe9c4, 'spark-trail': 0xffe9c4, aura: AETHER, charge: AETHER, blood: 0xb070ff, 'impact-water': 0xcfe9ff };
+const L = (v) => v._lit;
+const axisOf = (o, def) => o.normal ?? o.dir ?? def;
+
+const PRESETS = {
+  // ---- Destiny: guns -----------------------------------------------------------------------------------------------
+  muzzle(v, p, o, k, s, c) {
+    const b = v.brush, d = o.dir ?? UP, A = v.add, day = v.day, ds = s * (1 + 0.6 * day); // daylight: bigger + hotter or the flash vanishes against a noon sky
+    // dark backing puff (alpha, 1-2 frames): gives the additive petal contrast at high sun; ~invisible at night
+    if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.11).size(0.75 * ds, 0.95 * ds, 1.5).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.42 * day).rot().fade(0, 0.35).burst(2);
+    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.68 * ds, 1.4).life(0.1).color(0xfff6e0, c).hdr(20 + 14 * day, 7).rot().fade(0, 0.3).burst(1);      // crisp petal cross, 2-4 frames, HDR-hot so it reads at noon
+    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.1).color(0xffffff, c).hdr(11 + 6 * day, 4).rot().fade(0, 0.3).burst(1);        // hot star core
+    b.reset(A, p).tex(TEX.GLOW).size(0.28 * ds, 0.34 * ds, 1.3).life(0.08).color(0xffffff, c).hdr(4 + 2 * day, 2).alpha(0.7).fade(0, 0.3).burst(1);   // small halo (support layer only)
+    b.reset(A, p).axis(d).spread(0.22).speed(18 * s, 36 * s).life(0.12, 0.3).size(0.016, 0.034, 0.4).tex(TEX.SPARK).color(0xfff2c0, c).hdr(7 + 5 * day, 2.5).stretch(0.022).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
+    b.reset(v.alpha, p).axis(d).spread(0.5).speed(1.5, 3.2).life(0.45, 0.75).size(0.07 * s, 0.13 * s, 4).tex(TEX.SMOKE).color(0x8c8c90).lit(L(v)).alpha(0.13 + 0.1 * day).rot().spin(2).drag(3).gravity(-0.8).fade(0.12, 0.3).burst(3 * k); // wisp lingers between shots: firing evidence on frames that miss the 0.1 s flash
+  },
+  'spark-trail'(v, p, o, k, s, c) {
+    if (o.size) s *= o.size / 0.15;  // projectile radius -> scale
+    const b = v.brush;
+    b.reset(v.add, p).jitter(0.02 * s).spread(3.14).speed(0, 0.3).life(0.18, 0.3).size(0.09 * s, 0.14 * s, 0.15).tex(TEX.GLOW).color(0xffffff, c).hdr(2.2, 1.6).alpha(0.7).fade(0, 0.25).burst(1);
+    b.reset(v.add, p).axis(o.dir ?? UP).spread(0.35).speed(0.5, 2.2).life(0.2, 0.4).size(0.02 * s, 0.04 * s, 0.2).tex(TEX.SPARK).color(0xffffff, c).hdr(3.5, 2).stretch(0.03).gravity(3).drag(1).fade(0, 0.5).burst(1 + k);
+  },
+  trail(v, p, o, k, s, c) {
+    if (o.size) s *= o.size / 0.15;
+    const b = v.brush;
+    b.reset(v.add, p).jitter(0.03 * s).spread(3.14).speed(0, 0.3).life(0.25, 0.45).size(0.1 * s, 0.16 * s, 0.1).tex(TEX.GLOW).color(0xffffff, c).hdr(2.5, 2).alpha(0.85).fade(0, 0.3).burst(2);
+    if (Math.random() < 0.35) b.tex(TEX.STAR).size(0.06 * s, 0.1 * s, 0.3).life(0.3, 0.5).rot().spin(4).burst(1);
+  },
+  // ---- impacts -----------------------------------------------------------------------------------------------------
+  'impact-terrain'(v, p, o, k, s, c) {
+    const b = v.brush, n = axisOf(o, UP), fl = n.y > 0.5 ? p.y - 0.01 : -1e9;
+    _v2.set(p.x + n.x * 0.25, p.y + n.y * 0.25, p.z + n.z * 0.25);   // lift the puff off the surface so it clears meadow grass blades
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.16 * s, 0.22 * s, 1.6).life(0.08).color(0xfff0d0, 0xd8b070).hdr(3, 1.2).fade(0, 0.3).burst(1);            // brief pop so the shot visibly lands even in grass
+    b.reset(v.alpha, _v2).axis(n).spread(0.9).speed(1.4 * s, 3.2 * s).life(0.9, 1.5).size(0.22 * s, 0.38 * s, 3.2).tex(TEX.SMOKE).color(DUST).lit(L(v)).vary(0.3).alpha(0.6).rot().spin(1.5).drag(2.5).gravity(-0.3).fade(0.08, 0.4).burst(6 * k);
+    b.reset(v.alpha, p).axis(n).spread(0.8).speed(3 * s, 7 * s).life(0.5, 1.0).size(0.025 * s, 0.06 * s, 0.8).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(12).gravity(20).drag(0.5).floor(fl, 0.35).fade(0, 0.7).burst(10 * k);
+    b.reset(v.add, p).axis(n).spread(0.7).speed(3 * s, 6 * s).life(0.15, 0.35).size(0.012, 0.022, 0.3).tex(TEX.SPARK).color(0xfff0c0, 0xffa040).hdr(2.5, 1).stretch(0.025).gravity(14).drag(1).fade(0, 0.5).burst(2 * k);
+  },
+  dust(v, p, o, k, s, c) { PRESETS['impact-terrain'](v, p, o, k * 0.6, s, c); },
+  'impact-rock'(v, p, o, k, s, c) {
+    const b = v.brush, n = axisOf(o, UP), fl = n.y > 0.5 ? p.y - 0.01 : -1e9;
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.2 * s, 0.28 * s, 1.5).life(0.07).color(0xfff0c0, 0xff9040).hdr(3, 1.5).fade(0, 0.3).burst(1);
+    b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.3, 0.7).size(0.018, 0.034, 0.5).tex(TEX.SPARK).color(0xfff0b0, 0xff8030).hdr(4, 2).stretch(0.03).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
+    b.reset(v.alpha, p).axis(n).spread(0.9).speed(2 * s, 6 * s).life(0.5, 0.9).size(0.02 * s, 0.045 * s, 0.8).tex(TEX.DIRT).color(0x8a8684).lit(L(v)).vary(0.5).rot().spin(14).gravity(18).drag(0.4).floor(fl, 0.4).fade(0, 0.7).burst(6 * k);
+    b.reset(v.alpha, p).axis(n).spread(0.8).speed(1 * s, 2 * s).life(0.4, 0.7).size(0.1 * s, 0.18 * s, 2.5).tex(TEX.SMOKE).color(0x8e8c8a).lit(L(v)).alpha(0.3).rot().spin(2).drag(3).gravity(-0.3).fade(0.1, 0.35).burst(3 * k);
+  },
+  'impact-prop'(v, p, o, k, s, c) { PRESETS['impact-rock'](v, p, o, k, s, c); },
+  sparks(v, p, o, k, s, c) {
+    v.brush.reset(v.add, p).axis(axisOf(o, UP)).spread(o.spread ?? 1.0).speed(5 * s, 14 * s).life(0.3, 0.7).size(0.018, 0.034, 0.5).tex(TEX.SPARK).color(0xfff0b0, o.color != null || o.element ? c : 0xff8030).hdr(4, 2).stretch(0.03).gravity(18).drag(1.2).floor(p.y - 0.01, 0.5).fade(0, 0.55).burst(14 * k);
+  },
+  'impact-water'(v, p, o, k, s, c) {
+    const b = v.brush;
+    b.reset(v.alpha, p).axisUp().spread(0.5).speed(2 * s, 5 * s).life(0.5, 0.9).size(0.03, 0.06, 0.6).tex(TEX.GLOW).color(0xd8ecff).lit(L(v)).alpha(0.9).gravity(14).drag(0.5).fade(0, 0.6).burst(14 * k);
+    b.reset(v.alpha, p).axisUp().spread(0.7).speed(0.8, 1.8).life(0.5, 0.8).size(0.15 * s, 0.25 * s, 2.5).tex(TEX.SMOKE).color(0xe8f4ff).lit(L(v)).alpha(0.35).rot().drag(3).fade(0.05, 0.3).burst(3 * k);
+    b.reset(v.add, p).axisUp().flat().tex(TEX.RING).size(0.1 * s, 0.1 * s, 8).life(0.6).color(0xffffff, 0x9fd8ff).hdr(1.5, 0.6).alpha(0.7).fade(0, 0.2).burst(1);
+  },
+  'impact-enemy'(v, p, o, k, s, c) {
+    const b = v.brush, n = axisOf(o, UP), crit = !!o.crit, day = v.day;
+    const sat = _c2.copy(c).offsetHSL(0, 0.3, -0.06);   // element identity: saturated halo/motes at moderate HDR so the hue survives tonemap instead of clipping white
+    // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
+    b.reset(v.alpha, p).jitter(0.08 * s).spread(3.14).speed(0.3, 0.9).life(0.4, 0.65).size(0.34 * s, 0.5 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.75).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k);
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.46 * s, 0.62 * s, 1.6).life(0.18).color(sat, sat).hdr(2.6 + 1.8 * day, 1.1).alpha(0.9).fade(0, 0.3).burst(1); // saturated colored halo (the element read)
+    b.reset(v.add, p).tex(TEX.STAR).size(0.36 * s, 0.48 * s, 1.4).life(0.13).color(0xffffff, c).hdr(6 + 3 * day, 3).rot().fade(0, 0.3).burst(1);
+    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.25, 0.55).size(0.028, 0.055, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(5 + 3 * day, 3.5).stretch(0.045).gravity(7).drag(2.5).fade(0, 0.5).burst(12 * k);
+    b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.4, 0.75).size(0.06 * s, 0.12 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(3.5 + 1.5 * day).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
+    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 6.5).life(0.32).color(0xffffff, sat).hdr(5 + 3 * day, 2.5).alpha(0.95).fade(0, 0.2).burst(1);
+    if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.2).color(0xffffff, sat).hdr(6 + 3 * day, 3).rot().spin(2).fade(0, 0.3).burst(2);
+      b.reset(v.add, p).axis(n).spread(3.14).speed(4, 10).life(0.3, 0.6).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(5 + 3 * day, 3.5).stretch(0.03).gravity(6).drag(2).fade(0, 0.5).burst(10 * k); }
+  },
+  blood(v, p, o, k, s, c) { PRESETS['impact-enemy'](v, p, o, k, s, c); },
+  // ---- big ---------------------------------------------------------------------------------------------------------
+  explosion(v, p, o, k, s, c) {
+    // Destiny grenade cadence: fireball ~0.3s, then an aftermath that HOLDS at the site 2.5-4s:
+    // slow dark smoke ball + a pumped smoke column (attach emitter ~1.8s), a low dust ring that lingers, embers that stay local.
+    const b = v.brush, r = (o.radius ?? 3) * s, n = o.normal, A = v.add, AL = v.alpha;
+    const fire = o.element === 'arc' || o.element === 'void' || o.element === 'stasis' || o.element === 'strand' ? c : _c2.set(0xff5a18);
+    const fl = n ? p.y - 0.02 : -1e9;
+    b.reset(A, p).tex(TEX.GLOW).size(0.5 * r, 0.65 * r, 1.9).life(0.16).color(0xffffff, fire).hdr(8, 3).fade(0, 0.25).burst(1);                        // core flash
+    b.reset(A, p).tex(TEX.GLOW).size(1.1 * r, 1.3 * r, 1.5).life(0.28).color(fire, 0x7a1800).hdr(1.6, 0.3).alpha(0.85).fade(0, 0.25).burst(1);            // warm halo
+    b.reset(A, p).tex(TEX.FLARE).size(1.4 * r, 1.7 * r, 1.5).life(0.11).color(0xfff4d8, fire).hdr(4, 2).rot().fade(0, 0.2).burst(1);
+    b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.4, 0.85).size(0.16 * r, 0.32 * r, 2.6).tex(TEX.SMOKE).color(0xfff0b8, 0x8a1a00).hdr(3, 0.25).vary(0.5).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.28).burst(22 * k); // fire tongues
+    // smoke ball: fire-lit brown interior first (Destiny grenade), the linear color lerp takes it grey-brown -> near-black over life; slow fade-in so it never swallows the fireball frame
+    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.4 * r, 0.62 * r, 2.4).tex(TEX.SMOKE).color(0x8a5230, 0x201b16).hdr(1.5, 1).lit(L(v)).vary(0.35).alpha(0.8).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.1, 0.58).burst(16 * k);
+    v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(6, 11 * v.mult), scale: r / 3 });                                              // smoke column keeps pumping from the site
+    _v3.set(p.x, p.y + (n ? 0.55 : 0), p.z);                                                                                                          // grounded ring lifts above 1 m meadow grass
+    if (n) b.reset(A, _v3).axis(n).flat(); else b.reset(A, _v3).rot();
+    b.tex(TEX.RING).size(0.3 * r, 0.3 * r, 9).life(0.45).color(0xffffff, c).hdr(5, 2.2).alpha(0.95).fade(0, 0.15).burst(1);                            // shockwave
+    if (n) { _v3.set(p.x, p.y + 0.75, p.z);                                                                                                            // dust ring rides above the grass tops
+      b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.2, 3.4).size(0.3 * r, 0.5 * r, 2.2).tex(TEX.SMOKE).color(0x5c5040, 0x6e6048).lit(L(v)).vary(0.3).alpha(0.6).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(14 * k); } // lingering dust ring
+    b.reset(A, p).axisUp().spread(3.14).speed(1.2 * r, 3.2 * r).life(1.4, 2.6).size(0.022, 0.05, 0.35).tex(TEX.SPARK).color(0xffd080, fire).hdr(3.5, 0.7).stretch(0.03).gravity(8).drag(1.0).floor(fl, 0.3).fade(0, 0.6).burst(30 * k);       // lingering embers (local: capped speed so they don't pile 10 m away)
+    b.reset(A, p).jitter(0.4 * r).axisUp().spread(1.2).speed(0.4, 1.2).life(1.4, 2.4).size(0.05 * r, 0.09 * r, 0.4).tex(TEX.GLOW).color(fire, 0xff3000).hdr(1.8, 0.5).alpha(0.55).gravity(-0.5).drag(1.5).fade(0.1, 0.5).burst(10 * k);       // floating hot motes
+    b.reset(AL, p).axisUp().spread(2.2).speed(1.2 * r, 3 * r).life(0.8, 1.5).size(0.04 * s, 0.1 * s, 0.9).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(15).gravity(22).drag(0.3).floor(fl, 0.3).fade(0, 0.75).burst(14 * k);    // debris
+    v.flash(p, { color: fire, intensity: 6 * s, distance: 6 * r, duration: 0.3 });
+  },
+  'exp-smoke'(v, p, o, k, s, c) {
+    // one column puff per emitter tick: slow rise (~1-1.5 m/s), long life, dark and thick so it reads on grass at noon
+    v.brush.reset(v.alpha, p).jitter(0.5 * s).axisUp().spread(0.4).speed(0.8, 1.6).life(2.0, 3.0).size(0.85 * s, 1.35 * s, 2.6).tex(TEX.SMOKE)
+      .color(0x1b1613, 0x3a342c).lit(L(v)).vary(0.35).alpha(0.8).rot().spin(0.5).drag(0.5).gravity(-0.45).fade(0.1, 0.6).burst(1);
+  },
+  'aether-burst'(v, p, o, k, s, c) {
+    const b = v.brush, A = v.add, day = v.day;
+    const sat = _c2.copy(c).offsetHSL(0, 0.3, 0);      // saturated violet-blue so it reads as magic, not a shadow artifact
+    // dark aether veil behind the sparkles (un-lit so it stays dark at noon) — kept small so it backs the motes instead of BEING the effect
+    b.reset(v.alpha, p).jitter(0.12 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.9, 1.6).size(0.24 * s, 0.4 * s, 2.2).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.55).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.4).burst(6 * k);
+    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr(4 + 2.5 * day, 1.8).alpha(0.9).fade(0, 0.3).burst(1);
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.09 * s, 0.15 * s, 0.4).tex(TEX.STAR).color(0xffffff, sat).hdr(5.5 + 3 * day, 3.5).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(70 * k);
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.13 * s, 0.24 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr(3 + 1.2 * day).alpha(0.6).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(32 * k);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 6).life(0.5).color(0xffffff, sat).hdr(4 + 2 * day, 2).alpha(0.9).fade(0, 0.2).burst(1);
+  },
+  death(v, p, o, k, s, c) {
+    // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game
+    const b = v.brush, A = v.add, day = v.day;
+    b.reset(v.alpha, p).jitter(0.35 * s).spread(3.14).speed(0.4, 1.2).life(1.5, 2.4).size(0.35 * s, 0.6 * s, 2.4).tex(TEX.SMOKE).color(0x0e0817, 0x1a1026).vary(0.3).alpha(0.72).rot().spin(1).drag(2).gravity(-0.6).fade(0.04, 0.45).burst(10 * k);
+    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(0xffffff, c).hdr(5, 2).fade(0, 0.3).burst(1);
+    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(0xffffff, c).hdr(7, 3).rot().fade(0, 0.3).burst(1);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(0xffffff, c).hdr(5, 2).alpha(0.9).fade(0, 0.2).burst(1);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(c).hdr(3, 1.2).alpha(0.7).fade(0.1, 0.3).burst(1);
+    // afterglow motes: bigger/hotter at day + longer life so the kill payoff lingers ~2 s at noon (Destiny tail)
+    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.6, 2.7).size(0.11 * s, 0.19 * s, 0.35).tex(TEX.STAR).color(0xffffff, c).hdr(4.5 + 3 * day, 2.6).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.55).burst(36 * k);
+    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.4, 2.2).size(0.24 * s, 0.45 * s, 0.35).tex(TEX.GLOW).color(c).hdr(2.4 + day).alpha(0.6).gravity(-0.8).drag(1).fade(0.1, 0.5).burst(14 * k);
+    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(0xffffff, c).hdr(5, 3).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
+    v.flash(p, { color: c, intensity: 4 * s, distance: 10, duration: 0.4 });
+  },
+  // ---- rings / sigils / FF14 magic ----------------------------------------------------------------------------------
+  ring(v, p, o, k, s, c) {
+    const n = o.normal ?? UP;
+    _v2.set(p.x + n.x * 0.75, p.y + n.y * 0.75, p.z + n.z * 0.75);   // lift above grass blades (~1 m meadow)
+    const b = v.brush.reset(v.add, _v2).axis(n).flat();
+    b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(0xffffff, c).hdr(3.5, 1.8).alpha(0.9).fade(0, 0.2).burst(1);
+  },
+  sigil(v, p, o, k, s, c) {
+    const size = o.size ?? (o.radius ? o.radius * 2 : 2.4 * s);
+    const dur = o.duration ?? 1.5;
+    const fresh = v.sigils.add(p, o.normal, { color: c, size, duration: dur, spin: o.spin ?? 1.2, hdr: o.hdr ?? 2.2 }).t === 0;
+    if (!fresh) return;
+    const b = v.brush, n = o.normal ?? UP;
+    // vertical presence so the glyph reads from standing height in 1 m grass: light pillar + edge ring pulse + dense rising runes
+    _v2.set(p.x + n.x * 0.1, p.y + n.y * 0.1, p.z + n.z * 0.1); _v3.set(p.x + n.x * size * 0.85, p.y + n.y * size * 0.85, p.z + n.z * size * 0.85);
+    v.beam(_v2, _v3, { color: c, width: 0.16 * size, duration: Math.min(dur, 4), alpha: 0.45, core: 0.25, hdr: 3 });
+    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.2 * size, 0.2 * size, 5.2).life(0.5).color(0xffffff, c).hdr(5, 2.5).alpha(0.9).fade(0, 0.2).burst(1);
+    b.reset(v.add, p).ring(0.15 * size, 0.45 * size, 1, 0.15).speed(0.6, 1.2).life(1.0, 1.8).size(0.09 * size, 0.15 * size, 0.5).tex(TEX.RUNE).color(0xffffff, c).hdr(5, 2.6).rot().spin(1.5).gravity(-0.7).drag(0.8).fade(0.1, 0.5).burst(Math.max(8, 18 * k));
+    b.reset(v.add, p).ring(0.3 * size, 0.48 * size, 1, 0.1).speed(0.3, 0.8).life(1.0, 1.6).size(0.1 * size, 0.18 * size, 0.6).tex(TEX.GLOW).color(c).hdr(1.8).alpha(0.5).gravity(-0.5).drag(1).fade(0.1, 0.5).burst(Math.max(4, 8 * k));
+  },
+  heal(v, p, o, k, s, c) {
+    const fresh = v.sigils.add(p, o.normal, { color: c, size: o.size ?? (o.radius ? o.radius * 2 : 3 * s), duration: o.duration ?? 3, spin: 0.8 }).t === 0;
+    if (fresh) v.brush.reset(v.add, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 10).life(0.6).color(0xffffff, c).hdr(2.5, 1).alpha(0.8).fade(0, 0.2).burst(1);
+    PRESETS['heal-motes'](v, p, o, 14 * k, s, c);   // callers re-emit 'heal' (count ~8) every ~0.5 s while the rift lives -> sigil refreshes, motes keep rising
+  },
+  'heal-motes'(v, p, o, k, s, c) {
+    v.brush.reset(v.add, p).ring(0.2 * s, 1.3 * s, 1.0, 0.4).speed(0.8, 1.8).life(1.0, 1.8).size(0.04 * s, 0.09 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(2.5, 1.5).rot().spin(3).gravity(-1.2).drag(0.8).swirl(1, 2, true).fade(0.15, 0.5).burst(Math.max(1, k));
+  },
+  levelup(v, p, o, k, s, c) {
+    const b = v.brush, A = v.add;
+    v.sigils.add(p, o.normal, { color: c, size: 3.5 * s, duration: 2.5, spin: 1.5, hdr: 2 });
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 12).life(0.7).color(0xffffff, c).hdr(3, 1.2).alpha(0.9).fade(0, 0.2).burst(1);
+    b.reset(A, p).tex(TEX.GLOW).size(0.6 * s, 0.8 * s, 3).life(0.4).color(0xffffff, c).hdr(3, 1.5).fade(0, 0.3).burst(1);
+    b.reset(A, p).ring(0.3 * s, 1.2 * s, 1.0, 0.5).speed(2.5, 4.5).life(1.5, 2.5).size(0.05 * s, 0.1 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(3, 2).rot().spin(4).swirl(2, 4, true).gravity(-2.5).drag(0.8).fade(0.1, 0.5).burst(40 * k);
+    b.reset(A, p).ring(0.2 * s, 0.8 * s, 1.0, 0.2).speed(2, 3.5).life(1.2, 2.2).size(0.12 * s, 0.22 * s, 0.4).tex(TEX.GLOW).color(c).hdr(1.5).alpha(0.5).gravity(-2).drag(1).fade(0.1, 0.5).burst(20 * k);
+    b.reset(A, p).jitter(0.5 * s).spread(3.14).speed(1, 3).life(1.0, 1.8).size(0.08 * s, 0.14 * s, 0.5).tex(TEX.RUNE).color(c).hdr(2.2).rot().spin(2).gravity(-1.5).drag(1.5).fade(0.1, 0.5).burst(10 * k);
+    v.flash(_v2.copy(p).setY(p.y + 1.2), { color: c, intensity: 4, distance: 10, duration: 0.5 });
+  },
+  pickup(v, p, o, k, s, c) {
+    const b = v.brush;
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.3 * s, 0.4 * s, 2).life(0.3).color(0xffffff, c).hdr(3, 1.5).fade(0, 0.3).burst(1);
+    b.reset(v.add, p).jitter(0.1).spread(3.14).speed(1 * s, 2.5 * s).life(0.4, 0.8).size(0.04 * s, 0.08 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(3, 2).rot().spin(4).gravity(-1).drag(2).fade(0, 0.5).burst(10 * k);
+  },
+  flash(v, p, o, k, s, c) { v.brush.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.5 * s, 2).life(o.duration ?? 0.15).color(0xffffff, c).hdr(4, 2).fade(0, 0.3).burst(1); },
+  aura(v, p, o, k, s, c) {
+    v.brush.reset(v.add, p).ring(0.45 * s, 0.6 * s, 0, 1).speed(1.5 * s).swirl(2.5 / s).life(0.8, 1.4).size(0.04 * s, 0.08 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(2.5, 1.5).rot().spin(3).gravity(-0.4).fade(0.15, 0.5).burst(Math.max(1, k));
+  },
+  charge(v, p, o, k, s, c) {
+    v.brush.reset(v.add, p).ring(0.7 * s, 1.1 * s, 0, 0).speed(-2.2 * s, -2.8 * s).life(0.35, 0.4).size(0.03 * s, 0.07 * s, 0.2).tex(TEX.SPARK).color(c, 0xffffff).hdr(2, 3.5).stretch(0.04).fade(0.2, 0.7).burst(Math.max(1, k));
+  },
+  // ---- movement ----------------------------------------------------------------------------------------------------
+  jump(v, p, o, k, s, c) {
+    const b = v.brush, A = v.add;
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 4.5).life(0.35).color(0xffffff, c).hdr(2.5, 1.2).alpha(0.8).fade(0, 0.2).burst(1);
+    b.reset(A, p).tex(TEX.GLOW).size(0.5 * s, 0.6 * s, 2).life(0.25).color(c).hdr(2).alpha(0.7).fade(0, 0.3).burst(1);
+    b.reset(A, p).ring(0.1 * s, 0.35 * s, 0.25, 0.1).speed(2, 4).life(0.4, 0.7).size(0.04 * s, 0.07 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(3, 2).rot().spin(3).gravity(4).drag(2).fade(0, 0.4).burst(14 * k);
+  },
+  land(v, p, o, k, s, c) {
+    const b = v.brush;
+    b.reset(v.alpha, p).ring(0.1 * s, 0.3 * s, 0.25, 0).speed(2 * s, 4 * s).life(0.6, 1.0).size(0.2 * s, 0.32 * s, 3).tex(TEX.SMOKE).color(DUST).lit(L(v)).vary(0.3).alpha(0.45).rot().spin(1.5).drag(3).gravity(-0.3).fade(0.08, 0.35).burst(8 * k);
+    b.reset(v.alpha, p).ring(0.05 * s, 0.2 * s, 0.6, 0).speed(2 * s, 4 * s).life(0.4, 0.8).size(0.02, 0.045, 0.8).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(10).gravity(18).drag(0.5).floor(p.y, 0.3).fade(0, 0.7).burst(6 * k);
+  },
+  slide(v, p, o, k, s, c) {
+    const b = v.brush, d = o.dir ?? UP;
+    _v.set(d.x, d.y + 0.35, d.z);
+    b.reset(v.alpha, p).axis(_v).spread(0.45).speed(1 * s, 2.5 * s).life(0.5, 0.9).size(0.12 * s, 0.2 * s, 2.5).tex(TEX.SMOKE).color(DUST).lit(L(v)).vary(0.3).alpha(0.3).rot().spin(1.5).drag(2).gravity(-0.4).fade(0.1, 0.35).burst(1);
+    if (Math.random() < 0.6) b.reset(v.alpha, p).axis(_v).spread(0.5).speed(2, 4).life(0.4, 0.7).size(0.02, 0.04, 0.8).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(10).gravity(18).drag(0.5).floor(p.y, 0.3).fade(0, 0.7).burst(1);
+  },
+};

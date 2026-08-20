@@ -1,0 +1,51 @@
+[
+  { "wait": 4.5 },
+  { "eval": "(()=>{const c=__game.game.player.view;window.__tr={a:[],on:false,t0:0};setInterval(()=>{const T=window.__tr;if(!T.on||T.a.length>9000)return;T.a.push([+(performance.now()-T.t0).toFixed(1),+c.eye.y.toFixed(4),+c.landDip.toFixed(4),+(c.pitch*57.2958).toFixed(3),+c.fov.toFixed(2),+(c.bobOffset.y*1000).toFixed(2),+(c.bobOffset.x*1000).toFixed(2),+(c.roll*57.2958).toFixed(3),+(c._flP[0]*57.2958).toFixed(3),+(c.recoil.pitch*57.2958).toFixed(3),+c.trauma.toFixed(3),+(c.recoil.yaw*57.2958).toFixed(3)]);},7);window.__rec=(on)=>{window.__tr.a=[];window.__tr.t0=performance.now();window.__tr.on=on;};return 'installed'})()" },
+
+  { "log": "PHASE A: real 12m drop landing" },
+  { "eval": "(()=>{const g=__game;g.look(0,-0.2);const h=g.game.terrain.heightAt(25,25);window.__rec(true);g.teleport(25,h+12,25);return {groundH:h}})()" },
+  { "wait": 2.5 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const land=a.findIndex(s=>s[2]>0.001);const maxDip=Math.max(...a.map(s=>s[2]));const minPitch=Math.min(...a.map(s=>s[3]));const endPitch=a[a.length-1][3];const eyeEnd=a[a.length-1][1];const minEye=Math.min(...a.filter((s,i)=>i>land&&land>=0).map(s=>s[1]));return {landIdx:land,maxDip_m:maxDip,dipNod_minPitchDeg:minPitch,pitchRecovered:endPitch,eyeMin:minEye,eyeSettled:eyeEnd,trace:a.filter((s,i)=>land>=0&&i>=land-3&&i<land+60&&i%2===0).map(s=>[s[0],s[1],s[2],s[3]])}})()" },
+
+  { "log": "PHASE B: double jump landing + apex fov" },
+  { "eval": "window.__rec(true), 'on'" },
+  { "key": "Space", "down": true }, { "key": "Space", "down": false },
+  { "wait": 0.38 },
+  { "key": "Space", "down": true }, { "key": "Space", "down": false },
+  { "wait": 2.2 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const maxFov=Math.max(...a.map(s=>s[4]));const land=a.map((s,i)=>[i,s[2]]).filter(x=>x[1]>0.001);const maxDip=Math.max(0,...a.map(s=>s[2]));const minPitch=Math.min(...a.map(s=>s[3]));return {apexMaxFov:maxFov,baseFov:a[0][4],dj_maxDip_m:maxDip,dj_dipNodDeg:minPitch,landSamples:land.length}})()" },
+
+  { "log": "PHASE C: flinch on damagePlayer(40), god OFF" },
+  { "eval": "(()=>{__game.god(false);window.__rec(true);__game.damagePlayer(40);return {god:__game.game.player.god,hp:__game.game.player.health,shield:__game.game.player.shield}})()" },
+  { "wait": 1.2 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const maxFl=Math.max(...a.map(s=>s[8]));const minFl=Math.min(...a.map(s=>s[8]));const maxRoll=Math.max(...a.map(s=>Math.abs(s[7])));const maxTrauma=Math.max(...a.map(s=>s[10]));return {flinchPitchMaxDeg:maxFl,flinchPitchMinDeg:minFl,maxAbsRollDeg:maxRoll,traumaPeak:maxTrauma,flTrace:a.filter((s,i)=>i%3===0&&i<70).map(s=>[s[0],s[8],s[7]])}})()" },
+
+  { "log": "PHASE D: sprint bob amplitude" },
+  { "key": "KeyW", "down": true }, { "key": "ShiftLeft", "down": true },
+  { "wait": 1.4 },
+  { "eval": "window.__rec(true), 'on'" },
+  { "wait": 2.0 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const by=a.map(s=>s[5]),bx=a.map(s=>s[6]),r=a.map(s=>s[7]);return {sprintBobY_mm:[Math.min(...by),Math.max(...by)],sprintBobX_mm:[Math.min(...bx),Math.max(...bx)],rollDeg:[Math.min(...r),Math.max(...r)],speed:__game.game.player.controller.speed}})()" },
+  { "key": "ShiftLeft", "down": false },
+  { "wait": 0.6 },
+  { "eval": "window.__rec(true), 'on'" },
+  { "wait": 2.0 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const by=a.map(s=>s[5]),bx=a.map(s=>s[6]);return {walkBobY_mm:[Math.min(...by),Math.max(...by)],walkBobX_mm:[Math.min(...bx),Math.max(...bx)],speed:__game.game.player.controller.speed}})()" },
+  { "key": "KeyW", "down": false },
+  { "wait": 0.8 },
+
+  { "log": "PHASE E: 2s AR burst climb + yaw wander" },
+  { "eval": "(()=>{__game.give('autorifle',0);__game.look(0,0);return __game.game.player.weapons.current?.id})()" },
+  { "wait": 0.5 },
+  { "eval": "window.__rec(true), 'on'" },
+  { "fire": 2.0 },
+  { "wait": 0.1 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const p0=a[0][3];const climb=a.map(s=>+(s[3]-p0+s[9]).toFixed(2));const maxClimb=Math.max(...climb);const yaw=a.map(s=>s[11]);const settled=a[a.length-1][3]-p0;return {totalClimbDeg:maxClimb,aimSettledDeg:+settled.toFixed(2),yawWanderDeg:[Math.min(...yaw),Math.max(...yaw)],curve:climb.filter((c,i)=>i%12===0)}})()" },
+  { "shot": "post-ar-burst" },
+
+  { "log": "PHASE F: trauma-1 shake decay" },
+  { "eval": "(()=>{window.__rec(true);__game.game.player.view.shake(1);return 'shaken'})()" },
+  { "wait": 1.6 },
+  { "eval": "(()=>{const a=window.__tr.a;window.__tr.on=false;const maxRoll=Math.max(...a.map(s=>Math.abs(s[7])));const dead=a.find(s=>s[10]<0.05);return {peakAbsRollDeg:maxRoll,traumaUnder05_at_s:dead?dead[0]/1000:null}})()" },
+  { "stats": "final" }
+]

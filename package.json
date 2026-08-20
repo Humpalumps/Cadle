@@ -1,0 +1,20 @@
+{
+  "name": "aetherfall",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --port 5173 --strictPort",
+    "inspect": "node tools/inspect.mjs"
+  },
+  "dependencies": {
+    "postprocessing": "^6.37.8",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "vite": "^8.2.1"
+  }
+}

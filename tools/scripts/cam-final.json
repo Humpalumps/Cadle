@@ -1,0 +1,14 @@
+[
+  { "wait": 5 },
+  { "resetStats": true },
+  { "perfWindow": { "secs": 4, "label": "idle" } },
+  { "key": "KeyW", "down": true }, { "key": "ShiftLeft", "down": true },
+  { "wait": 0.8 },
+  { "perfWindow": { "secs": 4, "label": "sprint" } },
+  { "key": "ShiftLeft", "down": false }, { "key": "KeyW", "down": false },
+  { "eval": "__game.give('autorifle',0)" },
+  { "fire": 2.0 },
+  { "perfWindow": { "secs": 3, "label": "post-combat" } },
+  { "shot": "final" },
+  { "stats": "final" }
+]

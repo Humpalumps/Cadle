@@ -1,0 +1,27 @@
+[
+  { "wait": 6.0 },
+  { "eval": "__game.god(true)" },
+  { "eval": "__game.passive(true)" },
+  { "eval": "(()=>{ for (const el of document.body.children) if (el.tagName !== 'CANVAS') el.style.visibility = 'hidden'; return 'hud hidden' })()" },
+
+  { "log": "scenario B: world as populated (catches enemy/wisp-class blob offenders)" },
+  { "hour": 13 }, { "tp": [2, null, -2] },
+  { "look": [0.5, -0.55] }, { "wait": 0.4 }, { "shot": "blob-pop-13-a" },
+  { "look": [-1.2, -0.55] }, { "wait": 0.3 }, { "shot": "blob-pop-13-b" },
+  { "hour": 15 }, { "wait": 0.3 },
+  { "look": [0.5, -0.55] }, { "wait": 0.3 }, { "shot": "blob-pop-15-a" },
+  { "look": [3.6, -0.55] }, { "wait": 0.3 }, { "shot": "blob-pop-15-b" },
+  { "hour": 17.5 }, { "wait": 0.3 },
+  { "look": [0.5, -0.55] }, { "wait": 0.3 }, { "shot": "blob-pop-17-a" },
+
+  { "log": "scenario A: enemies cleared (isolates grass/vfx/props/postfx offenders)" },
+  { "eval": "__game.clearEnemies()" }, { "wait": 0.3 },
+  { "hour": 13 }, { "look": [0.5, -0.55] }, { "wait": 0.3 }, { "shot": "blob-clear-13" },
+  { "hour": 15 }, { "look": [-1.2, -0.55] }, { "wait": 0.3 }, { "shot": "blob-clear-15" },
+  { "hour": 17.5 }, { "look": [0.5, -0.55] }, { "wait": 0.3 }, { "shot": "blob-clear-17" },
+
+  { "log": "jitter probe: static camera on static stone (plinth), TAA/camera must hold still" },
+  { "hour": 13 }, { "tp": [0, null, -14] }, { "look": [0, -0.02] }, { "wait": 1.0 },
+  { "burst": { "name": "jit", "n": 6, "interval": 0.12 } },
+  { "shot": "jitter-scene" }
+]

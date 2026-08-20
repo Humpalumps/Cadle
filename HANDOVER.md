@@ -1,0 +1,123 @@
+# HANDOVER — Aetherfall orchestration
+
+Read this first if you are picking this project up cold (new session, new agent, previous orchestrator ran out of usage). It tells you what the job is, how the machine is built, what state it is in, and the exact commands to carry on.
+
+**Keep this file current.** Every loop tick / wave boundary: update "Current state" + "Next actions". It is the only thing a replacement agent gets.
+
+---
+
+## 1. The job (from the user, verbatim intent)
+
+Build a browser FPS-RPG in Three.js at **Destiny 2** level for game mechanics and **Final Fantasy XIV** level for the mystical look. Utterly perfect, beautiful, responsive. Three pillars in order: **graphics, performance, game mechanics (smooth)**. Later, after fundamentals are signed off: world bosses with mechanics, quests, story mode with voiced NPCs.
+
+Method the user asked for, which you must keep using:
+- Break the game into the **smallest pieces that can be judged on their own** (orchestrator decides the pieces).
+- **Fan out sub-agents**, one builder per piece, files strictly owned.
+- **A separate fresh-context sub-agent critic inspects the actual running game** — never the builder's summary — and is a really harsh critic.
+- Critic does a **blind side-by-side vs the real Destiny 2 / FF14**, says which is better, and when ours loses names **the single biggest gap** and sends the builder back in.
+- **No fixed number of rounds.** Loop until every critic is genuinely wowed.
+- Between major waves, **one fresh agent plays the whole game** and smooths everything into one coherent thing.
+- Keep a **live progress page** the user can watch.
+- Use `ultracode` / Workflow orchestration; the user is away, so act, never ask.
+
+Standing constraints (also in `CLAUDE.md`): everything procedural (no asset downloads/CDN/fetch), one owner per file, perf budget, determinism via `core/Noise.js`, `?auto=1` automation must keep working.
+
+---
+
+## 2. Machine (how work actually gets done)
+
+| Thing | Path | What it is |
+|---|---|---|
+| Game | `src/**` | Vite 8 + three r185 + `postprocessing` 6.39, plain ES modules |
+| Contracts + rules | `CLAUDE.md` | architecture, ownership table, conventions, perf budget, world layout, `window.__game` API |
+| Builder protocol | `tools/BUILDER.md` | what a builder sub-agent must do |
+| Critic protocol | `tools/CRITIC.md` | how a critic inspects + the JSON verdict schema |
+| Harness | `tools/inspect.mjs` | Playwright headless Chromium **with the real GPU**, drives the game, saves shots + perf + errors |
+| Syntax gate | `tools/check.mjs` | `node --check` every src file + resolve relative imports (run before every harness run) |
+| Contact sheet | `tools/sheet.py` | `python tools/sheet.py tools/out/<dir> 3 640` → `sheet.png` to Read |
+| Progress page | `progress/state.json` + `tools/progress.mjs` → `progress.html` | live status page, served by Vite |
+| Wave workflows | `tools/workflows/*.js` | Workflow scripts (fan-out + critic loop) |
+
+### Dev server (keep it up)
+Always runs at `http://127.0.0.1:5173/`. Check: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/`.
+Restart if down:
+```bash
+npx vite --port 5173 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &
+```
+The orchestrator also keeps the game open in the Browser pane so it can see it live:
+`preview_start {name:"aetherfall"}` (config in `.claude/launch.json`, attaches, starts nothing), then `navigate` to `http://127.0.0.1:5173/?auto=1&debug=1`, then `computer{action:"screenshot"}` / `read_console_messages` / `javascript_tool`. **The pane must be visible in the app for screenshots to work** — if it returns "Browser pane is not displayed", fall back to `tools/inspect.mjs` screenshots (headless, always works).
+
+### Harness usage
+```bash
+node tools/inspect.mjs --name tour-w2                      # default tour (24 shots, perf windows)
+node tools/inspect.mjs --nolock --name x --steps '[{"wait":5},{"shot":"a"}]'
+node tools/inspect.mjs --name x --script file.json --q low --w 1920 --h 1080
+```
+- Step language is documented in the header of `tools/inspect.mjs`.
+- `--nolock` for quick screenshot iteration; **omit it for perf numbers** (mkdir-mutex serialises runs so parallel agents don't skew each other).
+- Perf: wait ≥ 5 s after load before a `perfWindow` (shader warmup). `stats().gpuMs` = true GPU ms (timer queries), `stats().systems` = per-system CPU ms EMA.
+- GPU flags that make headless use the RTX 3060: `--use-angle=d3d11 --ignore-gpu-blocklist --enable-gpu` (already in the harness). Without them you silently get SwiftShader and useless numbers.
+
+---
+
+## 3. How a wave is run (the pattern to repeat)
+
+One Workflow call fans out one agent per piece; each piece runs `critic → (fix builder → critic)*` until `verdict: "WIN"` or the round cap, all pieces in parallel via `pipeline()`.
+
+- Script lives in `tools/workflows/<wave>.js`, launched with `Workflow({scriptPath: "C:\\Users\\ianca\\Desktop\\FPS3\\tools\\workflows\\<wave>.js"})`.
+- **Strip CRLF from the script** (`python -c "s=open(p,newline='').read().replace('\r','')"`) or the permission layer rejects it ("control characters").
+- Builders get `COMMON` + a per-piece `brief` + the files they own + the critic JSON from the previous round. Critics get `tools/CRITIC.md` + the same brief and return the verdict JSON (schema in the script).
+- Round cap per wave is a knob (`MAX_FIX_ROUNDS`); pieces that come back `LOSE`/`TOSSUP` go into the next wave. There is no global round limit — keep launching waves until every piece is `WIN`.
+- **Usage-limit recovery pattern (this happens every wave — the monthly/session limit kills the run ~90 min in):** if critics returned but fix builders died, the next wave goes **fix-first**: embed each piece's full stored verdict JSON as `PREJUDGED` in the script and start with the builder, then a fresh critic (see `tools/workflows/wave4.js` + its generator `scratchpad/wave4-gen.py` pattern). Never re-run critics whose verdicts are already in the journal.
+- Watch progress: `/workflows`, or read `~/.claude/projects/C--Users-ianca-Desktop-FPS3/<session>/subagents/workflows/<runId>/journal.jsonl` (one `{"type":"result"}` line per finished agent — the critic JSON is in there even if the workflow itself dies).
+- If a wave dies mid-way (usage limit, crash): the source files on disk keep whatever the builders wrote. Do **not** resume blindly — relaunch a critic-first wave (like `tools/workflows/wave1.js` does) so already-built pieces get judged instead of rebuilt.
+
+### Between waves (required by the user)
+1. **Integrate**: wire any new system hooks into `window.__game` (`src/main.js`), run `node tools/check.mjs`, run the full tour, fix cross-system breakage.
+2. **Coherence agent**: one fresh agent plays the whole game end to end and smooths inconsistencies into one coherent thing — including STYLE coherence: generated assets (ASSETS.md) and procedural art must read as one painterly-realistic look (palette rules in CLAUDE.md style section).
+3. Update `progress/state.json` → `node tools/progress.mjs`.
+4. Launch the next wave.
+
+---
+
+## 3b. Asset pipeline (NEW 2026-08-20 — user bought Magnific MCP; "no excuse" mandate for AAA look)
+
+- **Magnific MCP** connected (tools `mcp__df0d6b46-...__*`): images_generate (seedream-5-pro default, 100 cr/2k image), audio_sfx_generate (ElevenLabs, ~10-40 cr), audio_music_generate (elevenlabs-music-generation-v2, ~20 cr/s — pricey, use sparingly), models3d_generate (image→GLB, tripo-v31 detailed ≈ 1160 cr), images_remove_background, images_upscale. Check `account_balance` before big batches; started with 45k credits. Flow: generate → `creations_wait` → curl the `url` into `public/assets/...` (tokens expire — download IMMEDIATELY) → update `ASSETS.md`.
+- **ToS gotcha**: naming trademarked games ("Final Fantasy XIV") in music prompts = rejection; describe the style instead.
+- **`ASSETS.md`** = manifest builders read (paths, usage notes, ASSET ASK protocol). Landed: 10 textures (6 terrain/stone albedos + bark + alpha leaf card + 2 glyph rings, tiling verified), 28 SFX takes, field + night themes, 3 GLBs (handcannon 57k / aetheryte 38k / column 31k tris — decimated from 380k with gltf-transform simplify+quantize; sharp/vips texture-resize is broken on this machine, geometry decimation is what matters). Total payload ~24 MB.
+- **`src/core/Assets.js` (orchestrator-owned) preloads everything** as the FIRST system init: parallel fetch, GPU texture pre-upload (`renderer.initTexture`), progress events `assets:progress` for the HUD load bar, null-safe accessors (`game.assets.tex/model/audioBuffer`), measured 2.6 s under full wave load (43/43 assets, 0 errors). Builders must NOT load asset files directly — CLAUDE.md forbids it; keeps one copy + zero mid-game streaming hitches. Prod perf rules (tri/texture/payload budgets, preload-only, style-coherence palette) are now a CLAUDE.md conventions block.
+- **`TECHNIQUES.md`** = ranked license-verified open-source three.js techniques from X/GitHub research (N8AO CC0, SimonDev Quick_Grass MIT, three-good-godrays zlib, hex-tiling MIT, octahedral impostors MIT, volumetric clouds MIT, takram atmosphere reference...). Builders follow its STEAL guidance.
+- CLAUDE.md conventions updated: generated assets allowed (local-only at runtime, committed to repo, no CDN/external fetch from game code).
+
+## 4. Current state
+
+**Updated: 2026-08-20 05:10.**
+
+- **Wave 1**: builders landed ~9.1k lines across 15 systems; usage limit killed the critics.
+- **Wave 1b** (`wf_6614cf46-d1b`, dead): critic-first on 16 pieces. **All 15 critics returned verdicts** (journal: `.claude/projects/.../3bf2ab25-.../subagents/workflows/wf_6614cf46-d1b/journal.jsonl`): **12 LOSE / 3 TOSSUP / 0 WIN** (movement 8.2, combat 7.5, lighting 6.5 TOSSUP; terrain/water/enemies 4.5 worst). The 16 fix builders launched, then the **usage limit killed 14 of them mid-flight**; only camera (full recoil/bob/flinch fix pass) and HUD (built fresh, never judged) completed. Files on disk may contain partial fix-round edits — `check.mjs` passes, game boots clean.
+- **Wave 2** (`wf_022db421-f2d`, dead — usage limit killed 27/40 agents): 13 critics returned — combat 5.5, lighting 6, water 6, vegetation 6, abilities 4.5, grass 7 TOSSUP, vfx 5, enemies 4, camera 7 TOSSUP, terrain 4.5, audio 6, movement 8.2 TOSSUP; sky critic returned empty (no StructuredOutput), postfx/weapons/hud critics killed. Several fix builders completed mid-wave (grass clipmap rewrite, enemies standoff defs, weapons hands.js, TAAPass) — judged fresh in wave 3.
+- **Wave 3** (`wf_e7ac807f-e3c`, dead at 13/42 — usage limit again): 13 fresh verdicts, **scores climbing every wave** (avg ~5.2 → ~6.5): combat 8 (occlusion fixed), movement 8.3, camera 8, grass 7.3, water 7.2 (all TOSSUP — one gap from WIN each); terrain 5.5 (textures landed, shape still soft-serve), enemies 6 (standoff landed but overtuned — no melee pressure), vegetation 5.5, weapons 6 (hands exist, reloads frozen), vfx 6, audio 6 (mp3 takes STILL unwired — builder killed), postfx 6 (god-ray stipple, AO halos), sky 4 (REGRESSED — cloud rewrite = conical spike fence; night package praised). lighting/abilities/hud critics died.
+- **Wave 4 — running now** (`tools/workflows/wave4.js`, run id `wf_cd5c7899-156`, task `w3cvbqbw2`): **fix-first** — the 13 judged pieces start at their builder with the full stored wave-3 verdict (`PREJUDGED` map embedded in the script), then a fresh critic; lighting/abilities/hud go critic-first. Briefs carry targeted direction (sky: rounded fbm masses + blue-noise jitter per TECHNIQUES.md #8, never cone extrusion; enemies: tighten hound band for real melee pressure; audio: wiring the mp3 takes is mandatory; vegetation: use leaf_card/bark/column/aetheryte assets).
+- Orchestrator fixes landed earlier: Player.js pre-shield damage event; grass tip roughness decree; wisp glow/meadow decree (see §5b + CLAUDE.md decree block).
+- Game state at last verify: 0 errors, blob-free meadow at 15h/17.5h. p99 was 16.4 ms vs 14 budget; builders carry perf gates.
+- Not started (later waves): RPG stats/loot/inventory, quests + voiced NPCs (Magnific audio_tts can voice them now), world bosses, story mode.
+
+## 5. Next actions (in order)
+
+1. Wait for `wf_e7ac807f-e3c` (journal: `.claude/projects/.../d286c103-.../subagents/workflows/wf_e7ac807f-e3c/journal.jsonl`). If it dies (usage limit ~4-hourly): collect verdicts from the journal, fold them into prevs, relaunch critic-first as wave 4 — never resume blindly.
+2. Asset batch 2 in flight (bark, leaf card ×alpha, rune glyphs ×2, aetheryte/column/handcannon concepts → models3d GLBs). Download results IMMEDIATELY (URL tokens expire), update ASSETS.md, generate remaining ASSET ASKs from builder reports.
+3. Between waves: update progress/state.json + shots, run check.mjs + full tour, coherence agent, then next wave.
+4. Only once graphics/perf/mechanics are all WIN: RPG systems → world bosses → quests/NPC voice (audio_tts) → story mode.
+
+## 5b. User decrees (2026-08-20, from watching the live game — enforce in every wave, tell every builder/critic)
+
+- **No sparkly white blobs in the meadow, ever.** (Also pinned as a USER DECREE at the top of CLAUDE.md — critics must auto-LOSE any piece whose screenshots show washed-white blobs.) Diagnosed live, three stacked causes: (a) wisp glow parts white-clipping through ACES + 3 spawn wisps perma-aggroing the idle player (bolt trail/impact vfx rain), (b) grass flower-head emissive, and (c) **the persistent one: grass glossy tips** — `roughnessFactor mix(0.78, 0.35, v²)` threw drifting, gust-flashing white specular glints across the whole meadow (immune to every object toggle; confirmed by hiding the grass material — the user spotted it first). Fixes landed by orchestrator (keep, refine, never revert): tip roughness → `mix(0.82, 0.62, v²)` (Grass.js — survived the grass builder's clipmap rewrite), flowers matte (Grass.js), wisp `glow` 2.6→1.1 / `rim` 1.0→0.6 (defs.js), meadow camp → 2 wisps @48-64 m (Enemies.js). Verified clean at hour 15 + 17.5 from spawn after the rewrite. Watch every grass builder round for regressions — the wave-2 grass critic explicitly asked for MORE backlight sheen (gap 1), which is how this reappears.
+- Grass sparkles in general are out: no glowing/emissive flower heads by day; night magic = subtle colored lift, not bright points.
+
+## 6. Gotchas learned the hard way
+
+- **Bash heredocs > ~5 KB fail on this machine** (`unexpected EOF`). Use the Write tool for anything long; heredocs only for short files.
+- `renderer.info` must be reset per frame (`autoReset = false` + `info.reset()` in `Perf.begin`) or draw-call/tri counts are garbage.
+- postprocessing's `EffectComposer.addPass(pass, index)` is the supported way to insert the viewmodel overlay passes; splicing `composer.passes` skips initialisation.
+- Critics/builders must **look at the PNGs**, not just read the report — a build can be error-free and still look like programmer art.
+- Never let two agents own the same file. Cross-system needs go in the report as an ask; the orchestrator wires them.

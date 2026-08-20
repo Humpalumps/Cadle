@@ -1,0 +1,302 @@
+{
+ "updated": "2026-08-20 10:05",
+ "status": "<b>Wave 4 running (fix-first)</b>: wave-3 critics returned 13 verdicts before the usage limit hit — scores climbing every wave. Five pieces are one gap from WIN (movement 8.3, combat 8, camera 8, grass 7.3, water 7.2). Wave 4 skips redundant re-judging: builders start immediately from the stored verdicts, then fresh critics.",
+ "kpis": [
+  {
+   "label": "fps @1080p high, idle (uncapped)",
+   "value": "152"
+  },
+  {
+   "label": "frame ms mean / p99 (idle)",
+   "value": "6.6 / 16.4"
+  },
+  {
+   "label": "draw calls / tris",
+   "value": "139 / 1.3M"
+  },
+  {
+   "label": "errors",
+   "value": "0"
+  },
+  {
+   "label": "wave 1b verdicts",
+   "value": "12 LOSE · 3 TOSSUP"
+  }
+ ],
+ "pieces": [
+  {
+   "key": "sky",
+   "name": "Sky / atmosphere / time of day",
+   "files": "render/Sky.js",
+   "status": "fixing",
+   "score": 4.0,
+   "verdict": "LOSE",
+   "gap": "Cloud rewrite regressed: conical spike fence — redirected to volumetric fbm masses. Night sky praised.",
+   "round": 2
+  },
+  {
+   "key": "lighting",
+   "name": "Lighting / shadows (CSM)",
+   "files": "render/Lighting.js",
+   "status": "critic",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "Shadows invisible wherever grass covers ground — grass never samples the CSM.",
+   "round": 1
+  },
+  {
+   "key": "postfx",
+   "name": "Post-processing pipeline",
+   "files": "render/PostFX.js",
+   "status": "fixing",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "God rays = crosshatch stipple; AO smudge halos; 1.74 ms vs 1.3 budget.",
+   "round": 2
+  },
+  {
+   "key": "terrain",
+   "name": "Terrain",
+   "files": "world/Terrain.js",
+   "status": "fixing",
+   "score": 5.5,
+   "verdict": "LOSE",
+   "gap": "Textures landed; mountains still soft-serve mounds — needs ridgelines/crag structure.",
+   "round": 2
+  },
+  {
+   "key": "water",
+   "name": "Water",
+   "files": "world/Water.js",
+   "status": "fixing",
+   "score": 7.2,
+   "verdict": "TOSSUP",
+   "gap": "Reflection good now; foam swung to absent — needs crisp contact-line lace.",
+   "round": 2
+  },
+  {
+   "key": "grass",
+   "name": "Grass",
+   "files": "world/Grass.js",
+   "status": "fixing",
+   "score": 7.3,
+   "verdict": "TOSSUP",
+   "gap": "Close range 0-8 m: stiff dark daggers + floating flowers — last blocker.",
+   "round": 2
+  },
+  {
+   "key": "vegetation",
+   "name": "Vegetation / crystals / props",
+   "files": "world/Vegetation.js, Props.js",
+   "status": "fixing",
+   "score": 5.5,
+   "verdict": "LOSE",
+   "gap": "Foliage = flat paddle shelves — ordered onto leaf_card/bark/column/aetheryte assets.",
+   "round": 2
+  },
+  {
+   "key": "movement",
+   "name": "Movement controller",
+   "files": "player/PlayerController.js",
+   "status": "fixing",
+   "score": 8.3,
+   "verdict": "TOSSUP",
+   "gap": "Only surface-swim porpoising left.",
+   "round": 2
+  },
+  {
+   "key": "camera",
+   "name": "Camera feel",
+   "files": "player/PlayerCamera.js",
+   "status": "fixing",
+   "score": 8.0,
+   "verdict": "TOSSUP",
+   "gap": "FOV fixed. Landing dip unverified on a real fall — demonstrate or fix.",
+   "round": 2
+  },
+  {
+   "key": "weapons",
+   "name": "Weapons + viewmodel",
+   "files": "player/Weapons.js, weapons/*",
+   "status": "fixing",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "Hands exist; reloads are frozen-hand puppet shows — hand-driven reload anims.",
+   "round": 2
+  },
+  {
+   "key": "abilities",
+   "name": "Abilities",
+   "files": "player/Abilities.js",
+   "status": "critic",
+   "score": 4.5,
+   "verdict": "LOSE",
+   "gap": "All ability energy blows out to cream/white; needs saturated gold/arc/void cores.",
+   "round": 1
+  },
+  {
+   "key": "combat",
+   "name": "Combat / damage",
+   "files": "combat/Combat.js",
+   "status": "fixing",
+   "score": 8.0,
+   "verdict": "TOSSUP",
+   "gap": "Occlusion fixed. Bolts read as soft balloons — needs stretched hot-core darts.",
+   "round": 2
+  },
+  {
+   "key": "enemies",
+   "name": "Enemies / AI / creatures",
+   "files": "enemies/*",
+   "status": "fixing",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "Standoff landed but overtuned — hounds land ~0 bites; needs real melee pressure.",
+   "round": 2
+  },
+  {
+   "key": "vfx",
+   "name": "VFX / particles",
+   "files": "vfx/*",
+   "status": "fixing",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "Muzzle/tracers invisible in noon footage — daylight readability.",
+   "round": 2
+  },
+  {
+   "key": "audio",
+   "name": "Audio (synthesized)",
+   "files": "audio/*",
+   "status": "fixing",
+   "score": 6.0,
+   "verdict": "LOSE",
+   "gap": "Recorded gunshot takes still unwired (builder killed) — mandatory this wave.",
+   "round": 2
+  },
+  {
+   "key": "hud",
+   "name": "HUD",
+   "files": "ui/*",
+   "status": "critic",
+   "score": null,
+   "verdict": null,
+   "gap": "Still unjudged (two critics killed) — wave 3 is its first surviving pass.",
+   "round": 1
+  },
+  {
+   "key": "perf",
+   "name": "Performance budget",
+   "files": "(all)",
+   "status": "critic",
+   "score": null,
+   "verdict": null,
+   "gap": "",
+   "round": 0
+  },
+  {
+   "key": "rpg",
+   "name": "RPG: stats / loot / inventory",
+   "files": "rpg/",
+   "status": "later",
+   "score": null,
+   "verdict": null,
+   "gap": "",
+   "round": 0
+  },
+  {
+   "key": "quests",
+   "name": "Quests / NPC dialogue (voice)",
+   "files": "rpg/",
+   "status": "later",
+   "score": null,
+   "verdict": null,
+   "gap": "",
+   "round": 0
+  },
+  {
+   "key": "bosses",
+   "name": "World bosses",
+   "files": "bosses/",
+   "status": "later",
+   "score": null,
+   "verdict": null,
+   "gap": "",
+   "round": 0
+  },
+  {
+   "key": "story",
+   "name": "Story mode",
+   "files": "rpg/",
+   "status": "later",
+   "score": null,
+   "verdict": null,
+   "gap": "",
+   "round": 0
+  }
+ ],
+ "shots": [
+  {
+   "src": "/progress/shots/spawn-n.png",
+   "label": "spawn-n"
+  },
+  {
+   "src": "/progress/shots/spawn-e.png",
+   "label": "spawn-e"
+  },
+  {
+   "src": "/progress/shots/spawn-w.png",
+   "label": "spawn-w"
+  },
+  {
+   "src": "/progress/shots/ground-close.png",
+   "label": "ground-close"
+  },
+  {
+   "src": "/progress/shots/airborne.png",
+   "label": "airborne"
+  },
+  {
+   "src": "/progress/shots/tod-06-dawn.png",
+   "label": "tod-06-dawn"
+  },
+  {
+   "src": "/progress/shots/tod-17-golden.png",
+   "label": "tod-17-golden"
+  },
+  {
+   "src": "/progress/shots/tod-23-night.png",
+   "label": "tod-23-night"
+  },
+  {
+   "src": "/progress/shots/vista-1.png",
+   "label": "vista-1"
+  },
+  {
+   "src": "/progress/shots/vista-2.png",
+   "label": "vista-2"
+  },
+  {
+   "src": "/progress/shots/sky.png",
+   "label": "sky"
+  },
+  {
+   "src": "/progress/shots/reload.png",
+   "label": "reload"
+  }
+ ],
+ "log": [
+  "Wave 4 launched fix-first (wf_cd5c7899-156): 13 builders start from stored wave-3 verdicts, then fresh critics; lighting/abilities/hud critic-first. Wave 3 scores: movement 8.3, camera 8, combat 8, grass 7.3, water 7.2, enemies 6 (up from 4), terrain 5.5, sky regressed to 4 (cloud spikes — redirected).",
+  "Prod-grade asset plumbing: new core Assets preloader loads all 43 generated assets (10 tex, 3 GLBs, 30 audio) in ~2.6 s behind the start screen with GPU pre-upload — zero mid-game streaming hitches. GLBs decimated 380k→57k/38k/31k tris (~3 MB each); total asset payload ~24 MB. CLAUDE.md now carries hard asset perf budgets + a style-coherence palette rule; the between-wave coherence agent judges style unity.",
+  "Magnific MCP live: 6 seamless 2k terrain albedos + 28 gunshot/explosion takes + field & night themes generated, tiling-verified, committed under public/assets/ (ASSETS.md). X/GitHub research done: TECHNIQUES.md ranks N8AO (CC0), Quick_Grass (MIT), shadow-map god rays, hex tiling, octahedral impostors, volumetric clouds — licenses verified.",
+  "Wave 3 launched (wf_e7ac807f-e3c): critics-first on all 16 pieces; briefs carry wave-2 gaps + asset/technique orders. Wave 2 died at 13/40 agents (usage limit) after returning 13 verdicts — worst: enemies 4.0 (melee still clips), abilities 4.5 (white blobs), terrain 4.5 (chalk cliffs).",
+  "User flagged ~100 flashing white blobs in the meadow. Root-caused live: wisp glow white-clipping + wisp bolt vfx + 3 spawn wisps perma-aggroing. Fixed: matte flowers (Grass.js), wisp glow 2.6→1.1 (defs.js), spawn meadow 2 calm wisps beyond perception (Enemies.js). Bolt/impact vfx saturation lands with the wave-2 vfx/combat builders.",
+  "Wave 2 launched (run wf_022db421-f2d): fresh critics on all 16 pieces, ≤3 fix rounds, wave-1b gaps in the briefs. Player.js now emits pre-shield damage; terrain gains colorAt(x,z) ask; weapons gains setHidden(bool) ask.",
+  "Wave 1b verdicts in: 12 LOSE / 3 TOSSUP / 0 WIN. Camera fix round completed (recoil climb, footstep-locked bob); HUD built fresh. Usage limit killed the other 14 fix builders mid-flight; game still boots clean (0 errors, 152 fps idle).",
+  "HANDOVER.md added — full pickup doc (job, machine, wave pattern, live state, next actions, gotchas) kept current every loop tick.",
+  "Wave 1b launched: critic-first on all 16 pieces, HUD rebuild.",
+  "Added per-system CPU timing + GPU timer queries to the harness (stats().systems / gpuMs); tour now warms up 5 s and walks east.",
+  "Wave 1 (interrupted by usage limit): sky, lighting/CSM, postfx (AO/god rays/grade), terrain LOD + triplanar, water (reflection/refraction), grass, vegetation+props, movement, camera, weapons (6 archetypes, viewmodel), abilities, combat, enemies (6 types), vfx, audio all landed in some form; HUD still stub.",
+  "Project scaffolded: Vite + three r185 + postprocessing. Headless-GPU Playwright harness verified (RTX 3060 via ANGLE D3D11)."
+ ]
+}

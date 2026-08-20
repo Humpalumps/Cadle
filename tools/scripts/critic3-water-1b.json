@@ -1,0 +1,17 @@
+[
+  { "wait": 5.0 }, { "resetStats": true },
+  { "hour": 17.5 },
+  { "tp": [-95, null, -50] }, { "look": [1.31, -0.12] }, { "wait": 1.0 },
+  { "shot": "low-golden-shore" },
+  { "eval": "(() => { const w = __game.game.world.water; return { hasGrab: w.uniforms.uHasGrab.value, hasRefl: w.uniforms.uHasReflect.value, qp: w.qp }; })()" },
+  { "perfWindow": { "secs": 3, "label": "low-water-view" } },
+  { "hour": 23 }, { "wait": 0.8 },
+  { "eval": "(() => { const m = __game.game.sky.moonDir; const yaw = Math.atan2(-m.x, -m.z); __game.look(yaw, -0.15); return { moonDir: { x: m.x, y: m.y, z: m.z }, yaw }; })()" },
+  { "wait": 0.8 }, { "shot": "low-night-moonface" },
+  { "eval": "__game.teleport(-150, 4.5, -62)" },
+  { "eval": "(() => { const m = __game.game.sky.moonDir; __game.look(Math.atan2(-m.x, -m.z), -0.1); return 1; })()" },
+  { "wait": 0.8 }, { "shot": "low-night-moonface-2" },
+  { "log": "underwater" },
+  { "hour": 15 }, { "tp": [-170, 2.5, -70] }, { "look": [1.31, 0.1] }, { "wait": 0.6 }, { "shot": "low-underwater" },
+  { "stats": "final" }
+]
