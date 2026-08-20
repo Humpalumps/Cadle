@@ -6,7 +6,7 @@ import { mulberry32 } from '../core/Noise.js';
  * Abilities: Destiny-style kit. Keys: G grenade, F melee (charged), Q class ability, X super (needs full meter). Cooldowns in seconds; super charges from damage/kills.
  * Abilities use game.combat (explode/projectile/damage), game.vfx, game.audio, game.player.view (kick/shake), game.hud (toasts).
  * Minimum kit ("Aetherweaver"): grenade = aether orb (lob, explode, lingering sigil DoT); melee = arc palm strike (lunge + shockwave + palm-thrust viewmodel anim);
- *   class = heal rift (ground sigil heals for 10s); super = "Starfall": 6s of rapid homing star bolts + glowing viewmodel, big VFX.
+ *   class = grapple hook (Q: hook any scenery under the crosshair, get flung up and past it); super = "Starfall": 6s of rapid homing star bolts + glowing viewmodel, big VFX.
  * Exposes: game.player.abilities.list = [{ id:'grenade'|'melee'|'class'|'super', name, key, cooldown, remaining, ready:boolean, charge:0..1 (1 = ready / super meter), use() }]
  *          game.player.abilities.superActive:boolean, .superMeter (0..1), .use(id) -> bool, .charge(id) (instantly ready; tests), .superTimeLeft
  * Events: 'ability:use' {id}, 'ability:ready' {id}, 'ability:end' {id:'super'}
@@ -27,7 +27,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const COL = { grenade: 0xb070ff, melee: 0x53c7ff, class: 0x7cf5b0, super: 0xffb433 };
 const GOLD_CORE = 0xffa018; // saturated solar core for bolts/hands (survives ACES at noon)
 const ADD = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false };
-const CD = { grenade: 25, melee: 15, class: 40 };
+const CD = { grenade: 25, melee: 15, class: 7 };   // class = grapple: traversal cadence, not a heal
 // piecewise smoothstep keyframes (same idiom as Weapons): keys = [[t, v], ...]
 function kf(p, keys) {
   if (p <= keys[0][0]) return keys[0][1];
@@ -105,7 +105,7 @@ export class Abilities {
     this.game = game; this.player = player;
     this.superActive = false; this.superMeter = 0; this.superTimeLeft = 0;
     const mk = (id, name, key, cooldown) => ({ id, name, key, cooldown, remaining: 0, ready: true, charge: 1, use: () => this.use(id) });
-    this.list = [mk('grenade', 'Aether Orb', 'G', CD.grenade), mk('melee', 'Arc Palm', 'F', CD.melee), mk('class', 'Healing Rift', 'Q', CD.class), mk('super', 'Starfall', 'X', 6)];
+    this.list = [mk('grenade', 'Aether Orb', 'G', CD.grenade), mk('melee', 'Arc Palm', 'F', CD.melee), mk('class', 'Grapple Hook', 'Q', CD.class), mk('super', 'Starfall', 'X', 6)];
     this.byId = Object.fromEntries(this.list.map((a) => [a.id, a]));
     this.byId.super.ready = false; this.byId.super.charge = 0;
     this._v1 = new THREE.Vector3(); this._v2 = new THREE.Vector3(); this._v3 = new THREE.Vector3(); this._fwd = new THREE.Vector3(); this._right = new THREE.Vector3(); this._n = new THREE.Vector3();
@@ -292,7 +292,8 @@ export class Abilities {
     if (id === 'super') { if (this.superActive || this.superMeter < 1) return false; this._startSuper(); }
     else {
       if (a.remaining > 0 || this.superActive) return false;
-      if (id === 'grenade') this._throwGrenade(); else if (id === 'melee') this._melee(); else this._rift();
+      if (id === 'grenade') this._throwGrenade(); else if (id === 'melee') this._melee();
+      else if (!this._grapple()) return false;   // no anchor in range: no cooldown, no toast
       a.remaining = a.cooldown;
     }
     this.game.events.emit('ability:use', { id, name: a.name });
@@ -355,7 +356,32 @@ export class Abilities {
     this.player.view.shake?.(0.7, 0.22); this.player.view.kick?.(0.03, -0.012); postfx?.kick?.(0.35);
   }
 
-  // ---------- class: heal rift ----------
+  // ---------- class: grapple hook ----------
+  // Q fires a hook at whatever scenery the crosshair is on (terrain, rocks, trees, ruins — anything
+  // combat's dry hitscan resolves) and flings the player toward and PAST the anchor, upward-biased,
+  // like the hooks in Titanfall/Apex: one impulse, air control does the rest. Misses cost nothing.
+  _grapple() {
+    const g = this.game, p = this.player, view = p.view;
+    const eye = p.eye ?? p.position;
+    const dir = g.camera.getWorldDirection(this._grapDir ?? (this._grapDir = new THREE.Vector3()));
+    const res = g.combat?.hitscan?.({ origin: eye, dir, range: 58, dry: true, team: 'player' });
+    if (!res || res.surface === 'none' || res.distance < 3.5) { g.hud?.toast?.('NO ANCHOR', { ms: 700 }); return false; }
+    const ctrl = p.controller, v = ctrl?.velocity;
+    if (!v) return false;
+    const dx = res.point.x - p.position.x, dy = res.point.y - p.position.y, dz = res.point.z - p.position.z;
+    const dist = Math.max(1, Math.hypot(dx, dy, dz));
+    const t = Math.min(2.1, Math.max(0.85, dist / 16));      // rough flight time: far anchors = faster yank
+    v.x = dx / t * 1.12; v.z = dz / t * 1.12;
+    v.y = Math.max(v.y, dy / t + 8.5 + dist * 0.1);          // upward fling carries you past the anchor lip
+    ctrl.grounded = false;
+    view.shake?.(0.25, 0.15);
+    p.fovBoost = (p.fovBoost || 0) + 6;
+    g.vfx?.emit?.('ring', res.point, { color: COL.class, scale: 1.1 });
+    g.vfx?.emit?.('aether-burst', res.point, { color: COL.class, count: 10, scale: 0.7 });
+    g.audio?.play?.('ability-class');
+    return true;
+  }
+
   _rift() {
     const p = this.player.position; const s = this._sigil('heal', p, COL.class, 3.5, 10);
     this._burst(s.grp.position, COL.class, 2.5, 0.5); this._ring(p, COL.class, 4.5, 0.6); this._ring(p, 0x4fdc92, 3, 0.35);
