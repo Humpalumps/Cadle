@@ -39,6 +39,8 @@ const MODELS = {
 const AUDIO = {};
 for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) AUDIO[`shot-${a}-${i}`] = `/assets/sfx/shot-${a}-${i}.mp3`;
 for (let i = 1; i <= 4; i++) AUDIO[`explosion-${i}`] = `/assets/sfx/explosion-${i}.mp3`;
+// opening-quest voice lines (see ASSETS.md "Voice cast" — ONE pinned voice per character, always)
+for (let i = 1; i <= 4; i++) AUDIO[`voice-vale-0${i}`] = `/assets/voice/vale-0${i}.mp3`;
 AUDIO['field-theme'] = '/assets/music/field-theme.mp3';
 AUDIO['night-theme'] = '/assets/music/night-theme.mp3';
 

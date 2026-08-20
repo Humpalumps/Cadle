@@ -18,6 +18,7 @@ import * as save from './save.js';
 import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMOUR, describe, shortLabel, ARMOUR_SLOTS } from './items.js';
 import { reserveNames } from './names.js';
 import { Screens } from '../ui/Screens.js';
+import { OpeningQuest } from './quest.js';
 
 const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle' };
 
@@ -172,6 +173,8 @@ export class RPG {
     this.addXp = R.addXp; this.dropLoot = R.dropLoot; this.pickup = R.pickup; this.equip = R.equip;
 
     this.screens = new Screens(g, ctx);
+    this.quest = new OpeningQuest(g, R);
+    this.quest.init();
   }
 
   update(dt, t) {
@@ -183,6 +186,7 @@ export class RPG {
     if (!this._promptSet && this._promptWas) this.game.hud?.prompt?.(null);
     this._promptWas = this._promptSet;
     this.screens.frame(dt);
+    this.quest.update(dt, this.game.time);
     if (this._dirty && this.game.time > this._nextSave) { this._nextSave = this.game.time + 6; this.ctx.rpg.save(); }
   }
 }

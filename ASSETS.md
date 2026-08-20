@@ -65,3 +65,29 @@ Usage: `game.assets.model('aetheryte')` (already loaded + textures GPU-uploaded)
 - HUD filigree corners/frames
 - Footsteps per surface, reload foley, ability whooshes, ambient wind/bird/cricket loops
 - More GLBs on ASSET ASK (enemy statues, lanterns, monoliths...)
+
+
+## Voice cast (opening quest — VOICE CONSISTENCY IS BINDING)
+
+**The rule (user decree): a character's voice NEVER changes.** Each speaking character below is
+pinned to exactly one ElevenLabs voice. Every line for that character — now and in any future
+quest — is generated with the SAME voice id, same model, same stability/style settings, ideally in
+one batch. Never regenerate a single line with different settings; if a voice must change,
+regenerate EVERY line the character has ever spoken and replace them together.
+
+| Character | Voice (pin on first generation) | Delivery | Files |
+|---|---|---|---|
+| The Vale (narrator) | _voice id: UNSET — write the ElevenLabs voice id/name here the moment the first line is generated, before generating the second_ | ethereal, unhurried, low female register, slight reverb feel; painterly-fantasy narrator, never name trademarked games in prompts | `public/assets/voice/vale-01..04.mp3` |
+
+Registered in `src/core/Assets.js` as `voice-vale-01..04`; `src/rpg/quest.js` plays them at the
+quest beats and shows the subtitle regardless, so missing files degrade gracefully.
+
+Line scripts (generate verbatim, one batch):
+1. `vale-01` — "Wake, Wayfarer. The Vale remembers you — even if the world does not."
+2. `vale-02` — "The Sundered Spire. Aether bleeds where the stone was broken — and something feeds on the wound."
+3. `vale-03` — "The wound breathes easier. Take up the arm the Spire kept for you — you have earned its name."
+4. `vale-04` — "So armed, so named. Walk the Vale, Wayfarer — it has more to remember."
+
+Generation (Magnific MCP, when connected): `audio_tts` per line with the pinned voice →
+`creations_wait` → download IMMEDIATELY (URL tokens expire) → mp3 into `public/assets/voice/` →
+fill the voice id into the table above → commit the mp3s.

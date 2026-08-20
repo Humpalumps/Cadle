@@ -1,5 +1,10 @@
 import { Game } from './core/Game.js';
 
+// ?fresh=1: clean slate for demo recording — new character, quest from the top
+if (new URLSearchParams(location.search).get('fresh')) {
+  try { localStorage.removeItem('cadle.save'); localStorage.removeItem('cadle.quest'); } catch (e) {}
+}
+
 const canvas = document.getElementById('game');
 const game = new Game(canvas);
 

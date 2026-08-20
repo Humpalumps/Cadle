@@ -126,8 +126,6 @@ export class HUD {
     this._bindEvents();
     this._buildMenus();
     if (g.auto) { $('#start')?.remove(); }
-    this.setQuest('The Sundered Spire', 'Investigate the ruins to the east');
-    setTimeout(() => this.notify('The Shattered Meadow', 'Cadle'), 1200);
 
     // death screen: any key / click to respawn (after a beat so the killing blow doesn't skip it)
     const tryRespawn = () => {
