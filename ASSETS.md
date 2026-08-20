@@ -79,7 +79,7 @@ regenerate EVERY line the character has ever spoken and replace them together.
 |---|---|---|---|
 | The Vale (narrator) | **PINNED: Magnific voice id 364 — "Sophia Morgan" (ElevenLabs), model eleven_v3, stability 0.6, speed 0.95, similarityBoost default.** Generated 2026-08-20 in one batch. Every future Vale line uses exactly these settings. | ethereal, unhurried, low female register, slight reverb feel; painterly-fantasy narrator, never name trademarked games in prompts | `public/assets/voice/vale-01..04.mp3` |
 
-Registered in `src/core/Assets.js` as `voice-vale-01..04`; `src/rpg/quest.js` plays them at the
+Portrait: `public/assets/tex/vale_portrait.jpg` (Magnific text-to-image, 512px, shown on the dialogue card — regenerate only together with a deliberate redesign of the character). Registered in `src/core/Assets.js` as `voice-vale-01..04`; `src/rpg/quest.js` plays them at the
 quest beats and shows the subtitle regardless, so missing files degrade gracefully.
 
 Line scripts (generate verbatim, one batch):
