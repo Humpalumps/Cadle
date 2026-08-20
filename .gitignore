@@ -3,3 +3,7 @@ tools/out/
 dist/
 *.log
 .DS_Store
+err.tmp
+*.tmp
+probe-*-tmp.mjs
+tools_out_dist/
