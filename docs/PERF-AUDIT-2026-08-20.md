@@ -112,9 +112,20 @@ frame even standing in the meadow with no water on screen. New `_waterOnScreen()
 water can be visible. spawn 45.5 -> 61.7 fps (p50 10.3 -> 4.3), ruins 41.8 -> 56.7, lake holds
 80.8 with the mirror fully intact when it IS on screen (visually verified at the shore).
 
-**Remaining for Opus:** ruins-camp is the last slow window (56.7 fps, p50 10.3 — enemy camp in
-view). Leads: (1) probe the camp view the same way (hide enemies / their shadows / vfx one at a
-time — `__game.game.enemies.all.forEach(e => e.mesh.visible=false)` etc.); (2) re-measure CLEAN
-(user's Chrome closed) before optimizing further — every number in this doc is from a contended
-GPU, and spawn/lake are already at/above the 60 fps bar despite it; (3) then the standing 7 ms
-budget work per the main doc.
+**Round 3 probe (ruins camp) — enemies' RENDERING is the last cost, handed to Opus:**
+same-window bisect at the camp: base p50 14.1 ms -> `passive(true)` 15.1 (AI is free) ->
+`clearEnemies()` **7.0** (rendering the 7-enemy camp costs ~7 ms median), 186 -> 143 draw calls
+(~43 calls for 7 enemies: per-part meshes x types, plus their casts into every CSM cascade).
+Means barely moved (19.6 -> 19.0) — the mean is contention noise; trust the p50 delta.
+
+**Opus's job:** cut enemy render cost without touching the look up close.
+Options, in order of safety: (a) stop enemy shadow casting beyond ~30 m (needs per-enemy
+control — parts are per-TYPE InstancedMeshes today, so either split cast/no-cast instance
+buckets per type the way EZTrees buckets near/far, or cast only lod-0 enemies); (b) merge
+per-part meshes per type to cut the 6-ish draws per enemy; (c) check `enemies/bodies.js` part
+materials for anything expensive per-fragment. The enemy files are `src/enemies/*` (enemies
+builder ownership). Re-verify with the same window (`tp 140,60, look 0.6,-0.1`) and run
+`node tools/gate.mjs` after — enemy material edits are blob-gate territory.
+
+Also still standing: one CLEAN re-measure (user's Chrome closed) before deeper work — spawn
+61.7 / lake 80.8 already clear the 60 bar even contended; ruins 56.7 is close.
