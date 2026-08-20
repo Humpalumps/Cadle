@@ -1,4 +1,4 @@
-# HANDOVER — Aetherfall orchestration
+# HANDOVER — Cadle orchestration
 
 Read this first if you are picking this project up cold (new session, new agent, previous orchestrator ran out of usage). It tells you what the job is, how the machine is built, what state it is in, and the exact commands to carry on.
 
@@ -45,7 +45,7 @@ Restart if down:
 npx vite --port 5173 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &
 ```
 The orchestrator also keeps the game open in the Browser pane so it can see it live:
-`preview_start {name:"aetherfall"}` (config in `.claude/launch.json`, attaches, starts nothing), then `navigate` to `http://127.0.0.1:5173/?auto=1&debug=1`, then `computer{action:"screenshot"}` / `read_console_messages` / `javascript_tool`. **The pane must be visible in the app for screenshots to work** — if it returns "Browser pane is not displayed", fall back to `tools/inspect.mjs` screenshots (headless, always works).
+`preview_start {name:"cadle"}` (config in `.claude/launch.json`, attaches, starts nothing), then `navigate` to `http://127.0.0.1:5173/?auto=1&debug=1`, then `computer{action:"screenshot"}` / `read_console_messages` / `javascript_tool`. **The pane must be visible in the app for screenshots to work** — if it returns "Browser pane is not displayed", fall back to `tools/inspect.mjs` screenshots (headless, always works).
 
 ### Harness usage
 ```bash

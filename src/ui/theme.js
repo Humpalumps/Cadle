@@ -1,4 +1,4 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: UI agent. Shared visual language: palette, generated parchment, canvas primitives.
 // Nothing external — every texture and every glyph here is code or an inline SVG data URI.

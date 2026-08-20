@@ -1,4 +1,4 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: rpg agent. Item definitions + procedural generation. Pure data, no THREE, no ctx.
 // Everything here returns plain JSON-safe objects so save/load is a straight stringify.
@@ -26,7 +26,7 @@ export const ELEMENTS = {
 // mirror combat's armoury exactly — ids included. Inventing ids combat has never heard of
 // (autorifle / pulse / longbow / stormcaster) is what let an equipped Longbow leave a hand
 // cannon in your hands; nothing here may name a gun that does not exist.
-export const ARCHETYPES = [   // mirrors Aetherfall's armoury (src/player/weapons/defs.js) — ids must exist there
+export const ARCHETYPES = [   // mirrors Cadle's armoury (src/player/weapons/defs.js) — ids must exist there
   { id: 'autorifle',  label: 'Auto Rifle',   rpm: 600, damage: 12,  range: 46,  stability: 82, handling: 47, mag: 32 },
   { id: 'handcannon', label: 'Hand Cannon',  rpm: 140, damage: 34,  range: 64,  stability: 45, handling: 65, mag: 6 },
   { id: 'pulse',      label: 'Pulse Rifle',  rpm: 300, damage: 20,  range: 80,  stability: 70, handling: 55, mag: 21 },

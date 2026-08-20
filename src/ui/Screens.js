@@ -1,4 +1,4 @@
-// Full-screen RPG overlays for Aetherfall: map (M), character (C), inventory (I), skill tree (K).
+// Full-screen RPG overlays for Cadle: map (M), character (C), inventory (I), skill tree (K).
 // Shell + keys + focus live here; the bodies are the ported renderers (rpgscreens.js, mapscreen.js)
 // driven by the ctx adapter built in src/rpg/RPG.js. Runs on DOM + its own rAF because the game
 // loop stops updating while game.paused — a menu that freezes is a broken menu.

@@ -4,7 +4,7 @@
  *
  * The item/loot/progression modules and the screen renderers are ported from the sibling
  * FPS (Aurelen) project and were written against its `ctx` surface — this file builds that
- * ctx as a thin adapter over the Aetherfall `game` object, so the ported files stay close
+ * ctx as a thin adapter over the Cadle `game` object, so the ported files stay close
  * to their source. Adapt HERE, not in the ported files.
  *
  * API: game.rpg.ctx.rpg.* (full ported surface), game.rpg.screens, and mirrors:
@@ -54,7 +54,7 @@ export class RPG {
       set jumpMul(v) { if (g.player.controller) g.player.controller.jumpMul = v; },
       get fovBoost() { return 0; }, set fovBoost(v) {},
       get shake() { return 0; }, set shake(v) { g.player.view?.addShake?.(v); },
-      tune: null,   // Aetherfall's controller owns traversal tuning; ported applyTuning() no-ops on null
+      tune: null,   // Cadle's controller owns traversal tuning; ported applyTuning() no-ops on null
     };
     const KEYMAP = { forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD' };
     const input = {
@@ -74,7 +74,7 @@ export class RPG {
       landmarks: LANDMARKS,
     };
     const ai = { get enemies() { return (g.enemies?.all ?? []).filter((e) => e.alive); } };
-    // the armoury the loot rolls against: real Aetherfall weapon defs, so an equipped roll
+    // the armoury the loot rolls against: real Cadle weapon defs, so an equipped roll
     // always names a gun that exists ("nothing here may name a gun that does not exist")
     const defs = g.player?.weapons?.defs ?? {};
     const archetypes = Object.keys(AR_LABEL).filter((id) => defs[id]).map((id) => ({

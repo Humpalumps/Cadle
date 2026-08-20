@@ -1,4 +1,4 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: UI agent. Every style the full-screen menus need.
 // theme.js owns the shared CSS string and is edited concurrently, so nothing here touches it —

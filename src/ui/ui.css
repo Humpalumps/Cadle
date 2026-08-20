@@ -1,4 +1,4 @@
-/* ===== AETHERFALL HUD — FF14 ornate (gold filigree, aether-blue glow, serif small-caps) × Destiny clarity ===== */
+/* ===== CADLE HUD — FF14 ornate (gold filigree, aether-blue glow, serif small-caps) × Destiny clarity ===== */
 html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', system-ui, sans-serif; }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; user-select: none; overflow: hidden;

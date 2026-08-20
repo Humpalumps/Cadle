@@ -1,4 +1,4 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: rpg agent. Name grammar. Pure data + string work — no THREE, no ctx.
 //
@@ -59,7 +59,7 @@ const PLACE = ['Aurelen', 'the Sable Vale', 'Emberfen', 'Kaltmere', 'the Sunken 
 const WHO = ['Kalari', 'Sorren', 'Ysolde', 'Marrow', 'Vashti', 'Elowen', 'Threnn', 'Ovid', 'Aurek', 'Nima',
   'Bel', 'Corvain', 'Isk', 'Rhosyn'];
 
-// Aetherfall armoury ids share the closest palette
+// Cadle armoury ids share the closest palette
 for (const T of [AR_NOUN, AR_ADJ]) { T.autorifle = T.auto; T.pulse = T.auto; T.sniper = T.scout; T.fusion = T.beam; T.shotgun = T.handcannon; }
 
 const pick = (a, rand) => a[(rand() * a.length) | 0];

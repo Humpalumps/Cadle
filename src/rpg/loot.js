@@ -1,4 +1,4 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: rpg agent. Drop table, pity timers, physical loot in the world, pickup.
 import * as THREE from 'three';
@@ -187,7 +187,7 @@ export function init(ctx) {
   group.name = 'rpg-loot';
   ctx.scene.add(group);
 
-  ctx.events.on('enemy:death', (e) => {              // Aetherfall payload: { enemy, killer }
+  ctx.events.on('enemy:death', (e) => {              // Cadle payload: { enemy, killer }
     const en = (e && e.enemy) || e || {};
     const pos = en.position || (en.mesh && en.mesh.position) || ctx.player.position;
     grant(ctx, { glimmer: 8 + Math.floor(Math.random() * 10) });

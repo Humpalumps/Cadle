@@ -1,7 +1,7 @@
-// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Aetherfall via the ctx
+// Ported from the FPS (Aurelen) project rpg/ui modules — adapted for Cadle via the ctx
 // adapter in src/rpg/RPG.js. Keep diffs vs the source minimal; adaptation lives in RPG.js.
 // OWNER: rpg agent. Versioned localStorage persistence. Never throws, never blocks boot.
-const KEY = 'aetherfall.save';
+const KEY = 'cadle.save';
 // v2: the quest chain gained a step and binds landmarks by id, and rolled weapons now carry
 // archetype ids from combat's armoury. A v1 payload would resume mid-chain on the wrong step
 // holding guns that do not exist, so v1 is deliberately not migrated — read() starts fresh.

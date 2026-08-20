@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "aetherfall", "url": "http://127.0.0.1:5173" }
+    { "name": "cadle", "url": "http://127.0.0.1:5173" }
   ]
 }

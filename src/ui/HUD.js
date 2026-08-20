@@ -127,7 +127,7 @@ export class HUD {
     this._buildMenus();
     if (g.auto) { $('#start')?.remove(); }
     this.setQuest('The Sundered Spire', 'Investigate the ruins to the east');
-    setTimeout(() => this.notify('The Shattered Meadow', 'Aetherfall'), 1200);
+    setTimeout(() => this.notify('The Shattered Meadow', 'Cadle'), 1200);
 
     // death screen: any key / click to respawn (after a beat so the killing blow doesn't skip it)
     const tryRespawn = () => {
@@ -266,7 +266,7 @@ export class HUD {
     start.innerHTML = `<p class="cta">click to take the field</p>
       <p class="controls">wasd move · shift sprint · space jump (double) · lmb fire · rmb aim · q grapple · m map · esc menu</p>`;
     const pause = document.createElement('div'); pause.id = 'pause'; pause.className = 'hidden';
-    pause.innerHTML = `<div id="pausebox"><h1>Aetherfall</h1>
+    pause.innerHTML = `<div id="pausebox"><h1>Cadle</h1>
       <label>Sensitivity <span id="sensv"></span></label><input id="sensr" type="range" min="1" max="15" step="0.5">
       <label>Field of View <span id="fovv"></span></label><input id="fovr" type="range" min="80" max="110" step="1">
       <label>Quality</label><div id="qualrow">${['low', 'medium', 'high', 'ultra'].map((q) => `<button data-q="${q}">${q}</button>`).join('')}</div>

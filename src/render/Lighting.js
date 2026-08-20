@@ -140,7 +140,7 @@ const BUILTIN_DIR_BLOCK = /* glsl */`
 	DirectionalLight directionalLight;
 
 	#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
-		// Aetherfall CSM: the shadow-casting directional lights are the cascades of ONE key light (same dir/color) — light once, pick cascade.
+		// Cadle CSM: the shadow-casting directional lights are the cascades of ONE key light (same dir/color) — light once, pick cascade.
 		directionalLight = directionalLights[ 0 ];
 		getDirectionalLightInfo( directionalLight, directLight );
 		aetherShadowMask = ( directLight.visible && receiveShadow ) ? aether_csmSelect() : 1.0;
