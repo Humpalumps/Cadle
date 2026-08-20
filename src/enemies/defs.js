@@ -11,7 +11,10 @@ export const DEFS = {
   wisp: {
     name: 'Aether Wisp', element: 'arc', role: 'ranged', flying: true, hover: 1.9, scale: 1.15,
     health: 45, shield: 0, damage: 5, speed: 5.5, turn: 6, accel: 10,
-    perception: 38, fov: 3.2, attackRange: 22, band: [11, 19], attackWindup: 0.55, attackCooldown: 1.9, attackRecover: 0.2, standoff: 2.5,
+    // perception 38 let wandering meadow wisps drift inside notice range and perma-aggro an idle
+    // spawn player (seen live twice; decree: spawn meadow stays peaceful). 26 keeps them curious
+    // fireflies until you walk at them or shoot.
+    perception: 26, fov: 3.2, attackRange: 22, band: [11, 19], attackWindup: 0.55, attackCooldown: 1.9, attackRecover: 0.2, standoff: 2.5,
     projectile: { speed: 24, radius: 0.2, element: 'arc', life: 4 },
     fleeAt: 0.35, fleeTime: 3.2, strafe: 1, stagger: 0.3, staggerTime: 0.35,
     radius: 0.45, height: 0, center: 0, weakPoints: null,

@@ -124,6 +124,7 @@ export class PlayerController {
     if (!this.sliding) this.crouched = (wantCrouch && !this.swimming) || (this.crouched && this._headBlocked());   // hold to crouch; can't stand under a ceiling
 
     let cap = this.swimming ? this.swimSpeed : this.crouched ? this.crouchSpeed : sprinting ? this.sprintSpeed : this.walkSpeed;
+    cap *= this.moveSpeedMul || 1;   // rpg mobility stat (game.rpg publishes it; ~1.0-1.22)
     // wade slowdown smoothed (~0.4 s time constant) so an undulating lakebed can't pump the cap into visible speed wobble
     const wadeT = (this.wading && !this.swimming) ? lerp(1, 0.45, clamp((depth - this.wadeDepth) / 1.0, 0, 1)) : 1;
     this._wadeMul = lerp(this._wadeMul, wadeT, approach(2.5, dt));
@@ -176,12 +177,12 @@ export class PlayerController {
       if (this.swimming) {
         this._jumpBuf = 0;   // Space in water = ascend/surface swim (buoyancy below) — no breach impulse, no porpoising; exit onto land via shore/step-up
       } else if (canGround && this.jumpsLeft === this.maxJumps) {
-        v.y = this.jumpSpeed; this.jumpsLeft--; this._jumpBuf = 0; this._coyote = 0; this._jumped = true; this.grounded = false;
+        v.y = this.jumpSpeed * (this.jumpMul || 1); this.jumpsLeft--; this._jumpBuf = 0; this._coyote = 0; this._jumped = true; this.grounded = false;
         const fromSlide = this.sliding; this.sliding = false; if (fromSlide) this._slideCd = this.slideCooldown;   // slide-jump: hv untouched
         this.game.events.emit('player:jump', { n: 1, slide: fromSlide });
       } else if (!canGround && this.jumpsLeft > 0 && this.jumpsLeft < this.maxJumps) {
         // second jump: reset the fall, directional boost (never above the speed you had), float while Space is held
-        v.y = Math.max(v.y * 0.25, 0) + this.jump2Speed; this.jumpsLeft--; this._jumpBuf = 0; this._jumped = true; this._float = this.floatTime;
+        v.y = Math.max(v.y * 0.25, 0) + this.jump2Speed * (this.jumpMul || 1); this.jumpsLeft--; this._jumpBuf = 0; this._jumped = true; this._float = this.floatTime;
         if (moving) { const before = Math.max(hv.length(), this.sprintSpeed); hv.addScaledVector(wish, this.jump2Boost); if (hv.length() > before) hv.setLength(before); v.x = hv.x; v.z = hv.z; }
         this.game.events.emit('player:jump', { n: 2, slide: false });
       } else if (!canGround && this.jumpsLeft === this.maxJumps) {

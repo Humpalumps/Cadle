@@ -51,7 +51,7 @@ export class RPG {
       get maxHealth() { return g.player.maxHealth; }, set maxHealth(v) { g.player.maxHealth = v; },
       get maxShield() { return g.player.maxShield; }, set maxShield(v) { g.player.maxShield = v; },
       set moveSpeedMul(v) { if (g.player.controller) g.player.controller.moveSpeedMul = v; }, // advisory: controller may not read it
-      set jumpMul(v) {},
+      set jumpMul(v) { if (g.player.controller) g.player.controller.jumpMul = v; },
       get fovBoost() { return 0; }, set fovBoost(v) {},
       get shake() { return 0; }, set shake(v) { g.player.view?.addShake?.(v); },
       tune: null,   // Aetherfall's controller owns traversal tuning; ported applyTuning() no-ops on null
@@ -85,7 +85,24 @@ export class RPG {
     const weapon = { archetypes };
     const combat = {
       weapons: archetypes,
-      equip: (i) => { const a = archetypes[i]; if (a) g.player.weapons?.give?.(a.id); },
+      // equipping a rolled weapon hands you that gun WITH the roll's numbers on it: damage, rpm,
+      // magazine, crit and reload come from the item, so two drops of the same archetype feel
+      // different in the hands (the "loot matters" contract). weaponMul stays 1 — stats are
+      // applied directly instead of as a hidden multiplier, so the HUD ammo/sheet agree.
+      equip: (i) => {
+        const a = archetypes[i]; if (!a) return;
+        const w = g.player.weapons?.give?.(a.id);
+        const roll = ctx.weapon.roll;
+        if (w && roll && roll.archetype === a.id) {
+          w.damage = roll.damage;
+          w.rpm = roll.rpm;
+          w.magSize = Math.max(1, Math.round(roll.mag));
+          if (w.ammo > w.magSize) w.ammo = w.magSize;
+          w.critMult = roll.critMul ?? w.critMult;
+          if (w.def?.reloadTime) w.reloadTime = +(w.def.reloadTime * (1 - Math.min(0.4, (roll.item?.stats?.reload ?? 0) / 100))).toFixed(2);
+          ctx.rpg.weaponMul = 1;
+        }
+      },
     };
     const ctx = this.ctx = {
       events: g.events, scene: g.scene,

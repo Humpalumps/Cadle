@@ -1,14 +1,16 @@
-// Experimental tree replacement using @dgreenheck/ez-tree (MIT, textures embedded in the build —
-// no external fetch). Enabled with ?eztrees=1: generates a handful of preset variants at init,
-// merges each into two instanced geometries (branches + leaves) and places them at the exact
-// positions the normal tree system rolled, replacing it wholesale.
+// Tree system built on @dgreenheck/ez-tree (MIT, textures embedded — no external fetch).
+// DEFAULT since v0.3 (?eztrees=0 restores the legacy card trees).
 //
-// DEFAULT tree system (?eztrees=0 restores the legacy card trees). Full geometry with chunked
-// frustum culling and a 420 m distance cull — the far forest sits behind the haze anyway.
-// ponytail: a baked far-impostor tier would buy the last few fps; the InstLOD wiring attempt hit a
-// placement bug under the usage deadline — worth revisiting with time to debug visually.
+// Two tiers per variant, owned here (no InstLOD interplay):
+//   near  (< 190 m): real low-poly-tuned geometry, instanced, canopy wind sway
+//   far   (190-540 m): two crossed quads with the variant's baked albedo — the whole far
+//         forest costs a few thousand triangles instead of millions
+// Instances rebucket between tiers when the camera has moved 6 m (throttled, typed-array
+// rewrite, ~2k instances — well under a millisecond).
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Tree } from '@dgreenheck/ez-tree';
+import { patchMaterial } from './Vegetation.js';
 
 // species mapping: 0 slender birch-alike, 1 gnarled broadleaf, 2 shore willow (closest: droopy ash)
 const POOLS = [
@@ -17,16 +19,33 @@ const POOLS = [
   ['Ash Large'],
 ];
 const TARGET_H = { 0: 13, 1: 12, 2: 11 };   // metres; instance scale multiplies on top
+const NEAR = 190, FAR = 540;                // tier split / hard cull (far tier is cheap, so see further than the old 420 m cull)
 
 export function buildEZTrees(game, trees, vegetation) {
   const t0 = performance.now();
-  const variants = [];   // per unique preset: { branchGeo, leafGeo, barkMat, leafMat, h }
   const cache = {};
   const seedBase = (game.seed | 0) || 1;
+  const renderer = game.renderer;
+  const windT = { value: 0 };
 
-  // Low-poly tune: the raw presets are ~50-100k tris per tree (148M in frame, 29 fps measured).
-  // Fewer child branches and coarser tubes cut ~70% of the geometry; slightly larger leaves keep
-  // the canopy coverage with fewer quads. Target ~5-8k tris per tree.
+  // canopy wind sway: displace by height above the roots, phased per instance — one vertex term
+  const sway = {
+    uniforms: { uWindT: windT },
+    vHead: 'uniform float uWindT;',
+    vBegin: `{
+      #ifdef USE_INSTANCING
+      vec3 swayI = vec3(instanceMatrix[3]);
+      #else
+      vec3 swayI = vec3(0.0);
+      #endif
+      float swayPh = dot(swayI.xz, vec2(0.13, 0.11));
+      float swayA = smoothstep(1.5, 9.0, transformed.y);
+      transformed.x += sin(uWindT * 1.5 + swayPh) * 0.22 * swayA;
+      transformed.z += cos(uWindT * 1.2 + swayPh * 1.3) * 0.16 * swayA;
+    }`,
+  };
+
+  // Low-poly tune: raw presets are ~50-100k tris per tree (148M in frame, 29 fps measured).
   const tune = (o) => {
     const b = o.branch, l = o.leaves;
     for (const k in b.children) b.children[k] = Math.max(1, Math.round(b.children[k] * 0.4));
@@ -36,6 +55,27 @@ export function buildEZTrees(game, trees, vegetation) {
     l.size *= 1.7;
   };
 
+  // bake a variant's unlit albedo side view for the far impostor. Positive-near ortho pulled back
+  // (a negative-near frustum rejects everything and bakes pure transparency — learned the hard way).
+  const bakeScene = new THREE.Scene();
+  function bakeImpostor(t, w, h) {
+    const res = 192;
+    const rt = new THREE.WebGLRenderTarget(res, res, { format: THREE.RGBAFormat, depthBuffer: true, stencilBuffer: false });
+    const clones = [t.branchesMesh, t.leavesMesh].map((m) => new THREE.Mesh(m.geometry,
+      new THREE.MeshBasicMaterial({ map: m.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, color: m.material.color?.clone() ?? 0xffffff })));
+    for (const c of clones) { c.frustumCulled = false; bakeScene.add(c); }
+    const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h, 0, 0.1, w * 4);
+    cam.position.set(0, 0, w * 2); cam.lookAt(0, 0, 0);
+    const prevTone = renderer.toneMapping, prevTarget = renderer.getRenderTarget(), prevClear = renderer.getClearAlpha();
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setRenderTarget(rt); renderer.setClearAlpha(0); renderer.clear();
+    renderer.render(bakeScene, cam);
+    renderer.setRenderTarget(prevTarget); renderer.setClearAlpha(prevClear); renderer.toneMapping = prevTone;
+    for (const c of clones) { bakeScene.remove(c); c.material.dispose(); }
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    return rt.texture;
+  }
+
   const makeVariant = (preset, seed) => {
     const key = preset + seed;
     if (cache[key]) return cache[key];
@@ -44,85 +84,108 @@ export function buildEZTrees(game, trees, vegetation) {
     t.options.seed = seed;
     tune(t.options);
     t.generate();
-    const bb = new THREE.Box3().setFromObject(t);
-    const h = Math.max(1, bb.max.y);
-    const barkMap = t.branchesMesh.material.map ?? null;
-    const leafMap = t.leavesMesh.material.map ?? null;
-    const barkMat = new THREE.MeshStandardMaterial({ map: barkMap, roughness: 0.92, metalness: 0 });
-    const leafMat = new THREE.MeshStandardMaterial({
-      map: leafMap, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
+    // measure from the BRANCH geometry only: the leaf buffer carries stray far-out vertices that
+    // blew the measured height to ~186 m (instances shrank to 1 m, bake framed a transparent speck)
+    t.branchesMesh.geometry.computeBoundingBox();
+    const b1 = t.branchesMesh.geometry.boundingBox;
+    const margin = (t.options.leaves?.size ?? 2) * 1.2;
+    const h = Math.max(1, b1.max.y + margin * 0.5);
+    const w = Math.max(2, Math.max(b1.max.x - b1.min.x, b1.max.z - b1.min.z) + margin);
+    const barkMat = new THREE.MeshStandardMaterial({ map: t.branchesMesh.material.map ?? null, roughness: 0.92, metalness: 0 });
+    const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
+      map: t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       color: t.leavesMesh.material.color?.clone() ?? 0xffffff,
-    });
-    game.lighting?.csm?.setupMaterial?.(barkMat);
-    game.lighting?.csm?.setupMaterial?.(leafMat);
-    const v = { branchGeo: t.branchesMesh.geometry, leafGeo: t.leavesMesh.geometry, barkMat, leafMat, h };
-    cache[key] = v; variants.push(v);
+    }), sway);
+    const q0 = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
+    const q1 = q0.clone().rotateY(Math.PI / 2);
+    const cross = mergeGeometries([q0, q1]);
+    const nrm = cross.getAttribute('normal');
+    for (let n = 0; n < nrm.count; n++) nrm.setXYZ(n, 0, 1, 0);   // light like ground: no dark backside quad
+    const v = { tree: t, branchGeo: t.branchesMesh.geometry, leafGeo: t.leavesMesh.geometry, barkMat, leafMat, cross, impMat: null, w, h };
+    cache[key] = v;
     return v;
   };
 
-  // bucket instances per variant
+  // bucket trees per variant
   const buckets = new Map();
-  let i = 0;
   for (const tr of trees) {
     const pool = POOLS[tr.species] ?? POOLS[0];
     const preset = pool[(Math.abs((tr.x * 7 + tr.z * 13) | 0)) % pool.length];
-    const seed = seedBase + (tr.species + 1) * 37;   // one seed per preset: every extra variant multiplies chunked draw calls
-    const v = makeVariant(preset, seed);
+    const v = makeVariant(preset, seedBase + (tr.species + 1) * 37);
     let b = buckets.get(v); if (!b) buckets.set(v, b = []);
-    b.push(tr); i++;
+    b.push(tr);
   }
 
-  const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
-  const C = new THREE.Color();
-  let draws = 0;
-  // split each variant's instances into a coarse world grid so off-screen chunks frustum-cull
-  // (one world-spanning InstancedMesh can never be culled; behind-the-camera trees were free tris)
-  const CHUNK = 256;
-  const chunks = [];
-  const chunked = new Map();
-  for (const [v, list] of buckets) for (const tr of list) {
-    const key = ((tr.x + 512) / CHUNK | 0) + '_' + ((tr.z + 512) / CHUNK | 0);
-    let m = chunked.get(v); if (!m) chunked.set(v, m = new Map());
-    let arr = m.get(key); if (!arr) m.set(key, arr = []);
-    arr.push(tr);
-  }
-  for (const [v, cells] of chunked) for (const list of cells.values()) {
-    const trunk = new THREE.InstancedMesh(v.branchGeo, v.barkMat, list.length);
-    const leaves = new THREE.InstancedMesh(v.leafGeo, v.leafMat, list.length);
-    trunk.castShadow = trunk.receiveShadow = true;
-    leaves.castShadow = false; leaves.receiveShadow = false;   // leaf shadow pass cost >> its read; trunks still ground the trees
-    trunk.name = 'eztree-trunk'; leaves.name = 'eztree-leaves';
-    let cx = 0, cz = 0; for (const tr of list) { cx += tr.x; cz += tr.z; } cx /= list.length; cz /= list.length;
-    let rr = 0; for (const tr of list) rr = Math.max(rr, Math.hypot(tr.x - cx, tr.z - cz));
-    const bs = new THREE.Sphere(new THREE.Vector3(cx, 10, cz), rr + 24);
-    trunk.geometry = v.branchGeo.clone(); trunk.geometry.boundingSphere = bs;
-    leaves.geometry = v.leafGeo.clone(); leaves.geometry.boundingSphere = bs;
-    list.forEach((tr, k) => {
-      const norm = (TARGET_H[tr.species] ?? 13) / v.h;
-      const s = norm * tr.scale;
-      E.set(0, ((tr.x * 31 + tr.z * 17) % 628) / 100, 0); Q.setFromEuler(E);
-      P.set(tr.x, tr.y - 0.15 * s, tr.z); S.setScalar(s); M.compose(P, Q, S);
-      trunk.setMatrixAt(k, M); leaves.setMatrixAt(k, M);
-      const tint = 0.82 + ((tr.x * 13 + tr.z * 7) % 10) * 0.03;
-      C.setRGB(tint * 0.95, tint, tint * 0.9);
-      leaves.setColorAt(k, C);
-    });
-    trunk.instanceMatrix.needsUpdate = true; leaves.instanceMatrix.needsUpdate = true;
-    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
-    game.scene.add(trunk, leaves);
-    chunks.push({ cx, cz, meshes: [trunk, leaves] });
-    draws += 2;
-  }
-  // distance cull: chunks fully beyond the haze line contribute tris nobody can read.
-  // piggyback on the render loop via one onBeforeRender hook (no system wiring needed).
-  const CULL = 420;
-  const probe = new THREE.Object3D(); probe.frustumCulled = false; game.scene.add(probe);
-  probe.onBeforeRender = (r, sc, cam) => {
-    const p = cam.position;
-    for (const c of chunks) {
-      const vis = Math.hypot(c.cx - p.x, c.cz - p.z) < CULL;
-      if (c.meshes[0].visible !== vis) { c.meshes[0].visible = vis; c.meshes[1].visible = vis; }
+  // ez-tree's embedded data-URI textures decode async — bake only after they are actually loaded
+  const maps = [...new Set([...buckets.keys()].flatMap((v) => [v.barkMat.map, v.leafMat.map].filter(Boolean)))];
+  const ready = Promise.all(maps.map((m) => {
+    const img = m.image;
+    if (!img || img.complete) return null;
+    return new Promise((res) => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); });
+  }));
+
+  ready.then(() => {
+    const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
+    const C = new THREE.Color();
+    const sets = [];
+    let count = 0;
+    for (const m of maps) { m.needsUpdate = true; renderer.initTexture(m); }   // decoded image -> GPU before the bake samples it
+    for (const [v, list] of buckets) {
+      v.impMat = new THREE.MeshStandardMaterial({ map: bakeImpostor(v.tree, v.w, v.h), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
+      const n = list.length;
+      // static per-instance data, written once; rebucketing rewrites the mesh instance buffers from it
+      const mats = new Float32Array(n * 16), cols = new Float32Array(n * 3), xz = new Float32Array(n * 2);
+      list.forEach((tr, k) => {
+        const s = ((TARGET_H[tr.species] ?? 13) / v.h) * tr.scale;
+        E.set(0, ((tr.x * 31 + tr.z * 17) % 628) / 100, 0); Q.setFromEuler(E);
+        P.set(tr.x, tr.y - 0.15 * s, tr.z); S.setScalar(s); M.compose(P, Q, S);
+        mats.set(M.elements, k * 16);
+        const tint = 0.82 + ((tr.x * 13 + tr.z * 7) % 10) * 0.03;
+        C.setRGB(tint * 0.95, tint, tint * 0.9);
+        cols.set([C.r, C.g, C.b], k * 3);
+        xz[k * 2] = tr.x; xz[k * 2 + 1] = tr.z;
+      });
+      const trunk = new THREE.InstancedMesh(v.branchGeo, v.barkMat, n);
+      const leaves = new THREE.InstancedMesh(v.leafGeo, v.leafMat, n);
+      const imp = new THREE.InstancedMesh(v.cross, v.impMat, n);
+      trunk.castShadow = trunk.receiveShadow = true;
+      leaves.castShadow = false; leaves.receiveShadow = false;   // leaf shadow pass cost >> its read
+      imp.castShadow = imp.receiveShadow = false;
+      trunk.frustumCulled = leaves.frustumCulled = imp.frustumCulled = false;   // rebucketing is the culling
+      trunk.name = 'eztree-trunk'; leaves.name = 'eztree-leaves'; imp.name = 'eztree-impostor';
+      for (const m of [trunk, leaves, imp]) { m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+      leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage);
+      game.scene.add(trunk, leaves, imp);
+      sets.push({ mats, cols, xz, n, trunk, leaves, imp });
+      count += n;
     }
-  };
-  console.log(`[eztrees] ${i} trees, ${variants.length} variants, ${draws} draw calls, generated in ${(performance.now() - t0).toFixed(0)} ms`);
+
+    // rebucket near/far on movement; hooked into the render loop via one probe object
+    const last = new THREE.Vector3(1e9, 0, 0);
+    // must be a RENDERABLE object: onBeforeRender never fires for a bare Object3D
+    const probe = new THREE.Mesh(new THREE.PlaneGeometry(0.001, 0.001),
+      new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false }));
+    probe.frustumCulled = false; probe.renderOrder = -999; game.scene.add(probe);
+    probe.onBeforeRender = (r, sc, cam) => {
+      windT.value = performance.now() * 0.001;
+      const p = cam.position;
+      if (p.distanceToSquared(last) < 36) return;
+      last.copy(p);
+      const N2 = NEAR * NEAR, F2 = FAR * FAR;
+      for (const s of sets) {
+        let nn = 0, nf = 0;
+        const tm = s.trunk.instanceMatrix.array, im = s.imp.instanceMatrix.array, lc = s.leaves.instanceColor.array;
+        for (let i = 0; i < s.n; i++) {
+          const dx = s.xz[i * 2] - p.x, dz = s.xz[i * 2 + 1] - p.z, d2 = dx * dx + dz * dz;
+          if (d2 < N2) { tm.set(s.mats.subarray(i * 16, i * 16 + 16), nn * 16); lc.set(s.cols.subarray(i * 3, i * 3 + 3), nn * 3); nn++; }
+          else if (d2 < F2) { im.set(s.mats.subarray(i * 16, i * 16 + 16), nf * 16); nf++; }
+        }
+        s.leaves.instanceMatrix.array.set(tm.subarray(0, nn * 16));
+        s.trunk.count = s.leaves.count = nn; s.imp.count = nf;
+        s.trunk.instanceMatrix.needsUpdate = s.leaves.instanceMatrix.needsUpdate = s.imp.instanceMatrix.needsUpdate = true;
+        s.leaves.instanceColor.needsUpdate = true;
+      }
+    };
+    console.log(`[eztrees] ${count} trees, ${buckets.size} variants, impostors baked in ${(performance.now() - t0).toFixed(0)} ms`);
+  });
 }
