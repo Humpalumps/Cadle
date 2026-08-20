@@ -27,7 +27,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const COL = { grenade: 0xb070ff, melee: 0x53c7ff, class: 0x7cf5b0, super: 0xffb433 };
 const GOLD_CORE = 0xffa018; // saturated solar core for bolts/hands (survives ACES at noon)
 const ADD = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false };
-const CD = { grenade: 25, melee: 15, class: 7 };   // class = grapple: traversal cadence, not a heal
+const CD = { grenade: 25, melee: 15, class: 20 };  // class = grapple: traversal ability, paced like a real pick
 // piecewise smoothstep keyframes (same idiom as Weapons): keys = [[t, v], ...]
 function kf(p, keys) {
   if (p <= keys[0][0]) return keys[0][1];
@@ -122,6 +122,13 @@ export class Abilities {
     const { scene, events } = this.game;
     this.root = new THREE.Group(); this.root.name = 'abilities'; scene.add(this.root);
     this._tex = sigilTexture(this.game.seed + 911); this._glow = glowTexture();
+    // grapple rope + hook head (pooled, hidden when idle)
+    this._rope = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).translate(0, 0.5, 0),
+      new THREE.MeshBasicMaterial({ color: COL.class, transparent: true, opacity: 0.85, fog: false }));
+    this._hook = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: COL.class, fog: false }));
+    this._rope.visible = this._hook.visible = false; this._rope.frustumCulled = this._hook.frustumCulled = false;
+    this.root.add(this._rope, this._hook);
+    this._grap = { t: 0, active: false, anchor: new THREE.Vector3() };
     // sigils: rift / grenade DoT / super aura
     this.sigils = []; for (let i = 0; i < 4; i++) this.sigils.push(this._makeSigil());
     // grenade orbs
@@ -376,6 +383,9 @@ export class Abilities {
     ctrl.grounded = false;
     view.shake?.(0.25, 0.15);
     p.fovBoost = (p.fovBoost || 0) + 6;
+    this._grap.active = true; this._grap.t = 0; this._grap.anchor.copy(res.point);
+    this._rope.visible = this._hook.visible = true;
+    this._hook.position.copy(res.point);
     g.vfx?.emit?.('ring', res.point, { color: COL.class, scale: 1.1 });
     g.vfx?.emit?.('aether-burst', res.point, { color: COL.class, count: 10, scale: 0.7 });
     g.audio?.play?.('ability-class');
@@ -483,6 +493,26 @@ export class Abilities {
       else { s.h = null; this._starLand(s.pos); }
     }
   }
+  // grapple rope: anchored line from the hand while the fling plays out, then a quick reel-back.
+  _updateGrapple(dt) {
+    const G = this._grap; if (!G || !G.active) return;
+    G.t += dt;
+    const LIFE = 0.55, RETRACT = 0.18;
+    const cam = this.game.camera;
+    // hand offset: right and slightly below the eye so the rope reads as thrown, not eye-lasered
+    this._v2.set(0.34, -0.28, -0.15).applyQuaternion(cam.quaternion).add(this.player.eye ?? this.player.position);
+    const end = this._v3.copy(G.anchor);
+    if (G.t > LIFE - RETRACT) end.lerp(this._v2, (G.t - (LIFE - RETRACT)) / RETRACT);   // reel the hook back in
+    if (G.t >= LIFE) { G.active = false; this._rope.visible = this._hook.visible = false; return; }
+    const len = Math.max(0.1, end.distanceTo(this._v2));
+    this._rope.position.copy(this._v2);
+    this._rope.quaternion.setFromUnitVectors(UP, this._n.copy(end).sub(this._v2).divideScalar(len));
+    this._rope.scale.set(0.03, len, 0.03);
+    this._hook.position.copy(end);
+    const k = 1 - G.t / LIFE;
+    this._rope.material.opacity = 0.85 * Math.min(1, k * 3);
+  }
+
   _updateMotes() {
     this.motes.visible = this.superActive; if (!this.superActive) return;
     const e = this.player.eye, tt = this.game.time;
@@ -513,6 +543,7 @@ export class Abilities {
       if (input.justPressed('KeyQ')) this.use('class'); if (input.justPressed('KeyX')) this.use('super');
     }
     if (this._meleeAt >= 0 && t >= this._meleeAt) { this._meleeAt = -1; this._strike(); }
+    this._updateGrapple(dt);
     // cooldowns + super meter
     for (const a of this.list) {
       if (a.id === 'super') continue;
