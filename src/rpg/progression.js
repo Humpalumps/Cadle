@@ -426,7 +426,7 @@ export function init(ctx) {
 
   // starter kit, only on a brand new save (index.js clears it if a save loaded)
   ctx.rpg._giveStarter = () => {
-    const w = makeWeapon('common', 10, { archetype: 'autorifle', name: 'Sunbreaker' });
+    const w = makeWeapon('common', 10, { archetype: 'handcannon', name: 'Dawnbreak Oath' });
     addItem(ctx, w);
     equip(ctx, w);
     addItem(ctx, makeArmour('common', 10, { slot: 'chest', set: 'pilgrim' }));

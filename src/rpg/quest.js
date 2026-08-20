@@ -63,7 +63,7 @@ export class OpeningQuest {
     const g = this.game;
     // one voice, always: the audio file is generated under the pinned voice in ASSETS.md.
     // Missing file -> assets accessor is null-safe -> the card alone carries the line.
-    g.audio?.play?.(L.id, { vol: 1.1, bus: 'sfx' });
+    g.audio?.playVoice?.(L.id, 1.2);
     const el = this._card();
     el.querySelector('.vt').textContent = L.text;
     el.classList.add('on');
@@ -92,14 +92,20 @@ export class OpeningQuest {
   _advance(beat) {
     const g = this.game, R = this.rpg;
     this.beat = beat; this._save();
-    if (beat === 1) {          // wake: flare + first words + tracker
+    if (beat === 1) {          // wake: a staged moment, not a pileup — zone title, then her words, then the quest lands
       const y = g.terrain?.heightAt?.(AETHERYTE.x, AETHERYTE.z) ?? 0;
-      g.vfx?.emit?.('aether-burst', { x: AETHERYTE.x, y: y + 6, z: AETHERYTE.z }, { color: 0xb070ff, count: 36, scale: 2 });
-      g.postfx?.flash?.(0xb08cff, 0.35, 0.5);
-      this._speak(0);
       g.hud?.notify?.('The Shattered Meadow', 'Cadle');
-      g.hud?.setQuest?.('The Sundered Spire', 'Reach the ruins to the east');
-      try { setWaypoint(null, { x: RUINS.x, z: RUINS.z }); } catch (e) {}   // marked on the map (M)
+      setTimeout(() => {
+        g.vfx?.emit?.('aether-burst', { x: AETHERYTE.x, y: y + 6, z: AETHERYTE.z }, { color: 0xb070ff, count: 36, scale: 2 });
+        g.postfx?.flash?.(0xb08cff, 0.35, 0.5);
+        this._speak(0);
+      }, 2400);
+      setTimeout(() => {
+        g.hud?.notify?.('New Quest', 'The Sundered Spire');
+        g.hud?.toast?.('QUEST STARTED — THE SUNDERED SPIRE', { ms: 3200, kind: 'ability' });
+        g.hud?.setQuest?.('The Sundered Spire', 'Reach the ruins to the east');
+        try { setWaypoint(null, { x: RUINS.x, z: RUINS.z }); } catch (e) {}   // marked on the map (M)
+      }, 8200);
     } else if (beat === 2) {   // arrived at the ruins
       this._speak(1);
       g.hud?.notify?.('The Sundered Spire', 'something feeds on the wound');

@@ -162,6 +162,21 @@ export class Audio {
   }
 
   // ---------- play ----------
+  // Voice lines (quest dialogue): not in the SFX registry, decoded straight from game.assets.
+  // Ducks music briefly so the Vale reads over the field theme.
+  playVoice(name, vol = 1) {
+    const ctx = this.ctx; if (!ctx || ctx.state !== 'running') return;
+    this.game.assets.audioBuffer(ctx, name).then((buf) => {
+      if (!buf) return;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const g = ctx.createGain(); g.gain.value = vol;
+      src.connect(g); g.connect(this.buses?.sfx ?? ctx.destination);
+      const mg = this.buses?.music?.gain;
+      if (mg) { const v0 = mg.value; mg.setTargetAtTime(v0 * 0.35, ctx.currentTime, 0.2); mg.setTargetAtTime(v0, ctx.currentTime + buf.duration, 0.5); }
+      src.start();
+    }).catch(() => {});
+  }
+
   play(name, o = EMPTY) {
     const rec = SFX[name]; if (!rec) { if (this.game.debug) console.warn('audio: unknown sfx', name); return NOOP; }
     if (name === 'reload' && o.arch === undefined) { const a = this.game.player?.weapons?.current?.archetype; if (a) o = { ...o, arch: a }; }   // Weapons plays 'reload' directly (no payload); look the archetype up for the per-arch foley variant
