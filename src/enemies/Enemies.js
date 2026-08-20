@@ -162,7 +162,10 @@ export class Enemies {
       const dx = e.position.x - cam.x, dy = e.position.y - cam.y, dz = e.position.z - cam.z;
       const d2 = dx * dx + dy * dy + dz * dz;                                       // squared distances: no sqrt in the hot loop
       const lod = d2 < 2500 ? 0 : d2 < 12100 ? 1 : d2 < 48400 ? 2 : 3;             // 50 / 110 / 220 m
-      e.mesh.castShadow = shadows && d2 < 2025 && e.alive;                          // 45 m
+      // quality-scaled cast range: skinned shadow draws hit every CSM cascade, and at q=high the
+      // 45 m ring meant a whole camp cast at once (~3 ms median at the ruins — perf audit round 3).
+      // 25 m keeps the grounding shadow on whatever is actually near you; ultra keeps the full ring.
+      e.mesh.castShadow = shadows && d2 < (this.castD2 ??= ({ high: 625, ultra: 2025 }[this.game.quality] ?? 625)) && e.alive;
       e.root.visible = d2 < 176400;                                                 // 420 m
       if (this.passive && e.alive) { e.alert = false; e.seen = false; }
       e.update(dt, t, lod, frame, d2);

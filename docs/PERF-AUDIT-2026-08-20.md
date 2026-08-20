@@ -129,3 +129,17 @@ builder ownership). Re-verify with the same window (`tp 140,60, look 0.6,-0.1`) 
 
 Also still standing: one CLEAN re-measure (user's Chrome closed) before deeper work — spawn
 61.7 / lake 80.8 already clear the 60 bar even contended; ruins 56.7 is close.
+
+
+## Round 4 (final Fable round): enemy shadow ring quality-scaled
+
+`Enemies.js`: skinned enemies cast shadows within 25 m at q=high (45 m at ultra; `castD2`
+runtime-tunable). Controlled probe at the camp: cast-off saved ~3 ms median; 25 m keeps the
+grounding shadow on anything actually near the player. The REMAINING enemy cost (~3-4 ms median
+at camps) is the main skinned draws — that is the part-merge/instancing work already briefed
+above for Opus.
+
+NOTE ON FINAL NUMBERS: the last verification run regressed on ALL windows including enemy-free
+ones (lake 80.8 -> 58 with zero changes there) — the user's desktop GPU load spiked mid-session.
+Absolute numbers from that run are meaningless. First action for Opus remains: ONE clean
+measurement (user's Chrome/OBS closed) of the three windows before touching anything.
