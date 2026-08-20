@@ -288,9 +288,12 @@ export class HUD {
     }
     document.addEventListener('pointerlockchange', () => {
       const locked = !!document.pointerLockElement;
-      if (locked) { this._started = true; g.paused = false; start.classList.add('hidden'); pause.classList.add('hidden'); }
-      else if (this._started) { pause.classList.remove('hidden'); sync(); g.paused = true; }
-      else start.classList.remove('hidden');
+      if (locked) { this._started = true; g.paused = false; start.classList.add('hidden'); pause.classList.add('hidden'); g.rpg?.screens?.close?.(false); }
+      else if (this._started) {
+        g.paused = true;
+        // an RPG screen (map/character/inventory) owns this unlock — it pauses without the pause menu
+        if (!g.rpg?.screens?.open) { pause.classList.remove('hidden'); sync(); }
+      } else start.classList.remove('hidden');
     });
     start.classList.remove('hidden');
   }
