@@ -105,9 +105,16 @@ shows trees in the mirror). **Lake window: 43 -> 81 fps, mean 23.3 -> 12.3 ms.**
 frames (8 s cap); ez impostor bakes spread one per frame; `renderer.compile` of the whole scene
 under the splash; `HUD.setQuest` element refs cached.
 
-**Remaining for Opus:** spawn/ruins windows still sit at ~21-24 ms mean (p50 10-15) under the
-user's desktop GPU contention. Leads, in order: (1) the reflection+grab passes still run when
-any water is in frustum — check how often the camera-following water mesh is visible from the
-meadow and whether `everyN`/grab can skip when the lake is far/occluded; (2) re-measure CLEAN
-(user's Chrome closed) before optimizing further — every number in this doc was taken on a
-contended GPU; (3) then the standing 7 ms budget work per the main doc.
+**Round 2 (same day): lead #1 CONFIRMED AND FIXED.** The camera-following water surface made
+`onBeforeRender` fire everywhere — the mirror AND the full-framebuffer refraction grab ran every
+frame even standing in the meadow with no water on screen. New `_waterOnScreen()` gate
+(Mirrormere bounding sphere vs camera frustum, or camera over water) skips both passes when no
+water can be visible. spawn 45.5 -> 61.7 fps (p50 10.3 -> 4.3), ruins 41.8 -> 56.7, lake holds
+80.8 with the mirror fully intact when it IS on screen (visually verified at the shore).
+
+**Remaining for Opus:** ruins-camp is the last slow window (56.7 fps, p50 10.3 — enemy camp in
+view). Leads: (1) probe the camp view the same way (hide enemies / their shadows / vfx one at a
+time — `__game.game.enemies.all.forEach(e => e.mesh.visible=false)` etc.); (2) re-measure CLEAN
+(user's Chrome closed) before optimizing further — every number in this doc is from a contended
+GPU, and spawn/lake are already at/above the 60 fps bar despite it; (3) then the standing 7 ms
+budget work per the main doc.

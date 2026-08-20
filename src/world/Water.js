@@ -438,10 +438,25 @@ export class Water {
     u.uCamBelow.value = camera.position.y < this.level ? 1 : 0;
   }
 
+  // Is any actual water plausibly ON SCREEN? The surface mesh follows the camera everywhere, so
+  // onBeforeRender fires (and paid for a mirror + a framebuffer grab) even standing in the meadow
+  // with the lake behind you. Proxy: Mirrormere's bounding sphere vs the camera frustum, or the
+  // camera being over/near water. Costs a frustum build every few frames; saves both passes when
+  // false. (perf audit 2026-08-20 lead #1)
+  _waterOnScreen(camera) {
+    const p = camera.position;
+    if (this.isWater(p.x, p.z) || this.submergedDepth(p) > 0) return true;
+    this._fr ??= new THREE.Frustum(); this._frM ??= new THREE.Matrix4(); this._lakeS ??= new THREE.Sphere(new THREE.Vector3(-170, this.level, -70), 115);
+    this._frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this._fr.setFromProjectionMatrix(this._frM);
+    return this._fr.intersectsSphere(this._lakeS);
+  }
+
   _onBeforeRender(renderer, scene, camera) {
     if (scene.overrideMaterial) return;
     const u = this.uniforms;
     this._updateUniforms(camera);
+    if (camera === this.game.camera && !this._waterOnScreen(camera)) { u.uHasGrab.value = 0; u.uHasReflect.value = 0; this.cpuMs.grab = 0; this.cpuMs.reflect = 0; return; }
     // ---- refraction grab: copy the opaque scene (everything drawn before this transparent mesh) ----
     const tg0 = performance.now();
     const rt = renderer.getRenderTarget();
