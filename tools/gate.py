@@ -45,10 +45,8 @@ def clusters(img):
             if n >= MIN_AREA: out.append(n)
     return sorted(out, reverse=True)
 
-for f in sorted(glob.glob(os.path.join(d, 'shot-blob-*.png'))):
-    c = clusters(Image.open(f))
-    report[os.path.basename(f)] = c[:8]
-    if c: fails.append(f'BLOBS: {os.path.basename(f)} has {len(c)} washed-white cluster(s), largest {c[0]} px — user decree: no white blobs, saturate the color / cut the intensity')
+# blob detection now lives in tools/blobcheck.py (bright-any-hue + flashing across bursts) —
+# the white-only, single-frame test that used to live here missed blue blobs and flashing ones.
 
 jit = sorted(glob.glob(os.path.join(d, 'burst-jit-*.png')))
 if len(jit) >= 3:

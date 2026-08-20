@@ -98,6 +98,18 @@ export class Enemies {
     return out;
   }
 
+  /** one passive enemy of `type`, `dist` m in front of the player, flyers pinned low — close-up screenshots */
+  showcase(type, dist = 4.5, opts = {}) {
+    this.clear(); this.passive = true;
+    const P = this.game.player, fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    const x = P.position.x + fx * dist, z = P.position.z + fz * dist;
+    const e = this.spawn(type, { x, z }, { level: opts.level ?? 3, yaw: P.yaw + Math.PI });
+    if (!e) return null;
+    if (e.def.flying) { e.position.y = this.heightAt(x, z) + Math.min(e.def.hover, 2.2); e.root.position.copy(e.position); e.wantPos.copy(e.position); }
+    e.home.copy(e.position); e.idleDur = 999;
+    return e;
+  }
+
   // ------------------------------------------------------------------ world population (CLAUDE.md layout)
   populate() {
     this.clear(); this.camps.length = 0;
@@ -142,6 +154,9 @@ export class Enemies {
     this.dayGlow = 1 + 2.4 * Math.max(0, g.sky?.sunDir?.y ?? 0);
     const shadows = g.quality !== 'low';
     const frame = this.frame = (this.frame ?? 0) + 1;
+    // crowd LOD: a full field (40) halves anim/sync tick rates before the CPU budget blows. 72 Hz bone posing at
+    // 144 fps is invisible; motion integration + the standoff ring stay per-frame so nothing pops or clips.
+    const n = this.all.length; this.crowd = n > 26 ? 2 : n > 16 ? 1.5 : 1;
     for (let i = this.all.length - 1; i >= 0; i--) {
       const e = this.all[i];
       const dx = e.position.x - cam.x, dy = e.position.y - cam.y, dz = e.position.z - cam.z;
@@ -164,8 +179,10 @@ export class Enemies {
     }
     const ms = performance.now() - t0; this.ms = ms; this.msAvg = (this.msAvg ?? ms) * 0.95 + ms * 0.05;   // CPU cost of this system (harness reads enemies.msAvg)
   }
-  /** melee attack token: spaces pack strikes out (Destiny: one biter commits at a time, the rest dance) */
-  meleeToken(t) { if (t < this._meleeT) return false; this._meleeT = t + 0.55; return true; }
+  /** melee attack token: spaces pack strikes out (Destiny: one biter commits at a time, the rest dance).
+   *  0.85 s => a pack caps at ~11 strikes / 10 s no matter how many are engaged; a lone melee is never starved
+   *  (its own cooldown is the limit). This is the pack DPS knob — tune here, not in defs. */
+  meleeToken(t) { if (t < this._meleeT) return false; this._meleeT = t + 0.85; return true; }
   _noise(pos, r) {
     if (this.passive) return;
     const r2 = r * r, t = this.game.time;

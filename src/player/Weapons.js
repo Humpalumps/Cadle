@@ -188,7 +188,7 @@ export class Weapons {
   // stow/hide the whole viewmodel (Abilities takes over the hands during the super). Also blocks firing while hidden.
   setHidden(on) {
     this._hidden = !!on; this.rig.visible = !this._hidden;
-    if (this._hidden) { if (this.scope) this.scope.visible = false; this.flash.visible = false; this.flashLight.intensity = 0; }
+    if (this._hidden) { if (this.scope) this.scope.visible = false; this.flash.visible = false; this.flashLight.intensity = 0; for (const c of this._casings) { c.life = 0; c.mesh.visible = false; } }
   }
 
   // ---------- frame ----------

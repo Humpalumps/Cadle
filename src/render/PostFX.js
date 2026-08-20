@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  EffectComposer, RenderPass, EffectPass, ClearPass, ShaderPass, Pass, Effect, EffectAttribute, BlendFunction,
+  EffectComposer, RenderPass, EffectPass, ClearPass, ShaderPass, Effect, EffectAttribute, BlendFunction,
   BloomEffect, SMAAEffect, SMAAPreset, EdgeDetectionMode, PredicationMode, ToneMappingEffect, ToneMappingMode,
   VignetteEffect, GodRaysEffect, ChromaticAberrationEffect, KawaseBlurPass, KernelSize,
   LuminancePass, AdaptiveLuminancePass,
@@ -8,39 +8,42 @@ import {
 
 /**
  * PostFX: the post-processing pipeline. Owns the composer and renders each frame.
- * Pipeline (HDR half-float): world RenderPass -> AO (depth-only GTAO-ish, half res, bilateral blur, depth-aware upsample)
- *   -> [sky de-stipple (day-only 8-tap far-field average: hides the sky shader's static dither) + god rays]
- *      (GodRaysEffect, blurred light buffer; light source = internal warm disc 260 m out along game.sky.sunDir so the
+ * Pipeline (HDR half-float): world RenderPass -> AO (depth-only SAO-ish, half res, tight radius, bilateral blur, depth-aware upsample)
+ *   -> god rays (GodRaysEffect, blurred light buffer; light source = internal warm disc 260 m out along game.sky.sunDir so the
  *      mountain ring can't fully swallow golden hour; near occluders (trees/hills) carve shafts; off below horizon)
  *   -> DoF (ADS, off by default) -> [overlay: ClearPass(depth) + RenderPass(overlayScene, overlayCamera) for the first-person viewmodel]
  *   -> final: auto-exposure (GPU 1x1 adapted scene luminance, bounded) + chromatic aberration (kick) + bloom (threshold rides
  *      time-of-day so night emissives glow) + tone map (ACES, time-of-day exposure) + FF14 grade (sun-elevation-keyed warm
  *      gain / cool lift / saturation; dusk keyed deep so the warm horizon survives) + grain + flash + vignette
- *   -> SMAA (HIGH) -> TAA (subpixel-jittered temporal resolve, depth reprojection + neighborhood clamp; kills foliage shimmer).
+ *   -> SMAA (ULTRA at q>=high).
+ * NO TAA: a jittered temporal resolve never settles on a static scene (the 13% current-frame term is a different subpixel
+ *   sample every frame) and it amplified the animated grain through its neighborhood clamp -> the user-visible "screen
+ *   jitters at q=high, clean at q=low". SMAA + no jitter = a rock-stable image, and it bought back ~0.3 ms.
  * API (stable):
  *   postfx.render(dt), postfx.resize(w,h)
  *   postfx.setOverlay(scene, camera)          viewmodel overlay; camera aspect kept in sync on resize. Weapons calls this.
  *   postfx.flash(color, strength, duration)   full-screen tint kick (damage taken, super pop); edge-weighted so the center stays readable
  *   postfx.kick(strength)                     chromatic aberration pulse (explosions, big hits)
  *   postfx.setDof({ focus, range, strength, enabled })  used when ADS with sniper etc (optional, cheap half-res blur by CoC, ~0.2 ms)
- *   postfx.exposure (number, base; time-of-day + bounded scene-luminance adaptation on top), .bloom, .vignette, .ao, .godrays, .grade, .tone, .taa handles
+ *   postfx.exposure (number, base; time-of-day + bounded scene-luminance adaptation on top), .bloom, .vignette, .ao, .godrays, .grade, .tone handles
  *   postfx.setBypass(bool)                    world+overlay only (perf A/B), postfx.setQuality('low'|'medium'|'high'|'ultra')
  *   postfx.profile(frames) -> Promise<{on,off,cost}>  GPU ms of the whole post chain (timer queries, alternates bypass per frame)
  *   postfx.readLum() -> Promise<number>       adapted average scene luminance (pre-exposure; debug/calibration)
  *   postfx.godraysSource (Object3D|null)     override the god-rays light source (e.g. game.sky.sunMesh); null = internal disc
- * Quality: low = no AO / god rays / DoF / TAA, SMAA medium. Budget @1080p q=high on RTX 3060: <= 1.3 ms with sun on screen.
+ * Quality: low = no AO / god rays / DoF, SMAA medium. Budget @1080p q=high on RTX 3060: <= 1.3 ms with sun on screen.
  */
 
 const QUALITY = {
-  low:    { ao: false, aoSamples: 0,  godrays: false, godraysScale: 0.4,  dof: false, taa: false, smaa: SMAAPreset.MEDIUM },
-  medium: { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  dof: true,  taa: true,  smaa: SMAAPreset.HIGH },
-  high:   { ao: true,  aoSamples: 10, godrays: true,  godraysScale: 0.4,  dof: true,  taa: true,  smaa: SMAAPreset.HIGH },
-  ultra:  { ao: true,  aoSamples: 16, godrays: true,  godraysScale: 0.55, dof: true,  taa: true,  smaa: SMAAPreset.ULTRA },
+  low:    { ao: false, aoSamples: 0,  godrays: false, godraysScale: 0.4,  godraysSamples: 24, dof: false, smaa: SMAAPreset.MEDIUM },
+  medium: { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 26, dof: true,  smaa: SMAAPreset.HIGH },
+  high:   { ao: true,  aoSamples: 10, godrays: true,  godraysScale: 0.4,  godraysSamples: 30, dof: true,  smaa: SMAAPreset.ULTRA },
+  ultra:  { ao: true,  aoSamples: 14, godrays: true,  godraysScale: 0.55, godraysSamples: 44, dof: true,  smaa: SMAAPreset.ULTRA },
 };
 
 const FS_VERT = /* glsl */`varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
 
 // ---- AO: depth-only ambient occlusion (SAO-style spiral taps, normals reconstructed from depth), half res, bilateral blur, depth-aware upsample.
+//      Deliberately SHORT reach (max 8 half-res px): thin near geometry (grass blades over stone) must not smear a wide dark halo.
 const AO_FRAG = /* glsl */`
 #include <common>
 #include <packing>
@@ -59,7 +62,7 @@ void main(){
   vec3 dx = abs(Pl.z - P.z) < abs(Pr.z - P.z) ? P - Pl : Pr - P;   // pick the neighbour on our side of a depth edge
   vec3 dy = abs(Pd.z - P.z) < abs(Pu.z - P.z) ? P - Pd : Pu - P;
   vec3 N = normalize(cross(dx, dy));
-  float rPx = clamp(radius * projScale / dist, 2.0, 20.0);          // low max reach: thin near geometry (grass) can't smear wide halos
+  float rPx = clamp(radius * projScale / dist, 2.0, 8.0);           // short max reach: no 40 px smudge around a 3 px blade
   float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))); // interleaved gradient noise: static per pixel = no temporal crawl
   float a0 = noise * 6.2831853, R2 = radius * radius, occ = 0.0;
   for (int i = 0; i < SAMPLES; i++) {
@@ -69,7 +72,7 @@ void main(){
     vec3 v = vp(uv2, rd(uv2)) - P;
     float vv = dot(v, v), vn = dot(v, N) - bias * dist;
     float f = max(R2 - vv, 0.0) / R2;
-    float thin = 1.0 - smoothstep(radius * 0.35, radius * 0.9, v.z);  // occluder floating well in front (grass blade over stone): reject
+    float thin = 1.0 - smoothstep(radius * 0.25, radius * 0.7, v.z);  // occluder floating in front (grass blade over stone): reject
     occ += f * f * f * max(vn, 0.0) / (0.03 + vv) * thin;
   }
   float ao = clamp(1.0 - occ * intensity / float(SAMPLES), 0.0, 1.0);
@@ -80,7 +83,7 @@ const AO_BLUR_FRAG = /* glsl */`
 uniform sampler2D inputBuffer; uniform vec2 dir; varying vec2 vUv;
 void main(){
   vec2 c = texture2D(inputBuffer, vUv).rg; float sum = c.r, wsum = 1.0, tol = 0.015 * c.g + 0.02;
-  for (int i = 1; i <= 3; i++) { float fi = float(i); float g = exp(-fi * fi * 0.18);
+  for (int i = 1; i <= 2; i++) { float fi = float(i); float g = exp(-fi * fi * 0.3);
     vec2 a = texture2D(inputBuffer, vUv + dir * fi).rg, b = texture2D(inputBuffer, vUv - dir * fi).rg;
     float wa = g * max(0.0, 1.0 - abs(a.g - c.g) / tol), wb = g * max(0.0, 1.0 - abs(b.g - c.g) / tol);
     sum += a.r * wa + b.r * wb; wsum += wa + wb; }
@@ -100,7 +103,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth,
 }`;
 
 class AOEffect extends Effect {
-  constructor(camera, { samples = 10, radius = 0.8, intensity = 2.3, bias = 0.002, fadeDist = 120, resolutionScale = 0.5 } = {}) {
+  constructor(camera, { samples = 10, radius = 0.55, intensity = 1.9, bias = 0.0025, fadeDist = 110, resolutionScale = 0.5 } = {}) {
     super('AOEffect', AO_COMP_FRAG, { blendFunction: BlendFunction.MULTIPLY, attributes: EffectAttribute.DEPTH,
       uniforms: new Map([['aoBuffer', new THREE.Uniform(null)], ['aoTexel', new THREE.Uniform(new THREE.Vector2(1, 1))]]) });
     this.camera = camera; this.scale = resolutionScale;
@@ -134,28 +137,6 @@ class AOEffect extends Effect {
     this.blurMat.uniforms.dir.value.set(u.texelSize.value.x, 0); this.blurPass.render(renderer, this.rtA, this.rtB);
     this.blurMat.uniforms.dir.value.set(0, u.texelSize.value.y); this.blurPass.render(renderer, this.rtB, this.rtA);
   }
-}
-
-// ---- Sky de-stipple: the sky/cloud shader dithers with static per-pixel noise (IGN) that reads as a fabric weave in the
-//      bright golden-hour plumes (and TAA can't average static noise). 8-tap average restricted to sky pixels (depth == 1,
-//      dome has depthWrite off) so geometry never bleeds; day-gated so night stars stay pixel-crisp. ~0.1 ms.
-const SKY_SMOOTH_FRAG = /* glsl */`
-uniform float amt;
-#define SKY_TAP(o) { vec2 uv2 = uv + (o); float w = step(0.999999, readDepth(uv2)); sum += texture2D(inputBuffer, uv2).rgb * w; wsum += w; }
-void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth, out vec4 outputColor){
-  if (amt <= 0.0 || depth < 0.999999) { outputColor = inputColor; return; }
-  vec3 sum = inputColor.rgb; float wsum = 1.0;
-  vec2 t = texelSize * 2.0, s = texelSize * 1.4;
-  SKY_TAP(vec2(t.x, 0.0)) SKY_TAP(vec2(-t.x, 0.0)) SKY_TAP(vec2(0.0, t.y)) SKY_TAP(vec2(0.0, -t.y))
-  SKY_TAP(vec2(s.x, s.y)) SKY_TAP(vec2(-s.x, s.y)) SKY_TAP(vec2(s.x, -s.y)) SKY_TAP(vec2(-s.x, -s.y))
-  outputColor = vec4(mix(inputColor.rgb, sum / wsum, amt), inputColor.a);
-}`;
-class SkySmoothEffect extends Effect {
-  constructor() {
-    super('SkySmoothEffect', SKY_SMOOTH_FRAG, { blendFunction: BlendFunction.SRC, attributes: EffectAttribute.DEPTH,
-      uniforms: new Map([['amt', new THREE.Uniform(1)]]) });
-  }
-  get amt() { return this.uniforms.get('amt').value; } set amt(v) { this.uniforms.get('amt').value = v; }
 }
 
 // ---- Auto exposure: GPU scene-luminance (128^2 luminance -> mips -> 1x1 temporally adapted), bounded factor applied pre-tone-map.
@@ -205,7 +186,7 @@ class GradeEffect extends Effect {
   constructor() {
     super('GradeEffect', GRADE_FRAG, { blendFunction: BlendFunction.SRC, uniforms: new Map([
       ['lift', new THREE.Uniform(new THREE.Vector3(0.015, 0.02, 0.038))], ['gain', new THREE.Uniform(new THREE.Vector3(1.0, 0.99, 0.955))],
-      ['contrast', new THREE.Uniform(0.3)], ['saturation', new THREE.Uniform(1.1)], ['grain', new THREE.Uniform(0.05)],
+      ['contrast', new THREE.Uniform(0.3)], ['saturation', new THREE.Uniform(1.1)], ['grain', new THREE.Uniform(0.035)],
       ['flashColor', new THREE.Uniform(new THREE.Color(1, 1, 1))], ['flashAmt', new THREE.Uniform(0)]]) });
   }
   get lift() { return this.uniforms.get('lift').value; } get gain() { return this.uniforms.get('gain').value; }
@@ -235,58 +216,6 @@ class CheapDofEffect extends Effect {
   update(renderer, inputBuffer) { this.blurPass.render(renderer, inputBuffer, this.rt); }
 }
 
-// ---- TAA: subpixel camera jitter (halton 8) + depth reprojection of a full-res history + 5-tap neighborhood clamp.
-//      Velocity-less (camera motion only); moving objects are rescued by the clamp. Runs LAST (post-SMAA, LDR domain).
-const TAA_FRAG = /* glsl */`
-uniform sampler2D inputBuffer; uniform sampler2D historyBuffer; uniform highp sampler2D depthBuffer;
-uniform mat4 reproj; uniform vec2 texelSize; uniform float blend;
-varying vec2 vUv;
-void main(){
-  vec3 c = texture2D(inputBuffer, vUv).rgb;
-  float d = texture2D(depthBuffer, vUv).r;
-  vec4 pc = reproj * vec4(vec3(vUv, d) * 2.0 - 1.0, 1.0);
-  vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
-  vec3 n1 = texture2D(inputBuffer, vUv + vec2(texelSize.x, 0.0)).rgb, n2 = texture2D(inputBuffer, vUv - vec2(texelSize.x, 0.0)).rgb;
-  vec3 n3 = texture2D(inputBuffer, vUv + vec2(0.0, texelSize.y)).rgb, n4 = texture2D(inputBuffer, vUv - vec2(0.0, texelSize.y)).rgb;
-  vec3 mn = min(c, min(min(n1, n2), min(n3, n4))), mx = max(c, max(max(n1, n2), max(n3, n4)));
-  vec3 h = clamp(texture2D(historyBuffer, puv).rgb, mn, mx);
-  float a = (puv != clamp(puv, 0.0, 1.0)) ? 1.0 : blend;
-  gl_FragColor = vec4(mix(h, c, a), 1.0);
-}`;
-const BLIT_FRAG = /* glsl */`
-uniform sampler2D inputBuffer; varying vec2 vUv;
-void main(){ gl_FragColor = texture2D(inputBuffer, vUv);
-#include <colorspace_fragment>
-}`;
-class TAAPass extends Pass {
-  constructor() {
-    super('TAAPass');
-    this.needsSwap = false; this.needsDepthTexture = true;
-    this.mat = new THREE.ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: TAA_FRAG, depthTest: false, depthWrite: false,
-      uniforms: { inputBuffer: { value: null }, historyBuffer: { value: null }, depthBuffer: { value: null },
-        reproj: { value: new THREE.Matrix4() }, texelSize: { value: new THREE.Vector2() }, blend: { value: 0.13 } } });
-    this.resolvePass = new ShaderPass(this.mat, 'inputBuffer');
-    this.blitPass = new ShaderPass(new THREE.ShaderMaterial({ vertexShader: FS_VERT, fragmentShader: BLIT_FRAG, depthTest: false, depthWrite: false, uniforms: { inputBuffer: { value: null } } }), 'inputBuffer');
-    const mk = () => new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-    this.rtRead = mk(); this.rtWrite = mk();
-    this.reset = 2; this._w = 1; this._h = 1;
-  }
-  setDepthTexture(t) { this.mat.uniforms.depthBuffer.value = t; }
-  initialize(renderer, alpha, frameBufferType) { this.resolvePass.initialize(renderer, alpha, frameBufferType); this.blitPass.initialize(renderer, alpha, frameBufferType); }
-  setSize(w, h) { this._w = w; this._h = h; this.rtRead.setSize(w, h); this.rtWrite.setSize(w, h); this.mat.uniforms.texelSize.value.set(1 / w, 1 / h); this.reset = 2; }
-  render(renderer, inputBuffer, outputBuffer) {
-    const u = this.mat.uniforms;
-    u.historyBuffer.value = this.rtRead.texture;
-    u.blend.value = this.reset > 0 ? 1 : 0.13; if (this.reset > 0) this.reset--;
-    this.resolvePass.render(renderer, inputBuffer, this.rtWrite);
-    this.blitPass.renderToScreen = this.renderToScreen;
-    this.blitPass.render(renderer, this.rtWrite, outputBuffer);
-    const t = this.rtRead; this.rtRead = this.rtWrite; this.rtWrite = t;
-  }
-}
-// halton(2,3) - 0.5, 8 points (pixels)
-const JITTER = [[0, -0.167], [-0.25, 0.167], [0.25, -0.389], [-0.375, -0.056], [0.125, 0.278], [-0.125, -0.278], [0.375, 0.056], [-0.4375, 0.389]];
-
 const { smoothstep, lerp, clamp } = THREE.MathUtils;
 const WARM = new THREE.Color(1.0, 0.85, 0.6), DEEP_WARM = new THREE.Color(1.0, 0.58, 0.26);
 
@@ -304,7 +233,7 @@ export class PostFX {
     renderer.toneMapping = THREE.NoToneMapping; // tone map in the composer (HDR half-float chain)
     renderer.toneMappingExposure = 1;
     const composer = this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 0 });
-    composer.autoRenderToScreen = false; // renderToScreen managed per-frame in _tick (last pass varies with quality/bypass)
+    composer.autoRenderToScreen = false; // renderToScreen managed per-frame in _tick (last pass varies with bypass)
     this.worldPass = new RenderPass(scene, camera);
     composer.addPass(this.worldPass);
     // AO
@@ -317,29 +246,24 @@ export class PostFX {
     this._sun = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), new THREE.MeshBasicMaterial({ color: 0xffe8c0, fog: false }));
     this._sun.frustumCulled = false; this.godraysSource = null; this.godraysAngle = 0.035; this.godraysDist = 260;
     this.godraysBoost = 2.0; // HDR disc brightness: puts the ray core above the day bloom threshold (hot sun punch)
-    this.godrays = new GodRaysEffect(camera, this._sun, { resolutionScale: this.q.godraysScale, samples: 44, density: 1.0, decay: 0.955, weight: 0.55, exposure: 0.28, clampMax: 1.35, kernelSize: KernelSize.SMALL, blur: true });
-    this.skySmooth = new SkySmoothEffect();
-    this.godraysPass = new EffectPass(camera, this.skySmooth, this.godrays); composer.addPass(this.godraysPass);
+    this.godrays = new GodRaysEffect(camera, this._sun, { resolutionScale: this.q.godraysScale, samples: this.q.godraysSamples, density: 0.97, decay: 0.945, weight: 0.6, exposure: 0.3, clampMax: 1.35, kernelSize: KernelSize.SMALL, blur: true });
+    this.godraysPass = new EffectPass(camera, this.godrays); composer.addPass(this.godraysPass);
     // DoF (ADS), own pass so it can be toggled without recompiling
     this.dof = new CheapDofEffect(this._dof);
     this.dofPass = new EffectPass(camera, this.dof); this.dofPass.enabled = false; composer.addPass(this.dofPass);
     // final: auto-exposure + CA (kick) + bloom + tone + grade + vignette  (overlay passes get inserted right before this)
     this.autoExposure = new AutoExposureEffect({ target: 0.3, min: 0.8, max: 1.3 });
     this.ca = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0, 0), radialModulation: true, modulationOffset: 0.25 });
-    this.bloom = new BloomEffect({ mipmapBlur: true, intensity: 0.5, luminanceThreshold: 1.15, luminanceSmoothing: 0.5, radius: 0.7, levels: 5 });
+    this.bloom = new BloomEffect({ mipmapBlur: true, intensity: 0.5, luminanceThreshold: 1.05, luminanceSmoothing: 0.5, radius: 0.7, levels: 5 });
     this.tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     this.grade = new GradeEffect();
     this.vignette = new VignetteEffect({ darkness: 0.42, offset: 0.32 });
     this.finalPass = new EffectPass(camera, this.autoExposure, this.ca, this.bloom, this.tone, this.grade, this.vignette); composer.addPass(this.finalPass);
     this.smaa = new SMAAEffect({ preset: this.q.smaa, edgeDetectionMode: EdgeDetectionMode.COLOR, predicationMode: PredicationMode.DEPTH });
     this.smaaPass = new EffectPass(camera, this.smaa); composer.addPass(this.smaaPass);
-    this.taaPass = new TAAPass(); composer.addPass(this.taaPass);
     this.overlayClear = new ClearPass(false, true, false); // depth only
     if (this.overlay) this.setOverlay(this.overlay.scene, this.overlay.camera);
     this.game.events?.on?.('player:damaged', ({ amount }) => { this.flash(0xff3020, clamp(0.1 + amount / 120, 0.12, 0.45), 0.35); this.kick(clamp(amount / 40, 0.3, 1)); });
-    this._tmp = new THREE.Vector3(); this._jf = 0;
-    this._prevVP = new THREE.Matrix4(); this._invVP = new THREE.Matrix4(); this._m4 = new THREE.Matrix4();
-    this.grade.grain = this.q.taa ? 0.05 : 0.035; // TAA temporally averages animated grain (~2.5x weaker perceived)
   }
   setOverlay(scene, camera) {
     this.overlay = { scene, camera };
@@ -359,12 +283,12 @@ export class PostFX {
     const d = this._dof; if (focus !== undefined) d.focus = focus; if (range !== undefined) d.range = range; if (strength !== undefined) d.strength = strength; if (enabled !== undefined) d.enabled = !!enabled;
     this.dof?.params.set(d.focus, d.range, d.strength);
   }
-  setBypass(b) { this.bypass = !!b; if (this.taaPass) this.taaPass.reset = 2; }
+  setBypass(b) { this.bypass = !!b; }
   setQuality(name) {
     this.q = QUALITY[name] ?? QUALITY.high;
     if (this.q.aoSamples) this.ao.samples = this.q.aoSamples;
-    this.godrays.resolution.scale = this.q.godraysScale; this.smaa.applyPreset(this.q.smaa);
-    this.taaPass.reset = 2; this.grade.grain = this.q.taa ? 0.05 : 0.035;
+    this.godrays.resolution.scale = this.q.godraysScale; this.godrays.samples = this.q.godraysSamples;
+    this.smaa.applyPreset(this.q.smaa);
   }
   resize(w, h) { if (!this.composer) return; this.composer.setSize(w, h); if (this.overlay) { this.overlay.camera.aspect = w / h; this.overlay.camera.updateProjectionMatrix(); } }
   /** Adapted average scene luminance (pre-exposure), for exposure calibration. */
@@ -379,23 +303,22 @@ export class PostFX {
     const sy = sky?.sunDir?.y ?? 0.6;
     const day = smoothstep(sy, -0.24, -0.05);                                     // grade key: dusk keeps its warm bright horizon, full night look arrives when it's actually dark
     const night = 1 - day;
-    const golden = smoothstep(sy, -0.06, 0.05) * (1 - smoothstep(sy, 0.2, 0.45)); // low warm sun (dawn/golden hour), lingers a touch past sunset
+    const golden = smoothstep(sy, -0.10, 0.05) * (1 - smoothstep(sy, 0.2, 0.45)); // low warm sun (dawn/golden hour), lingers through dusk so the horizon keeps its gold
     const target = this.exposure * lerp(this.nightExposure, 1.0, day);            // base; bounded scene-luminance adaptation stacks in-shader
     this._exp += (target - this._exp) * Math.min(1, dt * 2.5);
     renderer.toneMappingExposure = this._exp;
-    this.bloom.intensity = this._noBloom ? 0 : 0.5 + 0.35 * night;
+    this.bloom.intensity = 0.5 + 0.35 * night;
     this.bloom.luminanceMaterial.threshold = lerp(this.bloomNightTh, this.bloomDayTh, day); // night emissives (crystals, aetheryte) sit below day threshold; let them halo
     // FF14 grade rides the sun: warm gain + saturation at golden hour, cool blue-violet lift + softer S-curve deep at night
     const g = this.grade;
     g.gain.set(lerp(1.0, 1.075, golden), lerp(0.99, 0.96, golden), lerp(0.955, 0.84, golden));
-    g.lift.set(lerp(0.015, 0.02, night), lerp(0.02, 0.036, night), lerp(0.038, 0.075, night));
+    g.lift.set(lerp(0.015, 0.014, night), lerp(0.02, 0.032, night), lerp(0.038, 0.078, night)); // night lift is blue-violet, NOT magenta
     g.contrast = 0.3 - 0.1 * night;
     g.saturation = 1.1 + 0.13 * golden;
     // god rays: strongest at low sun (golden hour), gone below horizon
     const sunUp = sy > -0.04;
     this.godraysPass.enabled = !by && q.godrays && sunUp;
     if (this.godraysPass.enabled) {
-      this.skySmooth.amt = smoothstep(sy, -0.04, 0.02);            // fades out with the sun so night stars stay crisp
       const sm = this.godraysSource || this._sun;
       if (this.godrays.lightSource !== sm) this.godrays.lightSource = sm;
       if (sm === this._sun) {
@@ -409,24 +332,8 @@ export class PostFX {
     this.aoPass.enabled = !by && q.ao;
     this.dofPass.enabled = !by && q.dof && this._dof.enabled;
     this.finalPass.enabled = !by; this.smaaPass.enabled = !by;
-    const taaOn = !by && q.taa;
-    this.taaPass.enabled = taaOn;
-    this.taaPass.renderToScreen = taaOn;
-    this.smaaPass.renderToScreen = !by && !taaOn;
+    this.smaaPass.renderToScreen = !by;
     for (const p of [this.worldPass, this.overlayClear, this.overlayPass]) if (p) p.renderToScreen = by;
-    // TAA: subpixel jitter on both cameras (rebuild first so jitter never accumulates), then reprojection matrix = prevVP * currInvVP
-    if (taaOn) {
-      const [jx, jy] = JITTER[this._jf++ & 7], w = this.taaPass._w, h = this.taaPass._h;
-      for (const cam of [camera, this.overlay?.camera]) if (cam) {
-        cam.updateProjectionMatrix();
-        cam.projectionMatrix.elements[8] += jx * 2 / w; cam.projectionMatrix.elements[9] += jy * 2 / h;
-        cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-      }
-      camera.updateMatrixWorld();
-      this._invVP.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
-      this.taaPass.mat.uniforms.reproj.value.multiplyMatrices(this._prevVP, this._invVP);
-      this._prevVP.multiplyMatrices(camera.projectionMatrix, this._m4.copy(camera.matrixWorld).invert());
-    } else if (this._jf) { this._jf = 0; camera.updateProjectionMatrix(); camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert(); }
     // kick (chromatic aberration) + flash decay
     if (this._kick > 0) { this._kick = Math.max(0, this._kick - dt * 4); }
     const k = this._kick * this._kick * 0.006; this.ca.offset.set(k, k * 0.6);

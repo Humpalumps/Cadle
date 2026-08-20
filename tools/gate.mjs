@@ -9,6 +9,12 @@ import { chromium } from 'playwright';
 const URL = 'http://127.0.0.1:5173/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
 let failed = false;
 
+console.log('[gate] source invariants...');
+{
+  const r0 = spawnSync('node', ['tools/invariants.mjs'], { stdio: 'inherit' });
+  if (r0.status !== 0) failed = true;
+}
+
 // --- 1+2: screenshots + analysis, at BOTH quality levels ---
 // (blobs have shipped at q=low while q=high looked clean, and jitter only shows at q=high — check both)
 for (const q of ['high', 'low']) {
@@ -16,8 +22,10 @@ for (const q of ['high', 'low']) {
   const dir = `gate-${q}`;
   const r1 = spawnSync('node', ['tools/inspect.mjs', '--nolock', '--name', dir, '--q', q, '--script', 'tools/gate-steps.json'], { stdio: 'inherit', timeout: 420000 });
   if (r1.status !== 0) { console.error(`[gate] harness run failed @ q=${q}`); failed = true; continue; }
-  const r2 = spawnSync('python', ['tools/gate.py', `tools/out/${dir}`], { stdio: 'inherit' });
+  const r2 = spawnSync('python', ['tools/gate.py', `tools/out/${dir}`], { stdio: 'inherit' });          // jitter
   if (r2.status !== 0) failed = true;
+  const r3 = spawnSync('python', ['tools/blobcheck.py', `tools/out/${dir}`, 'burst-blob-'], { stdio: 'inherit' }); // blobs: bright-any-hue + flashing
+  if (r3.status !== 0) failed = true;
 }
 
 // --- 3: pointer lock behavior ---

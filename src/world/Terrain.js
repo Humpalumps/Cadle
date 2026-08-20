@@ -41,6 +41,18 @@ const fbm4 = (x, y, s) => (n2(x, y, s) * 0.5 + n2(x * 2, y * 2, s + 101) * 0.25 
 const rg = (x, y, s) => { const n = 1 - Math.abs(n2(x, y, s)); return n * n; };
 const ridged3 = (x, y, s) => (rg(x, y, s) * 0.5 + rg(x * 2, y * 2, s + 131) * 0.25 + rg(x * 4, y * 4, s + 262) * 0.125) / 0.875;
 const ridged4 = (x, y, s) => (rg(x, y, s) * 0.5 + rg(x * 2, y * 2, s + 131) * 0.25 + rg(x * 4, y * 4, s + 262) * 0.125 + rg(x * 8, y * 8, s + 393) * 0.0625) / 0.9375;
+// Ridged MULTIFRACTAL: the crest is (1 - |n|) UNSQUARED, so the ridge stays a crease (arete) instead of being rounded into a
+// meringue dome by the square; each octave is gated by the previous one so detail branches off the main ridges = faceted crags.
+// `oct` is the band-limit knob: 3 for the far ring (>=44 m features, coarse clipmap levels reproduce them), 4 near the player.
+const rmf = (x, y, s, oct) => {
+  let sum = 0, nrm = 0, a = 0.55, f = 1, w = 1;
+  for (let o = 0; o < oct; o++) {
+    const n = (1 - Math.abs(n2(x * f, y * f, s + o * 137))) * w;
+    w = n * 1.7 > 1 ? 1 : n * 1.7;
+    sum += n * a; nrm += a; a *= 0.52; f *= 2.07;
+  }
+  return sum / nrm;
+};
 
 export class Terrain {
   constructor(game) {
@@ -79,8 +91,9 @@ export class Terrain {
       h = mix(h, 17.5 + (h - 9) * 0.15, pl);
       const sk = pl * (1 - pl) * 4;                                      // skirt band only (0 on top and on the meadow)
       if (sk > 0.02) {                                                   // domain-warped jagged outcrops: teeth that BREAK the silhouette
-        const ox = x + n2(x * 0.033, z * 0.033, s + 61) * 9, oz = z + n2(x * 0.033 + 5, z * 0.033 + 5, s + 62) * 9;
-        h += sk * (ridged3(ox * 0.034, oz * 0.034, s + 6) * 11 - 3.6);
+        const ox = x + n2(x * 0.033, z * 0.033, s + 61) * 10, oz = z + n2(x * 0.033 + 5, z * 0.033 + 5, s + 62) * 10;
+        // creased 4-octave RMF (36/17/8/4 m) -> broken outcrops with vertical faces, not a felt mound (skirt sits in clipmap L0/L1)
+        h += sk * (rmf(ox * 0.028, oz * 0.028, s + 6, 4) * 16 - 4.8 + n2(ox * 0.1, oz * 0.1, s + 64) * 1.6);
       }
     }
     const ax = x + 60, az = z - 260; let ar = 0;                         // Hollow Crown arena: flat disc + rocky rim wall
@@ -92,25 +105,30 @@ export class Terrain {
       if (x > 190) add += ss(190, 260, x) * (3 + ridged3(x * 0.008, z * 0.008, s + 9) * 9);
       h += keep * add;
     }
-    if (d0 > 250) {                                                      // mountain ring: craggy wall + sharp warped crests + varied strata ledges + NW pass
+    if (d0 > 236) {                                                      // mountain ring: craggy wall + sharp warped crests + varied strata ledges + NW pass
       const dm = d0 + fbm3(x * 0.004, z * 0.004, s + 21) * 60;
-      const mt = ss(355, 465, dm), wall = ss(330, 380, dm);
-      const belt = ss(258, 315, dm) * ss(408, 348, dm);                  // approach belt: rocky knolls/scree, not a featureless dirt ramp
+      const mt = ss(352, 462, dm), wall = ss(326, 380, dm);
+      const belt = ss(238, 306, dm) * ss(404, 340, dm) * (1 - ar);       // approach belt: rocky knolls/scree, not a featureless dirt ramp
       let da = Math.abs(Math.atan2(z, x) + 2.356); if (da > Math.PI) da = 2 * Math.PI - da;
       const pass = 1 - 0.72 * ss(0.6, 0.15, da);
-      if (belt > 0.01) h += belt * (0.4 + 0.6 * pass) * (ridged3(x * 0.021, z * 0.021, s + 29) * 9 - 3.2);
+      if (belt > 0.01) {                                                 // warped creased knolls + boulder-scale bumps across the whole approach
+        const bx = x + n2(x * 0.019, z * 0.019, s + 39) * 13, bz = z + n2(x * 0.019 + 4, z * 0.019 - 6, s + 40) * 13;
+        h += belt * (0.4 + 0.6 * pass) * (rmf(bx * 0.017, bz * 0.017, s + 29, 4) * 14 - 3.9 + n2(x * 0.062, z * 0.062, s + 30) * 1.7);
+      }
       if (mt > 0 || wall > 0) {
-        const wx = x + n2(x * 0.011, z * 0.011, s + 24) * 34, wz = z + n2(x * 0.011 + 9.2, z * 0.011 - 4.1, s + 25) * 34;  // domain warp -> faceted faces
-        const crag = ridged3(wx * 0.014, wz * 0.014, s + 23);
-        // sharp arete crests: LOW frequency (lambda >= 40 m) so the coarse clipmap levels (8-16 m stride) reproduce the
-        // creases instead of aliasing them into random paper-spike sawtooth; sharpness comes from the ridged profile, not freq
-        const crest = rg(wx * 0.016, wz * 0.016, s + 26) * 0.65 + rg(wx * 0.029, wz * 0.029, s + 27) * 0.35;
-        let m = (wall * (13 + 9 * crag) + mt * (42 + 56 * ridged4(x * 0.005, z * 0.005, s + 17) + 20 * crag + 27 * crest)) * pass;
-        const reg = n2(x * 0.0035, z * 0.0035, s + 28);                  // per-region ledge freq/amp: the ring is not one corduroy
-        m -= (2.6 + 3.4 * reg * reg) * Math.sin(m * (0.3 + 0.11 * reg)) * mt;
+        // TWO-stage domain warp: ridge lines bend and fork instead of running as parallel arcs around the ring
+        const wx = x + n2(x * 0.0072, z * 0.0072, s + 24) * 48 + n2(x * 0.024, z * 0.024, s + 34) * 8;
+        const wz = z + n2(x * 0.0072 + 9.2, z * 0.0072 - 4.1, s + 25) * 48 + n2(x * 0.024 + 3.1, z * 0.024 + 7.7, s + 35) * 8;
+        const massif = rmf(wx * 0.0053, wz * 0.0053, s + 17, 3);         // 190/91/44 m arete network — creased crests, band-limited for the 16 m LOD
+        const crag = rmf(wx * 0.0135, wz * 0.0135, s + 23, 4);           // 74/36/17/8 m faceted crag detail (near wall renders at 1-4 m stride)
+        let m = (wall * (14 + 11 * crag) + mt * (30 + 66 * massif + 20 * crag)) * pass;   // ring crests ~120-165 m (CLAUDE.md: ~150)
+        // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
+        const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
+        const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
+        if (bandAmt > 0.01) m -= (2.0 + 4.0 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
         h += m;
       }
-      h += ss(465, 530, dm) * 55;
+      h += ss(462, 530, dm) * 45;
     }
     return h;
   }
@@ -161,6 +179,7 @@ export class Terrain {
     const slope = 1 - 1 / Math.sqrt(1 + dxh * dxh + dzh * dzh);
     const macro = this._macroNoise(x * (1 / 143), z * (1 / 143));
     const macro2 = this._macroNoise(x * (1 / 61) + 0.37, z * (1 / 61) + 0.37);
+    const macroC = ss(0.33, 0.67, macro), macro2C = ss(0.35, 0.65, macro2);
     const lakeM = 1 - ss(105, 150, Math.hypot(x + 170, z + 70));
     const rd = Math.hypot(x - 140, z - 60), d0c = Math.hypot(x, z);
     const ruinM = 1 - ss(50, 70, rd + (macro2 - 0.5) * 16);
@@ -170,11 +189,11 @@ export class Terrain {
     const mtn = Math.max(ss(26, 40, h + (macro - 0.5) * 10), ss(340, 400, d0c + (macro - 0.5) * 70));
     const crystalM = ss(195, 260, x + (macro - 0.5) * 40) * (1 - mtn);
     const alt = ss(26, 58, h);
-    let wSnow = ss(106, 136, h + (macro - 0.5) * 20) * (1 - ss(0.20, 0.42, slope));
+    let wSnow = ss(104, 138, h + (macro - 0.5) * 24) * (1 - ss(0.22, 0.46, slope));
     const rockTh = mix(0.30, 0.12, Math.max(alt, Math.max(mtn, skirtM)));
-    let wRock = ss(rockTh - 0.08, rockTh + 0.10, slope + (macro - 0.5) * 0.10);
-    const beltM = ss(252, 300, d0c) * (1 - ss(352, 408, d0c));
-    wRock = Math.max(wRock, beltM * ss(0.32, 0.58, macro2) * ss(0.03, 0.11, slope));
+    let wRock = ss(rockTh - 0.13, rockTh + 0.16, slope + (macro - 0.5) * 0.10);
+    const beltM = ss(238, 296, d0c) * (1 - ss(348, 412, d0c));
+    wRock = Math.max(wRock, beltM * ss(0.26, 0.60, macro2C) * ss(0.02, 0.09, slope));
     wRock = Math.max(wRock, skirtM * ss(0.10, 0.20, slope + (macro - 0.5) * 0.08));
     let wSand = lakeM * ss(WL + 1.9, WL + 0.9, h + (macro2 - 0.5) * 0.9);
     let wStone = Math.max(ruinM, arenaM);
@@ -189,9 +208,9 @@ export class Terrain {
     k = 1 - wSnow; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wSand *= k; wRock *= k;
     const sum = wGrass + wForest + wDirt + wStone + wSand + wRock + wSnow + 1e-5;
     // per-layer mean linear albedos (match the merged asset albedos + shader-side rock/sand modifiers)
-    const dry = ss(0.50, 0.68, macro2) * (1 - forestM) * 0.6;
+    const dry = ss(0.42, 0.64, macro2) * (1 - forestM) * 0.6;
     let gr_ = mix(0.099, 0.21, dry), gg = mix(0.218, 0.30, dry), gb = mix(0.033, 0.018, dry);     // grass_albedo.jpg mean (+sun-dried tint)
-    const rMac = mix(0.72, 1.18, macro2), rr = 0.20 * rMac, rgc = 0.185 * rMac, rb = 0.155 * rMac; // cliff_strata.jpg mean, warm/cool patches
+    const rMac = mix(0.80, 1.28, macro2), rr = 0.222 * rMac, rgc = 0.206 * rMac, rb = 0.172 * rMac; // cliff_strata.jpg mean, warm/cool patches
     const sw = ss(0.35, 0.65, macro2), sr = 0.52 * mix(1.08, 0.90, sw), sg = 0.42 * mix(0.98, 0.88, sw), sb = 0.21 * mix(0.85, 0.95, sw);
     let r = (gr_ * wGrass + 0.15 * wForest + 0.24 * wDirt + 0.45 * wStone + sr * wSand + rr * wRock + 0.51 * wSnow) / sum;
     let g = (gg * wGrass + 0.11 * wForest + 0.19 * wDirt + 0.42 * wStone + sg * wSand + rgc * wRock + 0.60 * wSnow) / sum;
@@ -203,8 +222,11 @@ export class Terrain {
     r *= tR; g *= tG; b *= tB;
     const fm = forestM * 0.6; r *= mix(1, 0.78, fm); g *= mix(1, 0.86, fm); b *= mix(1, 0.74, fm);
     const cm = crystalM * 0.7; r = r * mix(1, 0.92, cm) + 0.02 * cm; g = g * mix(1, 0.84, cm) + 0.01 * cm; b = b * mix(1, 1.12, cm) + 0.05 * cm;
-    const wet = lakeM * ss(WL + 4.6, WL + 0.3, h);
-    r *= mix(1, 0.36, wet); g *= mix(1, 0.40, wet); b *= mix(1, 0.47, wet);
+    // the shader ramps this macro contrast in with camera distance; Grass mostly uses colorAt for FAR blades, so carry ~60% of it
+    const vg = (1 - neut) * 0.55, mC = macroC * 0.62 + macro2C * 0.38;
+    r *= mix(1, mix(0.60, 1.36, mC), vg); g *= mix(1, mix(0.70, 1.24, mC), vg); b *= mix(1, mix(0.50, 1.02, mC), vg);
+    const wet = lakeM * ss(WL + 6.5, WL + 0.2, h);
+    r *= mix(1, 0.30, wet); g *= mix(1, 0.35, wet); b *= mix(1, 0.44, wet);
     return out.setRGB(r, g, b);
   }
 
@@ -220,7 +242,7 @@ export class Terrain {
       const src = [
         `const clamp=${clamp};const smoothstep=${smoothstep};const lerp=(a,b,t)=>a+(b-a)*t;const fade=(t)=>t*t*t*(t*(t*6-15)+10);`,
         mulberry32.toString(), hash2.toString(), noise2.toString(),
-        `const ss=smoothstep,mix=lerp,n2=noise2;const fbm2=${fbm2};const fbm3=${fbm3};const fbm4=${fbm4};const rg=${rg};const ridged3=${ridged3};const ridged4=${ridged4};`,
+        `const ss=smoothstep,mix=lerp,n2=noise2;const fbm2=${fbm2};const fbm3=${fbm3};const fbm4=${fbm4};const rg=${rg};const ridged3=${ridged3};const ridged4=${ridged4};const rmf=${rmf};`,
         `const T={seed:0,heightAt:function ${Terrain.prototype.heightAt}};`,
         layerTex.toString(), bakeKernel.toString(),
         `self.onmessage=(e)=>{const r=bakeKernel(e.data);postMessage(r,[r.hgt.buffer,r.nrm.buffer,...r.layers.map((x)=>x.data.buffer)]);};`,
@@ -344,7 +366,7 @@ export class Terrain {
     console.log(`[terrain] preview ready in ${(t1 - t0).toFixed(0)} ms, ${L} levels x ${n} cells`);
     // real asset albedos (ASSETS.md): fetched + resized in parallel with the worker bake, merged over the procedural
     // layers when both land (procedural stays the fallback + its height supplies the macro shading / blend alpha source)
-    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.08], [4, 'beach_sand', 0.80], [5, 'snow', 0.93]];  // [layer, file, sRGB gain]
+    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.93]];  // [layer, file, sRGB gain]
     const imgP = Promise.all(ASSET_LAYERS.map(([l, nm, mul]) =>
       fetch(`/assets/tex/${nm}.jpg`).then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then((bl) => createImageBitmap(bl, { resizeWidth: R, resizeHeight: R, resizeQuality: 'high' }))
@@ -501,11 +523,12 @@ function layerTex(layer, R, seed) {
       const px = u * T + (hash(idy, 3, T) > 0.5 ? 0.5 : 0), idx = Math.floor(px), fx = px - idx, fy = py - idy;
       const hv = hash(idx, idy, T), hv2 = hashB(idx, idy, T);
       const m = Math.min(Math.min(fx, 1 - fx), Math.min(fy, 1 - fy));
-      const mortar = ss(0.028, 0.010, m + (fbm(u, v, 40, 2) - 0.5) * 0.02), n1 = fbm(u + hv, v + hv, 8, 4), sh = 0.88 + 0.26 * n1;
-      const mossy = hv2 > 0.9 ? 0.14 : 0, crack = 1 - ss(0.93, 1.0, ridge(u + hv2, v + hv2, 9, 3)) * 0.4;
-      const grit = (vnoise(u + 0.7, v + 0.7, 512) - 0.5) * 0.06 + (vnoise(u + 0.2, v + 0.4, 128) - 0.5) * 0.06;  // crisp grain that survives mips
-      r = mix(mix(mix(0.44, 0.58, hv) * sh, 0.42, mossy) * crack + grit, 0.34, mortar); g = mix(mix(mix(0.41, 0.54, hv) * sh, 0.44, mossy) * crack + grit, 0.31, mortar); b = mix(mix(mix(0.36, 0.48, hv) * sh, 0.35, mossy) * crack + grit * 0.8, 0.26, mortar);
-      h = 1 - mortar * 0.55 - (1 - crack) * 0.45;
+      // tight mortar line (was a cavernous gully), brighter warm sandstone, crisp fine grain, moss only as a faint tint
+      const mortar = ss(0.016, 0.006, m + (fbm(u, v, 40, 2) - 0.5) * 0.012), n1 = fbm(u + hv, v + hv, 8, 4), sh = 0.90 + 0.22 * n1;
+      const mossy = hv2 > 0.9 ? 0.07 : 0, crack = 1 - ss(0.93, 1.0, ridge(u + hv2, v + hv2, 9, 3)) * 0.3;
+      const grit = (vnoise(u + 0.7, v + 0.7, 512) - 0.5) * 0.075 + (vnoise(u + 0.2, v + 0.4, 200) - 0.5) * 0.055;  // crisp masonry grain that survives mips
+      r = mix(mix(mix(0.54, 0.70, hv) * sh, 0.50, mossy) * crack + grit, 0.42, mortar); g = mix(mix(mix(0.50, 0.65, hv) * sh, 0.52, mossy) * crack + grit, 0.39, mortar); b = mix(mix(mix(0.44, 0.57, hv) * sh, 0.42, mossy) * crack + grit * 0.8, 0.33, mortar);
+      h = 1 - mortar * 0.35 - (1 - crack) * 0.35;
     } else {                      // detail: bump normal (rg), bump height (b), macro noise (a)
       const c = bumpH[j * R + i], k2 = R * 0.03 * 0.5;                           // slope per uv * 0.03 (same strength at any R)
       const dx = (bumpH[j * R + ((i + 1) % R)] - bumpH[j * R + ((i + R - 1) % R)]) * k2, dy = (bumpH[((j + 1) % R) * R + i] - bumpH[((j + R - 1) % R) * R + i]) * k2;
@@ -598,6 +621,10 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // macro variation (low-frequency noise, breaks tiling + drives patches), detail bump (close-up)
   float macro = lyr(P.xz * (1.0 / 143.0), 7.0).a;
   float macro2 = lyr(P.xz * (1.0 / 61.0) + 0.37, 7.0).a;
+  // fbm output clusters around 0.5 -> raw macro only swung the far albedo by +-16% (the "two-tone poster" aerial).
+  // Expanded copies drive every far-field variation; the raw ones stay for blend dithering (needs to be gentle).
+  float macroC = smoothstep(0.33, 0.67, macro);
+  float macro2C = smoothstep(0.35, 0.65, macro2);
   vec4 det = lyr(P.xz * (1.0 / 0.9), 7.0);
   vec4 det2 = lyr(P.xz * (1.0 / 4.3) + 0.5, 7.0);
   vec4 det0 = lyr(P.xz * (1.0 / 0.23), 7.0);
@@ -619,15 +646,16 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float alt = smoothstep(26.0, 58.0, P.y);           // mountain altitude: rock takes over sooner, dirt turns to scree
   // --- layer weights ("over" compositing, then height-sharpened) ---
   float snowN = lyr(P.xz * (1.0 / 23.0) + 0.77, 7.0).a;                 // mid-scale breakup: no polygon-edged snow sheets
+  float snowN2 = lyr(P.xz * (1.0 / 6.5) + 0.29, 7.0).a;                 // drift-edge breakup at the snowline (kills the flat sheet border)
   // high snowline + hard slope cutoff: snow dusts benches and summits, rock faces stay rock (no chalk-white ring)
-  float wSnow = smoothstep(106.0, 136.0, P.y + (macro - 0.5) * 20.0 + (snowN - 0.5) * 16.0) * (1.0 - smoothstep(0.20, 0.42, slope + (snowN - 0.5) * 0.10));
+  float wSnow = smoothstep(104.0, 138.0, P.y + (macro - 0.5) * 24.0 + (snowN - 0.5) * 22.0 + (snowN2 - 0.5) * 7.0) * (1.0 - smoothstep(0.22, 0.46, slope + (snowN - 0.5) * 0.13));
   float skirtM = smoothstep(76.0, 58.0, ruinD) * smoothstep(38.0, 52.0, ruinD);   // Spire skirt band: broken rock, not a dirt mound
   float rockTh = mix(0.30, 0.12, max(alt, max(mtn, skirtM)));
-  float rockW = 0.09 + far * 0.14;                                       // blend widens with distance + detail dither: no sawtooth boundary
-  float wRock = smoothstep(rockTh - rockW, rockTh + rockW * 1.25, slope + (macro - 0.5) * 0.10 + (det2.b - 0.5) * 0.05 + (det.b - 0.5) * 0.06 * detFade);
+  float rockW = 0.13 + far * 0.12;                                       // wide blend + multi-octave dither: no sawtooth boundary at the skirt base
+  float wRock = smoothstep(rockTh - rockW, rockTh + rockW * 1.25, slope + (macro - 0.5) * 0.10 + (det2.b - 0.5) * 0.07 + (det.b - 0.5) * 0.06 * detFade + (det0.b - 0.5) * 0.05 * nearF);
   float beltD = length(P.xz);                                            // mountain approach belt: scree/rock patches, not a dirt ramp
-  float beltM = smoothstep(252.0, 300.0, beltD) * (1.0 - smoothstep(352.0, 408.0, beltD));
-  wRock = max(wRock, beltM * smoothstep(0.32, 0.58, macro2 + (det2.b - 0.5) * 0.15) * smoothstep(0.03, 0.11, slope));
+  float beltM = smoothstep(238.0, 296.0, beltD) * (1.0 - smoothstep(348.0, 412.0, beltD));
+  wRock = max(wRock, beltM * smoothstep(0.26, 0.60, macro2C + (det2.b - 0.5) * 0.30) * smoothstep(0.02, 0.09, slope));
   wRock = max(wRock, skirtM * smoothstep(0.10, 0.20, slope + (macro - 0.5) * 0.08));
   float wSand = lakeM * smoothstep(uWater + 1.9, uWater + 0.9, P.y + (macro2 - 0.5) * 0.9);
   float wStone = max(ruinM, arenaM);
@@ -644,14 +672,14 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float farC = smoothstep(50.0, 280.0, camD);                            // albedo macro contrast ramps in EARLY (aerial is not a paint fill)
   vec4 cG = mix(lyrHex(P.xz * (1.0 / 3.7), 0.0, 3.0), lyr(P.xz * (1.0 / 11.0) + 0.31, 0.0), 0.35);
   cG.rgb = mix(cG.rgb, lyr(P.xz * (1.0 / 43.0) + 0.61, 0.0).rgb, farC * 0.65);  // huge-scale patches: contrast survives distance
-  cG.rgb *= mix(1.0, 0.62 + 0.80 * macro, farC);                         // 143 m light/dark meadow patches from the air
-  float dry = smoothstep(0.50, 0.68, macro2) * (1.0 - forestM);          // sun-dried grass patches ringing the dirt patches
+  cG.rgb *= mix(1.0, 0.55 + 0.95 * macroC, farC);                        // 143 m light/dark meadow patches from the air
+  float dry = smoothstep(0.42, 0.64, macro2) * (1.0 - forestM);          // sun-dried grass patches ringing the dirt patches
   cG.rgb = mix(cG.rgb, cG.rgb * vec3(1.6, 1.25, 0.55) + vec3(0.05, 0.03, 0.0), dry * 0.6);
   vec4 cF = lyr(P.xz * (1.0 / 3.6), 1.0);
   cF.rgb = mix(cF.rgb, lyr(P.xz * (1.0 / 27.0) + 0.41, 1.0).rgb, farC * 0.5);
   vec4 cD = lyr(P.xz * (1.0 / 4.2), 2.0);
   cD.rgb = mix(cD.rgb, lyr(P.xz * (1.0 / 31.0) + 0.23, 2.0).rgb, farC * 0.55);
-  cD.rgb *= mix(1.0, 0.70 + 0.58 * macro, farC);
+  cD.rgb *= mix(1.0, 0.62 + 0.80 * macroC, farC);
   vec4 cS = lyr(P.xz * (1.0 / 2.4), 4.0);
   cS.rgb *= mix(vec3(1.08, 0.99, 0.88), vec3(0.92, 0.90, 0.97), smoothstep(0.35, 0.65, macro2));   // warm/cool sand patches
   vec4 cW = lyr(P.xz * (1.0 / 9.0), 5.0);
@@ -668,15 +696,17 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     cR = lyrHex(P.zy * rs, 3.0, 8.0) * bw.x + lyrHex(P.xz * rs, 3.0, 8.0) * bw.y + lyrHex(P.xy * rs, 3.0, 8.0) * bw.z;
     // macro warm/cool patches that survive ANY distance (kills the chalk-plaster look on far cliffs)
     float rMac = mix(lyr(vec2(P.x + P.z, P.y) * (1.0 / 47.0), 7.0).a, macro2, gN.y * gN.y);
-    cR.rgb *= mix(vec3(0.74, 0.66, 0.56), vec3(1.20, 1.13, 1.05), rMac);
-    // per-region strata modulation: frequency/tilt/amount vary across the ring (steep faces only, never one corduroy)
+    cR.rgb *= mix(vec3(0.80, 0.72, 0.62), vec3(1.28, 1.20, 1.12), rMac);
+    // per-region strata: frequency, TILT, phase drift and PRESENCE all vary (steep faces only, never one global corduroy)
     float steep = smoothstep(0.28, 0.48, slope);
     float reg = lyr(P.xz * (1.0 / 301.0) + 0.57, 7.0).a;
+    float regB = lyr(P.xz * (1.0 / 151.0) + 0.19, 7.0).a;                 // 75/38/19 m bedding-phase drift: bands wander and pinch out
+    float bandOn = smoothstep(0.30, 0.62, lyr(P.xz * (1.0 / 430.0) + 0.83, 7.0).a);   // whole massifs with no visible bedding at all
     float bandA = 0.25 + 0.75 * smoothstep(0.30, 0.65, reg);
-    float sc = smoothstep(-0.3, 0.8, sin(P.y * mix(0.22, 0.5, reg) + (P.x - P.z) * (reg - 0.5) * 0.05 + macro * 3.0 + det2.b * 0.8));
-    cR.rgb *= mix(1.0, 0.64 + 0.52 * sc, steep * bandA);                  // strong asymmetric ledge shading: reads at any distance
+    float sc = smoothstep(-0.3, 0.8, sin(P.y * mix(0.16, 0.52, reg) + (P.x - P.z) * (reg - 0.5) * 0.09 + regB * 12.0 + det2.b * 0.8));
+    cR.rgb *= mix(1.0, 0.72 + 0.44 * sc, steep * bandA * bandOn);         // asymmetric ledge shading, floor lifted (no near-black clip)
     cR.rgb = mix(cR.rgb, cR.rgb * vec3(0.84, 0.86, 0.95), alt * 0.35);    // high crags: slightly cooler granite
-    tAO = mix(tAO, min(1.0, tAO * 1.2 + 0.15), wRock);                    // shadowed faces keep readable detail (no near-black clip)
+    tAO = mix(tAO, min(1.0, tAO * 1.25 + 0.22), wRock);                   // shadowed faces keep readable detail (no near-black clip)
     // triplanar detail bump for cliffs
     vec4 dX = lyr(P.zy * (1.0 / 1.1), 7.0), dZ = lyr(P.xy * (1.0 / 1.1), 7.0);
     vec3 bX = vec3(0.0, dX.g * 2.0 - 1.0, dX.r * 2.0 - 1.0) * bw.x, bZ = vec3(dZ.r * 2.0 - 1.0, dZ.g * 2.0 - 1.0, 0.0) * bw.z;
@@ -697,12 +727,16 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   alb *= tint;
   alb = mix(alb, alb * vec3(0.78, 0.86, 0.74), forestM * 0.6);
   alb = mix(alb, alb * vec3(0.92, 0.84, 1.12) + vec3(0.02, 0.01, 0.05), crystalM * 0.7);
+  // far-field macro contrast on the VEGETATED ground only (rock/stone/snow keep their own): the aerial and every midground
+  // beyond the detail fade used to collapse to one flat green + one flat brown. Value AND hue swing, ~140 m and ~60 m scales.
+  float veg = clamp((sG + sF + sD) / sum, 0.0, 1.0);
+  alb = mix(alb, alb * mix(vec3(0.60, 0.70, 0.50), vec3(1.36, 1.24, 1.02), macroC * 0.62 + macro2C * 0.38), farC * veg * 0.9);
   // shoreline wetness: wide gradient + saturated dark waterline band, like an FF14 shore
-  float wet = lakeM * smoothstep(uWater + 4.6, uWater + 0.3, P.y + (det2.b - 0.5) * 0.5);
-  alb *= mix(vec3(1.0), vec3(0.36, 0.40, 0.47), wet);
-  alb *= mix(vec3(1.0), vec3(0.55, 0.60, 0.68), lakeM * smoothstep(uWater + 1.2, uWater + 0.25, P.y));   // waterline band
+  float wet = lakeM * smoothstep(uWater + 6.5, uWater + 0.2, P.y + (det2.b - 0.5) * 0.7);
+  alb *= mix(vec3(1.0), vec3(0.30, 0.35, 0.44), wet);
+  alb *= mix(vec3(1.0), vec3(0.48, 0.54, 0.64), lakeM * smoothstep(uWater + 1.6, uWater + 0.2, P.y));   // dark saturated waterline band
   alb = mix(alb, alb * vec3(0.6, 0.72, 0.7), lakeM * smoothstep(uWater, uWater - 3.0, P.y));
-  rough = mix(rough, 0.14, wet);
+  rough = mix(rough, 0.10, wet);
   // detail bump into the normal, close-up detail contrast (some albedo contrast survives at distance)
   tN = normalize(gN + bump);
   alb *= 1.0 + (det.b - 0.5) * 0.5 * detFade + (det2.b - 0.5) * 0.2 * (1.0 - 0.6 * far) + (det0.b - 0.5) * 0.45 * nearF;

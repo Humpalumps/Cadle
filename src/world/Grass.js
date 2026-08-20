@@ -41,10 +41,10 @@ const TRAIL_LIFE = 4.0;
 
 // per quality: ring radii (m), patches per cell per ring (16 blades each), cache texels, near shadow casting
 const PRESETS = {
-  low:    { R: [9, 26, 52],    P: [20, 8, 2],  N: 256, step: 0.5, cast: false },
-  medium: { R: [13, 42, 84],   P: [30, 13, 3], N: 384, step: 0.5, cast: false },
-  high:   { R: [18, 60, 116],  P: [48, 18, 3], N: 512, step: 0.5, cast: true },
-  ultra:  { R: [24, 76, 146],  P: [64, 25, 4], N: 640, step: 0.5, cast: true },
+  low:    { R: [9, 26, 52],    P: [23, 8, 2],  N: 256, step: 0.5, cast: false },
+  medium: { R: [13, 42, 84],   P: [34, 13, 3], N: 384, step: 0.5, cast: false },
+  high:   { R: [18, 60, 116],  P: [55, 18, 3], N: 512, step: 0.5, cast: true },
+  ultra:  { R: [24, 76, 146],  P: [72, 25, 4], N: 640, step: 0.5, cast: true },
 };
 
 // ---------------- GLSL ----------------
@@ -84,7 +84,7 @@ vec3 transformed; vec3 objectNormal;
   int ci = int(aCell.x), cj = int(aCell.y);
   int k = int(aCell.z) * BLADES_PER_PATCH + bIdx;
   uint s = gHash(uint(ci + 65536) * 0x9E3779B1u ^ gHash(uint(cj + 65536) * 0x85EBCA77u ^ gHash(uint(k) + uint(uBlade.w))));
-  float r0 = gRand(s), r1 = gRand(s), r2 = gRand(s), r3 = gRand(s), r4 = gRand(s), r5 = gRand(s), r6 = gRand(s), r7 = gRand(s);
+  float r0 = gRand(s), r1 = gRand(s), r2 = gRand(s), r3 = gRand(s), r4 = gRand(s), r5 = gRand(s), r6 = gRand(s), r7 = gRand(s), r8 = gRand(s);
   vec2 rootXZ = (vec2(float(ci), float(cj)) + vec2(r0, r1)) * CELL;
 
   // --- terrain cache (bilinear height/mask, nearest color) ---
@@ -120,16 +120,19 @@ vec3 transformed; vec3 objectNormal;
   H *= 1.0 + d * 0.002; W *= 1.0 + d * 0.015;
   #endif
   #if RING < 2
-  float fl0 = t00.a * 0.008;
+  // drifts, not confetti: flowers clump into ~9 m patches, and heads shrink to nothing past ~20 m
+  // (a 5 cm bloom at 40 m is a shimmering sub-pixel speck -> the critic's "paper scraps").
+  float fl0 = t00.a * 0.012 * (0.10 + 2.4 * smoothstep(0.45, 0.82, gNoise(rootXZ * 0.11, 23u)));
   bool flower = r6 < fl0;            // wild flowers / herbs, only in flower patches
   float ftype = r6 / max(fl0, 1e-4); // 0..1 -> type
-  if (flower) H *= 0.85;                                         // heads nest at the canopy top, never hover above it
+  float hs = 1.0 - smoothstep(9.0, 20.0, d);                     // head size fade: flower -> plain blade, no pop
+  if (flower) H *= mix(1.0, 0.85, hs);                           // heads nest at the canopy top, never hover above it
   #else
-  bool flower = false; float ftype = 0.0;
+  bool flower = false; float ftype = 0.0, hs = 0.0;
   #endif
   #if RING == 0
   float under = flower ? 0.0 : step(r7, 0.35);   // short wide filler blades: dense understory so bare splat never shows at the feet
-  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.7 * under;
+  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.1 * under;
   #else
   float under = 0.0;
   #endif
@@ -154,7 +157,7 @@ vec3 transformed; vec3 objectNormal;
   float flut = sin(t * (3.2 + 2.2 * r4) + r3 * 6.2831853 + rootXZ.x * 0.5);
   float phi = r3 * 6.2831853;
   vec3 fwd = vec3(cos(phi), 0.0, sin(phi)); vec3 rgt = vec3(-fwd.z, 0.0, fwd.x);
-  vec2 lean = wd * gust + vec2(wd.y, -wd.x) * (flut * 0.12 * gust) + fwd.xz * (0.24 + 0.55 * r4) + wd * (flut * 0.05 * uWind.z);
+  vec2 lean = wd * gust + vec2(wd.y, -wd.x) * (flut * 0.12 * gust) + fwd.xz * (0.34 + 0.85 * r4) + wd * (flut * 0.05 * uWind.z);
 
   // --- player push + trail (flatten + bend away); trail lives within ~15 m so near ring only ---
   float push = (1.0 - smoothstep(0.2, 0.75, d)) * (1.0 - smoothstep(0.6, 2.2, abs(uPlayer.y - rootY)));
@@ -174,7 +177,8 @@ vec3 transformed; vec3 objectNormal;
 
   // --- blade shape ---
   float v = bv;
-  float w = W * (1.0 - v * v) * (1.0 - 0.3 * v);   // wide base, thinning tip
+  // real grass keeps its width most of the way up then points; the old (1-v^2) taper is what read as a "dagger"
+  float w = W * (1.0 - 0.32 * v) * sqrt(max(0.0, 1.0 - v * v * v * v));
   vec3 headCol = vec3(0.0); float head = 0.0;
   vGrassHead = vec2(bside, -1.0);
   if (flower) {
@@ -183,27 +187,30 @@ vec3 transformed; vec3 objectNormal;
     // per-fragment from vGrassHead instead (see color_fragment injection).
     // width envelope peaks at v=2/3 — the strip's only interior vertex inside the head — and the
     // petal mask center (vGrassHead.y = 0.5) maps to the same v, so the bloom reads round, not clipped.
-    float hw = (0.028 + 0.015 * r1) * (1.0 + d * 0.02) * sc;
+    float hw = (0.046 + 0.022 * r1) * (1.0 + d * 0.02) * sc * hs;        // bigger bloom, shrinks to nothing far away
     float petal = hw * sin(clamp((v - 0.45) * 2.6, 0.0, 1.0) * 3.14159);
     w = max(W * 0.95 * (1.0 - 0.3 * v), petal);                           // fat visible green stem under the head
-    head = smoothstep(0.45, 0.58, v);
+    head = smoothstep(0.45, 0.58, v) * hs;
     vGrassHead = vec2(bside, (v - 0.45) * 2.3);                           // head-local coords for the fragment petal mask
     float ty = floor(ftype * 5.0);
-    vec3 petalC = ty < 1.0 ? vec3(1.0, 0.62, 0.10) : ty < 2.0 ? vec3(0.93, 0.90, 0.76) : ty < 3.0 ? vec3(0.55, 0.20, 0.95) : ty < 4.0 ? vec3(0.95, 0.25, 0.45) : vec3(0.25, 0.45, 1.0);
-    headCol = mix(petalC * 0.45 + vec3(0.35, 0.26, 0.02), petalC, smoothstep(0.5, 0.78, v));   // warm center -> petal tips: two-tone bloom
+    // muted meadow-herb palette (was near-primary saturated -> read as litter); matte per user decree
+    vec3 petalC = ty < 1.0 ? vec3(0.86, 0.52, 0.14) : ty < 2.0 ? vec3(0.80, 0.78, 0.60) : ty < 3.0 ? vec3(0.46, 0.24, 0.66) : ty < 4.0 ? vec3(0.80, 0.34, 0.46) : vec3(0.30, 0.42, 0.70);
+    headCol = mix(petalC * 0.42 + vec3(0.24, 0.19, 0.02), petalC, smoothstep(0.5, 0.78, v));   // warm center -> petal tips: two-tone bloom
     vGrassEmissive = vec3(0.0);  // user decree: flowers stay matte — no glowing/sparkling heads (they bloomed into white blobs)
   } else vGrassEmissive = vec3(0.0);
   vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), terrainN, 0.35));
   vec3 root = vec3(rootXZ.x, rootY - 0.04, rootXZ.y);
-  transformed = root + rgt * (bside * w) + vec3(lean.x, 0.0, lean.y) * (H * pow(v, 1.45)) + up * (H * v * (1.0 - 0.33 * L2 * v * v));
+  // v^2 bend: base stays upright, tip arcs over -> reads as a curved blade instead of a tilted straight dagger
+  transformed = root + rgt * (bside * w) + vec3(lean.x, 0.0, lean.y) * (H * v * v) + up * (H * v * (1.0 - 0.42 * L2 * v * v));
   if (flower) transformed += (fwd * 0.3 - up * 0.12) * (H * head * (v - 0.5) * 2.0);   // gentle nod: head tilts off vertical, stays a bloom not a flat card
 
   // --- normal: camera-facing blade normal bulged at sides, blended with terrain normal (smooth field lighting) ---
-  float farF = smoothstep(10.0, 55.0, d) * 0.92;   // color/normal convergence onto the terrain
+  float farF = smoothstep(14.0, 60.0, d) * 0.92;   // color/normal convergence onto the terrain
   float fs = dot(fwd.xz, cameraPosition.xz - transformed.xz) < 0.0 ? -1.0 : 1.0;
-  vec3 bn = normalize(fwd * fs + rgt * (bside * 0.28) + vec3(0.0, 0.55 * v + 0.3, 0.0));  // soft side bulge: no hard lit/dark face split
+  vec3 bn = normalize(fwd * fs + rgt * (bside * 0.42) + vec3(0.0, 0.35 * v + 0.15, 0.0));  // rounded blade cross-section (wrapped diffuse keeps the away face from going black)
   bn = normalize(mix(bn, vec3(0.0, 1.0, 0.0), head * 0.5));                               // flower heads face up
-  objectNormal = normalize(mix(bn, terrainN, min(1.0, 0.55 + 0.45 * farF + flatn * 0.5 + under * 0.3)));
+  // near field keeps its own blade normals (the old 0.55 terrain floor flat-lit everything into a smeared sheet)
+  objectNormal = normalize(mix(bn, terrainN, min(1.0, 0.26 + 0.62 * farF + flatn * 0.55 + under * 0.4)));
 
   // --- color: compressed root->tip range (roots dim, never black); dry-gold rides terrain color; converge far ---
   float dry = clamp((tcol.r - tcol.g * 0.62) * 8.0, 0.0, 1.0);
@@ -212,9 +219,11 @@ vec3 transformed; vec3 objectNormal;
   dry = clamp(dry + smoothstep(0.47, 0.82, mac) * 0.95, 0.0, 1.0);
   vec3 tipC = mix(vec3(0.11, 0.27, 0.045), vec3(0.32, 0.30, 0.06), dry * 0.7 + r4 * r4 * 0.2);
   tipC = mix(tipC, tcol * 1.35, 0.3);
+  tipC *= mix(vec3(0.84, 1.02, 1.10), vec3(1.16, 1.00, 0.68), r8 * r8);   // per-blade cool<->warm green: kills the single-tone golf-course read
   vec3 rootC = mix(tipC * 0.62, tcol * 0.8, 0.35);                 // roots melt into the ground tone, never near-black
   vec3 col = mix(rootC, tipC, smoothstep(-0.2, 0.75, v)) * (1.0 + (r4 - 0.5) * 0.35 * (1.0 - farF));
   col *= 0.82 + 0.36 * mac2;
+  col *= 0.68 + 0.32 * smoothstep(-0.1, 0.55, v);                  // canopy self-occlusion: the field gets depth instead of reading as flat paper
   col *= min(1.0 + (g - 0.45) * 0.5 * uWind.z * smoothstep(8.0, 30.0, d), 1.22);   // gust silvering, clamped: never blows to white
   float lowS = clamp(uSun.w * 0.833, 0.0, 1.0);
   col *= mix(vec3(1.0), vec3(1.28, 1.0, 0.55), lowS * 0.5);        // field inherits the golden-hour grade like the terrain does
@@ -230,6 +239,15 @@ vec3 transformed; vec3 objectNormal;
   float rim = pow(clamp(dot(vdir, uSun.xyz), 0.0, 1.0), 3.0);
   vGrassEmissive += uSunCol.rgb * (uSun.w * rim * vGrassV.y) + col * uSunCol.a;
   vGrassEmissive = min(vGrassEmissive, col * 0.75 + vec3(0.02));   // clamp: rim+lift never pushes past ~1.5x base color (critic: white blowout band)
+  // HARD CEILING (orchestrator, user decree — do not raise, do not remove).
+  // Blades are sub-pixel at distance: any emissive that can reach the bloom threshold (~1.2) flickers
+  // on/off frame to frame as wind/camera move, and bloom smears each flicker into a floating glowing
+  // ball. That is the "flashing white/blue blobs" bug, which has now shipped four separate times.
+  // Grass emissive must stay far below the bloom threshold, in ABSOLUTE terms — a clamp relative to
+  // blade color is not enough, because a bright blade color raises the ceiling with it.
+  // Want visible low-sun rim/backlight? Do it as a LIGHTING term (translucency in directDiffuse,
+  // which respects exposure and cannot bloom), never as emissive.
+  vGrassEmissive = min(vGrassEmissive, vec3(0.22));
 }
 `;
 
@@ -331,7 +349,7 @@ export class Grass {
       uWind: { value: new THREE.Vector4(0.8, 0.35, 0.5, 0) },
       uLodA: { value: new THREE.Vector4(this._lod.L0, this._lod.L1, this._lod.L2, this._lod.L3) },
       uLodB: { value: new THREE.Vector4(D1 / D0, D2 / D0, 1 / D0, g.terrain.waterLevel ?? 0) },
-      uBlade: { value: new THREE.Vector4(0.7, 0.042, 0, (g.seed | 0) & 0xffff) },
+      uBlade: { value: new THREE.Vector4(0.7, 0.034, 0, (g.seed | 0) & 0xffff) },
       uTrail: { value: trail },
       uNight: { value: 0 },
       uSun: { value: new THREE.Vector4(0.3, 0.7, 0.4, 0) },

@@ -38,8 +38,8 @@ import * as THREE from 'three';
  *   combat.rayWorld(origin, dir, range) -> { point, normal, distance, surface, collider } | null   (terrain + colliders only; ring of 8)
  *   combat.spawnDummy(pos?, { health=300, shield=0, shieldElement, level, respawn=3 }) -> dummy   debug target (mannequin + head weak point, regenerates)
  *   combat.aimBallistic(origin, target, speed, gravity, hi=true) -> unit dir Vector3 | null   exact lob solution for gravity projectiles
- *   combat.testMortar(dist=25) -> { dummy, proj } | null   deterministic mortar acceptance test: lobs a solar mortar exactly onto a fresh
- *       dummy `dist` m ahead of the player; eval it, wait ~3 s, dummy.health < dummy.maxHealth proves splash-on-target.
+ *   combat.testMortar(dist=25) -> { dummy, proj, eta } | null   deterministic mortar acceptance test: lobs a solar mortar exactly onto a fresh
+ *       dummy `dist` m ahead of the player; eval it, wait > eta s (~2.2), dummy.health < dummy.maxHealth proves splash-on-target.
  *   combat.clearDummies();  combat.stats = { shots, hits, crits, kills, damage, projectiles, explosions }
  *   URL: ?dummies=N spawns N training dummies 12 m in front of spawn.
  *
@@ -152,9 +152,13 @@ varying vec2 vUv; varying vec3 vColor;
 void main() {
   float d2 = dot(vUv, vUv);
   if (d2 > 1.0) discard;
-  float halo = (exp(-6.0 * d2) - 0.002479) * 1.002485;        // gaussian tail hitting exactly 0 at the rim: no hard edge on bright sky
-  float core = exp(-50.0 * d2);
-  vec3 col = vColor * halo * 1.5 + mix(vColor, vec3(2.2), 0.8) * core;    // saturated chromatic halo, white-hot only in the tight centre
+  // two lobes + a pinhead core. The lobes stay CHROMATIC (peak ~1.5x the element colour): additive HDR much above that
+  // clips every channel and ACES hands back a white balloon in daylight — the whole point is the bolt keeps its hue.
+  float t = 1.0 - d2;
+  float wide = t * t;                                          // broad soft glow, exactly 0 at the rim -> no visible disc edge on bright sky
+  float tight = (exp(-9.0 * d2) - 1.2341e-4) * 1.000123;
+  float core = exp(-58.0 * d2);                                // only this pinhead goes white-hot (bloom turns it into the sizzle)
+  vec3 col = vColor * (wide * 0.55 + tight) + mix(vColor, vec3(1.0), 0.65) * core * 1.35;
   #ifdef USE_FOG
     #ifdef FOG_EXP2
       float ff = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
@@ -413,23 +417,39 @@ export class Combat {
     if (out.lengthSq() < 1e-8) out.copy(d).negate(); else out.normalize();
     return out;
   }
-  /** closest collider hit along the ray (exact sphere/capsule/box via the broadphase grid); writes _cN/_cHit; returns t or -1 */
+  /** exact test of one collider against the current ray; updates best/_cHit */
+  _colHit(c, o, d, maxT, best) {
+    let t = -1;
+    if (c.type === 'sphere') t = raySphere(o, d, c.pos, c.r);
+    else if (c.type === 'capsule') t = rayCapsule(o, d, c.a, c.b, c.r);
+    else if (c.type === 'box') { this._ray.set(o, d); if (this._ray.intersectBox(c.box, this._p)) t = this._p.distanceTo(o); }
+    if (t >= 0 && t <= maxT && (best < 0 || t < best)) { this._cHit = c; return t; }
+    return best;
+  }
+  /** closest collider hit along the ray; writes _cN/_cHit; returns t or -1.
+   *  Amanatides-Woo DDA straight over the collider grid: visits only the cells the ray actually crosses and stops at the
+   *  first cell that can still contain a nearer hit. (colliders.query's radius sweep re-tested overlapping cells segment
+   *  after segment and deduped with an O(n^2) includes — that was ~60% of a rifle ray's CPU in a forest.) */
   _rayColliders(o, d, maxT) {
-    const cols = this.game.world?.colliders; if (!cols || !cols.query) return -1;
-    let best = -1; const q = this._q, seen = this._seen, hxz = Math.hypot(d.x, d.z);
-    seen.clear();                                            // loose broadphase returns the same colliders segment after segment: exact-test each once per ray
-    for (let s = 0; s < maxT; s += 24) {
-      const e = Math.min(maxT, s + 24), m = (s + e) * 0.5;
-      cols.query(o.x + d.x * m, o.z + d.z * m, (e - s) * 0.5 * hxz + 0.05, q);
-      for (let i = 0; i < q.length; i++) {
-        const c = q[i]; let t = -1;
-        if (seen.has(c)) continue; seen.add(c);
-        if (c.type === 'sphere') t = raySphere(o, d, c.pos, c.r);
-        else if (c.type === 'capsule') t = rayCapsule(o, d, c.a, c.b, c.r);
-        else if (c.type === 'box') { this._ray.set(o, d); if (this._ray.intersectBox(c.box, this._p)) t = this._p.distanceTo(o); }
-        if (t >= 0 && t <= maxT && (best < 0 || t < best)) { best = t; this._cHit = c; }
+    const cols = this.game.world?.colliders; if (!cols || maxT <= 0) return -1;
+    const grid = cols.grid, cs = cols.cell;
+    let best = -1; const seen = this._seen; seen.clear();
+    if (!grid || !cs) {                                       // fallback: whatever broadphase the registry offers
+      const q = cols.query?.(o.x + d.x * maxT * 0.5, o.z + d.z * maxT * 0.5, maxT * 0.5 + 0.05, this._q);
+      if (q) for (let i = 0; i < q.length; i++) best = this._colHit(q[i], o, d, maxT, best);
+    } else {
+      let cx = Math.floor(o.x / cs), cz = Math.floor(o.z / cs);
+      const sx = d.x > 0 ? 1 : d.x < 0 ? -1 : 0, sz = d.z > 0 ? 1 : d.z < 0 ? -1 : 0;
+      let tx = sx ? ((cx + (sx > 0 ? 1 : 0)) * cs - o.x) / d.x : Infinity;
+      let tz = sz ? ((cz + (sz > 0 ? 1 : 0)) * cs - o.z) / d.z : Infinity;
+      const dx = sx ? cs / Math.abs(d.x) : Infinity, dz = sz ? cs / Math.abs(d.z) : Infinity;
+      for (let guard = 0; guard < 256; guard++) {
+        const s = grid.get(cx * 73856093 ^ cz * 19349663);
+        if (s) for (const c of s) { if (seen.has(c)) continue; seen.add(c); best = this._colHit(c, o, d, maxT, best); }
+        const next = tx < tz ? tx : tz;                        // t where the ray leaves this cell
+        if (next > maxT || (best >= 0 && best <= next)) break;
+        if (tx < tz) { cx += sx; tx += dx; } else { cz += sz; tz += dz; }
       }
-      if (best >= 0 && best <= e) break;
     }
     if (best >= 0) {
       const c = this._cHit, p = this._p.copy(o).addScaledVector(d, best), n = this._cN;
@@ -538,9 +558,9 @@ export class Combat {
     p.color.set(visual?.color ?? BOLT_COLORS[element] ?? ELEMENT_COLORS[element] ?? 0xffffff);
     p.size = visual?.size ?? Math.max(0.06, radius * 0.8); p.stretch = visual?.stretch ?? 3.5; p.glow = visual?.glow ?? 1;
     p.hasCore = !visual?.mesh;
-    // core: white-hot thin needle (HDR -> bloom sizzle); the saturated halo + trail carry the element read
+    // core: solid dart body, hue-locked and only lightly whitened — a near-white 3x sphere is what made bolts read as balloons
     p.color.getHSL(_hsl);
-    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.1), Math.min(0.62, _hsl.l * 1.1)).lerp(WHITE, 0.6).multiplyScalar(3.0);
+    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.15), Math.min(0.58, _hsl.l)).lerp(WHITE, 0.3).multiplyScalar(1.9);
     if (visual?.mesh) { p.mesh = visual.mesh; p.node.add(visual.mesh); }
     this.game.scene.add(p.node);
     if (visual?.trail ?? true) p.trail = this.game.vfx?.attach?.('spark-trail', p.node, { color: p.color.getHex(), element, size: p.size }) ?? null;
@@ -620,11 +640,11 @@ export class Combat {
     let ci = 0;
     for (let i = 0; i < live.length; i++) {
       const p = live[i], gi = i * 3;
-      if (p.hasCore) { const s = p.size * 0.55; this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.7))); this.coreMesh.setColorAt(ci, p.coreColor); ci++; }
+      if (p.hasCore) { const s = p.size * 0.45; this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++; }
       this._gPos[gi] = p.position.x; this._gPos[gi + 1] = p.position.y; this._gPos[gi + 2] = p.position.z;
       this._gVel[gi] = p.velocity.x; this._gVel[gi + 1] = p.velocity.y; this._gVel[gi + 2] = p.velocity.z;
-      this._gSize[i] = p.size * 1.25 * p.glow;
-      this._gCol[gi] = p.color.r * 2.4 * p.glow; this._gCol[gi + 1] = p.color.g * 2.4 * p.glow; this._gCol[gi + 2] = p.color.b * 2.4 * p.glow;
+      this._gSize[i] = p.size * 1.3 * p.glow;
+      this._gCol[gi] = p.color.r * 1.5 * p.glow; this._gCol[gi + 1] = p.color.g * 1.5 * p.glow; this._gCol[gi + 2] = p.color.b * 1.5 * p.glow;
     }
     this.coreMesh.count = ci; this.coreMesh.visible = ci > 0;
     this.glowMesh.visible = live.length > 0; this.glowMesh.geometry.instanceCount = live.length;
@@ -655,16 +675,19 @@ export class Combat {
     return out.set(dx / x, tan, dz / x).normalize();
   }
   /** deterministic mortar acceptance test: spawns a dummy `dist` m ahead, lobs a solar mortar exactly onto its chest.
-   *  eval `game.combat.testMortar(25)`, wait ~3 s, then the dummy's health < maxHealth proves splash-on-target. */
-  testMortar(dist = 25, speed = 24, gravity = 12) {
+   *  eval `game.combat.testMortar(25)` -> { dummy, proj, eta } ; wait > eta seconds, then dummy.health < dummy.maxHealth
+   *  proves splash-on-target (gravity + ballistic aim + explode + occlusion all agreeing). ~2.2 s at the defaults. */
+  testMortar(dist = 25, speed = 34, gravity = 30) {
     const pl = this.game.player, yaw = pl?.yaw ?? 0, px = pl?.position.x ?? 0, pz = pl?.position.z ?? 0;
     const dummy = this.spawnDummy({ x: px - Math.sin(yaw) * dist, z: pz - Math.cos(yaw) * dist });
     const oy = (this.game.terrain?.heightAt?.(px, pz) ?? 0) + 1.6;
-    const dir = this.aimBallistic(this._t2.set(px, oy, pz), dummy.position, speed, gravity, true);
+    const org = this._t2.set(px, oy, pz);
+    const dir = this.aimBallistic(org, dummy.position, speed, gravity, true);
     if (!dir) return null;
-    const proj = this.projectile({ origin: this._t2.set(px, oy, pz), dir, speed, gravity, damage: 90, element: 'solar',
-      explode: { radius: 4.5, damage: 90 }, life: 15, source: 'mortar-test', visual: { size: 0.2 } });
-    return { dummy, proj };
+    const proj = this.projectile({ origin: org, dir, speed, gravity, damage: 90, element: 'solar',
+      explode: { radius: 4.5, damage: 90 }, life: 15, source: 'mortar-test', visual: { size: 0.22 } });
+    const hz = Math.hypot(dir.x, dir.z) * speed;                       // ground speed -> flight time to the target
+    return { dummy, proj, eta: +(Math.hypot(dummy.position.x - px, dummy.position.z - pz) / Math.max(1e-3, hz)).toFixed(2) };
   }
 
   update(dt, t) {

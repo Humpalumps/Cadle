@@ -20,8 +20,10 @@ export const DEFS = {
   },
   hound: {
     name: 'Aether Hound', element: 'arc', role: 'melee', flying: false, scale: 1.45,
-    health: 140, shield: 0, damage: 9, speed: 8.5, turn: 5, accel: 22,
-    perception: 34, fov: 2.4, attackRange: 2.6, attackWindup: 0.38, attackCooldown: 1.2, attackRecover: 0.3, lungeSpeed: 7, standoff: 2.35,
+    health: 140, shield: 0, damage: 8, speed: 8.5, turn: 5, accel: 22,
+    // attackRange (3.2) > standoff (2.2) by design: the bite starts from inside the dance band, so a circling hound
+    // commits several lunges per 10 s instead of orbiting forever. Pack rate is throttled by Enemies.meleeToken.
+    perception: 34, fov: 2.4, attackRange: 3.2, attackWindup: 0.38, attackCooldown: 1.35, attackRecover: 0.28, lungeSpeed: 7, standoff: 2.2,
     stagger: 0.16, staggerTime: 0.45, pack: true,
     radius: 0.55, height: 1.25, center: 1.08, weakPoints: [{ bone: 'head', radius: 0.27, mult: 2.0, off: [0, 0.02, 0.1] }],
     palette: [[0x66d9ff, 0xffffff], [0x7fd8ff, 0xdfe6f0], [0xb070ff, 0xe8dcff]], glow: 1.9, rim: 0.65,

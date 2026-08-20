@@ -126,6 +126,21 @@ One Workflow call fans out one agent per piece; each piece runs `critic → (fix
 
 Gotcha found while building it: `PostFX.update()` re-applies `enabled` from `this.q.*` every frame, so runtime `pass.enabled = false` toggles are silently reverted — bisect via `postfx.q.taa/ao/godrays` instead.
 
+## 5d. Why the blob / mouse bugs kept coming back — and the mechanism that stops them (2026-08-20)
+
+**Root cause was structural, not a bad tune.** Each recurrence had a DIFFERENT source (flower-head emissive -> wisp glow -> grass tip specular -> grass rim emissive), because two forces kept regenerating it:
+1. *The critic loop rewards glow.* Critics legitimately ask for "backlit sheen", "low-sun rim", "readable flowers", "the field goes black at golden hour". Builders satisfy that the easy way: add emissive. On sub-pixel geometry that is the bug.
+2. *Prose rules are followed literally.* A decree naming flowers and roughness did not stop a builder adding a brand-new emissive rim path.
+
+**The physics:** a blade is smaller than a pixel at distance, so any value that can reach the bloom threshold (~1.2) flickers on/off as wind and camera move; bloom smears each flicker into a floating ball. A RELATIVE clamp (`min(x, col*0.75)`) does not fix it - a bright blade colour raises the ceiling too. Hence an ABSOLUTE ceiling.
+
+**Mechanism now in place (three layers, in order of strength):**
+- `node tools/invariants.mjs` - source greps, ~1 s, no server: single pointer-lock path (`Input.lock`), grass absolute emissive ceiling <= 0.25, grass tip roughness >= 0.6. **Verified by injecting both regressions: it catches them with the exact reason, and passes when restored.** This is the layer that survives contention and busy waves.
+- `tools/blobcheck.py` - blob detection rewritten: ANY hue (the old test was near-white only, so blue aether blobs walked through) and TEMPORAL flash detection across bursts (the old test used single shots, so flashing blobs appeared between frames). Gate now captures 8-frame bursts at 13/15/17.5/23 h, standing and walking, enemies present and cleared.
+- CLAUDE.md **architectural law**: ground cover is never emissive; rim/backlight goes in `reflectedLight.directDiffuse` (respects exposure, cannot bloom). Critics are told that asking for more glow on ground cover is asking for the bug back.
+
+Same shape for pointer lock: the fix decayed whenever a builder wrote their own `requestPointerLock` (which can REJECT with `unadjustedMovement`, and which Chrome blocks for ~1.3 s after an exit). Now there is one path, and the invariant check fails the build if anything else calls it.
+
 ## 6. Gotchas learned the hard way
 
 - **Bash heredocs > ~5 KB fail on this machine** (`unexpected EOF`). Use the Write tool for anything long; heredocs only for short files.

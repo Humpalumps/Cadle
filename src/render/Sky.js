@@ -13,17 +13,22 @@ import * as THREE from 'three';
  *   sky.moonColor (Color, linear moonlight color*strength), sky.moonIntensity (0..1), sky.sunElevation (radians)
  *   sky.cloudCover (null = automatic per time of day, or 0..1 override), sky.dome (the dome Mesh; on layers 0 and 1 -> a CubeCamera on layer 1 sees only sky+sun for env probes)
  *   sky.sunDiscColor (Color, linear HDR radiance of the visible sun disc, already extinction-tinted)
+ *   sky.cloudScale (0.35..1 render scale of the cloud pass; set + call resize() to change), sky.windSpeed (m/s cloud drift)
  *
- * How it works: a tiny sky-view LUT (256x128, half float) is ray-marched on the GPU (Rayleigh + Mie + ozone, planet shadow, fake multi-scatter,
- * art-directed twilight glow / belt of venus / civil-twilight dome / indigo night floor) whenever the sun moves; the dome shader just looks it up,
- * then layers per-pixel: sun disc+glare, moon (phase-lit, maria+craters), stars (clustered hash cells, pixel-crisp, halos on the brightest) +
- * milky way, aether aurora ribbons, fibrous cirrus, and a 2.5D stratified-jitter cumulus march. Cumulus columns use an f² height profile
- * (contour at height f is H>f², so smooth coverage peaks become flat-based hemispherical domes, not cones), worley-lump modulated tops,
- * rim-only erosion (opaque cores, crumbly cauliflower edges), 2-probe beer/powder self-shadow (white-gold lit tops vs dark bellies),
- * a forward-scatter silver-lining rim, low-freq macro coverage banks, and a distance dissolve so the layer melts into haze instead of
- * saturating into a wall at the shell tangent. Cloud noise is a one-time
- * GPU-baked tileable 512² RGBA texture (perlin fbm / perlin-worley / detail / cirrus). The same atmosphere model is ported to JS (few rays) to
- * produce the CPU-side colors (sky/horizon/fog/ambient/ground/sun) so Lighting/Water/Grass/fog match what the dome shows.
+ * How it works:
+ *  - a tiny sky-view LUT (256x128, half float) is ray-marched on the GPU (Rayleigh + Mie + ozone, planet shadow, fake multi-scatter, art-directed
+ *    twilight glow / belt of venus / civil-twilight dome / indigo night floor) whenever the sun moves; the dome shader just looks it up.
+ *  - CLOUDS are a real volumetric raymarch (Horizon/Nubis-style, technique per TECHNIQUES.md #8 leoawen/volumetric-clouds, MIT) rendered into a
+ *    HALF-RES RGBA16F target once per frame and composited into the dome with a 4-tap tent upsample (kills march dither, keeps the budget).
+ *    Density = tileable 96³ perlin-worley shape texture (GPU-baked once) remapped by a 2D weather map (coverage + cloud-type/top-height) through a
+ *    cumulus height gradient (hard flat base, rounded cauliflower top), eroded by a 32³ worley detail texture (wispy at the base, billowy on top),
+ *    sheared downwind with altitude. Lighting = 4-tap light march -> optical depth -> 2-octave multi-scatter beer + powder + dual-lobe HG phase, so
+ *    tops are white-gold, bellies dark, and rims toward the sun get a real silver lining. Curved shell geometry + aerial perspective melt the layer
+ *    into the haze at the horizon instead of stacking into a wall.
+ *  - the dome adds, per pixel: sun disc+glare, moon (phase-lit, maria+craters), stars (clustered hash cells, pixel-crisp, halos on the brightest) +
+ *    milky way, aether aurora ribbons, then the cloud composite, then horizon haze.
+ *  - the same atmosphere model is ported to JS (few rays) to produce the CPU-side colors (sky/horizon/fog/ambient/ground/sun) so Lighting/Water/Grass/fog
+ *    match what the dome shows.
  */
 
 const PI = Math.PI, DEG = PI / 180;
@@ -33,6 +38,8 @@ const BETA_R = [5.802e-6, 13.558e-6, 33.1e-6], BETA_MS = 2.6e-6, BETA_MA = 2.4e-
 const SUN_E = 22.0;         // sun radiance scale (linear HDR, tuned for ACES @ exposure 1)
 const MS = 0.22;            // fake multiple-scatter strength
 const OBS_H = 150;          // observer altitude used by the model (player height changes nothing visible)
+const CLOUD_TILE = 5500;    // meters per repeat of the 3D shape texture
+const WIND = [0.93, 0.37];  // cloud drift direction (normalized-ish)
 
 const ATMO_GLSL = /* glsl */`
 const float Rg = 6360e3, Rt = 6460e3, HR = 8000.0, HM = 1200.0, PI = 3.14159265;
@@ -108,7 +115,7 @@ void main() {
   gl_FragColor = vec4(L, 1.0);
 }`;
 
-// ---------------- one-time tileable noise bake (512² RGBA8, mips): R perlin fbm, G perlin-worley, B detail fbm, A cirrus fbm ----------------
+// ---------------- one-time tileable 2D noise bake (512² RGBA8, mips): R perlin fbm, G perlin-worley, B detail fbm, A cirrus/weather fbm ----------------
 const NOISE_FRAG = /* glsl */`
 uniform float uSeed; varying vec2 vUv;
 vec2 h2(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))) + uSeed; return -1.0 + 2.0 * fract(sin(p) * 43758.5453123); }
@@ -139,7 +146,193 @@ void main() {
   gl_FragColor = vec4(shape, puff, det, cir);
 }`;
 
+// ---------------- one-time tileable 3D cloud noise bake (rendered layer by layer into a WebGL3DRenderTarget) ----------------
+// SHAPE (96³ RGBA8): R = perlin-worley, G/B/A = worley fbm at 3 octaves  -> classic Horizon/Nubis shape packing
+// DETAIL (32³ RGBA8): worley fbm at 3 rising frequencies (cauliflower crumb)
+const NOISE3D_FRAG = /* glsl */`
+precision highp float;
+uniform float uSlice, uSeed, uMode; varying vec2 vUv;
+vec3 h33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973) + uSeed); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+// periodic 3D gradient noise
+float gn3(vec3 p, float P) {
+  vec3 i = floor(p), f = fract(p); vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float n = 0.0;
+  for (int k = 0; k < 8; k++) {
+    vec3 o = vec3(float(k & 1), float((k >> 1) & 1), float(k >> 2));
+    vec3 g = normalize(h33(mod(i + o, P)) * 2.0 - 1.0);
+    float w = mix(1.0 - u.x, u.x, o.x) * mix(1.0 - u.y, u.y, o.y) * mix(1.0 - u.z, u.z, o.z);
+    n += w * dot(g, f - o);
+  }
+  return n * 1.6;
+}
+float pfbm(vec3 p, float P) { float s = 0.0, a = 0.5, n = 0.0; for (int i = 0; i < 4; i++) { s += a * gn3(p, P); n += a; p *= 2.0; P *= 2.0; a *= 0.5; } return 0.5 + 0.5 * s / n; }
+float wor(vec3 p, float P) {
+  vec3 i = floor(p), f = fract(p); float m = 4.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(float(x), float(y), float(z)); vec3 o = h33(mod(i + g, P));
+    m = min(m, dot(g + o - f, g + o - f));
+  }
+  return sqrt(m);
+}
+float iwf(vec3 p, float P) { return 1.0 - (wor(p, P) * 0.625 + wor(p * 2.0, P * 2.0) * 0.25 + wor(p * 4.0, P * 4.0) * 0.125); }
+void main() {
+  vec3 uv = vec3(vUv, uSlice);
+  if (uMode < 0.5) {
+    float per = pfbm(uv * 4.0, 4.0);
+    float w0 = iwf(uv * 4.0, 4.0);
+    float pw = clamp(w0 + per * (1.0 - w0), 0.0, 1.0);                // perlin-worley (Nubis): billowy worley base, perlin fills the gaps
+    gl_FragColor = vec4(pw, iwf(uv * 4.0 + 0.33, 4.0), iwf(uv * 8.0 + 0.71, 8.0), iwf(uv * 14.0 + 0.17, 14.0));
+  } else {
+    gl_FragColor = vec4(iwf(uv * 3.0, 3.0), iwf(uv * 6.0 + 0.41, 6.0), iwf(uv * 11.0 + 0.83, 11.0), 1.0);
+  }
+}`;
+
 const QUAD_VERT = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+// ---------------- volumetric cloud pass (half res, own target) ----------------
+// Technique after leoawen/volumetric-clouds (MIT) + Schneider/Nubis "The Real-Time Volumetric Cloudscapes of Horizon Zero Dawn" (public course notes).
+const CLOUD_COMMON = /* glsl */`
+const float PI = 3.14159265;
+const float CURV_R = 2.6e5;          // fake planet radius: the layer bends down and meets the horizon at ~26 km
+float hg(float mu, float g) { return (1.0 - g * g) / (4.0 * PI * pow(max(1.0 + g * g - 2.0 * g * mu, 1e-4), 1.5)); }
+float shell(float camY, vec3 d, float H) { float oc = camY + CURV_R; float b = oc * d.y; float c = oc * oc - (CURV_R + H) * (CURV_R + H); return -b + sqrt(max(b * b - c, 0.0)); }
+float altAt(float camY, vec3 d, float t) { float oc = camY + CURV_R; vec3 q = vec3(d.x * t, oc + d.y * t, d.z * t); return length(q) - CURV_R; }
+float rmp(float v, float a, float b) { return clamp((v - a) / max(b - a, 1e-5), 0.0, 1.0); }
+`;
+
+const CLOUD_FRAG = /* glsl */`
+precision highp float;
+precision highp sampler3D;
+uniform sampler2D uLut, uNoise;
+uniform sampler3D uShape, uDetail;
+uniform vec3 uSunDir, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot, uBeltCol;
+uniform float uCamY, uCloudCover, uCirrusCover, uBelt, uCloudH0, uCloudH1, uWindT, uTileM, uSunEl;
+uniform vec2 uTan, uWindV, uShearV;
+uniform vec3 uCamPos, uThr;   // x = clear-sky iso threshold, y = full-coverage threshold, z = soft width
+uniform mat3 uCamRot;
+varying vec2 vUv;
+` + CLOUD_COMMON + /* glsl */`
+
+vec3 lutSky(vec3 d) {
+  vec2 sh = normalize(uSunDir.xz + vec2(1e-4, 0.0)), dh = normalize(d.xz + vec2(1e-4, 0.0));
+  float az = acos(clamp(dot(sh, dh), -1.0, 1.0)) / PI;
+  float el = asin(clamp(d.y, -1.0, 1.0));
+  float v = 0.5 + 0.5 * sign(el) * sqrt(abs(el) / (0.5 * PI));
+  return texture2D(uLut, vec2(az, v)).rgb;
+}
+
+// weather map: x = local coverage, y = cloud type (0 = flat pancake, 1 = towering castle)
+vec2 weather(vec2 xz) {
+  vec2 uv = (xz + uWindV * 0.55) / 38000.0;
+  float m = texture2D(uNoise, uv + 0.21).a;
+  float m2 = texture2D(uNoise, uv * 2.6 + 0.57).r;
+  float cov = clamp(uCloudCover * (0.30 + 1.45 * m * m) * (0.66 + 0.62 * m2), 0.0, 1.0);
+  return vec2(cov, clamp(m * 0.85 + m2 * 0.45, 0.0, 1.0));
+}
+
+// density at a world point. hi = also fetch the erosion detail (skipped for light-march taps)
+float cloudDens(vec3 p, vec2 wth, bool hi) {
+  float hf = clamp((p.y - uCloudH0) / (uCloudH1 - uCloudH0), 0.0, 1.0);
+  vec3 wp = p;
+  wp.xz += uWindV + uShearV * hf;              // drift + downwind lean of the tops
+  wp.y += uWindT * 3.5;                        // slow vertical evolution (clouds boil, not just slide)
+  vec4 s = texture(uShape, wp / uTileM);
+  float w = s.g * 0.625 + s.b * 0.25 + s.a * 0.125;
+  float base = mix(s.r, s.r * w, 0.55);                     // worley octaves carve lumps into the perlin-worley mass
+  // cumulus vertical profile: hard flat base, rounded top whose ceiling varies per region
+  float topH = mix(0.26, 1.0, wth.y);
+  float grad = smoothstep(0.0, 0.05, hf) * smoothstep(topH, topH * 0.40, hf);
+  float thr = mix(uThr.x, uThr.y, wth.x);                   // coverage -> iso-threshold: crisp silhouettes, big blue gaps
+  float d = rmp(base * grad, thr, thr + uThr.z);
+  if (d <= 0.0) return 0.0;
+  if (hi) {
+    vec3 dt = texture(uDetail, wp / (uTileM * 0.085)).rgb;
+    float df = dt.r * 0.625 + dt.g * 0.25 + dt.b * 0.125;
+    float m = mix(1.0 - df, df, clamp(hf * 3.0, 0.0, 1.0));   // wispy shredded base, billowy cauliflower top
+    d = rmp(d, m * 0.42, 1.0);
+  }
+  return d;
+}
+
+float lightTau(vec3 p, vec2 wth, vec3 L) {
+  float tau = 0.0, d = 0.0;
+  for (int i = 0; i < LIGHT_STEPS; i++) {
+    float sl = 55.0 * pow(2.0, float(i));
+    d += sl;
+    tau += cloudDens(p + L * d, wth, false) * sl;
+  }
+  tau += cloudDens(p + L * 2200.0, wth, false) * 900.0;       // one far tap so cloud banks shadow each other
+  return tau;
+}
+
+void main() {
+  vec3 d = normalize(uCamRot * vec3((vUv * 2.0 - 1.0) * uTan, -1.0));
+  vec3 acc = vec3(0.0); float T = 1.0;
+  float lmu = dot(d, uCloudLightDir);
+  // dual-lobe phase: broad back lobe + forward lobe (clamped — the raw HG spike near the sun would blow the body term out)
+  float phase = clamp(mix(hg(lmu, -0.22), hg(lmu, 0.78), 0.55) * 4.0 * PI, 0.30, 2.8);
+  float fwd = min(hg(lmu, 0.90) * 4.0 * PI, 16.0);            // silver lining: only thin sunward rims get this
+  // pink under-lighting for bellies opposite a low sun (belt-of-venus bounce)
+  vec2 sh = normalize(uSunDir.xz + vec2(1e-4, 0.0)), dh = normalize(d.xz + vec2(1e-4, 0.0));
+  float anti = clamp(-dot(sh, dh), 0.0, 1.0);
+  vec3 ambBot = mix(uCloudAmbBot, uBeltCol, uBelt * anti);
+  vec3 L = uCloudLightDir; if (L.y < 0.07) L = normalize(vec3(L.x, 0.07, L.z));
+
+  if (d.y > -0.035) {
+    float t0 = shell(uCamY, d, uCloudH0), t1 = min(shell(uCamY, d, uCloudH1), 46000.0);
+    if (t1 > t0 && t0 < 44000.0) {
+      float span = t1 - t0;
+      float dt = span / float(CLOUD_STEPS);
+      // white-noise jitter (no screen-space structure -> the 4-tap tent upsample erases it; IGN/dither made a crosshatch weave)
+      float jit = fract(sin(dot(vUv, vec2(12.9898, 78.233)) * 1.0) * 43758.5453);
+      vec2 wth = weather(uCamPos.xz + d.xz * (t0 + span * 0.35));
+      if (wth.x > 0.005) {
+        float sigE = 0.0075;
+        vec3 skyC = lutSky(d);
+        for (int i = 0; i < CLOUD_STEPS; i++) {
+          float t = t0 + (float(i) + jit) * dt;
+          vec3 p = vec3(uCamPos.x + d.x * t, altAt(uCamY, d, t), uCamPos.z + d.z * t);
+          float dens = cloudDens(p, wth, true);
+          if (dens > 0.003) {
+            float hf = clamp((p.y - uCloudH0) / (uCloudH1 - uCloudH0), 0.0, 1.0);
+            float tau = lightTau(p, wth, L) * sigE;
+            // 2-octave multiple scattering (Wrenninge): keeps deep cloud bodies luminous instead of grey mud
+            vec3 sun = uCloudLightCol * (exp(-tau) * phase + 0.42 * exp(-tau * 0.32) * (phase * 0.35 + 0.55));
+            sun += uCloudLightCol * fwd * 0.055 * exp(-tau * 2.0 - dens * 1.2);          // silver lining on thin sunward rims
+            float powder = 1.0 - 0.45 * exp(-dens * 7.0);                                // dark crenellations facing the light
+            vec3 amb = mix(ambBot, uCloudAmbTop, hf * hf * (0.55 + 0.45 * hf)) * (0.42 + 0.58 * (1.0 - dens));
+            vec3 S = sun * powder + amb;
+            float ext = dens * sigE;
+            float tr = exp(-ext * dt);
+            float aer = 1.0 - exp(-t * 4.2e-5);                                          // distant clouds dissolve into the haze
+            acc += T * mix(S, skyC, aer) * (1.0 - tr);
+            T *= tr;
+            if (T < 0.02) break;
+          }
+        }
+        // let the very last kilometres melt out completely (no razor wall at the shell tangent)
+        float fade = exp(-max(t0 - 16000.0, 0.0) * 9.0e-5) * smoothstep(-0.035, 0.02, d.y);
+        acc *= fade; T = 1.0 - (1.0 - T) * fade;
+      }
+    }
+  }
+
+  // ---- cirrus veil (8 km), behind the cumulus: fibrous mares' tails sheared along a fixed wind axis ----
+  if (d.y > 0.012 && T > 0.02) {
+    float tc = shell(uCamY, d, 8000.0);
+    vec2 uvc = ((d * tc).xz + uCamPos.xz + uWindV * 1.6) / 46000.0;
+    vec2 uvf = mat2(0.885, 0.466, -0.466, 0.885) * uvc;
+    float cov = texture2D(uNoise, uvc * 0.8 + 0.13).a;
+    float fib = texture2D(uNoise, uvf * vec2(0.9, 6.5)).a;
+    float fib2 = texture2D(uNoise, uvf * vec2(1.8, 14.0) + 0.41).b;
+    float cir = cov * 0.5 + fib * 0.32 + fib2 * 0.18;
+    float ca = smoothstep(0.62 - uCirrusCover * 0.14, 0.88, cir) * smoothstep(0.008, 0.12, d.y) * 0.36;
+    vec3 cc = uCloudLightCol * (0.40 + 0.20 * phase + fwd * 0.10) + uCloudAmbTop * 0.55;
+    cc = mix(cc, lutSky(d), 1.0 - exp(-tc * 1.1e-5));
+    acc += T * cc * ca; T *= 1.0 - ca;
+  }
+  gl_FragColor = vec4(acc, 1.0 - T);
+}`;
 
 // ---------------- the dome ----------------
 const DOME_VERT = /* glsl */`
@@ -147,10 +340,11 @@ varying vec3 vDir;
 void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0); gl_Position = p.xyww; }`;
 
 const DOME_FRAG = /* glsl */`
-uniform sampler2D uLut, uNoise;
-uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot, uMoonGlow, uBeltCol;
-uniform float uTime, uCamY, uCloudCover, uCirrusCover, uHaze, uAurora, uSunEl, uStarVis, uWindT, uCloudH0, uCloudH1, uBelt, uPixAng;
-uniform mat3 uStarMat;
+uniform sampler2D uLut, uNoise, uClouds;
+uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow;
+uniform float uTime, uHaze, uAurora, uStarVis, uPixAng;
+uniform vec2 uTan, uCloudTexel;
+uniform mat3 uStarMat, uCamRot;
 varying vec3 vDir;
 const float PI = 3.14159265;
 
@@ -161,7 +355,6 @@ vec3 lutSky(vec3 d) {
   float v = 0.5 + 0.5 * sign(el) * sqrt(abs(el) / (0.5 * PI));
   return texture2D(uLut, vec2(az, v)).rgb;
 }
-float hg(float mu, float g) { return (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5)); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 
 // ---- stars: hash cells on the unit sphere; pixel-crisp cores, halos only on the brightest, density clustered by low-freq noise ----
@@ -187,18 +380,6 @@ vec3 stars(vec3 sd, float px, float clus) {
   }
   return acc;
 }
-
-// ---- 2.5D cumulus slab: f² height profile turns coverage peaks into flat-based domes (not cones); lumpy tops from the worley channel ----
-const float CURV_R = 2.5e5, CL_TILE = 12000.0;
-float shell(vec3 d, float H) { float oc = uCamY + CURV_R; float b = oc * d.y; float c = oc * oc - (CURV_R + H) * (CURV_R + H); return -b + sqrt(max(b * b - c, 0.0)); }
-float cloudTop(vec2 uv, float cov) {
-  float s = texture2D(uNoise, uv).r;
-  float H = clamp((s - (1.0 - cov)) / max(cov, 0.02), 0.0, 1.0);
-  float lump = texture2D(uNoise, uv * 0.5 + 0.61 + uWindT * vec2(-0.0006, 0.0004)).g;
-  return H * (0.72 + 0.42 * lump);
-}
-float colDens(vec2 uv, float f, float cov) { return smoothstep(f * f + 0.02, f * f + 0.17, cloudTop(uv, cov)) * smoothstep(1.0, 0.80, f); }
-float cloudPhase(float mu) { return mix(hg(mu, -0.25), hg(mu, 0.72), 0.5) * 4.0 * PI; }
 
 void main() {
   vec3 d = normalize(vDir);
@@ -245,7 +426,7 @@ void main() {
     float band = exp(-pow(dot(sd, mwN) * 3.2, 2.0));
     float mwn = texture2D(uNoise, vec2(atan(sd.x, sd.z) * 0.5, sd.y * 0.9) * 1.3).a;
     float mwn2 = texture2D(uNoise, vec2(atan(sd.x, sd.z) * 1.7, sd.y * 2.3) + 0.2).r;
-    vec3 mw = mix(vec3(0.22, 0.30, 0.62), vec3(0.44, 0.36, 0.72), mwn2) * band * (0.35 + 0.9 * mwn * mwn) * 0.20;
+    vec3 mw = mix(vec3(0.20, 0.28, 0.66), vec3(0.42, 0.32, 0.86), mwn2) * band * (0.35 + 0.9 * mwn * mwn) * 0.20;
     col += (st + mw) * uStarVis * hzFade;
   }
   if (uAurora > 0.001 && d.y > 0.02) {
@@ -264,93 +445,21 @@ void main() {
       aur += ac * prof * amp;
     }
     float northW = smoothstep(-0.6, 0.3, -d.z) * 0.94 + 0.06;
-    col += aur * uAurora * 0.30 * northW * smoothstep(0.05, 0.20, d.y);   // keep curtains off the horizon (no white pleats between mountains)
+    col += aur * uAurora * 0.30 * northW * smoothstep(0.12, 0.30, d.y);   // keep curtains well clear of the horizon
   }
 
-  float lmu = dot(d, uCloudLightDir);
-  float phase = cloudPhase(lmu);
-
-  // ---- cirrus veil (8 km): fibrous mares' tails sheared along a fixed wind axis, not radial smears ----
-  if (d.y > 0.01) {
-    float tc = shell(d, 8000.0);
-    vec2 pc = (d * tc).xz;
-    vec2 uvc = (pc + vec2(uWindT * 40.0, uWindT * 13.0)) / 46000.0;
-    vec2 uvf = mat2(0.885, 0.466, -0.466, 0.885) * uvc;
-    float cov = texture2D(uNoise, uvc * 0.8 + 0.13).a;
-    float fib = texture2D(uNoise, uvf * vec2(0.9, 6.5)).a;
-    float fib2 = texture2D(uNoise, uvf * vec2(1.8, 14.0) + 0.41).b;
-    float cir = cov * 0.5 + fib * 0.32 + fib2 * 0.18;
-    float ca = smoothstep(0.62 - uCirrusCover * 0.14, 0.88, cir);
-    ca *= smoothstep(0.005, 0.11, d.y) * 0.34;
-    vec3 cc = uCloudLightCol * (0.42 + 0.22 * phase + hg(lmu, 0.82) * 4.0 * PI * 0.16) + uCloudAmbTop * 0.55;
-    float aerc = 1.0 - exp(-tc * 0.00001);
-    cc = mix(cc, sky, aerc);
-    col = mix(col, cc, ca * (1.0 - aerc * 0.6));
-  }
-
-  // ---- cumulus slab ----
-  if (d.y > -0.10) {
-    float t0 = shell(d, uCloudH0), t1 = shell(d, uCloudH1);
-    vec2 wind = vec2(uWindT * 30.0, uWindT * 11.0);
-    vec3 ld = uCloudLightDir; if (ld.y < 0.06) ld = normalize(vec3(ld.x, 0.06, ld.z));
-    vec2 lOff = ld.xz * (520.0 / CL_TILE);
-    float fL = ld.y * (520.0 / (uCloudH1 - uCloudH0));
-    // pink underlighting for cloud bellies opposite a low sun (belt of venus light)
-    vec2 sh = normalize(uSunDir.xz + vec2(1e-4, 0.0)), dh = normalize(d.xz + vec2(1e-4, 0.0));
-    float anti = clamp(-dot(sh, dh), 0.0, 1.0);
-    vec3 ambBot = mix(uCloudAmbBot, uBeltCol, uBelt * anti) * 0.52;
-    // macro coverage banks (clear lanes / cloud streets): low-freq, one fetch mid-slab is enough
-    vec2 uvM = ((d * (0.5 * (t0 + t1))).xz + wind) / CL_TILE;
-    float macro = texture2D(uNoise, uvM * 0.14 + 0.37).a;
-    float cov = clamp(uCloudCover * (0.55 + 0.95 * macro), 0.0, 1.0);
-    // distance coverage taper: far clouds shrink and break up before the shell tangent can merge them into a wall
-    cov *= exp(-max(t0 - 9000.0, 0.0) * 7e-5);
-    // interleaved-gradient jitter (neighbor-correlated -> fine weave, not static) + per-step golden-ratio decorrelation
-    float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    float T = 1.0; vec3 acc = vec3(0.0);
-    float sig = 28.0 / float(CLOUD_STEPS);
-    float fwd = hg(lmu, 0.86) * 4.0 * PI;
-    float phC = min(phase, 2.6);   // near-sun forward scatter capped for the body term (the rim term keeps full fwd) so backlit clouds keep structure
-    for (int i = 0; i < CLOUD_STEPS; i++) {
-      float f = (float(i) + fract(jit + float(i) * 0.618034)) / float(CLOUD_STEPS);
-      float t = mix(t0, t1, f);
-      vec2 uv = ((d * t).xz + wind) / CL_TILE;
-      float f2 = f * f;
-      float s = texture2D(uNoise, uv).r;
-      float H = clamp((s - (1.0 - cov)) / max(cov, 0.02), 0.0, 1.0);
-      if (H * 1.14 <= f2 + 0.02) continue;
-      float lump = texture2D(uNoise, uv * 0.5 + 0.61 + uWindT * vec2(-0.0006, 0.0004)).g;
-      H *= 0.72 + 0.42 * lump;
-      float dn = smoothstep(f2 + 0.02, f2 + 0.17, H) * smoothstep(1.0, 0.80, f);
-      if (dn <= 0.01) continue;
-      // crumbly cauliflower rims: erode edges only (cores stay opaque); detail drifts vs base for slow morphing
-      float det = texture2D(uNoise, uv * 1.9 + vec2(0.61, 0.43) + uWindT * vec2(0.0011, -0.0007)).g;
-      float det2 = texture2D(uNoise, uv * 6.1 + vec2(0.13, 0.77)).b;
-      float ero = (1.0 - det) * 0.55 + (0.5 - det2) * 0.22;
-      dn = clamp((dn - ero * (1.0 - dn)) * 1.9, 0.0, 1.0);
-      if (dn <= 0.012) continue;
-      // self-shadow: 2 density probes along the light + depth under the local cloud top
-      float dL1 = colDens(uv + lOff, f + fL, cov);
-      float dL2 = colDens(uv + lOff * 2.2, f + fL * 2.2, cov);
-      float depthTop = clamp((sqrt(H) - f) * 3.5, 0.0, 1.0);
-      float tau = dL1 * 2.8 + dL2 * 1.8 + depthTop * 3.1 + dn * 0.5;
-      float beer = exp(-tau) + 0.20 * exp(-tau * 0.20);          // multi-scatter floor
-      float powder = 1.0 - 0.72 * exp(-dn * 5.0);
-      // silver lining: unoccluded rims facing the sun catch strong forward scatter
-      vec3 lit = uCloudLightCol * (beer * powder * phC * 1.25 + exp(-(dL1 * 3.0 + dn * 1.2)) * fwd * 0.22);
-      float topness = exp(-depthTop * 1.8);
-      vec3 amb = mix(ambBot * (0.90 + 0.20 * det), uCloudAmbTop * (1.45 + 0.35 * det2), topness * (0.35 + 0.65 * det));
-      vec3 c = lit + amb;
-      float a = 1.0 - exp(-pow(dn, 1.2) * sig);                  // opaque cores, soft rims
-      float aer = 1.0 - exp(-t * 0.00005);                       // far clouds take on the haze color
-      c = mix(c, sky, aer);
-      acc += T * a * c; T *= 1.0 - a;
-      if (T < 0.02) break;
+  // ---- clouds: half-res volumetric pass, 4-tap tent upsample (removes the march jitter) ----
+  vec3 cam = vec3(dot(d, uCamRot[0]), dot(d, uCamRot[1]), dot(d, uCamRot[2]));   // = transpose(rot)*d (no transpose() in ESSL1)
+  vec4 cl = vec4(0.0);
+  if (cam.z < -1e-4) {
+    vec2 cuv = (cam.xy / -cam.z) / uTan * 0.5 + 0.5;
+    if (cuv.x > 0.0 && cuv.x < 1.0 && cuv.y > 0.0 && cuv.y < 1.0) {
+      vec2 o = uCloudTexel * 0.5;
+      cl = 0.25 * (texture2D(uClouds, cuv + vec2(o.x, o.y)) + texture2D(uClouds, cuv + vec2(-o.x, o.y))
+                 + texture2D(uClouds, cuv + vec2(o.x, -o.y)) + texture2D(uClouds, cuv + vec2(-o.x, -o.y)));
     }
-    // per-pixel distance dissolve: the whole slab contribution fades before the shell-tangent wall can saturate
-    float hzc = smoothstep(-0.01, 0.10, d.y) * exp(-max(t0 - 8000.0, 0.0) * 5e-5);
-    col = col * (1.0 - (1.0 - T) * hzc) + acc * hzc;
   }
+  col = col * (1.0 - cl.a) + cl.rgb;
 
   // ---- horizon haze (tinted by the actual sky at that azimuth: amber toward a low sun, cool away) & ground ----
   float hz = exp(-max(d.y, 0.0) * 11.0) * uHaze;
@@ -360,12 +469,19 @@ void main() {
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
   if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
-  col += sunDisc * disc * limb * 60.0 * sunUp;
+  col += sunDisc * disc * limb * 60.0 * sunUp * (1.0 - cl.a);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
 // GLSL-identical smoothstep (works with reversed edges, like the shader uses)
 function sstep(e0, e1, x) { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t); }
+
+const CLOUD_Q = {
+  low: { scale: 0.42, steps: 20, light: 2 },
+  medium: { scale: 0.50, steps: 32, light: 3 },
+  high: { scale: 0.55, steps: 48, light: 4 },
+  ultra: { scale: 0.70, steps: 64, light: 4 },
+};
 
 export class Sky {
   constructor(game) {
@@ -385,6 +501,7 @@ export class Sky {
     this.sunIntensity = 1; this.moonIntensity = 0; this.night = 0; this.fogDensity = 0.0012; this.sunMesh = null;
     this.sunElevation = 0.5;
     this.cloudCover = null;     // null = automatic by time of day
+    this.windSpeed = 38;        // m/s cloud drift (game-fast: an FF14 sky is never still)
     this._dirty = true; this._lastSunEl = 99; this._lastCover = null;
     this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
     this._c = [new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()];
@@ -395,34 +512,70 @@ export class Sky {
     const { scene, renderer, quality } = this.game;
     scene.background = null;
     scene.fog = new THREE.FogExp2(this.fogColor.getHex(), this.fogDensity);
+    const cq = CLOUD_Q[quality] ?? CLOUD_Q.high;
+    this.cloudScale = cq.scale;
 
-    // --- noise bake (GPU, once) ---
-    this.noiseRT = new THREE.WebGLRenderTarget(512, 512, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false });
-    this.noiseRT.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     const quadGeo = new THREE.PlaneGeometry(2, 2);
     const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const nScene = new THREE.Scene();
-    nScene.add(new THREE.Mesh(quadGeo, new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: NOISE_FRAG, uniforms: { uSeed: { value: (this.game.seed % 997) * 0.013 } }, depthTest: false, depthWrite: false })));
+    const bake = (mat) => { const s = new THREE.Scene(); s.add(new THREE.Mesh(quadGeo, mat)); return s; };
+
+    // --- 2D noise bake (weather map, cirrus, moon surface, star clustering) ---
+    this.noiseRT = new THREE.WebGLRenderTarget(512, 512, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false });
+    this.noiseRT.texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    const nScene = bake(new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: NOISE_FRAG, uniforms: { uSeed: { value: (this.game.seed % 997) * 0.013 } }, depthTest: false, depthWrite: false }));
     renderer.setRenderTarget(this.noiseRT); renderer.render(nScene, quadCam); renderer.setRenderTarget(null);
+
+    // --- 3D cloud noise bake (shape 96³, detail 32³), one draw per z slice ---
+    const t3 = performance.now();
+    const mk3 = (n) => {
+      const rt = new THREE.WebGL3DRenderTarget(n, n, n, { format: THREE.RGBAFormat, type: THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false, generateMipmaps: false });
+      const tx = rt.texture;
+      tx.minFilter = tx.magFilter = THREE.LinearFilter;
+      tx.wrapS = tx.wrapT = tx.wrapR = THREE.RepeatWrapping;
+      tx.generateMipmaps = false;
+      return rt;
+    };
+    this.shapeRT = mk3(96); this.detailRT = mk3(32);
+    const n3u = { uSlice: { value: 0 }, uSeed: { value: (this.game.seed % 733) * 0.0017 }, uMode: { value: 0 } };
+    const n3Scene = bake(new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: NOISE3D_FRAG, uniforms: n3u, glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false }));
+    for (const [rt, n, mode] of [[this.shapeRT, 96, 0], [this.detailRT, 32, 1]]) {
+      n3u.uMode.value = mode;
+      for (let z = 0; z < n; z++) { n3u.uSlice.value = (z + 0.5) / n; renderer.setRenderTarget(rt, z); renderer.render(n3Scene, quadCam); }
+      console.log('[sky] bake mode', mode, (performance.now() - t3).toFixed(0), 'ms');
+    }
+    renderer.setRenderTarget(null);
+    console.log('[sky] 3D cloud noise baked in', (performance.now() - t3).toFixed(0), 'ms');
 
     // --- sky-view LUT ---
     this.lutRT = new THREE.WebGLRenderTarget(256, 128, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping, depthBuffer: false, stencilBuffer: false, generateMipmaps: false });
     this.lutMat = new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: LUT_FRAG, depthTest: false, depthWrite: false,
       uniforms: { uSunDir: { value: this.sunDir }, uSunE: { value: SUN_E }, uMs: { value: MS }, uObsH: { value: OBS_H }, uSunEl: { value: 0.5 } } });
-    this.lutScene = new THREE.Scene(); this.lutScene.add(new THREE.Mesh(quadGeo, this.lutMat)); this.lutCam = quadCam;
+    this.lutScene = bake(this.lutMat); this.lutCam = quadCam;
 
-    // --- dome ---
-    const steps = { low: 6, medium: 12, high: 20, ultra: 26 }[quality] ?? 20;
+    // --- shared uniforms (cloud pass + dome read the same objects) ---
+    this.cloudRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping, depthBuffer: false, stencilBuffer: false, generateMipmaps: false });
     this.uniforms = {
-      uLut: { value: this.lutRT.texture }, uNoise: { value: this.noiseRT.texture },
+      uLut: { value: this.lutRT.texture }, uNoise: { value: this.noiseRT.texture }, uClouds: { value: this.cloudRT.texture },
+      uShape: { value: this.shapeRT.texture }, uDetail: { value: this.detailRT.texture },
       uSunDir: { value: this.sunDir }, uMoonDir: { value: this.moonDir }, uSunDisc: { value: this.sunDiscColor }, uMoonCol: { value: new THREE.Color() }, uMoonGlow: { value: new THREE.Color() },
       uFogColor: { value: this.fogColor }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
       uCloudAmbTop: { value: new THREE.Color() }, uCloudAmbBot: { value: new THREE.Color() }, uBeltCol: { value: new THREE.Color() },
-      uTime: { value: 0 }, uWindT: { value: 0 }, uCamY: { value: 0 }, uCloudCover: { value: 0.5 }, uCirrusCover: { value: 0.5 }, uHaze: { value: 0.3 }, uAurora: { value: 0 },
+      uTime: { value: 0 }, uWindT: { value: 0 }, uCamY: { value: 0 }, uCamPos: { value: new THREE.Vector3() },
+      uCloudCover: { value: 0.5 }, uCirrusCover: { value: 0.5 }, uHaze: { value: 0.3 }, uAurora: { value: 0 },
       uSunEl: { value: 0.5 }, uStarVis: { value: 0 }, uStarMat: { value: new THREE.Matrix3() },
-      uCloudH0: { value: 1500 }, uCloudH1: { value: 2900 }, uBelt: { value: 0 }, uPixAng: { value: 0.001 },
+      uCloudH0: { value: 1500 }, uCloudH1: { value: 4200 }, uBelt: { value: 0 }, uPixAng: { value: 0.001 },
+      uTileM: { value: CLOUD_TILE }, uWindV: { value: new THREE.Vector2() }, uShearV: { value: new THREE.Vector2() },
+      uThr: { value: new THREE.Vector3(0.80, 0.16, 0.26) },
+      uCamRot: { value: new THREE.Matrix3() }, uTan: { value: new THREE.Vector2(1, 1) }, uCloudTexel: { value: new THREE.Vector2(0.002, 0.002) },
     };
-    this.material = new THREE.ShaderMaterial({ vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: this.uniforms, defines: { CLOUD_STEPS: steps }, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false });
+
+    // --- cloud pass (half res) ---
+    this.cloudMat = new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: CLOUD_FRAG, uniforms: this.uniforms, glslVersion: THREE.GLSL3,
+      defines: { CLOUD_STEPS: cq.steps, LIGHT_STEPS: cq.light }, depthTest: false, depthWrite: false });
+    this.cloudScene = bake(this.cloudMat);
+
+    // --- dome ---
+    this.material = new THREE.ShaderMaterial({ vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false });
     this.dome = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.material);
     this.dome.frustumCulled = false; this.dome.renderOrder = 10000; this.dome.layers.enable(1); this.dome.name = 'skyDome';
     scene.add(this.dome);
@@ -435,9 +588,19 @@ export class Sky {
 
     this._starAxis = new THREE.Vector3(0.05, 0.72, -0.69).normalize();
     this._q = new THREE.Quaternion(); this._m4 = new THREE.Matrix4();
+    const sz = renderer.getDrawingBufferSize(new THREE.Vector2());
+    this._setCloudSize(sz.x, sz.y);
     this.setHour(this.hour);
     this._refreshColors();
   }
+
+  _setCloudSize(w, h) {
+    const cw = Math.max(64, Math.round(w * this.cloudScale)), ch = Math.max(64, Math.round(h * this.cloudScale));
+    if (cw === this.cloudRT.width && ch === this.cloudRT.height) return;
+    this.cloudRT.setSize(cw, ch);
+    this.uniforms.uCloudTexel.value.set(1 / cw, 1 / ch);
+  }
+  resize() { const sz = this.game.renderer.getDrawingBufferSize(new THREE.Vector2()); this._setCloudSize(sz.x, sz.y); }
 
   setHour(h) {
     this.hour = ((h % 24) + 24) % 24;
@@ -473,16 +636,30 @@ export class Sky {
     }
     // per-frame uniforms
     u.uTime.value = t; u.uWindT.value = t;
+    u.uWindV.value.set(WIND[0] * this.windSpeed * t, WIND[1] * this.windSpeed * t);
+    u.uShearV.value.set(WIND[0] * 340, WIND[1] * 340);           // tops lean downwind of the bases
     u.uCamY.value = Math.max(0, camera.position.y);
+    u.uCamPos.value.copy(camera.position);
     u.uSunEl.value = this.sunElevation;
     u.uPixAng.value = (camera.fov * DEG) / (renderer.domElement.height || 1080);   // angular size of one pixel (star cores)
+    // camera basis for the cloud pass; 8% wider than the real frustum so a fast turn can't run off the edge of the buffer
+    u.uCamRot.value.setFromMatrix4(camera.matrixWorld);
+    const ty = Math.tan(camera.fov * DEG * 0.5) * 1.08;
+    u.uTan.value.set(ty * camera.aspect, ty);
     // celestial sphere rotation (stars) follows the clock
     this._q.setFromAxisAngle(this._starAxis, this.hour / 24 * PI * 2 + 0.7);
     this._m4.makeRotationFromQuaternion(this._q); u.uStarMat.value.setFromMatrix4(this._m4);
+    // volumetric clouds -> half-res target (composited by the dome)
+    renderer.setRenderTarget(this.cloudRT); renderer.render(this.cloudScene, this.lutCam); renderer.setRenderTarget(null);
     // sun mesh follows the camera
     this.sunMesh.position.copy(camera.position).addScaledVector(this.sunDir, 1500);
     this.sunMesh.visible = this.sunDir.y > -0.08;
     scene.fog.color.copy(this.fogColor); scene.fog.density = this.fogDensity;
+  }
+
+  dispose() {
+    for (const rt of [this.noiseRT, this.lutRT, this.cloudRT, this.shapeRT, this.detailRT]) rt?.dispose();
+    this.material?.dispose(); this.cloudMat?.dispose(); this.lutMat?.dispose(); this.sunMat?.dispose();
   }
 
   // ---------------- CPU twin of the atmosphere (colors for the other systems) ----------------
@@ -591,26 +768,26 @@ export class Sky {
     const elC = el + 2.5 * DEG;
     this._transmittance(0, Rg + 2000, 0, 0, Math.sin(elC), Math.cos(elC), tmp);
     const sunUp = THREE.MathUtils.smoothstep(elC, -0.04, 0.02);
-    const sunCloud = c0.setRGB(tmp[0], tmp[1] * 0.98, tmp[2] * 0.95).multiplyScalar(2.2 * sunUp);
+    const sunCloud = c0.setRGB(tmp[0], tmp[1] * 0.98, tmp[2] * 0.95).multiplyScalar(2.6 * sunUp);
     const useMoon = sunCloud.r + sunCloud.g + sunCloud.b < 0.03;
-    if (useMoon) { uc.uCloudLightDir.value.copy(this.moonDir); uc.uCloudLightCol.value.copy(this.moonColor).multiplyScalar(0.9); }
+    if (useMoon) { uc.uCloudLightDir.value.copy(this.moonDir); uc.uCloudLightCol.value.copy(this.moonColor).multiplyScalar(1.1); }
     else { uc.uCloudLightDir.value.copy(this.sunDir); uc.uCloudLightCol.value.copy(sunCloud); }
-    uc.uCloudAmbTop.value.copy(this.ambientColor).multiplyScalar(1.0);
+    uc.uCloudAmbTop.value.copy(this.ambientColor).multiplyScalar(0.85);
     this._radiance(0, 3 * DEG, tmp);                                   // horizon toward the sun: dusk/dawn glow lights cloud bellies
     const gl = THREE.MathUtils.clamp(1.2 - Math.abs(elD + 4) / 9, 0, 1);
-    uc.uCloudAmbBot.value.setRGB(this.fogColor.r * 0.38 + tmp[0] * 0.20 * gl + this.ambientColor.r * 0.10, this.fogColor.g * 0.38 + tmp[1] * 0.20 * gl + this.ambientColor.g * 0.10, this.fogColor.b * 0.38 + tmp[2] * 0.20 * gl + this.ambientColor.b * 0.10);
+    uc.uCloudAmbBot.value.setRGB(this.fogColor.r * 0.30 + tmp[0] * 0.16 * gl + this.ambientColor.r * 0.06, this.fogColor.g * 0.30 + tmp[1] * 0.16 * gl + this.ambientColor.g * 0.06, this.fogColor.b * 0.30 + tmp[2] * 0.16 * gl + this.ambientColor.b * 0.06);
     // belt-of-venus pink underlight on anti-solar cloud bellies at golden hour/dusk
     const beltW = sstep(-0.30, -0.10, el) * (1 - sstep(-0.04, 0.14, el));
     uc.uBelt.value = THREE.MathUtils.clamp((1 - sstep(-0.04, 0.14, el)) * sstep(-0.30, 0.02, el), 0, 1);
-    uc.uBeltCol.value.setRGB(0.50, 0.24, 0.28).multiplyScalar(0.35 + 0.65 * Math.max(beltW, uc.uBelt.value));
+    uc.uBeltCol.value.setRGB(0.42, 0.20, 0.26).multiplyScalar(0.35 + 0.65 * Math.max(beltW, uc.uBelt.value));
     const h = this.hour;
-    const autoCover = 0.60 + 0.08 * Math.exp(-((h - 6.5) ** 2) / 3.0) + 0.10 * Math.exp(-((h - 17.8) ** 2) / 3.2) - 0.03 * Math.exp(-((h - 12.5) ** 2) / 6.0) - 0.10 * nf;
+    const autoCover = 0.50 + 0.06 * Math.exp(-((h - 6.5) ** 2) / 3.0) + 0.10 * Math.exp(-((h - 17.8) ** 2) / 3.2) - 0.04 * Math.exp(-((h - 12.5) ** 2) / 6.0) - 0.08 * nf;
     uc.uCloudCover.value = this.cloudCover ?? autoCover;
     uc.uCirrusCover.value = 0.45 + 0.25 * Math.exp(-((h - 17) ** 2) / 6.0);
-    // mild towering at golden hour / dawn (kept short: a tall slab extrudes the columns into teeth)
-    const goldT = Math.exp(-((h - 17.7) ** 2) / 2.5) + 0.6 * Math.exp(-((h - 6.4) ** 2) / 2.5);
-    uc.uCloudH0.value = 1500 - 150 * goldT;
-    uc.uCloudH1.value = 2900 + 500 * goldT;
+    // towering at golden hour / dawn: the layer gets deeper (real cumulus congestus grow through the afternoon)
+    const goldT = Math.exp(-((h - 17.7) ** 2) / 3.0) + 0.7 * Math.exp(-((h - 6.4) ** 2) / 2.5);
+    uc.uCloudH0.value = 1450 - 180 * goldT;
+    uc.uCloudH1.value = 4200 + 900 * goldT;
     uc.uHaze.value = 0.16 + 0.18 * dawn + 0.07 * golden + 0.10 * nf;
     uc.uStarVis.value = 1 - THREE.MathUtils.smoothstep(elD, -14, -8);   // stars only after civil twilight (~-8°), full by -14°
     uc.uAurora.value = (1 - THREE.MathUtils.smoothstep(elD, -14, -7)) * 1.0;

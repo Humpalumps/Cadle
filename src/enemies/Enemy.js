@@ -170,11 +170,13 @@ export class Enemy {
     this.moveDt += dt;
     const moveEvery = active || lod === 0 ? 1 : lod === 1 ? 2 : lod === 2 ? 3 : 6;
     if (moveEvery === 1 || (frame + this.id) % moveEvery === 0) { this._move(this.moveDt, t); this.moveDt = 0; }
-    // animation (bone posing + IK): full rate only right in front of the camera
+    // animation (bone posing + IK): full rate only right in front of the camera, stretched when the field is crowded
     this.animDt += dt;
-    const animEvery = lod === 0 ? (d2cam < 144 ? 1 : d2cam < 900 ? 2 : 3) : lod === 1 ? 4 : lod === 2 ? 6 : 0;
+    const cm = this.sys.crowd;
+    let animEvery = lod === 0 ? (d2cam < 144 ? 1 : d2cam < 900 ? 2 : 3) : lod === 1 ? 4 : lod === 2 ? 6 : 0;
+    if (cm > 1 && animEvery) animEvery = Math.ceil(animEvery * cm);
     if (animEvery && (frame + this.id) % animEvery === 0) { this._animate(this.animDt, t); this.animDt = 0; }
-    if (lod < 2 || (frame + this.id) % 3 === 0) this._sync(dt, t, lod);
+    if (lod < 2 ? (cm === 1 || (frame + this.id) % 2 === 0) : (frame + this.id) % 3 === 0) this._sync(dt, t, lod);
   }
 
   _perceive(t) {
@@ -306,8 +308,12 @@ export class Enemy {
     if (!this.struck && this.stateT >= wind) {
       this.struck = true; g.events.emit('enemy:attack', { enemy: this, kind });
       if (kind === 'bite') {
-        const dh = Math.hypot(pf.x - this.position.x, pf.z - this.position.z);
-        if (dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) this._hitPlayer(this.damage, 'kinetic');
+        // the lunge is stopped at the standoff ring, so the strike reaches from there: range covers the whole dance
+        // band, but only in a ~115 deg cone — you can't be bitten by a hound facing away, and sidestepping still works
+        const dx = pf.x - this.position.x, dz = pf.z - this.position.z, dh = Math.hypot(dx, dz);
+        const facing = Math.abs(wrapAngle(Math.atan2(dx, dz) - this.yaw)) < 1.0;
+        this._muzzle(_w); g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 8, scale: 0.6 });
+        if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) this._hitPlayer(this.damage, 'kinetic');
       } else if (kind === 'slam') {
         _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)); _w.copy(this.position).addScaledVector(_v, def.radius + 1.2); _w.y = this.sys.heightAt(_w.x, _w.z);
         g.combat.explode?.({ point: _w, radius: def.slamRadius, damage: this.damage, element: 'kinetic', owner: this, team: 'enemy', knockback: def.knockback, source: this.type + '-slam' });
@@ -464,9 +470,12 @@ export class Enemy {
   }
   _separate(out) {
     if (this._lod >= 2) return;                            // far camps: overlap is invisible, skip the O(n) scan
-    const list = this.sys.list, r = this.def.radius; let n = 0;
-    for (let i = 0; i < list.length; i++) {
-      const o = list[i]; if (o === this || !o.alive) continue;
+    const list = this.sys.list, L = list.length, r = this.def.radius; let n = 0;
+    // ponytail: bounded rotating window instead of a full O(n²) pack scan — with 40 alive this is 18 checks/enemy
+    // and any missed overlap is corrected within a few ticks. Upgrade path: uniform grid in Enemies.update if packs grow.
+    const scan = L < 20 ? L : 18, i0 = L ? this.id % L : 0;
+    for (let k = 0; k < scan; k++) {
+      const o = list[L < 20 ? k : (i0 + k) % L]; if (o === this || !o.alive) continue;
       const dx = this.position.x - o.position.x, dz = this.position.z - o.position.z, dy = this.position.y - o.position.y;
       const min = r + o.def.radius + 0.5, d2 = dx * dx + dz * dz + (this.def.flying ? dy * dy : 0);
       if (d2 < min * min && d2 > 1e-4) { const d = Math.sqrt(d2), push = (min - d) / min * 4; out.x += dx / d * push; out.z += dz / d * push; if (this.def.flying) out.y += dy / d * push; if (++n > 4) break; }

@@ -128,8 +128,8 @@ function barkTextures(kind, aniso) {
   if (kind === 'birch') {
     map = noiseTexture(W, Hh, (u, v) => {
       const h = hf(u, v); const fl = smoothstep(0.66, 0.78, 0.5 + 0.5 * tn(u * 1, v * 4, 16, 31)) * smoothstep(0.3, 0.7, 0.5 + 0.5 * tn(u, v, 5, 32)); // dark lenticels
-      const base = [0.82, 0.80, 0.74].map((c, i) => c * (0.85 + 0.3 * (h - 0.5)) - [0.05, 0.04, 0.02][i] * (1 - h));
-      return base.map((c, i) => lerp(c, [0.13, 0.1, 0.08][i], fl * 0.9));
+      const base = [0.80, 0.79, 0.73].map((c, i) => c * (0.85 + 0.3 * (h - 0.5)) - [0.05, 0.04, 0.02][i] * (1 - h));
+      return base.map((c, i) => lerp(c, [0.30, 0.27, 0.24][i], fl * 0.75)); // softened lenticels: relief comes from the bark normal map, not painted-on ink
     }, { aniso });
   } else {
     map = noiseTexture(W, Hh, (u, v) => { const h = hf(u, v); const t = clamp((h - 0.2) / 0.5, 0, 1); return [lerp(0.14, 0.42, t) + 0.04 * t, lerp(0.09, 0.3, t), lerp(0.06, 0.2, t)]; }, { aniso });
@@ -180,7 +180,7 @@ function leafTexture(kind, rng, base, dark, light, aniso) {
 // ---------------------------------------------------------------- geometry builders
 /** Tube along a polyline with per-point radius; outward normals, uv (around, length*vScale).
  *  gnarl > 0 adds radial noise displacement (organic bark relief, kills the smooth-cylinder read). */
-function tube(pts, radii, segs = 8, vScale = 0.5, gnarl = 0) {
+function tube(pts, radii, segs = 8, vScale = 0.5, gnarl = 0, uRep = 1) {
   const P = [], N = [], U = [], I = []; const up = new THREE.Vector3(0, 1, 0), t = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3(), prev = new THREE.Vector3(); let dist = 0;
   for (let i = 0; i < pts.length; i++) {
     if (i < pts.length - 1) t.subVectors(pts[i + 1], pts[i]).normalize(); else t.subVectors(pts[i], pts[i - 1]).normalize();
@@ -191,80 +191,108 @@ function tube(pts, radii, segs = 8, vScale = 0.5, gnarl = 0) {
       const th = j / segs * Math.PI * 2, c = Math.cos(th), s = Math.sin(th);
       let r = radii[i];
       if (gnarl) r *= 1 + gnarl * (noise2(c * 1.6 + 5, s * 1.6 + dist * 0.55, 61) - 0.5) * 2 + gnarl * 0.5 * (noise2(c * 4 + 9, s * 4 + dist * 1.7, 62) - 0.5) * 2; // periodic around, varies along length
-      p.copy(pts[i]).addScaledVector(a, c * r).addScaledVector(b, s * r); P.push(p.x, p.y, p.z); N.push(a.x * c + b.x * s, a.y * c + b.y * s, a.z * c + b.z * s); U.push(j / segs, dist * vScale);
+      p.copy(pts[i]).addScaledVector(a, c * r).addScaledVector(b, s * r); P.push(p.x, p.y, p.z); N.push(a.x * c + b.x * s, a.y * c + b.y * s, a.z * c + b.z * s); U.push(j / segs * uRep, dist * vScale);
     }
   }
   for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < segs; j++) { const k = i * (segs + 1) + j; I.push(k, k + 1, k + segs + 1, k + 1, k + segs + 2, k + segs + 1); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', F32(P, 3)); g.setAttribute('normal', F32(N, 3)); g.setAttribute('uv', F32(U, 2)); g.setIndex(I); return g.toNonIndexed();
 }
+/** Sub-crops of the painted leaf-cluster asset. The asset is ONE dense round bush: mapping it whole onto a 3.5 m
+ *  card makes every leaf ~7 cm on screen, which mips down to a flat green paddle (the "toy tree" read).
+ *  Cropping a ~1/3 window puts leaves at a real ~20 cm and — because every window straddles the bush's edge —
+ *  gives each card a ragged organic silhouette instead of a disc. */
+const LEAF_CROPS = (() => {
+  const out = [];
+  for (let i = 0; i < 14; i++) {
+    const a = i / 14 * Math.PI * 2 + 0.37, s = 0.26 + 0.13 * ((i * 5) % 4) / 3;
+    const cx = 0.5 + Math.cos(a) * (0.5 - s * 0.44), cy = 0.5 + Math.sin(a) * (0.5 - s * 0.44);
+    out.push([clamp(cx - s / 2, 0, 1 - s), clamp(cy - s / 2, 0, 1 - s), s, s]);
+  }
+  return out;
+})();
 /** Folded leaf cards: each card = 2 quads bent around its horizontal mid-line.
- *  list: [{c, n, w, h, up?, fold?, flip?}] — spherical normals around `center` give soft canopy shading;
- *  flip mirrors the texture (breaks the repeated-cluster read). */
+ *  list: [{c, n, w, h, up?, fold?, flip?, crop?, ao?}] — spherical normals around `center` give soft canopy shading;
+ *  flip mirrors the texture, crop picks a LEAF_CROPS window, aLeaf carries (hue jitter, ambient occlusion). */
 function cards(list, center, fold = 0.2) {
-  const P = [], N = [], U = []; const up0 = new THREE.Vector3(0, 1, 0), r = new THREE.Vector3(), u = new THREE.Vector3(), u2 = new THREE.Vector3(), q = new THREE.Vector3(), n = new THREE.Vector3();
+  const P = [], N = [], U = [], L = []; const up0 = new THREE.Vector3(0, 1, 0), r = new THREE.Vector3(), u = new THREE.Vector3(), u2 = new THREE.Vector3(), q = new THREE.Vector3(), n = new THREE.Vector3();
   for (const k of list) {
     n.copy(k.n).normalize(); const upv = k.up || up0; u.copy(upv).addScaledVector(n, -n.dot(upv)).normalize(); r.crossVectors(u, n).normalize();
     const f = k.fold ?? fold; u2.copy(u).multiplyScalar(Math.cos(f)).addScaledVector(n, Math.sin(f)); // top half tilts toward the normal
     const hw = k.w / 2, hh = k.h / 2, fx = k.flip ? 1 : 0;
+    const [cu, cv, cs, ct] = k.crop ?? [0, 0, 1, 1];
     const ml = k.c.clone().addScaledVector(r, -hw), mr = k.c.clone().addScaledVector(r, hw);
     const bl = ml.clone().addScaledVector(u, -hh), br = mr.clone().addScaledVector(u, -hh);
     const tl = ml.clone().addScaledVector(u2, hh), tr = mr.clone().addScaledVector(u2, hh);
+    const tint = k.tint ?? 0.5, ao = k.ao ?? 1;
     for (const [co, v0, v1] of [[[bl, br, mr, ml], 0, 0.5], [[ml, mr, tr, tl], 0.5, 1]]) {
       const uvs = [[fx, v0], [1 - fx, v0], [1 - fx, v1], [fx, v1]];
-      for (const i of [0, 1, 2, 0, 2, 3]) { const p = co[i]; P.push(p.x, p.y, p.z); q.subVectors(p, center).normalize(); N.push(q.x, q.y, q.z); U.push(uvs[i][0], uvs[i][1]); }
+      for (const i of [0, 1, 2, 0, 2, 3]) {
+        const p = co[i]; P.push(p.x, p.y, p.z); q.subVectors(p, center).normalize(); N.push(q.x, q.y, q.z);
+        U.push(cu + uvs[i][0] * cs, cv + uvs[i][1] * ct); L.push(tint, ao);
+      }
     }
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', F32(P, 3)); g.setAttribute('normal', F32(N, 3)); g.setAttribute('uv', F32(U, 2)); return g;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', F32(P, 3)); g.setAttribute('normal', F32(N, 3)); g.setAttribute('uv', F32(U, 2)); g.setAttribute('aLeaf', F32(L, 2)); return g;
 }
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 function spine(n, fn) { const pts = [], radii = []; for (let i = 0; i <= n; i++) { const [p, r] = fn(i / n); pts.push(p); radii.push(r); } return [pts, radii]; }
-function fan(list, center, y, radius, count, w, h, tilt, rng, jitter = 0.35) {
+/** Push a leaf card with a random crop, hue jitter and depth-based AO (inner cards read darker → volume, not a shelf). */
+function card(list, c, n, w, h, rng, o = {}) {
+  const d = o.ao ?? 1;
+  list.push({ c, n, w: w * (0.82 + rng() * 0.4), h: h * (0.82 + rng() * 0.4), flip: rng() < 0.5, fold: o.fold ?? (0.12 + rng() * 0.26), up: o.up,
+    crop: LEAF_CROPS[(rng() * LEAF_CROPS.length) | 0], tint: rng(), ao: d * (0.86 + rng() * 0.14) });
+}
+function fan(list, center, y, radius, count, w, h, tilt, rng, jitter = 0.35, ao = 1) {
   for (let i = 0; i < count; i++) {
-    const a = (i + rng() * 0.6) / count * Math.PI * 2, rr = radius * (0.75 + rng() * 0.5); const out = V3(Math.cos(a), 0, Math.sin(a));
+    const a = (i + rng() * 0.9) / count * Math.PI * 2, rr = radius * (0.5 + rng() * 0.75); const out = V3(Math.cos(a), 0, Math.sin(a));
     const c = V3(Math.cos(a) * rr, y + (rng() - 0.5) * jitter * 2, Math.sin(a) * rr);
-    const n = out.clone().multiplyScalar(1 - tilt).add(V3(0, tilt, 0)).add(V3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(0.35));
-    list.push({ c, n, w: w * (0.85 + rng() * 0.35), h: h * (0.85 + rng() * 0.35), flip: rng() < 0.5, fold: 0.1 + rng() * 0.2 });
+    const n = out.clone().multiplyScalar(1 - tilt).add(V3(0, tilt, 0)).add(V3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(0.5));
+    card(list, c, n, w, h, rng, { ao: ao * lerp(0.72, 1.0, clamp(rr / radius, 0, 1)) }); // deeper in the crown = less sky light
   }
 }
 // species 0: tall slender "shroud birch" — long pale trunk, big painterly canopy clusters near the top
 function buildSlender(rng) {
   const H = 16, bx = (rng() - 0.5) * 1.6, bz = (rng() - 0.5) * 1.6;
   const [pts, radii] = spine(10, (t) => [V3(Math.sin(t * 2.2) * bx * t, t * H, Math.sin(t * 1.7 + 1) * bz * t), 0.34 * Math.pow(1 - t, 0.85) + 0.06 + (t < 0.08 ? (0.08 - t) * 2.5 : 0)]);
-  const parts = [tube(pts, radii, 10, 0.45, 0.10)];
-  for (let i = 0; i < 5; i++) { // short upper branches
-    const t0 = 0.6 + rng() * 0.32, a = rng() * Math.PI * 2, p0 = pts[Math.round(t0 * 10)].clone(), dir = V3(Math.cos(a), 0.7 + rng() * 0.5, Math.sin(a)).normalize(), L = 1.6 + rng() * 1.6;
-    parts.push(tube([p0, p0.clone().addScaledVector(dir, L * 0.5).add(V3(0, 0.2, 0)), p0.clone().addScaledVector(dir, L).add(V3(0, 0.6, 0))], [0.09, 0.06, 0.02], 6, 0.5));
+  const parts = [tube(pts, radii, 10, 0.62, 0.16, 2)];
+  for (let i = 0; i < 6; i++) { // short upper branches
+    const t0 = 0.58 + rng() * 0.34, a = rng() * Math.PI * 2, p0 = pts[Math.round(t0 * 10)].clone(), dir = V3(Math.cos(a), 0.7 + rng() * 0.5, Math.sin(a)).normalize(), L = 1.6 + rng() * 1.6;
+    parts.push(tube([p0, p0.clone().addScaledVector(dir, L * 0.5).add(V3(0, 0.2, 0)), p0.clone().addScaledVector(dir, L).add(V3(0, 0.6, 0))], [0.09, 0.06, 0.02], 6, 0.7, 0.1, 1));
   }
-  const L = [], cc = V3(0, H * 0.78, 0);
-  fan(L, cc, H * 0.60, 1.9, 5, 3.5, 2.9, 0.5, rng);
-  fan(L, cc, H * 0.76, 2.3, 6, 3.8, 3.1, 0.45, rng);
-  fan(L, cc, H * 0.90, 1.4, 4, 3.2, 2.7, 0.65, rng);
-  for (let i = 0; i < 3; i++) L.push({ c: V3((rng() - 0.5) * 1.4, H * (0.97 + rng() * 0.05), (rng() - 0.5) * 1.4), n: V3(rng() - 0.5, 1, rng() - 0.5), w: 3.0, h: 3.0, flip: rng() < 0.5 });
+  const L = [], cc = V3(0, H * 0.80, 0);
+  fan(L, cc, H * 0.58, 2.0, 7, 2.5, 2.1, 0.35, rng, 0.5, 0.8);
+  fan(L, cc, H * 0.70, 2.5, 9, 2.7, 2.2, 0.35, rng, 0.5, 0.92);
+  fan(L, cc, H * 0.82, 2.4, 9, 2.6, 2.2, 0.5, rng, 0.5, 1.0);
+  fan(L, cc, H * 0.94, 1.7, 7, 2.3, 2.0, 0.7, rng, 0.45, 1.0);
+  for (let i = 0; i < 4; i++) card(L, V3((rng() - 0.5) * 1.6, H * (1.0 + rng() * 0.06), (rng() - 0.5) * 1.6), V3(rng() - 0.5, 1.1, rng() - 0.5), 2.2, 2.0, rng);
   return { trunk: mergeGeometries(parts), leaves: cards(L, cc), H, W: 9, colR: 0.36, colH: H * 0.7 };
 }
 // species 1: gnarled old tree — thick twisted trunk, radiating branches, broad crown of painterly clusters
 function buildGnarled(rng) {
   const H = 8.5, ph = rng() * 6;
   const [pts, radii] = spine(10, (t) => [V3(Math.sin(t * 5 + ph) * 0.28 * t + t * 0.5, t * H, Math.cos(t * 4.3 + ph) * 0.28 * t), 0.72 * Math.pow(1 - t * 0.85, 1.1) + 0.12 + (t < 0.12 ? (0.12 - t) * 4.5 : 0)]);
-  const parts = [tube(pts, radii, 12, 0.4, 0.16)]; const L = [], cc = V3(0.3, H * 0.85, 0);
+  const parts = [tube(pts, radii, 12, 0.55, 0.22, 3)]; const L = [], cc = V3(0.3, H * 0.85, 0);
   for (let i = 0; i < 7; i++) {
     const t0 = 0.45 + rng() * 0.35, a = i / 7 * Math.PI * 2 + rng() * 0.6, p0 = pts[Math.round(t0 * 10)].clone(), d = V3(Math.cos(a), 0, Math.sin(a)), L0 = 2.2 + rng() * 1.6;
     const b = [p0, p0.clone().addScaledVector(d, L0 * 0.35).add(V3(0, 0.5, 0)), p0.clone().addScaledVector(d, L0 * 0.7).add(V3(0, 1.3, 0)), p0.clone().addScaledVector(d, L0).add(V3(0, 2.4, 0))];
-    parts.push(tube(b, [0.26, 0.18, 0.11, 0.04], 7, 0.5, 0.12));
-    const tip = b[3]; for (let k = 0; k < 2; k++) L.push({ c: tip.clone().add(V3(rng() - 0.5, 0.4 + rng() * 0.9, rng() - 0.5)), n: V3(d.x * 0.6 + (rng() - 0.5) * 0.5, 0.8, d.z * 0.6 + (rng() - 0.5) * 0.5), w: 3.4, h: 2.7, flip: rng() < 0.5, fold: 0.1 + rng() * 0.2 });
+    parts.push(tube(b, [0.26, 0.18, 0.11, 0.04], 7, 0.7, 0.16, 1.5));
+    const tip = b[3];
+    for (let k = 0; k < 4; k++) card(L, tip.clone().add(V3((rng() - 0.5) * 1.5, 0.2 + rng() * 1.3, (rng() - 0.5) * 1.5)),
+      V3(d.x * 0.6 + (rng() - 0.5) * 0.7, 0.7, d.z * 0.6 + (rng() - 0.5) * 0.7), 2.6, 2.2, rng, { ao: 0.9 + k * 0.03 });
   }
-  fan(L, cc, H * 0.75, 2.7, 6, 4.0, 3.1, 0.5, rng);
-  for (let i = 0; i < 3; i++) L.push({ c: V3((rng() - 0.5) * 2.2 + 0.3, H * (1.0 + rng() * 0.06), (rng() - 0.5) * 2.2), n: V3(rng() - 0.5, 1, rng() - 0.5), w: 3.2, h: 3.0, flip: rng() < 0.5 });
+  fan(L, cc, H * 0.72, 3.0, 9, 2.8, 2.3, 0.4, rng, 0.5, 0.82);
+  fan(L, cc, H * 0.88, 2.8, 8, 2.7, 2.3, 0.55, rng, 0.5, 1.0);
+  for (let i = 0; i < 5; i++) card(L, V3((rng() - 0.5) * 2.6 + 0.3, H * (1.0 + rng() * 0.08), (rng() - 0.5) * 2.6), V3(rng() - 0.5, 1.1, rng() - 0.5), 2.5, 2.2, rng);
   return { trunk: mergeGeometries(parts), leaves: cards(L, cc), H: H + 1.5, W: 11, colR: 0.75, colH: H * 0.6 };
 }
 // species 2: willow — leaning trunk, umbrella crown, hanging leaf strands
 function buildWillow(rng) {
   const H = 9.5, lean = 0.9 + rng() * 0.6;
   const [pts, radii] = spine(8, (t) => [V3(t * t * lean, t * H, Math.sin(t * 3) * 0.2), 0.5 * (1 - t * 0.7) + 0.05 + (t < 0.1 ? (0.1 - t) * 3 : 0)]);
-  const parts = [tube(pts, radii, 10, 0.4, 0.13)]; const top = pts[8].clone(); const L = [], cc = top.clone().add(V3(0, -1.5, 0));
-  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 + rng(), d = V3(Math.cos(a), 0.35, Math.sin(a)).normalize(); parts.push(tube([top.clone().add(V3(0, -0.6, 0)), top.clone().addScaledVector(d, 1.6), top.clone().addScaledVector(d, 2.8).add(V3(0, -0.3, 0))], [0.18, 0.11, 0.04], 6, 0.5)); }
-  for (let i = 0; i < 7; i++) L.push({ c: top.clone().add(V3((rng() - 0.5) * 2.6, 0.3 + rng() * 0.7, (rng() - 0.5) * 2.6)), n: V3(rng() - 0.5, 1, rng() - 0.5), w: 3.3, h: 2.8, flip: rng() < 0.5, fold: 0.1 + rng() * 0.15 });
-  const S = []; for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2 + rng() * 0.3, rr = 2.1 + rng() * 1.2, out = V3(Math.cos(a), 0, Math.sin(a)), h = 4.8 + rng() * 1.8; const att = top.clone().addScaledVector(out, rr).add(V3(0, -0.2 - rng() * 0.5, 0)); S.push({ c: att.clone().add(V3(out.x * 0.4, -h / 2, out.z * 0.4)), n: out, up: V3(out.x * 0.12, 1, out.z * 0.12), w: 1.3 + rng() * 0.4, h, fold: 0.16 }); }
+  const parts = [tube(pts, radii, 10, 0.6, 0.18, 2.5)]; const top = pts[8].clone(); const L = [], cc = top.clone().add(V3(0, -1.5, 0));
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 + rng(), d = V3(Math.cos(a), 0.35, Math.sin(a)).normalize(); parts.push(tube([top.clone().add(V3(0, -0.6, 0)), top.clone().addScaledVector(d, 1.6), top.clone().addScaledVector(d, 2.8).add(V3(0, -0.3, 0))], [0.18, 0.11, 0.04], 6, 0.7, 0.12, 1.5)); }
+  for (let i = 0; i < 14; i++) card(L, top.clone().add(V3((rng() - 0.5) * 3.4, 0.1 + rng() * 1.0, (rng() - 0.5) * 3.4)), V3(rng() - 0.5, 1.0, rng() - 0.5), 2.5, 2.1, rng, { ao: 0.88 + rng() * 0.12 });
+  const S = []; for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2 + rng() * 0.3, rr = 2.1 + rng() * 1.2, out = V3(Math.cos(a), 0, Math.sin(a)), h = 4.8 + rng() * 1.8; const att = top.clone().addScaledVector(out, rr).add(V3(0, -0.2 - rng() * 0.5, 0)); S.push({ c: att.clone().add(V3(out.x * 0.4, -h / 2, out.z * 0.4)), n: out, up: V3(out.x * 0.12, 1, out.z * 0.12), w: 1.3 + rng() * 0.4, h, fold: 0.16, tint: rng(), ao: 0.95 }); }
   return { trunk: mergeGeometries(parts), leaves: cards(L, cc), strands: cards(S, cc), H: H + 1.2, W: 9, colR: 0.5, colH: H * 0.7 };
 }
 /** Rock shapes 0 boulder, 1 rock, 2 slab, 3 shard. Vertex color = cavity shading. */
@@ -281,16 +309,38 @@ export function makeRockGeometry(kind, seed = 1) {
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
 }
+/** One aether shard: an irregular 8-sided prism (per-side radius + height jitter) with a chiselled 3-step tip and a
+ *  bevelled waist. Irregular sides mean every facet has its OWN normal, so sun/rim/glint break across the shard —
+ *  a regular hexagonal cone renders as two flat tones (the "purple confetti" read the critic called out). */
+function shardGeometry(rng, h, r) {
+  const SIDES = 8, P = [];
+  const rad = [], off = [];
+  for (let k = 0; k < SIDES; k++) { rad.push(r * (0.62 + rng() * 0.6)); off.push((rng() - 0.5) * 0.16); }
+  // profile: [heightFrac, radiusFrac] — flared foot, waist, shoulder, then a 2-step chisel to the point
+  const prof = [[0, 0.74], [0.10, 1.0], [0.46, 0.93], [0.70, 0.82], [0.86, 0.5], [1, 0.0]];
+  const twist = (rng() - 0.5) * 0.5;
+  const pt = (pi, k) => {
+    const [t, rf] = prof[pi], a = (k / SIDES) * Math.PI * 2 + twist * t + off[k % SIDES];
+    const rr = rad[k % SIDES] * rf;
+    return [Math.cos(a) * rr, t * h * (1 + off[k % SIDES] * 0.3), Math.sin(a) * rr];
+  };
+  for (let pi = 0; pi < prof.length - 1; pi++) for (let k = 0; k < SIDES; k++) {
+    const a = pt(pi, k), b = pt(pi, k + 1), c = pt(pi + 1, k + 1), d = pt(pi + 1, k);
+    if (prof[pi][1] > 0) P.push(...a, ...b, ...c);
+    if (prof[pi + 1][1] > 0) P.push(...a, ...c, ...d);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(P), 3)); return g;
+}
 function crystalClusterGeometry(rng, n) {
   const parts = [];
   for (let i = 0; i < n; i++) {
-    const h = (i === 0 ? 1 : 0.35 + rng() * 0.5) * 2.4, r = h * (0.14 + rng() * 0.05);
-    const body = new THREE.CylinderGeometry(r * 0.6, r, h * 0.72, 6, 1, false).translate(0, h * 0.36 - h * 0.15, 0), tip = new THREE.ConeGeometry(r * 0.6, h * 0.3, 6).translate(0, h * 0.72 - h * 0.15 + h * 0.15, 0);
-    const g = mergeGeometries([body.toNonIndexed(), tip.toNonIndexed()]); g.rotateX(i === 0 ? rng() * 0.12 : 0.25 + rng() * 0.55); g.rotateY(rng() * Math.PI * 2);
-    if (i > 0) g.translate(Math.cos(i * 2.4) * (0.25 + rng() * 0.35) * 1.2, -0.1, Math.sin(i * 2.4) * (0.25 + rng() * 0.35) * 1.2);
+    const h = (i === 0 ? 1 : 0.3 + rng() * 0.55) * 2.4, r = h * (0.15 + rng() * 0.06);
+    const g = shardGeometry(rng, h, r);
+    g.rotateX(i === 0 ? rng() * 0.14 : 0.2 + rng() * 0.6); g.rotateY(rng() * Math.PI * 2);
+    if (i > 0) g.translate(Math.cos(i * 2.4) * (0.25 + rng() * 0.4) * 1.2, -0.12, Math.sin(i * 2.4) * (0.25 + rng() * 0.4) * 1.2);
     parts.push(g);
   }
-  const g = mergeGeometries(parts); g.deleteAttribute('uv'); g.computeVertexNormals(); return g;
+  const g = mergeGeometries(parts); g.computeVertexNormals(); return g;
 }
 
 // ---------------------------------------------------------------- instanced LOD set
@@ -369,11 +419,15 @@ export class Vegetation {
 
   _buildTrees(rng, aniso, Q, leafCard, barkAsset) {
     const U = this.uniforms, sc = this.game.scene;
-    const birch = barkTextures('birch', aniso), oak = barkAsset ?? barkTextures('oak', aniso);
+    // birch keeps its pale painted albedo but borrows the painted bark's REAL ridge relief (kills the "smooth cylinder
+    // with stripes" read); oak/willow use the painted bark outright.
+    const oak = barkAsset ?? barkTextures('oak', aniso);
+    const birchProc = barkTextures('birch', aniso);
+    const birch = { map: birchProc.map, normalMap: barkAsset ? barkAsset.normalMap : birchProc.normalMap };
     // painterly cluster card for all species (species identity from tint + silhouette), procedural fallback
     const leafTex = leafCard ?? leafTexture('cluster', rng, [0.28, 0.52, 0.22], [0.16, 0.38, 0.14], [0.55, 0.78, 0.3], aniso);
     const strandTex = leafTexture('strands', rng, [0.45, 0.6, 0.24], [0.32, 0.5, 0.18], [0.76, 0.85, 0.4], aniso);
-    const leafTint = [0xe6ffc4, 0xa8c890, 0xf0f7a8]; // slender fresh-lime, gnarled deep muted, willow golden-green
+    const leafTint = [0xdcf5b6, 0x9fc088, 0xe8f2a0]; // slender fresh-lime, gnarled deep muted, willow golden-green
     const specs = [buildSlender(rng), buildGnarled(rng), buildWillow(rng)];
     // willow: leaves + strands merged into one geometry/material; strand cards select the strand texture via uv.x offset +2
     specs[2].leaves = (() => { const s = specs[2].strands; const uv = s.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) + 2); return mergeGeometries([specs[2].leaves, s]); })();
@@ -381,8 +435,9 @@ export class Vegetation {
     const leafShader = (i) => mergePatch(erodeFade(AT), {
       key: 'leaf' + i,
       uniforms: { uTime: U.uTime, uWind: U.uWind, uSunDirV: U.uSunDirV, uSunColor: U.uSunColor, uSunI: U.uSunI, uHeight: { value: specs[i].H }, uSway: { value: i === 2 ? 0.35 : 0.5 }, tStrand: { value: strandTex } },
-      vHead: 'uniform float uTime, uWind, uHeight, uSway;',
-      vBegin: `{
+      vHead: 'uniform float uTime, uWind, uHeight, uSway; attribute vec2 aLeaf; varying vec2 vLeaf;',
+      vBegin: `vLeaf = aLeaf;
+        {
         #ifdef USE_INSTANCING
           vec3 iPos = (modelMatrix * instanceMatrix)[3].xyz;
         #else
@@ -395,14 +450,28 @@ export class Vegetation {
                        sin(uTime * 2.1 + ph * 1.3 + position.x) * 0.08,
                        cos(uTime * 1.1 + ph * 0.8) * 0.3 + cos(uTime * 3.1 + ph + position.z) * 0.12);
         transformed += sw * g * hf * uSway; }`,
-      fHead: 'uniform vec3 uSunDirV; uniform vec3 uSunColor; uniform float uSunI; uniform sampler2D tStrand;',
-      fMap: `{ vec4 tc = vMapUv.x > 1.5 ? texture2D(tStrand, vec2(vMapUv.x - 2.0, vMapUv.y)) : texture2D(map, vMapUv); diffuseColor *= tc; }`,
-      fEmissive: `{ vec3 Vd = normalize(-vViewPosition); float bl = pow(max(dot(Vd, uSunDirV), 0.0), 5.0);
-        totalEmissiveRadiance += diffuseColor.rgb * uSunColor * (bl * 1.1 + 0.14) * uSunI; }`,
+      fHead: `uniform vec3 uSunDirV; uniform vec3 uSunColor; uniform float uSunI; uniform sampler2D tStrand; varying vec2 vLeaf;
+        const vec3 LEAF_COOL = vec3(0.72, 0.98, 0.74);   // shaded blue-green
+        const vec3 LEAF_WARM = vec3(1.24, 1.02, 0.60);   // sun-bleached golden`,
+      fMap: `{ vec4 tc = vMapUv.x > 1.5 ? texture2D(tStrand, vec2(vMapUv.x - 2.0, vMapUv.y)) : texture2D(map, vMapUv); diffuseColor *= tc;
+        diffuseColor.rgb *= mix(LEAF_COOL, LEAF_WARM, vLeaf.x) * (0.55 + 0.45 * vLeaf.y); }`, // per-card hue break-up + crown AO
+      fEmissive: `{ vec3 Vd = normalize(vViewPosition);                       // fragment -> camera
+        float back = max(dot(-Vd, uSunDirV), 0.0);                             // sun behind the leaf, shining at us
+        float ndl  = dot(normalize(normal), uSunDirV);
+        float thin = 1.0 - abs(ndl);                                           // grazing = thinnest path through the blade
+        vec3 sap = diffuseColor.rgb * mix(vec3(0.85, 1.15, 0.55), vec3(1.0), 0.35);
+        totalEmissiveRadiance += sap * uSunColor * uSunI *
+          (pow(back, 2.2) * 1.15 * (0.35 + 0.65 * thin) + max(0.0, ndl + 0.45) / 1.45 * 0.16 + 0.07) * vLeaf.y; }`,
     });
     this.treeSets = specs.map((sp, i) => {
       const bark = i === 0 ? birch : oak;
-      const trunkMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(i === 0 ? 1.6 : 2.0, i === 0 ? 1.6 : 2.0), roughness: 0.92, metalness: 0, color: i === 0 ? 0xffffff : i === 2 ? 0xcdbfa8 : 0xd8cdbb }), mergePatch(fadePatch, { key: 'trunk' + (i === 0 ? 'b' : 'o') }));
+      const trunkMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(i === 0 ? 1.5 : 2.4, i === 0 ? 1.5 : 2.4), roughness: 0.94, metalness: 0, color: i === 0 ? 0xffffff : i === 2 ? 0xbfae95 : 0xc9b89e }),
+        mergePatch(fadePatch, { key: 'trunk' + i,
+          // root darkening + damp moss creeping up the first metre: grounds the trunk, kills the "clean dowel" read
+          fMap: `#include <map_fragment>
+            { float up0 = clamp(vMapUv.y * 1.1, 0.0, 1.0);
+              diffuseColor.rgb *= mix(0.55, 1.0, up0);
+              diffuseColor.rgb = mix(diffuseColor.rgb * vec3(0.62, 0.95, 0.5), diffuseColor.rgb, clamp(up0 * 1.6 - 0.15, 0.0, 1.0)); }` }));
       const leafMat = patchMaterial(new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: AT, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, color: leafTint[i] }), leafShader(i));
       const leafDepth = patchMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafTex, alphaTest: AT + 0.08, side: THREE.DoubleSide }), leafShader(i));
       leafDepth.customProgramCacheKey = () => 'leafdepth' + i;
@@ -436,7 +505,12 @@ export class Vegetation {
     const tm = new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, roughness: 0.9 });
     const lm = new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.85, color: tint });
     tm.toneMapped = false; lm.toneMapped = false;
-    lm.onBeforeCompile = (sh) => { sh.uniforms.tStrand = { value: strandTex }; sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tStrand;').replace('#include <map_fragment>', '{ vec4 tc = vMapUv.x > 1.5 ? texture2D(tStrand, vec2(vMapUv.x - 2.0, vMapUv.y)) : texture2D(map, vMapUv); diffuseColor *= tc; }'); };
+    lm.onBeforeCompile = (sh) => { // mirror the near-tree per-card hue/AO break-up so impostors match the trees they replace
+      sh.uniforms.tStrand = { value: strandTex };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aLeaf; varying vec2 vLeaf;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLeaf = aLeaf;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D tStrand; varying vec2 vLeaf;')
+        .replace('#include <map_fragment>', `{ vec4 tc = vMapUv.x > 1.5 ? texture2D(tStrand, vec2(vMapUv.x - 2.0, vMapUv.y)) : texture2D(map, vMapUv); diffuseColor *= tc;
+          diffuseColor.rgb *= mix(vec3(0.72, 0.98, 0.74), vec3(1.24, 1.02, 0.60), vLeaf.x) * (0.55 + 0.45 * vLeaf.y); }`); };
     lm.customProgramCacheKey = () => 'bakeleaf';
     sc.add(new THREE.Mesh(sp.trunk, tm), new THREE.Mesh(sp.leaves, lm), new THREE.AmbientLight(0xffffff, Math.PI)); // lambert /pi * PI = albedo
     const cam = new THREE.OrthographicCamera(-sp.W / 2, sp.W / 2, sp.H, 0, 0.1, 400); cam.position.set(0, 0, 200); cam.lookAt(0, 0, 0);
@@ -462,7 +536,7 @@ export class Vegetation {
     const U = this.uniforms;
     // FF14 daylight read: deep saturated body, per-facet albedo contrast, internal streaks, thin normalized
     // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout)
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x4c38cc, emissive: 0x3b18ff, emissiveIntensity: 1.25, roughness: 0.16, metalness: 0.0, flatShading: true, envMapIntensity: 1.8 }), {
+    const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.22, metalness: 0.0, flatShading: true, clearcoat: 0.85, clearcoatRoughness: 0.12, envMapIntensity: 1.6 }), {
       key: 'crystal', uniforms: { uTime: U.uTime, uSunI: U.uSunI, uSunColor: U.uSunColor, uSunDirV: U.uSunDirV },
       vHead: 'varying float vPh; varying float vLy; varying vec3 vON;', vBegin: `
         #ifdef USE_INSTANCING
@@ -471,26 +545,30 @@ export class Vegetation {
           vPh = 0.0;
         #endif
         vLy = position.y; vON = objectNormal;`,
-      fHead: 'uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; varying vec3 vON;',
-      fMap: `{ float fh = fract(sin(dot(vON, vec3(127.1, 311.7, 74.7))) * 43758.5453);   // stable per-facet value (face normals)
+      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; varying vec3 vON;
+        float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`,
+      fMap: `{ float fh = facetHash(vON);                                                  // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
-        diffuseColor.rgb *= 0.42 + 0.62 * fh;                                            // facet-to-facet albedo contrast
-        diffuseColor.rgb *= 0.9 + 0.25 * sin(vLy * 6.5 + fh * 19.0);                     // internal growth banding
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.95, 1.3), fh * 0.55 + tipT * 0.25); }`,
+        diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
+        diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.88, 1.45), fh * 0.6 + tipT * 0.3); }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
-        float pulse = 0.75 + 0.25 * sin(uTime * 1.4 + vPh * 6.2832); vec3 Vd = normalize(vViewPosition);
-        float rim = pow(1.0 - abs(dot(Vd, normal)), 3.0);
-        float fh = fract(sin(dot(vON, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-        float grad = mix(1.45, 0.35, clamp(vLy / 2.2, 0.0, 1.0));  // bright core at the base, cooler tips
-        float streak = 0.8 + 0.35 * sin(vLy * 7.0 + fh * 21.0);    // inner light banding follows growth lines
-        float bl = pow(max(dot(-Vd, uSunDirV), 0.0), 3.0);         // sun shining through the crystal toward the camera
-        float glint = pow(max(dot(reflect(-uSunDirV, normal), Vd), 0.0), 40.0) * step(0.4, fh); // sparse facet sparkle
-        vec3 sunN = uSunColor / max(max(uSunColor.r, max(uSunColor.g, uSunColor.b)), 1e-3);     // direction of sun tint, unit peak
-        totalEmissiveRadiance = totalEmissiveRadiance * pulse * grad * streak * mix(1.0, 0.28, day)  // by day the glow yields to facet shading
-          + vec3(0.55, 0.42, 1.0) * rim * (0.55 + 0.45 * pulse) * mix(1.1, 0.5, day)
-          + sunN * rim * rim * rim * 1.0 * day                                                  // thin white edge highlight
-          + vec3(0.5, 0.38, 1.1) * bl * (0.45 + 0.55 * fh) * day                                // translucency
-          + sunN * glint * 1.7 * day; }                                                         // facet glints`,
+        float pulse = 0.78 + 0.22 * sin(uTime * 1.4 + vPh * 6.2832);
+        vec3 Vd = normalize(vViewPosition);                                      // fragment -> camera
+        vec3 Nn = normalize(normal);
+        float fres = pow(1.0 - clamp(abs(dot(Vd, Nn)), 0.0, 1.0), 2.2);          // broad Fresnel: a rim you can actually see at noon
+        float fh = facetHash(vON);
+        float grad = mix(1.2, 0.45, clamp(vLy / 2.2, 0.0, 1.0));                 // bright core at the base, cool tips
+        float streak = 0.82 + 0.3 * sin(vLy * 7.0 + fh * 21.0);
+        float back = max(dot(-Vd, uSunDirV), 0.0);                               // sun behind the shard, shining through
+        float glint = pow(max(dot(reflect(-uSunDirV, Nn), Vd), 0.0), 26.0);      // per-facet sun sparkle
+        vec3 sunN = uSunColor / max(max(uSunColor.r, max(uSunColor.g, uSunColor.b)), 1e-3);
+        vec3 e = totalEmissiveRadiance * pulse * grad * streak * mix(1.0, 0.20, day)  // by day the inner glow yields to facet shading
+          + vec3(0.60, 0.44, 1.15) * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)  // violet rim, day and night
+          + sunN * fres * fres * 0.85 * day                                            // thin hot edge where the sun grazes
+          + vec3(0.55, 0.36, 1.25) * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1   // translucency through the body
+          + sunN * glint * (0.35 + 0.5 * fh) * day * 0.9;
+        totalEmissiveRadiance = min(e, vec3(2.1)); }`,                                 // hard cap: bloom must never wash a facet to flat white
     });
     this.crystalMat = mat;
     this.crystalSets = [7, 5, 9].map((n, i) => { const m = new THREE.InstancedMesh(crystalClusterGeometry(rng, n), mat, 8); m.castShadow = false; /* emissive: shadows add nothing */ m.receiveShadow = true; m.name = 'crystals-' + i; this.game.scene.add(m); const lod = new InstLOD({ near: [m], nearDist: 520, band: 60, color: true }); this.lods.push(lod); return lod; });

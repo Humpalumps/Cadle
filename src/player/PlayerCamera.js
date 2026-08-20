@@ -85,8 +85,10 @@ export class PlayerCamera {
   kick(pitch, yaw = 0) {
     this._shotN++;
     if (this._sinceKick < 0.25) {                 // chained shot (automatic/pulse cadence):
-      pitch *= 1.25;                              //   punch reads ~25% harder so a 2 s burst climbs like a Destiny 600 rpm auto
-      yaw += noise2(this._shotN * 0.37, 9.17) * 0.55 * Math.abs(pitch);   // seeded horizontal wander — smooth per-burst walk, not white noise
+      pitch *= 1.55;                              //   punch reads ~55% harder so a 2 s burst climbs like a Destiny 600 rpm auto (~5-6° on screen)
+      // seeded horizontal wander: smooth value-noise walk over the burst (~2-3 lobes across a 20-shot mag), not white noise.
+      // 0.13 per shot index keeps it slow enough to read as a pattern instead of averaging out.
+      yaw += noise2(this._shotN * 0.13, 9.17) * 1.1 * Math.abs(pitch);
     }
     const perm = pitch * 0.2;                     // Destiny leaves ~20% of the climb: recoil control is on the player
     this.pitch = THREE.MathUtils.clamp(this.pitch + perm, -this.pitchLimit, this.pitchLimit);
@@ -162,8 +164,9 @@ export class PlayerCamera {
       const adj = this._bobSync * approach(10, dt); this.bobPhase += adj; this._bobSync -= adj;   // phase-lock to footstep events
     }
     const sp = Math.sin(this.bobPhase), s2p = Math.sin(this.bobPhase * 2);
-    const bobK = this.bobAmt * adsDamp, bs = this._sprint;   // sprint: ~2× roll so the run visibly rocks; vertical stays calm (Destiny puts run energy in the viewmodel)
-    this.bobOffset.set(sp * 0.012 * bobK * (1 + 0.5 * bs), s2p * 0.022 * bobK * (1 + 0.35 * bs), 0);
+    const bobK = this.bobAmt * adsDamp, bs = this._sprint;   // sprint: ~2× roll so the run visibly rocks; vertical actually DROPS ~30%
+    // (Destiny keeps the camera itself calm at a run and puts the energy into the viewmodel + roll — a bouncing eye reads as nausea, not speed)
+    this.bobOffset.set(sp * 0.012 * bobK * (1 + 0.5 * bs), s2p * 0.022 * bobK * (1 - 0.06 * bs), 0);
     const bobPitch = s2p * 0.2 * DEG * bobK * (1 + 0.6 * bs), bobRoll = sp * 0.35 * DEG * bobK * (1 + 1.0 * bs);
 
     // --- landing dip: damped spring (ω≈13, ζ≈0.6 → dip with a small overshoot), impact-scaled impulse from the event ---
@@ -200,7 +203,8 @@ export class PlayerCamera {
     const brP = Math.sin(t * 1.1) * 0.12 * DEG * idle, brR = Math.sin(t * 0.73 + 1.3) * 0.08 * DEG * idle, brY = noise2(t * 0.35, 71.3) * 0.06 * DEG * idle;
 
     // --- compose ---
-    const dipPitch = dipY * 1.25;                               // dip → visible landing nod, recovers with the spring
+    // dip → visible landing nod. Clamped: the eye may drop 25 cm off a 20 m fall, but nodding 15° with it is a face-plant.
+    const dipPitch = m.clamp(dipY * 0.85, -0.13, 0.13);         // ~4.5° on a normal jump landing, saturating at 7.4° on a big drop
     this.roll = this._strafeRoll + this._slideRoll + shR + this._flR[0] + this._kR[0] + bobRoll + brR;
     const vYaw = this.yaw + this.recoil.yaw + shY + brY;
     const vPitch = this.pitch + this.recoil.pitch + shP + this._flP[0] + dipPitch + bobPitch + brP - 0.7 * DEG * this._sprint;   // small forward lean into the sprint

@@ -72,12 +72,13 @@ export class VFX {
     const { camera, renderer, sky } = this.game;
     // min screen width for thin sparks/tracers (1.5 px), in world m per m depth
     const minW = 1.5 * 2 * Math.tan(camera.fov * 0.00872665) / (renderer.domElement.height || 1080);
-    this.add.material.uniforms.uMinW.value = minW; this.alpha.material.uniforms.uMinW.value = minW; this.tracers.material.uniforms.uMinW.value = minW * 2.2; // tracers: ~3.3px min so autorifle lines read in daylight
+    this.add.material.uniforms.uMinW.value = minW; this.alpha.material.uniforms.uMinW.value = minW;
+    this.tracers.material.uniforms.uMinW.value = minW * (2.2 + 2.0 * this.day); // ~3.3px at night, ~6.3px at noon: a head-on tracer is a short screen segment, width is all it has
     // approximate scene light for dust/smoke tint: ambient + sun
     if (sky) {
       const si = sky.sunIntensity ?? 1, sc = sky.sunColor, ac = sky.ambientColor;
       this.day = Math.max(0, Math.min(1, si));
-      this.tracers.material.uniforms.uDark.value = 0.5 * this.day; // dark tracer rim only in daylight (night additive is already hot)
+      this.tracers.material.uniforms.uDark.value = 0.85 * this.day; // dark tracer rim only in daylight (night additive is already hot)
       const L = this._lit;
       L[0] = Math.min(1.6, 0.18 + (ac ? ac.r * 0.35 : 0.2) + (sc ? sc.r : 1) * si * 0.85);
       L[1] = Math.min(1.6, 0.18 + (ac ? ac.g * 0.35 : 0.2) + (sc ? sc.g : 1) * si * 0.85);
@@ -122,11 +123,13 @@ export class VFX {
   _col(o, fallback) { return _c.set(o.color ?? (o.element && ELEMENT_COLORS[o.element]) ?? fallback); }
   _anchor(p) { const a = this._anchors[this._ai = (this._ai + 1) % this._anchors.length]; a.copy(p); return a; }
   tracer(from, to, o = NOPTS) {
-    const c = this._col(o, 0xffe9c4), h = o.hdr ?? (7 + 10 * this.day), len = o.len ?? 7; // noon: ~17x HDR core so it survives tonemap over bright grass/sky
-    // a tracer dies when its tail passes `to`: clamp speed so even point-blank shots stay on screen >= ~0.12 s (else noon gunfire reads as nothing)
+    // Shots fly along the view axis, so a tracer projects to a SHORT screen segment near the muzzle: length + width + on-screen
+    // time are the only things that make it read. Noon: ~17x HDR core, ~2.4x width, 20+ m bolt, >= 0.22 s alive (hand cannon
+    // cadence is 0.33 s — anything shorter and half the frames of real firing footage show nothing at all).
+    const c = this._col(o, 0xffe9c4), h = o.hdr ?? (7 + 10 * this.day), len = o.len ?? (11 + 10 * this.day);
     const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
-    const spd = Math.min(o.speed ?? 320, (dist + len) / 0.12);
-    this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, (o.width ?? 0.05) * (1 + 0.5 * this.day), o.duration ?? 0.1, spd, len, o.alpha ?? 1, o.core ?? 0.5, false);
+    const spd = Math.min(o.speed ?? 320, (dist + len) / 0.22);
+    this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, (o.width ?? 0.05) * (1 + 1.4 * this.day), o.duration ?? 0.14, spd, len, o.alpha ?? 1, o.core ?? 0.55, false);
   }
   beam(from, to, o = NOPTS) { const c = this._col(o, 0x7fd8ff), h = o.hdr ?? 4; this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, o.width ?? 0.08, o.duration ?? 0.25, 0, 0, o.alpha ?? 1, o.core ?? 0.7, true); }
   decal(p, n, o = NOPTS) {
@@ -155,9 +158,9 @@ export class VFX {
   }
   shockwave(p, o = NOPTS) {
     const r = o.radius ?? 3, c = this._col(o, 0xffffff), b = this.brush;
-    if (o.normal) { _v3.set(p.x + o.normal.x * 0.55, p.y + o.normal.y * 0.55, p.z + o.normal.z * 0.55); b.reset(this.add, _v3).axis(o.normal).flat(); } // lift over grass
+    if (o.normal) { _v3.set(p.x + o.normal.x * 0.95, p.y + o.normal.y * 0.95, p.z + o.normal.z * 0.95); b.reset(this.add, _v3).axis(o.normal).flat(); } // lift clear of 1 m meadow grass
     else b.reset(this.add, p).rot();
-    b.tex(TEX.RING).size(r * 0.12, r * 0.12, 2 / 0.12).life(o.duration ?? 0.45).color(0xffffff, c).hdr(3.5 + 1.5 * this.day, 1.8).alpha(0.95).fade(0, 0.15).burst(1);
+    b.tex(TEX.RING).size(r * 0.16, r * 0.16, 2 / 0.16).life(o.duration ?? 0.5).color(0xffffff, c).hdr(3.5 + 1.5 * this.day, 1.8).alpha(0.95).fade(0, 0.15).burst(1);
   }
   sigil(p, o = NOPTS) { return this.sigils.add(p, o.normal, { color: this._col(o, GOLD), size: o.size ?? 3, duration: o.duration ?? 1.5, spin: o.spin ?? 1.2, hdr: o.hdr ?? 2.2 }); }
   stats() { return { additive: this.add.n, alpha: this.alpha.n, tracers: this.tracers.n, decals: this.decals.n, sigils: this.sigils.items.filter((s) => s.live).length, emitters: this.emitters.filter((e) => e.live).length, day: this.day }; }
@@ -183,7 +186,7 @@ export class VFX {
       if (nm === 'tracer') this.tracer(p.clone().addScaledVector(right, -1.5).setY(p.y + 1.2), p.clone().addScaledVector(right, 1.5).addScaledVector(fwd, 3).setY(p.y + 1.4), { element: 'kinetic', speed: 40, len: 1.5 });
       else if (nm === 'beam') this.beam(p.clone().addScaledVector(right, -1.5).setY(p.y + 1), p.clone().addScaledVector(right, 1.5).addScaledVector(fwd, 3).setY(p.y + 1.6), { element: 'arc', duration: 1.2 });
       else if (nm === 'decal') { this.decal(p, n, { type: 'bullet', size: 0.3 }); this.decal(p.clone().addScaledVector(right, 0.8), n, { type: 'scorch', size: 1.4 }); }
-      else if (nm === 'flash') { this.flash(p.clone().setY(p.y + 1), { color: 0xff8a3d, intensity: 2.5, duration: 0.2 }); this.emit('flash', p.clone().setY(p.y + 1), { color: 0xff8a3d }); } // was intensity 6/0.4 s: blew out to a giant white orb at night
+      else if (nm === 'flash') { this.flash(p.clone().setY(p.y + 1), { color: 0xff8a3d, intensity: 1.4, distance: 6, duration: 0.18 }); this.emit('flash', p.clone().setY(p.y + 1), { color: 0xff8a3d, scale: 1.6 }); } // was intensity 6/0.4 s: blew out to a giant white orb at night
       else this.emit(nm, GROUNDED.has(nm) ? p : p.setY(p.y + 1.0), { normal: n, dir: fwd, element: nm === 'impact-enemy' ? 'arc' : undefined });
     }
     return list.length;
@@ -246,14 +249,20 @@ const axisOf = (o, def) => o.normal ?? o.dir ?? def;
 const PRESETS = {
   // ---- Destiny: guns -----------------------------------------------------------------------------------------------
   muzzle(v, p, o, k, s, c) {
+    // A hand cannon fires every ~0.33 s. A 0.1 s flash means 2 of 3 frames of real firing footage show NOTHING — which is
+    // exactly what the noon critique found. So the flash is layered by lifetime: 0.16 s crisp petal -> 0.34 s saturated
+    // ember afterglow -> ~0.9 s lit smoke wisp. Something readable is on screen for the whole firing cycle.
     const b = v.brush, d = o.dir ?? UP, A = v.add, day = v.day, ds = s * (1 + 0.6 * day); // daylight: bigger + hotter or the flash vanishes against a noon sky
+    const sat = _c2.copy(c).offsetHSL(0, 0.35, -0.05);
     // dark backing puff (alpha, 1-2 frames): gives the additive petal contrast at high sun; ~invisible at night
-    if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.11).size(0.75 * ds, 0.95 * ds, 1.5).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.42 * day).rot().fade(0, 0.35).burst(2);
-    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.68 * ds, 1.4).life(0.1).color(0xfff6e0, c).hdr(20 + 14 * day, 7).rot().fade(0, 0.3).burst(1);      // crisp petal cross, 2-4 frames, HDR-hot so it reads at noon
-    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.1).color(0xffffff, c).hdr(11 + 6 * day, 4).rot().fade(0, 0.3).burst(1);        // hot star core
-    b.reset(A, p).tex(TEX.GLOW).size(0.28 * ds, 0.34 * ds, 1.3).life(0.08).color(0xffffff, c).hdr(4 + 2 * day, 2).alpha(0.7).fade(0, 0.3).burst(1);   // small halo (support layer only)
-    b.reset(A, p).axis(d).spread(0.22).speed(18 * s, 36 * s).life(0.12, 0.3).size(0.016, 0.034, 0.4).tex(TEX.SPARK).color(0xfff2c0, c).hdr(7 + 5 * day, 2.5).stretch(0.022).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
-    b.reset(v.alpha, p).axis(d).spread(0.5).speed(1.5, 3.2).life(0.45, 0.75).size(0.07 * s, 0.13 * s, 4).tex(TEX.SMOKE).color(0x8c8c90).lit(L(v)).alpha(0.13 + 0.1 * day).rot().spin(2).drag(3).gravity(-0.8).fade(0.12, 0.3).burst(3 * k); // wisp lingers between shots: firing evidence on frames that miss the 0.1 s flash
+    if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.17).size(0.85 * ds, 1.1 * ds, 1.6).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.46 * day).rot().fade(0, 0.4).burst(2);
+    b.reset(A, p).tex(TEX.FLARE).size(0.98 * ds, 1.18 * ds, 1.3).life(0.16).color(sat, sat).hdr(2.2 + 1.4 * day, 0.9).alpha(0.9).rot().fade(0, 0.25).burst(1);  // saturated element petal BEHIND the core: low HDR keeps the hue through ACES instead of clipping white
+    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.70 * ds, 1.4).life(0.15).color(0xfff6e0, c).hdr(20 + 14 * day, 7).rot().fade(0, 0.3).burst(1);      // crisp petal cross, HDR-hot so it reads at noon
+    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.13).color(0xffffff, c).hdr(11 + 6 * day, 4).rot().fade(0, 0.3).burst(1);        // hot star core
+    b.reset(A, p).tex(TEX.GLOW).size(0.30 * ds, 0.40 * ds, 1.4).life(0.12).color(0xffffff, sat).hdr(4 + 2 * day, 2).alpha(0.7).fade(0, 0.3).burst(1);  // small halo (support layer only)
+    b.reset(A, p).tex(TEX.GLOW).size(0.34 * ds, 0.42 * ds, 0.35).life(0.34).color(sat, sat).hdr(1.6 + 1.2 * day).alpha(0.8).fade(0.02, 0.12).burst(1);  // hot-barrel afterglow, shrinking: the between-shots evidence
+    b.reset(A, p).axis(d).spread(0.24).speed(18 * s, 36 * s).life(0.14, 0.34).size(0.02, 0.042, 0.4).tex(TEX.SPARK).color(0xfff2c0, c).hdr(7 + 5 * day, 2.5).stretch(0.028).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
+    b.reset(v.alpha, p).axis(d).spread(0.55).speed(1.4, 3.0).life(0.55, 0.95).size(0.22 * ds, 0.34 * ds, 3).tex(TEX.SMOKE).color(0x8c8c90).lit(L(v)).alpha(0.15 + 0.11 * day).rot().spin(2).drag(3).gravity(-0.8).fade(0.12, 0.3).burst(2 * k); // wisp lingers between shots
   },
   'spark-trail'(v, p, o, k, s, c) {
     if (o.size) s *= o.size / 0.15;  // projectile radius -> scale
@@ -279,10 +288,12 @@ const PRESETS = {
   dust(v, p, o, k, s, c) { PRESETS['impact-terrain'](v, p, o, k * 0.6, s, c); },
   'impact-rock'(v, p, o, k, s, c) {
     const b = v.brush, n = axisOf(o, UP), fl = n.y > 0.5 ? p.y - 0.01 : -1e9;
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.2 * s, 0.28 * s, 1.5).life(0.07).color(0xfff0c0, 0xff9040).hdr(3, 1.5).fade(0, 0.3).burst(1);
-    b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.3, 0.7).size(0.018, 0.034, 0.5).tex(TEX.SPARK).color(0xfff0b0, 0xff8030).hdr(4, 2).stretch(0.03).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
-    b.reset(v.alpha, p).axis(n).spread(0.9).speed(2 * s, 6 * s).life(0.5, 0.9).size(0.02 * s, 0.045 * s, 0.8).tex(TEX.DIRT).color(0x8a8684).lit(L(v)).vary(0.5).rot().spin(14).gravity(18).drag(0.4).floor(fl, 0.4).fade(0, 0.7).burst(6 * k);
-    b.reset(v.alpha, p).axis(n).spread(0.8).speed(1 * s, 2 * s).life(0.4, 0.7).size(0.1 * s, 0.18 * s, 2.5).tex(TEX.SMOKE).color(0x8e8c8a).lit(L(v)).alpha(0.3).rot().spin(2).drag(3).gravity(-0.3).fade(0.1, 0.35).burst(3 * k);
+    // at 9 m a 2 cm spark is sub-pixel: chips and dust carry the read, the sparks are the sizzle on top
+    b.reset(v.alpha, p).jitter(0.05 * s).spread(3.14).speed(0.3, 0.8).life(0.3, 0.5).size(0.22 * s, 0.34 * s, 1.8).tex(TEX.SMOKE).color(0x1a1512).vary(0.3).alpha(0.5 * v.day).rot().fade(0.02, 0.3).burst(2 * k);   // dark backing so the flash pops off a bright cliff
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.34 * s, 0.46 * s, 1.5).life(0.11).color(0xfff0c0, 0xff9040).hdr(4.5, 1.8).fade(0, 0.3).burst(1);
+    b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.35, 0.8).size(0.03, 0.058, 0.5).tex(TEX.SPARK).color(0xfff0b0, 0xff8030).hdr(5, 2.4).stretch(0.05).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
+    b.reset(v.alpha, p).axis(n).spread(0.9).speed(2 * s, 6 * s).life(0.5, 0.9).size(0.035 * s, 0.07 * s, 0.8).tex(TEX.DIRT).color(0x8a8684).lit(L(v)).vary(0.5).rot().spin(14).gravity(18).drag(0.4).floor(fl, 0.4).fade(0, 0.7).burst(8 * k);
+    b.reset(v.alpha, p).axis(n).spread(0.8).speed(1 * s, 2.4 * s).life(0.5, 0.95).size(0.18 * s, 0.32 * s, 2.6).tex(TEX.SMOKE).color(0x9a9490).lit(L(v)).vary(0.3).alpha(0.45).rot().spin(2).drag(3).gravity(-0.3).fade(0.08, 0.35).burst(4 * k);
   },
   'impact-prop'(v, p, o, k, s, c) { PRESETS['impact-rock'](v, p, o, k, s, c); },
   sparks(v, p, o, k, s, c) {
@@ -296,16 +307,20 @@ const PRESETS = {
   },
   'impact-enemy'(v, p, o, k, s, c) {
     const b = v.brush, n = axisOf(o, UP), crit = !!o.crit, day = v.day;
-    const sat = _c2.copy(c).offsetHSL(0, 0.3, -0.06);   // element identity: saturated halo/motes at moderate HDR so the hue survives tonemap instead of clipping white
+    // Element identity survives ACES only at MODERATE HDR: anything above ~3x clips to white. So the hue lives in big,
+    // saturated, low-HDR layers (halo, ring, motes) and only a small core is allowed to go white-hot.
+    const sat = _c2.copy(c).offsetHSL(0, 0.45, -0.08);
     // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
-    b.reset(v.alpha, p).jitter(0.08 * s).spread(3.14).speed(0.3, 0.9).life(0.4, 0.65).size(0.34 * s, 0.5 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.75).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k);
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.46 * s, 0.62 * s, 1.6).life(0.18).color(sat, sat).hdr(2.6 + 1.8 * day, 1.1).alpha(0.9).fade(0, 0.3).burst(1); // saturated colored halo (the element read)
-    b.reset(v.add, p).tex(TEX.STAR).size(0.36 * s, 0.48 * s, 1.4).life(0.13).color(0xffffff, c).hdr(6 + 3 * day, 3).rot().fade(0, 0.3).burst(1);
-    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.25, 0.55).size(0.028, 0.055, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(5 + 3 * day, 3.5).stretch(0.045).gravity(7).drag(2.5).fade(0, 0.5).burst(12 * k);
-    b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.4, 0.75).size(0.06 * s, 0.12 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(3.5 + 1.5 * day).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
-    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 6.5).life(0.32).color(0xffffff, sat).hdr(5 + 3 * day, 2.5).alpha(0.95).fade(0, 0.2).burst(1);
-    if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.2).color(0xffffff, sat).hdr(6 + 3 * day, 3).rot().spin(2).fade(0, 0.3).burst(2);
-      b.reset(v.add, p).axis(n).spread(3.14).speed(4, 10).life(0.3, 0.6).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(5 + 3 * day, 3.5).stretch(0.03).gravity(6).drag(2).fade(0, 0.5).burst(10 * k); }
+    b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k);
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr(1.5 + 0.5 * day, 0.5).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.55 * s, 1.6).life(0.2).color(sat, sat).hdr(2.6 + 1.0 * day, 1.1).alpha(0.9).fade(0, 0.3).burst(1);
+    b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(0xffffff, c).hdr(6 + 3 * day, 3).rot().fade(0, 0.3).burst(1);          // small white-hot core only
+    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.034, 0.065, 0.3).tex(TEX.SPARK).color(sat, sat).hdr(4.5 + 1.5 * day, 2).stretch(0.05).gravity(7).drag(2.5).fade(0, 0.5).burst(12 * k);
+    b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.5, 0.9).size(0.1 * s, 0.18 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(2.6 + 0.9 * day).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
+    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 7).life(0.45).color(sat, sat).hdr(2.4 + 1.0 * day, 0.9).alpha(1).fade(0, 0.18).burst(1);   // saturated ring, big enough to read at 8 m
+    if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.22).color(0xffffff, sat).hdr(5 + 2 * day, 2.5).rot().spin(2).fade(0, 0.3).burst(2);
+      b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.28 * s, 0.28 * s, 11).life(0.6).color(sat, sat).hdr(2.2 + 0.8 * day, 0.7).alpha(0.9).fade(0.04, 0.25).burst(1);  // crit: second wider ring
+      b.reset(v.add, p).axis(n).spread(3.14).speed(4, 10).life(0.35, 0.7).size(0.026, 0.05, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(4.5 + 1.5 * day, 2.5).stretch(0.04).gravity(6).drag(2).fade(0, 0.5).burst(10 * k); }
   },
   blood(v, p, o, k, s, c) { PRESETS['impact-enemy'](v, p, o, k, s, c); },
   // ---- big ---------------------------------------------------------------------------------------------------------
@@ -318,15 +333,18 @@ const PRESETS = {
     b.reset(A, p).tex(TEX.GLOW).size(0.5 * r, 0.65 * r, 1.9).life(0.16).color(0xffffff, fire).hdr(8, 3).fade(0, 0.25).burst(1);                        // core flash
     b.reset(A, p).tex(TEX.GLOW).size(1.1 * r, 1.3 * r, 1.5).life(0.28).color(fire, 0x7a1800).hdr(1.6, 0.3).alpha(0.85).fade(0, 0.25).burst(1);            // warm halo
     b.reset(A, p).tex(TEX.FLARE).size(1.4 * r, 1.7 * r, 1.5).life(0.11).color(0xfff4d8, fire).hdr(4, 2).rot().fade(0, 0.2).burst(1);
-    b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.4, 0.85).size(0.16 * r, 0.32 * r, 2.6).tex(TEX.SMOKE).color(0xfff0b8, 0x8a1a00).hdr(3, 0.25).vary(0.5).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.28).burst(22 * k); // fire tongues
-    // smoke ball: fire-lit brown interior first (Destiny grenade), the linear color lerp takes it grey-brown -> near-black over life; slow fade-in so it never swallows the fireball frame
-    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.4 * r, 0.62 * r, 2.4).tex(TEX.SMOKE).color(0x8a5230, 0x201b16).hdr(1.5, 1).lit(L(v)).vary(0.35).alpha(0.8).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.1, 0.58).burst(16 * k);
+    b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.5, 1.0).size(0.18 * r, 0.36 * r, 2.6).tex(TEX.SMOKE).color(0xfff0b8, 0x8a1a00).hdr(3.2, 0.25).vary(0.5).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.3).burst(22 * k); // fire tongues (outlive the flash so the smoke ball never swallows the fire phase)
+    // smoke ball: Destiny grenade gradient — fire-lit orange-brown -> mid grey-brown -> dark. Starts SMALL and semi-transparent
+    // and grows (endMul 3.4), so 0.2-1.0 s reads as a churning fireball, not an instant ink blob.
+    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(0xb06a2e, 0x272119).hdr(1.7, 1).lit(L(v)).vary(0.35).alpha(0.62).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(14 * k);
     v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(6, 11 * v.mult), scale: r / 3 });                                              // smoke column keeps pumping from the site
-    _v3.set(p.x, p.y + (n ? 0.55 : 0), p.z);                                                                                                          // grounded ring lifts above 1 m meadow grass
+    _v3.set(p.x, p.y + (n ? 0.95 : 0), p.z);                                                                                                          // grounded ring lifts clear of 1 m meadow grass
     if (n) b.reset(A, _v3).axis(n).flat(); else b.reset(A, _v3).rot();
-    b.tex(TEX.RING).size(0.3 * r, 0.3 * r, 9).life(0.45).color(0xffffff, c).hdr(5, 2.2).alpha(0.95).fade(0, 0.15).burst(1);                            // shockwave
-    if (n) { _v3.set(p.x, p.y + 0.75, p.z);                                                                                                            // dust ring rides above the grass tops
-      b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.2, 3.4).size(0.3 * r, 0.5 * r, 2.2).tex(TEX.SMOKE).color(0x5c5040, 0x6e6048).lit(L(v)).vary(0.3).alpha(0.6).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(14 * k); } // lingering dust ring
+    b.tex(TEX.RING).size(0.42 * r, 0.42 * r, 9).life(0.55).color(0xffffff, c).hdr(5, 2.2).alpha(0.95).fade(0, 0.18).burst(1);                          // shockwave
+    if (n) { _v3.set(p.x, p.y + 1.05, p.z);                                                                                                            // dust ring rides above the grass tops
+      b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.4, 3.8).size(0.3 * r, 0.5 * r, 2.4).tex(TEX.SMOKE).color(0x9c8760, 0x7a6a4e).lit(L(v)).vary(0.3).alpha(0.55).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(14 * k);   // lingering TAN dust ring: light against green grass, dark against sky
+      _v3.set(p.x, p.y + 0.9, p.z);                                                                                                                    // scorch "haze" discs: the decal itself is buried under 1 m grass, this is the visible char
+      b.reset(AL, _v3).axis(n).flat().ring(0, 0.5 * r).tex(TEX.SMOKE).size(0.75 * r, 1.05 * r, 1.15).life(7, 10).color(0x241d16, 0x2b241b).vary(0.3).alpha(0.5).rot().fade(0.06, 0.45).burst(5); }
     b.reset(A, p).axisUp().spread(3.14).speed(1.2 * r, 3.2 * r).life(1.4, 2.6).size(0.022, 0.05, 0.35).tex(TEX.SPARK).color(0xffd080, fire).hdr(3.5, 0.7).stretch(0.03).gravity(8).drag(1.0).floor(fl, 0.3).fade(0, 0.6).burst(30 * k);       // lingering embers (local: capped speed so they don't pile 10 m away)
     b.reset(A, p).jitter(0.4 * r).axisUp().spread(1.2).speed(0.4, 1.2).life(1.4, 2.4).size(0.05 * r, 0.09 * r, 0.4).tex(TEX.GLOW).color(fire, 0xff3000).hdr(1.8, 0.5).alpha(0.55).gravity(-0.5).drag(1.5).fade(0.1, 0.5).burst(10 * k);       // floating hot motes
     b.reset(AL, p).axisUp().spread(2.2).speed(1.2 * r, 3 * r).life(0.8, 1.5).size(0.04 * s, 0.1 * s, 0.9).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(15).gravity(22).drag(0.3).floor(fl, 0.3).fade(0, 0.75).burst(14 * k);    // debris
@@ -334,18 +352,19 @@ const PRESETS = {
   },
   'exp-smoke'(v, p, o, k, s, c) {
     // one column puff per emitter tick: slow rise (~1-1.5 m/s), long life, dark and thick so it reads on grass at noon
-    v.brush.reset(v.alpha, p).jitter(0.5 * s).axisUp().spread(0.4).speed(0.8, 1.6).life(2.0, 3.0).size(0.85 * s, 1.35 * s, 2.6).tex(TEX.SMOKE)
-      .color(0x1b1613, 0x3a342c).lit(L(v)).vary(0.35).alpha(0.8).rot().spin(0.5).drag(0.5).gravity(-0.45).fade(0.1, 0.6).burst(1);
+    v.brush.reset(v.alpha, p).jitter(0.5 * s).axisUp().spread(0.4).speed(0.8, 1.6).life(2.0, 3.0).size(0.7 * s, 1.2 * s, 2.9).tex(TEX.SMOKE)
+      .color(0x5a4e40, 0x241f1a).lit(L(v)).vary(0.35).alpha(0.7).rot().spin(0.5).drag(0.5).gravity(-0.45).fade(0.14, 0.6).burst(1);
   },
   'aether-burst'(v, p, o, k, s, c) {
     const b = v.brush, A = v.add, day = v.day;
-    const sat = _c2.copy(c).offsetHSL(0, 0.3, 0);      // saturated violet-blue so it reads as magic, not a shadow artifact
-    // dark aether veil behind the sparkles (un-lit so it stays dark at noon) — kept small so it backs the motes instead of BEING the effect
-    b.reset(v.alpha, p).jitter(0.12 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.9, 1.6).size(0.24 * s, 0.4 * s, 2.2).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.55).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.4).burst(6 * k);
-    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr(4 + 2.5 * day, 1.8).alpha(0.9).fade(0, 0.3).burst(1);
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.09 * s, 0.15 * s, 0.4).tex(TEX.STAR).color(0xffffff, sat).hdr(5.5 + 3 * day, 3.5).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(70 * k);
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.13 * s, 0.24 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr(3 + 1.2 * day).alpha(0.6).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(32 * k);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 6).life(0.5).color(0xffffff, sat).hdr(4 + 2 * day, 2).alpha(0.9).fade(0, 0.2).burst(1);
+    const sat = _c2.copy(c).offsetHSL(0, 0.5, 0);      // saturated violet-blue so it reads as magic, not a shadow artifact
+    // dark aether veil: TINY and sparse — at noon it used to dominate and the whole burst read as a shadow smudge
+    b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.16 * s, 0.26 * s, 2.0).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.3).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
+    b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr(1.6 + 0.6 * day, 0.5).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
+    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr(4 + 2 * day, 1.8).alpha(0.9).fade(0, 0.3).burst(1);
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(3.2 + 1.2 * day, 2).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(90 * k);   // 2x mote size, saturated (was white-hot dots that clipped to grey specks)
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr(2.2 + 0.8 * day).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(42 * k);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr(2.4 + 1.0 * day, 0.9).alpha(0.95).fade(0, 0.2).burst(1);
   },
   death(v, p, o, k, s, c) {
     // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game
@@ -355,16 +374,18 @@ const PRESETS = {
     b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(0xffffff, c).hdr(7, 3).rot().fade(0, 0.3).burst(1);
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(0xffffff, c).hdr(5, 2).alpha(0.9).fade(0, 0.2).burst(1);
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(c).hdr(3, 1.2).alpha(0.7).fade(0.1, 0.3).burst(1);
-    // afterglow motes: bigger/hotter at day + longer life so the kill payoff lingers ~2 s at noon (Destiny tail)
-    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.6, 2.7).size(0.11 * s, 0.19 * s, 0.35).tex(TEX.STAR).color(0xffffff, c).hdr(4.5 + 3 * day, 2.6).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.55).burst(36 * k);
-    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.4, 2.2).size(0.24 * s, 0.45 * s, 0.35).tex(TEX.GLOW).color(c).hdr(2.4 + day).alpha(0.6).gravity(-0.8).drag(1).fade(0.1, 0.5).burst(14 * k);
+    // afterglow motes: at 8 m the old 0.11 m stars were sub-pixel and the kill tail vanished by 0.75 s. 2x size, longer life,
+    // saturated at moderate HDR so the element colour holds through noon exposure — the payoff now reads for ~2.5 s.
+    const dsat = _c2.copy(c).offsetHSL(0, 0.35, 0);
+    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * s, 0.36 * s, 0.4).tex(TEX.STAR).color(0xffffff, dsat).hdr(3.6 + 1.6 * day, 1.8).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(36 * k);
+    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * s, 0.75 * s, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr(1.7 + 0.5 * day).alpha(0.7).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(14 * k);
     b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(0xffffff, c).hdr(5, 3).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
     v.flash(p, { color: c, intensity: 4 * s, distance: 10, duration: 0.4 });
   },
   // ---- rings / sigils / FF14 magic ----------------------------------------------------------------------------------
   ring(v, p, o, k, s, c) {
     const n = o.normal ?? UP;
-    _v2.set(p.x + n.x * 0.75, p.y + n.y * 0.75, p.z + n.z * 0.75);   // lift above grass blades (~1 m meadow)
+    _v2.set(p.x + n.x * 1.0, p.y + n.y * 1.0, p.z + n.z * 1.0);   // lift clear of grass blades (~1 m meadow)
     const b = v.brush.reset(v.add, _v2).axis(n).flat();
     b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(0xffffff, c).hdr(3.5, 1.8).alpha(0.9).fade(0, 0.2).burst(1);
   },
@@ -404,7 +425,14 @@ const PRESETS = {
     b.reset(v.add, p).tex(TEX.GLOW).size(0.3 * s, 0.4 * s, 2).life(0.3).color(0xffffff, c).hdr(3, 1.5).fade(0, 0.3).burst(1);
     b.reset(v.add, p).jitter(0.1).spread(3.14).speed(1 * s, 2.5 * s).life(0.4, 0.8).size(0.04 * s, 0.08 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(3, 2).rot().spin(4).gravity(-1).drag(2).fade(0, 0.5).burst(10 * k);
   },
-  flash(v, p, o, k, s, c) { v.brush.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.5 * s, 2).life(o.duration ?? 0.15).color(0xffffff, c).hdr(4, 2).fade(0, 0.3).burst(1); },
+  flash(v, p, o, k, s, c) {
+    // a single big GLOW at hdr 4 became a structureless white orb at night (night exposure is ~2x): cap HDR by daylight and
+    // give it structure — saturated halo + small hot star core + a ring edge, so it reads as a spark pop, not a render error.
+    const b = v.brush, A = v.add, e = 0.45 + 0.55 * v.day, dur = o.duration ?? 0.15, sat = _c2.copy(c).offsetHSL(0, 0.35, -0.05);
+    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.62 * s, 1.8).life(dur * 1.4).color(sat, sat).hdr(1.5 * e, 0.5 * e).alpha(0.9).fade(0, 0.25).burst(1);
+    b.reset(A, p).tex(TEX.STAR).size(0.2 * s, 0.26 * s, 1.6).life(dur).color(0xffffff, c).hdr(5 * e, 2 * e).rot().fade(0, 0.3).burst(1);
+    b.reset(A, p).rot().tex(TEX.RING).size(0.18 * s, 0.18 * s, 5).life(dur * 2).color(sat, sat).hdr(2.2 * e, 0.8 * e).alpha(0.85).fade(0, 0.2).burst(1);
+  },
   aura(v, p, o, k, s, c) {
     v.brush.reset(v.add, p).ring(0.45 * s, 0.6 * s, 0, 1).speed(1.5 * s).swirl(2.5 / s).life(0.8, 1.4).size(0.04 * s, 0.08 * s, 0.3).tex(TEX.STAR).color(0xffffff, c).hdr(2.5, 1.5).rot().spin(3).gravity(-0.4).fade(0.15, 0.5).burst(Math.max(1, k));
   },

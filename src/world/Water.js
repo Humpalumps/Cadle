@@ -97,6 +97,9 @@ vec3 skyGrad(vec3 r) { return mix(uHorizonColor, uSkyColor, smoothstep(-0.05, 0.
 void main() {
   float bed = texture2D(uHeight, vWorld.xz * uInvSize + 0.5 + uHeightOffset).r;   // terrain height relative to water level
   float depth = -bed + vCrest;                                      // actual local depth under the displaced surface
+  // derivative MUST be taken before the discard: ANGLE/D3D lowers discard to clip(), which poisons the quad's other
+  // lanes -> fwidth() was garbage in exactly the quads that straddle the waterline, i.e. where the foam band lives
+  float fwD = fwidth(depth);
   if (depth < -0.6) discard;                                        // dry land well above the plane
   float d0 = max(depth, 0.0);
   vec3 V = normalize(cameraPosition - vWorld);
@@ -107,9 +110,11 @@ void main() {
   // ---- detail normal: scrolling layers of the baked tileable slope map, fading with distance (anti-shimmer).
   //      Layer 2/3 sample rotated coords + a macro mask trades layer weights spatially: kills the fabric-weave repeat in the 5-30 m band ----
   float str = uDetail / (1.0 + dist * 0.012);
-  vec2 p2 = mat2(0.66, -0.75, 0.75, 0.66) * p;
   float macro = texture2D(uNormal, p * 0.0046 + vec2(0.006, -0.004) * t).a;
   vec4 n1 = texture2D(uNormal, p * 0.042 + vec2(0.043, 0.025) * t);
+  // rotate AND domain-warp the finer layers by the coarse one: the 5-30 m band showed a fabric-weave repeat when the
+  // layers stayed on the same grid, and a +-2.5 m warp at the coarse layer's own period decorrelates them for free
+  vec2 p2 = mat2(0.66, -0.75, 0.75, 0.66) * p + (n1.rg * 2.0 - 1.0) * 2.5;
   vec4 n2 = texture2D(uNormal, p2 * 0.105 + vec2(-0.058, 0.047) * t);
   vec2 d = (n1.rg * 2.0 - 1.0) * (0.7 + 0.6 * macro) + (n2.rg * 2.0 - 1.0) * (0.9 - 0.55 * macro);
 #ifdef WATER_HQ
@@ -158,6 +163,9 @@ void main() {
   vec2 ruv = rp.xy / rp.w + n.xz * uReflDistort * NdotV / (1.0 + dist * 0.05);
   float rbias = clamp(dist * 0.004, 0.25, 1.2) + (1.0 - NdotV) * 0.5;   // extra grazing bias: hides 0.4x-target sawtooth/dither fizz where it shows most
   vec3 skyR = skyGrad(reflect(-V, n)) * 0.92;
+  float noRefl = 1.0 - step(0.5, uHasReflect);   // q=low (and the first frames): the flat sky gradient is the only mirror we have
+  // tint that fallback toward the lake body — untinted, grazing Fresnel painted the whole midday far field a flat milky horizon sheet
+  skyR = mix(skyR, skyR * (uShallow * 1.9 + 0.42), noRefl);
   float redge = smoothstep(0.0, 0.045, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
   vec3 refl = (uHasReflect > 0.5 && uCamBelow < 0.5) ? mix(skyR, texture2D(uReflect, clamp(ruv, 0.001, 0.999), rbias).rgb, redge) : ((uCamBelow > 0.5) ? scatter : skyR);
   refl *= uReflTint;
@@ -180,30 +188,34 @@ void main() {
   // so it lays a long glowing path but can never saturate into a solid white sheet
   float mtrail = ggx(nMoon, V, mDir, rough * 2.8 + 0.1);
   mtrail = mtrail / (1.0 + mtrail * 0.66);
-  spec += uMoonRad * (ggx(n, V, uMoonDir, rough) * 0.8 + mtrail * 0.9 * gw);
+  vec3 mspec = uMoonRad * (ggx(n, V, uMoonDir, rough) * 0.8 + mtrail * 0.9 * gw);
+  spec += mspec / (1.0 + dot(mspec, LUMA) * 0.55);   // hue-preserving cap: per-pixel sparkle survives, the trail can never flatten into a white sheet
 
   // night water reads more mirror-like: lift the reflection weight so moon/aurora/star sky sits on the whole surface
-  float Fr = min(F * (1.0 + uNight * 1.2) + uNight * 0.03, 1.0);
+  float Fr = min(F * (1.0 + uNight * 1.2) + uNight * 0.03, 1.0 - noRefl * 0.3);   // no real mirror -> never a full-Fresnel white sheet
   vec3 col = mix(refr, refl, Fr) + spec;
   col += uAmbient * uNight * (0.05 + 0.3 * pow(1.0 - NdotV, 3.0));   // ambient sheen: night lake never falls to featureless black
 #ifdef WATER_HQ
   // star-glint twinkle everywhere at night (not just the moon azimuth): sparse product threshold of two scrolling height layers
   float star = smoothstep(0.86, 0.985, n3.a) * smoothstep(0.72, 0.95, n1.a);
-  col += vec3(0.55, 0.7, 1.0) * (star * star * uNight * 1.6 / (1.0 + dist * 0.04));
+  // flat magnitude: the old 1/(1+dist) falloff drew a bright blue disc centred on the player. Only fade far, where it aliases.
+  col += vec3(0.6, 0.75, 1.0) * (star * star * uNight * 1.15 * (1.0 - smoothstep(80.0, 240.0, dist)));
 #endif
 
   // ---- shoreline foam: a pixel-crisp lace line hugging every contact isoline (fwidth-normalised width, noise-wobbled, breathing)
   //      + a couple of broken wash fronts creeping up the shelf + sparse crest lace. Never a blanket over the whole shelf ----
   float fp = n2.a * 0.6 + texture2D(uNormal, p * 0.07 + vec2(-0.02, 0.035) * t).b * 0.7;
-  float iso = d0 + (fp - 0.62) * 0.06 + 0.02 * sin(t * 1.3 + fp * 9.0);
-  float px = iso / max(fwidth(d0), 1e-5);                     // distance from the wobbled contact isoline in SCREEN PIXELS: crisp at any slope/distance
+  float iso = d0 + (fp - 0.62) * 0.07 + 0.035 * sin(t * 1.3 + fp * 9.0);      // wobbled + breathing contact isoline
+  // band width = max(~6 screen px, 9 cm of depth), capped at 55 cm: a hairline at distance, a believable wash at your
+  // feet, and never the whole shelf even where the bed is nearly flat
+  float bandW = clamp(fwD * 6.0, 0.09, 0.55);
   float lace = texture2D(uNormal, p * 0.31 + vec2(0.05, -0.04) * t).b;
-  float holes = 0.2 + 0.8 * smoothstep(0.2, 0.62, lace * 0.65 + fp * 0.35);   // lace texture: bright clumps + gaps, never fully solid
-  float foam = smoothstep(8.0, 2.5, px) * holes;              // ~4-8 px band hugging the contact (land side is clipped by the shore alpha)
-  float arc = smoothstep(0.09, 0.03, abs(fract(iso * 2.5 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
-  foam += arc * smoothstep(0.45, 0.12, iso) * smoothstep(0.55, 0.85, fp) * 0.45 * (1.0 - smoothstep(40.0, 120.0, dist));
-  foam += smoothstep(0.35, 0.75, vCrest / uSumAmp) * smoothstep(0.62, 0.88, fp) * 0.3;  // sparse wave-crest lace in open water
-  foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(150.0, 450.0, dist)) * (1.0 - uCamBelow);
+  float holes = 0.25 + 0.75 * smoothstep(0.12, 0.58, lace * 0.6 + fp * 0.4);  // lace texture: bright clumps + gaps, never fully solid
+  float foam = (1.0 - smoothstep(0.0, bandW, iso)) * holes;                   // the contact lace (land side is clipped by the shore alpha)
+  float arc = smoothstep(0.10, 0.03, abs(fract(iso * 2.2 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
+  foam += arc * smoothstep(0.75, 0.15, iso) * smoothstep(0.5, 0.82, fp) * 0.5 * (1.0 - smoothstep(60.0, 170.0, dist));
+  foam += smoothstep(0.30, 0.72, vCrest / uSumAmp) * smoothstep(0.55, 0.85, fp) * 0.45;  // sparse wave-crest lace in open water
+  foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
   vec3 foamCol = vec3(0.8) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
   col = mix(col, foamCol, foam);
 
