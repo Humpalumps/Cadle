@@ -169,6 +169,11 @@ void main() {
   float redge = smoothstep(0.0, 0.045, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
   vec3 refl = (uHasReflect > 0.5 && uCamBelow < 0.5) ? mix(skyR, texture2D(uReflect, clamp(ruv, 0.001, 0.999), rbias).rgb, redge) : ((uCamBelow > 0.5) ? scatter : skyR);
   refl *= uReflTint;
+  // hue-preserving cap (same trick as the moon trail below): at grazing angles the mirror carries the whole
+  // bright sky, which reads as a washed milky-white sheet at distance — worst at q=low where the flat
+  // sky-gradient fallback IS the mirror (blobcheck-gated). Sun/moon glitter lives in spec, unaffected.
+  float rlum = dot(refl, LUMA);
+  refl *= 0.62 / max(rlum, 0.62);
 
   // ---- specular: sun/moon glitter. Trail lobes use a cross-trail-squashed normal, only at grazing view angles (no brushed-metal from above),
   //      and the moon's glitter direction is elevation-clamped so a high moon still lays a long trail across the lake instead of a pool at the feet

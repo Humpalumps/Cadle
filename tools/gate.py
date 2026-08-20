@@ -54,6 +54,10 @@ if len(jit) >= 3:
     prev = None
     for f in jit:
         im = Image.open(f).convert('L')   # full frame: the world is frozen, so nothing legitimate moves
+        hist0 = im.histogram(); mean0 = sum(i * n for i, n in enumerate(hist0)) / max(sum(hist0), 1)
+        if mean0 < 8:                     # dead-frame guard: a lost WebGL context renders black, and black frames diff to a perfect 0.0
+            fails.append(f'JITTER: {os.path.basename(f)} is near-black (mean {mean0:.1f}) — renderer died mid-run; a 0.0 diff on black frames is NOT a pass')
+            break
         if prev is not None:
             df = ImageChops.difference(prev, im)
             hist = df.histogram()

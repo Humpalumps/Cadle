@@ -124,11 +124,11 @@ export function makeMaterials() {
     metal: std({ color: 0x2e333c, map: T.metal, roughnessMap: T.rough, roughness: 0.95, metalness: 0.9, envMapIntensity: 0.8, bumpMap: T.metal, bumpScale: 0.0018 }),
     metal2: std({ color: 0x6e7480, map: T.metal, roughnessMap: T.rough, roughness: 0.78, metalness: 0.85, envMapIntensity: 0.85, bumpMap: T.metal, bumpScale: 0.0012 }),
     dark: std({ color: 0x0c0c10, roughness: 0.7, metalness: 0.3 }),
-    gold: std({ color: 0xd8a94b, roughness: 0.3, metalness: 1.0, envMapIntensity: 1.2, emissive: 0x2a1a05, emissiveIntensity: 0.35 }),
-    brass: std({ color: 0xffca6a, roughness: 0.22, metalness: 1.0, envMapIntensity: 1.6, emissive: 0x7a4a10, emissiveIntensity: 0.6 }),
+    gold: std({ color: 0xd8a94b, roughness: 0.38, metalness: 1.0, envMapIntensity: 1.0, emissive: 0x2a1a05, emissiveIntensity: 0.35 }),   // user decree: viewmodel metals must not throw white sun glints over the meadow (blobcheck-gated)
+    brass: std({ color: 0xffca6a, roughness: 0.35, metalness: 1.0, envMapIntensity: 1.1, emissive: 0x7a4a10, emissiveIntensity: 0.6 }),
     grip: std({ color: 0x2e211a, roughness: 0.85, metalness: 0.0, bumpMap: T.wrap, bumpScale: 0.0025 }),
     ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05 }),
-    white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 2.2, roughness: 0.4, metalness: 0 }),
+    white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0 }),   // sights stay lit-white but under the day bloom threshold (1.05): 2.2 bloomed into permanent white balls over the grass
     glass: std({ color: 0x9fd0ff, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.28, depthWrite: false, emissive: 0x4080c0, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
     glow: {}, flash: {}, tex: T,
   };

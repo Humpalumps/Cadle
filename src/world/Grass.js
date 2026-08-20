@@ -270,6 +270,19 @@ if (vGrassHead.y > 0.0) {
 #endif
 diffuseColor.rgb = vGrassColor;`;
 
+// USER DECREE / ARCHITECTURAL LAW (do not raise, do not remove — tools/invariants.mjs greps this):
+// thin ground cover must NEVER produce pixels that read as glowing. A blade or flower head is sub-pixel
+// at distance, so any final output value near the bloom threshold (~1.05 linear; ~200 sRGB counts as
+// "glowing" in tools/blobcheck.py) flickers on/off frame-to-frame in wind, and bloom smears each flicker
+// into a floating white ball — the "flashing white blobs" bug, shipped from FIVE different terms so far
+// (flower emissive, wisp glow, tip specular, rim emissive, gust silvering × translucency stacking).
+// Per-term clamps kept missing the next term, so this caps the FINAL outgoing luminance instead:
+// hue-preserving, so over-bright tips flatten toward their own color instead of clipping to white.
+const GRASS_LUM_CAP = /* glsl */`
+	float grassLum = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+	outgoingLight *= 0.60 / max(grassLum, 0.60);
+`;
+
 // resolved at compile time (after other systems' ShaderChunk patches): wrapped diffuse + back-light translucency
 const lightsPhysicalGrass = () => ShaderChunk.lights_physical_pars_fragment
   .replace('float dotNL = saturate( dot( geometryNormal, directLight.direction ) );',
@@ -431,7 +444,8 @@ export class Grass {
         .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += vGrassEmissive;')
         .replace('#include <normal_fragment_begin>', NORMAL_BEGIN_GRASS)
         .replace('#include <lights_fragment_maps>', LIGHTS_MAPS_GRASS)
-        .replace('#include <lights_physical_pars_fragment>', lightsPhysicalGrass());
+        .replace('#include <lights_physical_pars_fragment>', lightsPhysicalGrass())
+        .replace('#include <opaque_fragment>', GRASS_LUM_CAP + '#include <opaque_fragment>');
     };
     // Keep our injection even if someone (e.g. CSM.setupMaterial) assigns onBeforeCompile later: chain, don't replace.
     let outer = null;

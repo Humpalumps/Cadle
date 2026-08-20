@@ -3,6 +3,8 @@
   { "eval": "__game.god(true)" },
   { "eval": "__game.passive(true)" },
   { "eval": "(()=>{ for (const el of document.body.children) if (el.tagName !== 'CANVAS') el.style.visibility = 'hidden'; return 'hud hidden' })()" },
+  { "log": "viewmodel stowed: the blob suite measures the WORLD — swaying lit-gold gun parts read >= the glowing threshold in sunlight without being meadow blobs. Weapon glow regressions are guarded by tools/invariants.mjs (sight emissive <= 1.0, metal roughness >= 0.3)." },
+  { "eval": "(()=>{ __game.game.player.weapons.setHidden(true); return 'viewmodel hidden' })()" },
 
   { "log": "BLOBS scenario B: world as populated (catches enemy/wisp-class offenders). BURSTS, not single shots — the blobs FLASH, so a static screenshot misses them." },
   { "hour": 13 }, { "tp": [2, null, -2] },
@@ -21,6 +23,8 @@
   { "hour": 13 }, { "look": [0.5, -0.55] }, { "wait": 0.6 }, { "burst": { "name": "blob-clear13", "n": 8, "interval": 0.1 } },
   { "hour": 15 }, { "look": [-1.2, -0.55] }, { "wait": 0.6 }, { "burst": { "name": "blob-clear15", "n": 8, "interval": 0.1 } },
   { "hour": 17.5 }, { "look": [0.5, -0.45] }, { "wait": 0.6 }, { "burst": { "name": "blob-clear17", "n": 8, "interval": 0.1 } },
+  { "log": "dawn: bloom threshold is mid-lerp between night (0.28) and day (1.05) and the field is backlit — the worst blob case" },
+  { "hour": 7.5 }, { "look": [-1.57, -0.45] }, { "wait": 0.6 }, { "burst": { "name": "blob-dawn", "n": 8, "interval": 0.1 } },
   { "hour": 23 }, { "look": [0.5, -0.5] }, { "wait": 0.6 }, { "burst": { "name": "blob-night", "n": 8, "interval": 0.1 } },
 
   { "log": "jitter probe: WORLD FROZEN (game.paused) so wind/clouds/water cannot register as motion — any remaining per-frame change is pure rendering instability (TAA not converging, animated dither). Must stay flat." },

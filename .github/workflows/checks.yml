@@ -1,0 +1,25 @@
+# Guardrail CI: the source invariants that keep the two forever-regressing bugs dead —
+# (1) flashing white/purple blobs over the meadow grass, (2) pointer lock lost (mouse stops
+# at the screen edge). tools/invariants.mjs greps the source for the rules; tools/check.mjs
+# syntax-checks every module and resolves imports. Neither needs npm install or a GPU.
+#
+# The FULL regression gate (node tools/gate.mjs: screenshot blob/jitter analysis + a real
+# pointer-lock session) needs the dev server and a real GPU, so it runs locally, not here —
+# CLAUDE.md makes it mandatory before any builder reports done.
+name: checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Source invariants (blob + pointer-lock guardrails)
+        run: node tools/invariants.mjs
+      - name: Syntax + import resolution
+        run: node tools/check.mjs
