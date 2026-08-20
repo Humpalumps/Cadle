@@ -121,7 +121,11 @@ export class Terrain {
         const wz = z + n2(x * 0.0072 + 9.2, z * 0.0072 - 4.1, s + 25) * 48 + n2(x * 0.024 + 3.1, z * 0.024 + 7.7, s + 35) * 8;
         const massif = rmf(wx * 0.0053, wz * 0.0053, s + 17, 3);         // 190/91/44 m arete network — creased crests, band-limited for the 16 m LOD
         const crag = rmf(wx * 0.0135, wz * 0.0135, s + 23, 4);           // 74/36/17/8 m faceted crag detail (near wall renders at 1-4 m stride)
-        let m = (wall * (14 + 11 * crag) + mt * (30 + 66 * massif + 20 * crag)) * pass;   // ring crests ~120-165 m (CLAUDE.md: ~150)
+        // the NW pass lowers the CRESTS, not the rock: crag detail keeps most of its amplitude in the
+        // saddle, so the pass reads as a rocky notch instead of a smooth bank (the "mountain looks
+        // like a slope" report — pass * everything flattened the whole gap into a dune)
+        let m = wall * (14 + 11 * crag) * (0.65 + 0.35 * pass)
+              + mt * ((30 + 66 * massif) * pass + 20 * crag * (0.55 + 0.45 * pass));   // ring crests ~120-165 m (CLAUDE.md: ~150)
         // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
         const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
         const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
