@@ -10,6 +10,7 @@
     "inspect": "node tools/inspect.mjs"
   },
   "dependencies": {
+    "@dgreenheck/ez-tree": "^1.1.0",
     "postprocessing": "^6.37.8",
     "three": "^0.185.1"
   },
