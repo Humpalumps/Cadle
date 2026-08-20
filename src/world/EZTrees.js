@@ -124,13 +124,15 @@ export function buildEZTrees(game, trees, vegetation) {
     return new Promise((res) => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); });
   }));
 
-  ready.then(() => {
+  ready.then(async () => {
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
     const C = new THREE.Color();
     const sets = [];
     let count = 0;
     for (const m of maps) { m.needsUpdate = true; renderer.initTexture(m); }   // decoded image -> GPU before the bake samples it
     for (const [v, list] of buckets) {
+      // one bake per frame: a burst of six RT renders was a visible boot hitch (perf audit 2026-08-20)
+      await new Promise((res) => requestAnimationFrame(res));
       v.impMat = new THREE.MeshStandardMaterial({ map: bakeImpostor(v.tree, v.w, v.h), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
       const n = list.length;
       // static per-instance data, written once; rebucketing rewrites the mesh instance buffers from it
@@ -186,6 +188,9 @@ export function buildEZTrees(game, trees, vegetation) {
         s.leaves.instanceColor.needsUpdate = true;
       }
     };
+    // compile every new tree/impostor program NOW, while the boot splash still covers the screen —
+    // first-use compiles were landing as multi-hundred-ms hitches in the player's first seconds.
+    try { renderer.compile(game.scene, game.camera); } catch (e) {}
     console.log(`[eztrees] ${count} trees, ${buckets.size} variants, impostors baked in ${(performance.now() - t0).toFixed(0)} ms`);
   });
 }

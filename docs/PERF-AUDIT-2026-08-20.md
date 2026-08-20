@@ -84,3 +84,30 @@ front-loaded after boot.
 - `renderer.compile(scene, camera)` after ez-tree materials exist, while the splash still covers.
 - Spread the per-variant `bakeImpostor` calls across frames (one per rAF) instead of a burst.
 - Quantize the health-fill `setX` writes (0.25 % steps).
+
+
+## UPDATE — same day, fixes started (Fable, continued by Opus)
+
+**Root cause found and fixed:** the water's planar mirror was re-rendering every near-tier
+ez-tree (full geometry) into its half-res target every 3rd frame — a periodic ~30 ms spike that
+read as "p50 fine, mean terrible" bimodal frames. `NO_REFLECT` in `src/world/Water.js` predated
+the ez-trees; trunks+leaves are now excluded (impostor quads stay in, so the far shore still
+shows trees in the mirror). **Lake window: 43 -> 81 fps, mean 23.3 -> 12.3 ms.**
+
+**Exonerated by order-controlled tests (do not re-chase):**
+- Quest beat-1 update: p50 16.3 (on) vs 16.5 (off), same window position.
+- ez-trees themselves: hiding ALL tree meshes moved the mean ~1.3 ms only.
+- DOM/HUD overlay: hiding everything changed nothing.
+- Post-boot settling: p50 was flat 10-16 ms from +10 s to +60 s — the earlier "decay" was
+  camera position, not time.
+
+**Landed alongside (warmup polish, keep):** splash now holds until 5 consecutive sub-25 ms
+frames (8 s cap); ez impostor bakes spread one per frame; `renderer.compile` of the whole scene
+under the splash; `HUD.setQuest` element refs cached.
+
+**Remaining for Opus:** spawn/ruins windows still sit at ~21-24 ms mean (p50 10-15) under the
+user's desktop GPU contention. Leads, in order: (1) the reflection+grab passes still run when
+any water is in frustum — check how often the camera-following water mesh is visible from the
+meadow and whether `everyN`/grab can skip when the lake is far/occluded; (2) re-measure CLEAN
+(user's Chrome closed) before optimizing further — every number in this doc was taken on a
+contended GPU; (3) then the standing 7 ms budget work per the main doc.

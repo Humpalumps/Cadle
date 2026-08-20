@@ -185,7 +185,8 @@ export class HUD {
   }
   setQuest(title, objective) {
     this.questEl.classList.toggle('hidden', !title);
-    if (title) { setT(this.questEl.querySelector('.qt'), title); setT(this.questEl.querySelector('.qo'), objective ?? ''); }
+    this._qt ??= this.questEl.querySelector('.qt'); this._qo ??= this.questEl.querySelector('.qo');
+    if (title) { setT(this._qt, title); setT(this._qo, objective ?? ''); }
   }
   hitMarker({ crit = false, kill = false } = {}) {
     const h = this.hitEl;

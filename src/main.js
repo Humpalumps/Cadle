@@ -65,11 +65,19 @@ window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(S
   game.ready.then(() => {
     if (bar) bar.style.width = '100%';
     if (msg) msg.textContent = 'ENTERING THE VALE';
-    // two frames after start(): the world is genuinely rendering (shader warmup happened under the splash)
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      splash?.classList.add('gone');
-      setTimeout(() => splash?.remove(), 900);
-    }));
+    // hold the splash until the frame time actually STABILIZES: shader compiles, impostor bakes
+    // and texture uploads all land under it instead of as jank in the player's first seconds.
+    // (5 consecutive sub-25ms frames, or an 8 s cap so a contended GPU can't hold boot hostage.)
+    const t0 = performance.now(); let last = t0, good = 0;
+    const settle = () => {
+      const now = performance.now(), d = now - last; last = now;
+      good = d < 25 ? good + 1 : 0;
+      if (good >= 5 || now - t0 > 8000) {
+        splash?.classList.add('gone');
+        setTimeout(() => splash?.remove(), 900);
+      } else requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
   });
 }
 

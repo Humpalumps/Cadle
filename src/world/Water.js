@@ -27,7 +27,7 @@ const QP = {  // refl = reflection res scale, everyN = render reflection every N
   ultra:  { refl: 0.5,  fine: 240, span: 384, hq: 1, grab: 1, everyN: 1 },
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
-const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames)/;
+const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees
 const COARSE = 32;   // coarse skirt cell (m); fine grid snaps to it
 const G = 9.81;
 
