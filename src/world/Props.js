@@ -318,7 +318,9 @@ export class Props {
       flames.push(V3(x, y + 1.97, z)); col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + 2.4, z), r: 0.32 });
     }
     const stones = new THREE.Mesh(flat(mergeAll(parts, tints)), this.stoneMat); stones.castShadow = stones.receiveShadow = true; stones.name = 'meadow-stones'; scene.add(stones);
-    const flameMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xff9a40, emissiveIntensity: 4.0, roughness: 0.6 }), { key: 'flame', uniforms: { uTime: U.uTime }, fHead: 'uniform float uTime; varying float vPh;', vHead: 'varying float vPh;', vBegin: 'vPh = fract(instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.21);',
+    // user decree: 4.0 on a 0.1 m flickering octahedron = sub-pixel warm blobs at distance (blobcheck-gated).
+    // 1.4 keeps the flame reading and its night halo (night bloom threshold 0.28) without daytime white balls.
+    const flameMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xff9a40, emissiveIntensity: 1.4, roughness: 0.6 }), { key: 'flame', uniforms: { uTime: U.uTime }, fHead: 'uniform float uTime; varying float vPh;', vHead: 'varying float vPh;', vBegin: 'vPh = fract(instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.21);',
       fEmissive: 'totalEmissiveRadiance *= 0.8 + 0.2 * sin(uTime * 9.0 + vPh * 6.28) * sin(uTime * 4.3 + vPh * 9.0);' });
     const fl = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.1).scale(1, 1.7, 1), flameMat, flames.length); flames.forEach((p, i) => fl.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z))); fl.name = 'lantern-flames'; scene.add(fl);
     // warm ground-glow decals instead of point lights (bloom + emissive carry the look; zero lighting cost, no recompile storms)

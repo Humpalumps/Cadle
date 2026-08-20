@@ -273,7 +273,10 @@ const PRESETS = {
   trail(v, p, o, k, s, c) {
     if (o.size) s *= o.size / 0.15;
     const b = v.brush;
-    b.reset(v.add, p).jitter(0.03 * s).spread(3.14).speed(0, 0.3).life(0.25, 0.45).size(0.1 * s, 0.16 * s, 0.1).tex(TEX.GLOW).color(0xffffff, c).hdr(2.5, 2).alpha(0.85).fade(0, 0.3).burst(2);
+    // user decree: wisps attach this trail 24/7 at grass height across the meadow — it must NEVER read as
+    // white balls. Saturate the color (hue survives ACES), cap the intensity at the wisp glow ceiling (1.1,
+    // barely over the day bloom threshold). White at hdr 2.5 was the drifting white/purple flashing blobs.
+    b.reset(v.add, p).jitter(0.03 * s).spread(3.14).speed(0, 0.3).life(0.25, 0.45).size(0.1 * s, 0.16 * s, 0.1).tex(TEX.GLOW).color(c, c).hdr(1.1, 0.8).alpha(0.85).fade(0, 0.3).burst(2);
     if (Math.random() < 0.35) b.tex(TEX.STAR).size(0.06 * s, 0.1 * s, 0.3).life(0.3, 0.5).rot().spin(4).burst(1);
   },
   // ---- impacts -----------------------------------------------------------------------------------------------------

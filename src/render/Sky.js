@@ -151,6 +151,7 @@ void main() {
 // DETAIL (32³ RGBA8): worley fbm at 3 rising frequencies (cauliflower crumb)
 const NOISE3D_FRAG = /* glsl */`
 precision highp float;
+layout(location = 0) out highp vec4 oColor;   // GLSL3: three r185 adds no oColor alias for glslVersion GLSL3 materials
 uniform float uSlice, uSeed, uMode; varying vec2 vUv;
 vec3 h33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973) + uSeed); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 // periodic 3D gradient noise
@@ -181,9 +182,9 @@ void main() {
     float per = pfbm(uv * 4.0, 4.0);
     float w0 = iwf(uv * 4.0, 4.0);
     float pw = clamp(w0 + per * (1.0 - w0), 0.0, 1.0);                // perlin-worley (Nubis): billowy worley base, perlin fills the gaps
-    gl_FragColor = vec4(pw, iwf(uv * 4.0 + 0.33, 4.0), iwf(uv * 8.0 + 0.71, 8.0), iwf(uv * 14.0 + 0.17, 14.0));
+    oColor = vec4(pw, iwf(uv * 4.0 + 0.33, 4.0), iwf(uv * 8.0 + 0.71, 8.0), iwf(uv * 14.0 + 0.17, 14.0));
   } else {
-    gl_FragColor = vec4(iwf(uv * 3.0, 3.0), iwf(uv * 6.0 + 0.41, 6.0), iwf(uv * 11.0 + 0.83, 11.0), 1.0);
+    oColor = vec4(iwf(uv * 3.0, 3.0), iwf(uv * 6.0 + 0.41, 6.0), iwf(uv * 11.0 + 0.83, 11.0), 1.0);
   }
 }`;
 
@@ -203,6 +204,7 @@ float rmp(float v, float a, float b) { return clamp((v - a) / max(b - a, 1e-5), 
 const CLOUD_FRAG = /* glsl */`
 precision highp float;
 precision highp sampler3D;
+layout(location = 0) out highp vec4 oColor;   // GLSL3: no oColor alias (see NOISE3D_FRAG note)
 uniform sampler2D uLut, uNoise;
 uniform sampler3D uShape, uDetail;
 uniform vec3 uSunDir, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot, uBeltCol;
@@ -331,7 +333,7 @@ void main() {
     cc = mix(cc, lutSky(d), 1.0 - exp(-tc * 1.1e-5));
     acc += T * cc * ca; T *= 1.0 - ca;
   }
-  gl_FragColor = vec4(acc, 1.0 - T);
+  oColor = vec4(acc, 1.0 - T);
 }`;
 
 // ---------------- the dome ----------------

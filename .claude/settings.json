@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node tools/invariants.mjs || exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}
