@@ -36,7 +36,7 @@ import {
 const QUALITY = {
   low:    { ao: false, aoSamples: 0,  godrays: false, godraysScale: 0.4,  godraysSamples: 24, dof: false, smaa: SMAAPreset.MEDIUM },
   medium: { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 26, dof: true,  smaa: SMAAPreset.HIGH },
-  high:   { ao: true,  aoSamples: 10, godrays: true,  godraysScale: 0.4,  godraysSamples: 30, dof: true,  smaa: SMAAPreset.ULTRA },
+  high:   { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 26, dof: false, smaa: SMAAPreset.HIGH },  // perf: DoF+ULTRA SMAA cost more than they read at 1080p; dof stays on ultra
   ultra:  { ao: true,  aoSamples: 14, godrays: true,  godraysScale: 0.55, godraysSamples: 44, dof: true,  smaa: SMAAPreset.ULTRA },
 };
 

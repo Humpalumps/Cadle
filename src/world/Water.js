@@ -23,7 +23,7 @@ import { mulberry32 } from '../core/Noise.js';
 const QP = {  // refl = reflection res scale, everyN = render reflection every N frames, grab = refraction framebuffer copy
   low:    { refl: 0,    fine: 128, span: 256, hq: 0, grab: 0, everyN: 1 },
   medium: { refl: 0.3,  fine: 160, span: 320, hq: 1, grab: 1, everyN: 2 },
-  high:   { refl: 0.4,  fine: 200, span: 320, hq: 1, grab: 1, everyN: 2 },
+  high:   { refl: 0.35, fine: 200, span: 320, hq: 1, grab: 1, everyN: 3 },  // perf: the planar mirror re-renders the scene — every 3rd frame reads the same at half res
   ultra:  { refl: 0.5,  fine: 240, span: 384, hq: 1, grab: 1, everyN: 1 },
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
