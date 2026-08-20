@@ -20,8 +20,10 @@
   { "hour": 15 }, { "look": [-1.2, -0.55] }, { "wait": 0.3 }, { "shot": "blob-clear-15" },
   { "hour": 17.5 }, { "look": [0.5, -0.55] }, { "wait": 0.3 }, { "shot": "blob-clear-17" },
 
-  { "log": "jitter probe: static camera on static stone (plinth), TAA/camera must hold still" },
-  { "hour": 13 }, { "tp": [0, null, -14] }, { "look": [0, -0.02] }, { "wait": 1.0 },
+  { "log": "jitter probe: WORLD FROZEN (game.paused) so wind/clouds/water cannot register as motion — any remaining per-frame change is pure rendering instability (TAA not converging, animated dither). Must stay flat." },
+  { "hour": 13 }, { "tp": [0, null, -14] }, { "look": [0, -0.02] }, { "wait": 1.5 },
+  { "eval": "(()=>{ __game.game.paused = true; return 'world frozen' })()" }, { "wait": 1.0 },
   { "burst": { "name": "jit", "n": 6, "interval": 0.12 } },
-  { "shot": "jitter-scene" }
+  { "shot": "jitter-scene" },
+  { "eval": "(()=>{ __game.game.paused = false; return 'resumed' })()" }
 ]

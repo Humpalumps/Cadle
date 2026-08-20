@@ -298,7 +298,7 @@ void main() {
     // pink underlighting for cloud bellies opposite a low sun (belt of venus light)
     vec2 sh = normalize(uSunDir.xz + vec2(1e-4, 0.0)), dh = normalize(d.xz + vec2(1e-4, 0.0));
     float anti = clamp(-dot(sh, dh), 0.0, 1.0);
-    vec3 ambBot = mix(uCloudAmbBot, uBeltCol, uBelt * anti) * 0.60;
+    vec3 ambBot = mix(uCloudAmbBot, uBeltCol, uBelt * anti) * 0.52;
     // macro coverage banks (clear lanes / cloud streets): low-freq, one fetch mid-slab is enough
     vec2 uvM = ((d * (0.5 * (t0 + t1))).xz + wind) / CL_TILE;
     float macro = texture2D(uNoise, uvM * 0.14 + 0.37).a;
@@ -321,25 +321,25 @@ void main() {
       if (H * 1.14 <= f2 + 0.02) continue;
       float lump = texture2D(uNoise, uv * 0.5 + 0.61 + uWindT * vec2(-0.0006, 0.0004)).g;
       H *= 0.72 + 0.42 * lump;
-      float dn = smoothstep(f2 + 0.02, f2 + 0.24, H) * smoothstep(1.0, 0.80, f);
+      float dn = smoothstep(f2 + 0.02, f2 + 0.17, H) * smoothstep(1.0, 0.80, f);
       if (dn <= 0.01) continue;
       // crumbly cauliflower rims: erode edges only (cores stay opaque); detail drifts vs base for slow morphing
       float det = texture2D(uNoise, uv * 1.9 + vec2(0.61, 0.43) + uWindT * vec2(0.0011, -0.0007)).g;
       float det2 = texture2D(uNoise, uv * 6.1 + vec2(0.13, 0.77)).b;
       float ero = (1.0 - det) * 0.55 + (0.5 - det2) * 0.22;
-      dn = clamp((dn - ero * (1.0 - dn)) * 1.6, 0.0, 1.0);
+      dn = clamp((dn - ero * (1.0 - dn)) * 1.9, 0.0, 1.0);
       if (dn <= 0.012) continue;
       // self-shadow: 2 density probes along the light + depth under the local cloud top
       float dL1 = colDens(uv + lOff, f + fL, cov);
       float dL2 = colDens(uv + lOff * 2.2, f + fL * 2.2, cov);
       float depthTop = clamp((sqrt(H) - f) * 3.5, 0.0, 1.0);
-      float tau = dL1 * 2.8 + dL2 * 1.8 + depthTop * 2.6 + dn * 0.5;
+      float tau = dL1 * 2.8 + dL2 * 1.8 + depthTop * 3.1 + dn * 0.5;
       float beer = exp(-tau) + 0.20 * exp(-tau * 0.20);          // multi-scatter floor
-      float powder = 1.0 - 0.6 * exp(-dn * 6.0);
+      float powder = 1.0 - 0.72 * exp(-dn * 5.0);
       // silver lining: unoccluded rims facing the sun catch strong forward scatter
-      vec3 lit = uCloudLightCol * (beer * powder * phase * 1.25 + exp(-(dL1 * 3.0 + dn * 1.2)) * fwd * 0.22);
-      float topness = exp(-depthTop * 2.2);
-      vec3 amb = mix(ambBot * (0.90 + 0.20 * det), uCloudAmbTop * (1.25 + 0.30 * det2), topness * (0.35 + 0.65 * det));
+      vec3 lit = uCloudLightCol * (beer * powder * phC * 1.25 + exp(-(dL1 * 3.0 + dn * 1.2)) * fwd * 0.22);
+      float topness = exp(-depthTop * 1.8);
+      vec3 amb = mix(ambBot * (0.90 + 0.20 * det), uCloudAmbTop * (1.45 + 0.35 * det2), topness * (0.35 + 0.65 * det));
       vec3 c = lit + amb;
       float a = 1.0 - exp(-pow(dn, 1.2) * sig);                  // opaque cores, soft rims
       float aer = 1.0 - exp(-t * 0.00005);                       // far clouds take on the haze color
@@ -359,7 +359,7 @@ void main() {
   col = mix(col, fogCol * (1.0 - 0.28 * smoothstep(0.0, -0.32, d.y)), smoothstep(0.012, -0.03, d.y));
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  if (lum > 0.8) col *= (0.8 + (lum - 0.8) / (1.0 + (lum - 0.8) * 0.9)) / lum;
+  if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
   col += sunDisc * disc * limb * 60.0 * sunUp;
   gl_FragColor = vec4(col, 1.0);
 }`;

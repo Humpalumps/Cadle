@@ -4,14 +4,18 @@
 #     connected clusters of near-white pixels (min(R,G,B) >= WHITE). Any cluster >= MIN_AREA px
 #     (at 960px width) fails — that is a washed-white glowing blob, the thing the user decree bans.
 #     Colored glows (lanterns, aether violet) have a low min-channel and pass.
-#  2. JITTER: burst-jit-*.png, static camera on static stone. Mean abs diff between consecutive
-#     frames in the center crop (stone, no wind-blown grass) must stay < JITTER_MAX per channel.
+#  2. JITTER: burst-jit-*.png, static camera with the WORLD FROZEN (game.paused, rendering still
+#     running). Wind/clouds/water cannot contribute, so any per-frame change is pure rendering
+#     instability — TAA failing to converge, animated dither. Measured across the FULL frame, and
+#     the drift must not grow (a non-converging TAA ramps upward: verified 1.17 -> 3.21 at q=high
+#     while q=low sat flat at 1.15, matching the user-visible "jitter on high, none on low").
 import sys, os, glob, json
 from PIL import Image, ImageChops
 
 WHITE = 232        # min-channel threshold for "washed white"
 MIN_AREA = 16      # px at 960-wide downscale (~0.5m blob at 20m); flowers/specks stay below
-JITTER_MAX = 2.5   # mean abs diff (0..255) in center crop between consecutive static frames
+JITTER_MAX = 2.0   # mean abs diff (0..255) between consecutive frames with the world frozen
+                   # (grain-only baseline measures ~1.15; a non-converging TAA climbs past 3)
 
 d = sys.argv[1] if len(sys.argv) > 1 else 'tools/out/gate'
 fails, report = [], {}
@@ -51,9 +55,7 @@ if len(jit) >= 3:
     diffs = []
     prev = None
     for f in jit:
-        im = Image.open(f).convert('L')
-        w, h = im.size
-        im = im.crop((int(w*0.3), int(h*0.12), int(w*0.7), int(h*0.55)))  # center-upper: stone + sky, no grass
+        im = Image.open(f).convert('L')   # full frame: the world is frozen, so nothing legitimate moves
         if prev is not None:
             df = ImageChops.difference(prev, im)
             hist = df.histogram()
@@ -63,7 +65,9 @@ if len(jit) >= 3:
     report['jitter_diffs'] = diffs
     worst = max(diffs)
     if worst > JITTER_MAX:
-        fails.append(f'JITTER: static-camera frame diff {worst} > {JITTER_MAX} (pairs: {diffs}) — TAA/camera is visibly unstable')
+        fails.append(f'JITTER: frozen-world frame diff {worst} > {JITTER_MAX} (pairs: {diffs}) — the renderer keeps changing a static scene; TAA is not converging (see HANDOVER "jitter")')
+    elif len(diffs) >= 3 and diffs[-1] > diffs[0] * 2 and diffs[-1] > 1.6:
+        fails.append(f'JITTER: frozen-world drift is RAMPING ({diffs}) — TAA history is diverging instead of settling')
 else:
     fails.append('JITTER: burst-jit frames missing — gate steps did not run')
 
