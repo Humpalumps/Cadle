@@ -59,8 +59,7 @@ const TEMPLATE = `
 <div id="tgt"><div class="tname"><span class="tn"></span><span class="tlvl"></span></div><div class="bar"><i class="ghost"></i><i class="tfill"></i><i class="tsh"></i></div></div>
 <div id="boss"><div class="bname"></div><div class="bar"><i class="bfill"></i><i class="bsh"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div></div>
 <div id="vitals"><div id="lvl"><b>1</b></div><div class="bars">
-  <div id="sbar" class="bar"><i class="ghost"></i><i class="fill"></i><i class="shim"></i></div>
-  <div id="hbar" class="bar"><i class="ghost"></i><i class="fill"></i><i class="shim"></i></div>
+  <div id="hbar" class="bar"><i class="ghost"></i><i class="fill"></i><i class="shim"></i><span class="hpnum"></span></div>
 </div></div>
 <div id="ammo">
   <div id="wline"><span id="wname"></span><span id="welem"></span></div>
@@ -89,8 +88,8 @@ export class HUD {
     this.chRing = $('#ch .ring'); this.chTk = [$('.up'), $('.dn'), $('.lf'), $('.rt')];
     this.chargeEl = $('#chargebar'); this.chargeFill = $('#chargebar i');
     this.lowhp = $('#lowhp'); this.lvlEl = $('#lvl b');
-    this.sbar = $('#sbar'); this.hbar = $('#hbar');
-    this.sFill = $('#sbar .fill'); this.hFill = $('#hbar .fill'); this.sGhost = $('#sbar .ghost'); this.hGhost = $('#hbar .ghost');
+    this.hbar = $('#hbar');
+    this.hFill = $('#hbar .fill'); this.hGhost = $('#hbar .ghost'); this.hpNum = $('#hbar .hpnum');
     this.wname = $('#wname'); this.welem = $('#welem'); this.mag = $('#mag'); this.res = $('#res');
     this.rline = $('#rline'); this.rFill = $('#rline i'); this.slotEls = [...$('#slots').children];
     this.tgtEl = $('#tgt'); this.tgtName = $('#tgt .tn'); this.tgtLvl = $('#tgt .tlvl'); this.tgtFill = $('#tgt .tfill'); this.tgtSh = $('#tgt .tsh'); this.tgtGhost = $('#tgt .ghost');
@@ -236,7 +235,7 @@ export class HUD {
     arc.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: 950 });
   }
   _barFlash() {
-    this.sbar.parentElement.animate([{ filter: 'brightness(2.2)' }, { filter: 'brightness(1)' }], { duration: 260 });
+    this.hbar.parentElement.animate([{ filter: 'brightness(2.2)' }, { filter: 'brightness(1)' }], { duration: 260 });
   }
   _refreshWeapon(w) {
     if (!w) return;
@@ -304,15 +303,14 @@ export class HUD {
     const g = this.game, p = g.player, w = p.weapons?.current;
     if (g.input.justPressed('F3')) this.setPerfVisible(!this._perfOn);
 
-    // vitals
-    const hp = p.health / p.maxHealth, sh = p.shield / p.maxShield;
-    setX(this.hFill, hp); setX(this.sFill, sh);
+    // vitals (health-only; shield removed — WoW-style regen lives in Player.update)
+    const hp = p.health / p.maxHealth;
+    setX(this.hFill, hp);
     this.hGhost._g = Math.max(hp, (this.hGhost._g ?? hp) - dt * 0.55); setX(this.hGhost, this.hGhost._g);
-    this.sGhost._g = Math.max(sh, (this.sGhost._g ?? sh) - dt * 0.55); setX(this.sGhost, this.sGhost._g);
     setCls(this.hbar, 'low', hp < 0.33);
     setCls(this.hbar, 'regen', p.health > this._prevHp + dt * 0.5 && p.health < p.maxHealth);
-    setCls(this.sbar, 'regen', p.shield > this._prevSh + dt * 0.5 && p.shield < p.maxShield);
-    this._prevHp = p.health; this._prevSh = p.shield;
+    this._prevHp = p.health;
+    setT(this.hpNum, Math.ceil(p.health) + ' / ' + Math.round(p.maxHealth));
     setT(this.lvlEl, String(p.level ?? 1));
     // low-health vignette
     const lo = p.alive ? clamp01((0.42 - hp) / 0.42) * 0.9 : 0;

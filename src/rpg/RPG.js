@@ -48,9 +48,9 @@ export class RPG {
       get dead() { return !g.player.alive; },
       set dead(v) { if (!v && !g.player.alive) g.player.respawn?.(); },
       get health() { return g.player.health; }, set health(v) { g.player.health = v; },
-      get shield() { return g.player.shield; }, set shield(v) { g.player.shield = v; },
+      get shield() { return 0; }, set shield(v) {},
       get maxHealth() { return g.player.maxHealth; }, set maxHealth(v) { g.player.maxHealth = v; },
-      get maxShield() { return g.player.maxShield; }, set maxShield(v) { g.player.maxShield = v; },
+      get maxShield() { return 0; }, set maxShield(v) {},   // shield removed: health-only (see Player.js)
       set moveSpeedMul(v) { if (g.player.controller) g.player.controller.moveSpeedMul = v; }, // advisory: controller may not read it
       set jumpMul(v) { if (g.player.controller) g.player.controller.jumpMul = v; },
       get fovBoost() { return 0; }, set fovBoost(v) {},

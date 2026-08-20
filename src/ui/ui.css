@@ -179,3 +179,8 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #qualrow button.on { background: rgba(216,189,122,0.18); border-color: var(--gold); color: var(--gold-hi); }
 #resume { display: block; width: 100%; margin-top: 20px; padding: 9px 0; font-size: 16px; }
 #pause .controls { margin-top: 14px; }
+
+/* health-only vitals: hp number inside the bar */
+#hbar { position: relative; }
+#hbar .hpnum { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font: 600 11px var(--serif); letter-spacing: 0.08em; color: rgba(246,236,208,0.96); text-shadow: 0 1px 2px rgba(0,0,0,0.85); pointer-events: none; }
