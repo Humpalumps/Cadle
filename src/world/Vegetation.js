@@ -683,13 +683,14 @@ export class Vegetation {
     const { camera, sky } = this.game, U = this.uniforms;
     U.uTime.value = t;
     if (sky) { U.uSunDirV.value.copy(sky.sunDir).transformDirection(camera.matrixWorldInverse); U.uSunColor.value.copy(sky.sunColor); U.uSunI.value = sky.sunIntensity ?? 1; }
-    // staggered LOD refresh: at most 2 sets per frame, each set when the camera moved > 1.5 m from ITS last refresh
+    // staggered LOD refresh: 3 sets per frame, each set when the camera moved > 1 m from ITS last refresh
+    // (2 sets @ 1.5 m lagged enough at sprint speed that trees/rocks visibly popped in at the near edge)
     const p = camera.position, n = this.lods.length; if (!n) return;
-    let budget = 2;
+    let budget = 3;
     for (let k = 0; k < n && budget; k++) {
       const l = this.lods[(this._ri + k) % n];
       if (!l._lp) { l._lp = new THREE.Vector3(1e9, 0, 0); l._lt = -1; }
-      if (p.distanceToSquared(l._lp) > 2.25 || t - l._lt > 0.6) {
+      if (p.distanceToSquared(l._lp) > 1.0 || t - l._lt > 0.45) {
         l.refresh(p.x, p.z); l._lp.copy(p); l._lt = t;
         if (--budget === 0) this._ri = (this._ri + k + 1) % n;
       }

@@ -244,7 +244,7 @@ export class PostFX {
     // while the sun glow bleeds over the distant ridge, FF14-style). Set postfx.godraysSource = game.sky.sunMesh to use theirs.
     // Tight disc (angle 0.035) + blurred light buffer = defined smooth shafts instead of a broad stippled veil.
     this._sun = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), new THREE.MeshBasicMaterial({ color: 0xffe8c0, fog: false }));
-    this._sun.frustumCulled = false; this.godraysSource = null; this.godraysAngle = 0.035; this.godraysDist = 260;
+    this._sun.frustumCulled = false; this.godraysSource = null; this.godraysAngle = 0.035; this.godraysDist = 1200; // beyond the mountain ring: peaks now depth-occlude the disc (and so its rays) instead of the sun drawing in front of them
     this.godraysBoost = 2.0; // HDR disc brightness: puts the ray core above the day bloom threshold (hot sun punch)
     this.godrays = new GodRaysEffect(camera, this._sun, { resolutionScale: this.q.godraysScale, samples: this.q.godraysSamples, density: 0.97, decay: 0.945, weight: 0.6, exposure: 0.3, clampMax: 1.35, kernelSize: KernelSize.SMALL, blur: true });
     this.godraysPass = new EffectPass(camera, this.godrays); composer.addPass(this.godraysPass);
