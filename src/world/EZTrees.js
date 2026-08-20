@@ -3,9 +3,10 @@
 // merges each into two instanced geometries (branches + leaves) and places them at the exact
 // positions the normal tree system rolled, replacing it wholesale.
 //
-// Status: EVALUATION build. Full geometry at every distance — no impostor LOD, no wind sway yet.
-// If the fps holds, the follow-up is wiring these geometries through Vegetation's InstLOD +
-// impostor bake so far trees stay cheap; if it doesn't, that wiring is mandatory before default-on.
+// DEFAULT tree system (?eztrees=0 restores the legacy card trees). Full geometry with chunked
+// frustum culling and a 420 m distance cull — the far forest sits behind the haze anyway.
+// ponytail: a baked far-impostor tier would buy the last few fps; the InstLOD wiring attempt hit a
+// placement bug under the usage deadline — worth revisiting with time to debug visually.
 import * as THREE from 'three';
 import { Tree } from '@dgreenheck/ez-tree';
 
@@ -17,7 +18,7 @@ const POOLS = [
 ];
 const TARGET_H = { 0: 13, 1: 12, 2: 11 };   // metres; instance scale multiplies on top
 
-export function buildEZTrees(game, trees) {
+export function buildEZTrees(game, trees, vegetation) {
   const t0 = performance.now();
   const variants = [];   // per unique preset: { branchGeo, leafGeo, barkMat, leafMat, h }
   const cache = {};
@@ -28,10 +29,10 @@ export function buildEZTrees(game, trees) {
   // the canopy coverage with fewer quads. Target ~5-8k tris per tree.
   const tune = (o) => {
     const b = o.branch, l = o.leaves;
-    for (const k in b.children) b.children[k] = Math.max(1, Math.round(b.children[k] * 0.45));
+    for (const k in b.children) b.children[k] = Math.max(1, Math.round(b.children[k] * 0.4));
     for (const k in b.sections) b.sections[k] = Math.max(3, Math.round(b.sections[k] * 0.55));
     for (const k in b.segments) b.segments[k] = Math.max(3, Math.round(b.segments[k] * 0.55));
-    l.count = Math.max(8, Math.round(l.count * 0.6));
+    l.count = Math.max(8, Math.round(l.count * 0.55));
     l.size *= 1.7;
   };
 
@@ -114,7 +115,7 @@ export function buildEZTrees(game, trees) {
   }
   // distance cull: chunks fully beyond the haze line contribute tris nobody can read.
   // piggyback on the render loop via one onBeforeRender hook (no system wiring needed).
-  const CULL = 470;
+  const CULL = 420;
   const probe = new THREE.Object3D(); probe.frustumCulled = false; game.scene.add(probe);
   probe.onBeforeRender = (r, sc, cam) => {
     const p = cam.position;

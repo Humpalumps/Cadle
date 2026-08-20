@@ -413,13 +413,13 @@ export class Vegetation {
     this._buildRocks(rng, aniso, Q);
     this._buildCrystals(rng, aniso);
     this._place(mulberry32(game.seed + 777));
-    // ?eztrees=1 — experimental @dgreenheck/ez-tree replacement (see EZTrees.js): swap the normal
-    // tree meshes out entirely, keep placements/colliders. Evaluation flag, off by default.
-    if (game.params?.get?.('eztrees')) {
+    // ez-tree trees are the DEFAULT (see EZTrees.js): generated variants through the same InstLOD
+    // near/impostor contract. ?eztrees=0 restores the legacy card trees.
+    if (game.params?.get?.('eztrees') !== '0') {
       const treeLods = new Set(this.treeSets.map((s) => s.lod));
       this.lods = this.lods.filter((l) => !treeLods.has(l));
       for (const s of this.treeSets) for (const m of [...s.lod.near, s.lod.far]) if (m) { m.count = 0; m.visible = false; this.game.scene.remove(m); }
-      import('./EZTrees.js').then(({ buildEZTrees }) => buildEZTrees(this.game, this.trees));
+      import('./EZTrees.js').then(({ buildEZTrees }) => buildEZTrees(this.game, this.trees, this));
     }
     for (const l of this.lods) l.finalize();
     console.log(`[vegetation] trees ${this.trees.length} rocks ${this.rocks.length} crystals ${this.crystals.length} in ${(performance.now() - t0).toFixed(0)} ms`);
