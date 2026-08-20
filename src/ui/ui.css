@@ -159,6 +159,8 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---------- start screen & pause menu ---------- */
 #start, #pause { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--ivory); background: radial-gradient(ellipse at center, rgba(10,14,30,0.55), rgba(0,0,0,0.86)); pointer-events: auto; }
 #start { cursor: pointer; }
+/* straight-in boot: the hint floats over the LIVE world (no dark veil, no title) — any click captures the mouse */
+#start.strip { justify-content: flex-end; padding-bottom: 6vh; background: none; }
 #start h1, #pause h1 { font: 300 62px var(--serif); font-variant: small-caps; letter-spacing: 0.32em; margin: 0; color: var(--gold-hi); text-shadow: 0 0 28px rgba(140,190,255,0.55), 0 0 60px rgba(216,189,122,0.3); }
 .flourish { width: 420px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); position: relative; }
 .flourish::after { content: '❖'; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); color: var(--gold); font-size: 12px; }

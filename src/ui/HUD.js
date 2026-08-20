@@ -260,9 +260,11 @@ export class HUD {
   _buildMenus() {
     const g = this.game;
     if (g.auto) return;
-    const start = document.createElement('div'); start.id = 'start';
-    start.innerHTML = `<h1>Aetherfall</h1><div class="flourish"></div><p class="cta">click to begin</p>
-      <p class="controls">wasd move · shift sprint · space jump (double) · ctrl slide · lmb fire · rmb aim · r reload<br>1 / 2 / 3 weapons · g grenade · f melee · q class · x super · esc menu</p>`;
+    // No click-to-begin screen: the world loads straight in (browsers require a real click before
+    // pointer lock, so a small floating hint stands in until the first capture).
+    const start = document.createElement('div'); start.id = 'start'; start.className = 'strip';
+    start.innerHTML = `<p class="cta">click to take the field</p>
+      <p class="controls">wasd move · shift sprint · space jump (double) · lmb fire · rmb aim · q grapple · m map · esc menu</p>`;
     const pause = document.createElement('div'); pause.id = 'pause'; pause.className = 'hidden';
     pause.innerHTML = `<div id="pausebox"><h1>Aetherfall</h1>
       <label>Sensitivity <span id="sensv"></span></label><input id="sensr" type="range" min="1" max="15" step="0.5">
@@ -295,6 +297,7 @@ export class HUD {
         if (!g.rpg?.screens?.open) { pause.classList.remove('hidden'); sync(); }
       } else start.classList.remove('hidden');
     });
+    // before the first capture the world runs unpaused behind the hint — a living title screen
     start.classList.remove('hidden');
   }
 

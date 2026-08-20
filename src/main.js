@@ -50,4 +50,22 @@ window.__game = {
 window.addEventListener('error', (e) => window.__game.errors.push(String(e.message)));
 window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
 
+// Boot splash (markup lives inline in index.html so it paints before any JS): feed it asset
+// progress, then fade it once the game is running and has actually put frames on screen.
+{
+  const bar = document.getElementById('splashbar'), msg = document.getElementById('splashmsg'), splash = document.getElementById('splash');
+  game.events.on('assets:progress', (e) => {
+    if (bar && e?.total) bar.style.width = Math.round((e.done ?? e.loaded ?? 0) / e.total * 100) + '%';
+  });
+  game.ready.then(() => {
+    if (bar) bar.style.width = '100%';
+    if (msg) msg.textContent = 'ENTERING THE VALE';
+    // two frames after start(): the world is genuinely rendering (shader warmup happened under the splash)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      splash?.classList.add('gone');
+      setTimeout(() => splash?.remove(), 900);
+    }));
+  });
+}
+
 game.ready.then(() => game.start()).catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
