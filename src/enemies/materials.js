@@ -9,7 +9,7 @@ import * as THREE from 'three';
  */
 const NOISE_GLSL = /* glsl */`
 float ehash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float enoise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+float enoise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
   return mix(mix(mix(ehash(i), ehash(i + vec3(1,0,0)), f.x), mix(ehash(i + vec3(0,1,0)), ehash(i + vec3(1,1,0)), f.x), f.y),
              mix(mix(ehash(i + vec3(0,0,1)), ehash(i + vec3(1,0,1)), f.x), mix(ehash(i + vec3(0,1,1)), ehash(i + vec3(1,1,1)), f.x), f.y), f.z); }
 `;
@@ -21,10 +21,16 @@ function creatureOnBeforeCompile(shader) {
     .replace('#include <common>', `#include <common>\nattribute float aGlow; varying float vGlow; varying vec3 vEPos;`)
     .replace('#include <begin_vertex>', `#include <begin_vertex>\nvGlow = aGlow; vEPos = position;`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\nuniform vec3 uTint; uniform vec3 uEmissive; uniform float uGlow; uniform float uFlash; uniform float uDissolve; uniform float uTime; uniform float uRim;\nvarying float vGlow; varying vec3 vEPos;\n${NOISE_GLSL}`)
+    .replace('#include <common>', `#include <common>\nuniform vec3 uTint; uniform vec3 uEmissive; uniform float uGlow; uniform float uFlash; uniform float uDissolve; uniform float uTime; uniform float uRim; uniform float uBump;\nvarying float vGlow; varying vec3 vEPos;\n${NOISE_GLSL}`)
     .replace('#include <color_fragment>', `#include <color_fragment>
-      float grain = enoise(vEPos * 9.0) * 0.45 + enoise(vEPos * 31.0) * 0.35 + enoise(vEPos * 90.0) * 0.2;
-      diffuseColor.rgb *= uTint * (0.62 + grain * 0.72);
+      float n1 = enoise(vEPos * 9.0), n2 = enoise(vEPos * 31.0), n3 = enoise(vEPos * 90.0);
+      float grain = n1 * 0.45 + n2 * 0.35 + n3 * 0.2;
+      // slope-balanced height (amplitude ~ 1/frequency) so every octave contributes equal RELIEF instead of the
+      // finest one owning the whole gradient — reuses the three fetches above, costs nothing extra.
+      float relief = n1 * 0.74 + n2 * 0.21 + n3 * 0.05;
+      // large-scale tonal drift: one hide is never one flat colour (uTint used to paint the creature evenly)
+      float blotch = enoise(vEPos * 1.7 + 3.1);
+      diffuseColor.rgb *= uTint * (0.62 + grain * 0.72) * (0.80 + blotch * 0.40);
       // saturated aether: push the emissive color toward its square so it stays colored through ACES instead of clipping white
       vec3 ecol = mix(uEmissive, uEmissive * uEmissive, 0.9) * 2.2;
       // crystals/glow parts: darken the lit base so the colored emissive dominates (no sunlit-white paper cutouts at noon)
@@ -32,6 +38,18 @@ function creatureOnBeforeCompile(shader) {
       float dn = enoise(vEPos * 4.0 + 7.3) * 0.65 + enoise(vEPos * 13.0) * 0.35;
       if (dn < uDissolve) discard;`)
     .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor * (0.85 + grain * 0.3), 0.45, vGlow);`)
+    // Sculpted surface relief: Mikkelsen screen-space bump driven by the `relief` height above. No texture, no extra
+    // noise fetch, no extra sampler — creatures stop reading as smooth untextured clay. Faded out past ~26 m (and off
+    // on the glow crystals) so the fine octave can never turn into distance shimmer.
+    .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+      float bumpK = uBump * (1.0 - vGlow) * (1.0 - smoothstep(7.0, 30.0, length(vViewPosition)));
+      if (bumpK > 0.002) {
+        vec2 dH = vec2(dFdx(relief), dFdy(relief)) * bumpK;
+        vec3 sp = -vViewPosition, sx = dFdx(sp), sy = dFdy(sp);
+        vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
+        float det = dot(sx, r1) * faceDirection;
+        normal = normalize(abs(det) * normal - sign(det) * (dH.x * r1 + dH.y * r2));
+      }`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       float pulse = 0.82 + 0.18 * sin(uTime * 3.1 + vEPos.y * 2.5 + vEPos.x * 1.7);
       totalEmissiveRadiance += ecol * (vGlow * uGlow * pulse);
@@ -48,7 +66,7 @@ export function createCreatureMaterial({ tint = 0xffffff, emissive = 0x66ccff, r
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness });
   m.userData.u = {
     uTint: { value: new THREE.Color(tint) }, uEmissive: { value: new THREE.Color(emissive) },
-    uGlow: { value: 2.2 }, uFlash: { value: 0 }, uDissolve: { value: 0 }, uTime: { value: 0 }, uRim: { value: 0.35 },
+    uGlow: { value: 2.2 }, uFlash: { value: 0 }, uDissolve: { value: 0 }, uTime: { value: 0 }, uRim: { value: 0.35 }, uBump: { value: 0.05 },
   };
   m.onBeforeCompile = creatureOnBeforeCompile;
   m.customProgramCacheKey = () => 'aether-creature';

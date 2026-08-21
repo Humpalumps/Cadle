@@ -18,7 +18,7 @@ export const DEFS = {
     projectile: { speed: 24, radius: 0.2, element: 'arc', life: 4 },
     fleeAt: 0.35, fleeTime: 3.2, strafe: 1, stagger: 0.3, staggerTime: 0.35,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
-    palette: [[0x66d9ff, 0x2a3348], [0xb070ff, 0x2a2640], [0x7cffd8, 0x243838], [0x9fd8ff, 0x2c3250]], glow: 0.85, rim: 0.6, // user decree: wisps must not read as white blobs across the meadow (1.1 x the night dayGlow multiplier still tone-mapped to a near-white 211,224,226 ball at 23:00 -- blobcheck caught it; hue kept, intensity cut) — keep hue, no ACES white-clip
+    palette: [[0x66d9ff, 0x2a3348], [0xb070ff, 0x2a2640], [0x7cffd8, 0x243838], [0x9fd8ff, 0x2c3250]], glow: 0.85, rim: 0.6, bump: 0, // user decree: wisps must not read as white blobs across the meadow (1.1 x the night dayGlow multiplier still tone-mapped to a near-white 211,224,226 ball at 23:00 -- blobcheck caught it; hue kept, intensity cut) — keep hue, no ACES white-clip
     deathTime: 1.1, xp: 8,
   },
   hound: {
@@ -29,7 +29,7 @@ export const DEFS = {
     perception: 34, fov: 2.4, attackRange: 3.2, attackWindup: 0.38, attackCooldown: 1.35, attackRecover: 0.28, lungeSpeed: 7, standoff: 2.2,
     stagger: 0.16, staggerTime: 0.45, pack: true,
     radius: 0.55, height: 1.25, center: 1.08, weakPoints: [{ bone: 'head', radius: 0.27, mult: 2.0, off: [0, 0.02, 0.1] }],
-    palette: [[0x66d9ff, 0xffffff], [0x7fd8ff, 0xdfe6f0], [0xb070ff, 0xe8dcff]], glow: 1.9, rim: 0.65,
+    palette: [[0x66d9ff, 0xffffff], [0x7fd8ff, 0xdfe6f0], [0xb070ff, 0xe8dcff]], glow: 1.9, rim: 0.65, bump: 0.045,
     deathTime: 1.4, xp: 20,
   },
   sentinel: {
@@ -39,7 +39,7 @@ export const DEFS = {
     projectile: { speed: 32, radius: 0.22, element: 'arc', life: 4 },
     strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.05,
     radius: 0.55, height: 2.7, center: 1.74, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
-    palette: [[0x7fd8ff, 0xffffff], [0xffd27a, 0xfff1d6]], glow: 1.9, rim: 0.55,
+    palette: [[0x7fd8ff, 0xffffff], [0xffd27a, 0xfff1d6]], glow: 1.9, rim: 0.55, bump: 0.05,
     deathTime: 1.6, xp: 45,
   },
   golem: {
@@ -49,7 +49,7 @@ export const DEFS = {
     throwRange: [9, 24], throw: { speed: 22, radius: 0.45, gravity: 14, element: 'kinetic', life: 5, damage: 14, explodeRadius: 2.5 },
     stagger: 0.3, staggerTime: 0.6,
     radius: 0.95, height: 3.3, center: 1.8, weakPoints: [{ bone: 'core', radius: 0.36, mult: 3.0, off: [0, 0, 0.07] }],
-    palette: [[0xb070ff, 0xffffff], [0x66d9ff, 0xffffff]], glow: 2.4, rim: 0.45,
+    palette: [[0xb070ff, 0xffffff], [0x66d9ff, 0xffffff]], glow: 2.4, rim: 0.45, bump: 0.075,
     deathTime: 2.0, xp: 90,
   },
   drake: {
@@ -59,7 +59,7 @@ export const DEFS = {
     projectile: { speed: 34, radius: 0.25, element: 'solar', life: 3.5, explodeRadius: 1.6 },
     stagger: 0.25, staggerTime: 0.5,
     radius: 0.65, height: 1.2, center: 0, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.02, 0.12] }],
-    palette: [[0xff8a3d, 0xffffff], [0xffb04a, 0xffffff]], glow: 2.3, rim: 0.5,
+    palette: [[0xff8a3d, 0xffffff], [0xffb04a, 0xffffff]], glow: 2.3, rim: 0.5, bump: 0.04,
     deathTime: 1.6, xp: 120,
   },
   warden: {
@@ -69,7 +69,7 @@ export const DEFS = {
     volleyRange: [8, 30], volley: 5, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 30, radius: 0.28, element: 'void', life: 4, damage: 11 },
     stagger: 0.4, staggerTime: 0.5, shieldRadius: 1.85, phases: [0.66, 0.33],
     radius: 1.1, height: 3.9, center: 2.1, weakPoints: [{ bone: 'head', radius: 0.42, mult: 1.6, off: [0, 0.26, 0] }, { bone: 'torso', radius: 0.38, mult: 2.2, off: [0, 0.67, 0.39] }],
-    palette: [[0xb070ff, 0xffffff]], glow: 2.4, rim: 0.55,
+    palette: [[0xb070ff, 0xffffff]], glow: 2.4, rim: 0.55, bump: 0.055,
     deathTime: 2.6, xp: 400,
   },
 };

@@ -302,13 +302,13 @@ const drake = {
     for (const [n, s] of [['L', 1], ['R', -1]]) {
       const w0 = R.bone('wing0' + n, body, s * 0.28, 0.16, 0.25), w1 = R.bone('wing1' + n, w0, s * 1.15, 0, 0);
       R.part(w0, prim.cyl(), { p: [s * 0.85, 0.16, 0.25], r: [0, 0, Math.PI / 2], s: [0.06, 1.15, 0.06], color: SCALE2 });          // humerus
-      R.part(w0, prim.box(), { p: [s * 0.85, 0.12, -0.15], r: [0.06, 0, s * 0.05], s: [1.1, 0.03, 0.75], color: MEMB, mottle: 0.22 }); // inner membrane (cambered)
+      R.part(w0, prim.membrane(3), { p: [s * 0.85, 0.12, -0.15], r: [0.06, 0, s * 0.05], s: [1.15, 0.30, 0.92], color: MEMB, mottle: 0.22 }); // inner membrane: cambered skin, scalloped trailing edge
       // radiating molten veins (solar glow that reads from every angle, both wing faces)
       R.part(w0, prim.box(), { p: [s * 0.85, 0.13, -0.05], r: [0, 0.2 * s, 0], s: [0.9, 0.04, 0.035], color: EMBER, glow: 0.75 });
       R.part(w0, prim.box(), { p: [s * 0.8, 0.13, -0.32], r: [0, 0.45 * s, 0], s: [0.75, 0.04, 0.03], color: EMBER, glow: 0.7 });
       R.part(w0, prim.box(), { p: [s * 0.7, 0.13, -0.46], r: [0, 0.8 * s, 0], s: [0.5, 0.04, 0.03], color: EMBER, glow: 0.65 });
       R.part(w1, prim.cyl(), { p: [s * 2.05, 0.16, 0.2], r: [0, 0, Math.PI / 2], s: [0.045, 1.25, 0.045], color: SCALE2 });        // finger
-      R.part(w1, prim.box(), { p: [s * 2.0, 0.12, -0.2], r: [-0.06, s * 0.15, s * -0.05], s: [1.2, 0.025, 0.7], color: MEMB, mottle: 0.22 }); // outer membrane
+      R.part(w1, prim.membrane(2), { p: [s * 2.0, 0.12, -0.2], r: [-0.06, s * 0.15, s * -0.05], s: [1.25, 0.26, 0.88], color: MEMB, mottle: 0.22 }); // outer membrane
       R.part(w1, prim.box(), { p: [s * 2.0, 0.13, -0.1], r: [0, -0.35 * s, 0], s: [1.0, 0.04, 0.035], color: EMBER, glow: 0.75 });
       R.part(w1, prim.box(), { p: [s * 2.1, 0.13, -0.35], r: [0, -0.1 * s, 0], s: [0.85, 0.04, 0.03], color: EMBER, glow: 0.7 });
       R.part(w1, prim.crystal(), { p: [s * 2.62, 0.16, 0.05], r: [0, 0, -s * 1.35], s: [0.08, 0.2, 0.08], color: EMBER, glow: 0.9, flat: true }); // molten wing tip
@@ -323,11 +323,18 @@ const drake = {
     const b = e.bones, tt = t + e.seedT, sw = SW(e);
     const diving = e.state === 'attack';
     const flapF = diving ? 3 : 6.5, flapA = diving ? 0.25 : 0.75;
-    const flap = Math.sin(tt * flapF);
+    const raw = Math.sin(tt * flapF);
+    // a real wingbeat is not a sine: the downstroke snaps (it does the work), the recovery drifts, and the outer
+    // wing both LAGS the humerus and folds in on the upstroke so it isn't pushing air the wrong way.
+    const flap = Math.sign(raw) * Math.pow(Math.abs(raw), raw > 0 ? 0.62 : 1.35);
+    const rawL = Math.sin(tt * flapF - 0.9), lag = Math.sign(rawL) * Math.pow(Math.abs(rawL), rawL > 0 ? 0.7 : 1.25);
+    const fold = Math.max(0, -flap);                                  // 0 on the downstroke, 1 at the top of the upstroke
     b.body.position.y = flap * 0.08; b.body.rotation.x = e.pitchAnim + flap * 0.03; b.body.rotation.z = e.rollAnim;
     for (const [n, s] of [['L', 1], ['R', -1]]) {
-      b['wing0' + n].rotation.z = s * (flap * flapA + 0.1) ; b['wing0' + n].rotation.y = -s * 0.05 * flap;
-      b['wing1' + n].rotation.z = s * (Math.sin(tt * flapF - 0.9) * flapA * 0.9 - 0.15);
+      b['wing0' + n].rotation.z = s * (flap * flapA + 0.1);
+      b['wing0' + n].rotation.y = -s * (0.05 * flap + 0.16 * fold);   // sweep forward as it folds
+      b['wing1' + n].rotation.z = s * (lag * flapA * 0.9 - 0.15 - 0.55 * fold);
+      b['wing1' + n].rotation.y = -s * 0.32 * fold;                   // outer wing tucks back toward the body
     }
     chainWave(e.tail, tt, 0.25, 2.2, 'y', 0.9); for (let i = 0; i < 3; i++) e.tail[i].rotation.x = 0.08 + flap * 0.04;
     if (e.alert) { aimAt(b.neck1, A.eye, 0.9, 0.7, 5, dt); } else { relaxBone(b.neck1, 3, dt); }
