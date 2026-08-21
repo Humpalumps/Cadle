@@ -5,7 +5,7 @@ import { mulberry32 } from '../core/Noise.js';
 /**
  * Abilities: Destiny-style kit. Keys: G grenade, F melee (charged), Q class ability, X super (needs full meter). Cooldowns in seconds; super charges from damage/kills.
  * Abilities use game.combat (explode/projectile/damage), game.vfx, game.audio, game.player.view (kick/shake), game.hud (toasts).
- * Minimum kit ("Aetherweaver"): grenade = aether orb (lob, explode, lingering sigil DoT); melee = arc palm strike (lunge + shockwave + palm-thrust viewmodel anim);
+ * Minimum kit ("Aetherweaver"): grenade = aether orb (lob, explode, lingering sigil DoT); melee = arc weapon bash (lunge + shockwave + a swing of the equipped gun);
  *   class = grapple hook (Q: hook any scenery under the crosshair, get flung up and past it); super = "Starfall": 6s of rapid homing star bolts + glowing viewmodel, big VFX.
  * Exposes: game.player.abilities.list = [{ id:'grenade'|'melee'|'class'|'super', name, key, cooldown, remaining, ready:boolean, charge:0..1 (1 = ready / super meter), use() }]
  *          game.player.abilities.superActive:boolean, .superMeter (0..1), .use(id) -> bool, .charge(id) (instantly ready; tests), .superTimeLeft
@@ -18,7 +18,7 @@ import { mulberry32 } from '../core/Noise.js';
  *   world instead of smearing over grass, + dark contrast disc for daylight), glow-sprite bursts + instanced ground shockwave rings, orbiting star motes.
  * Super viewmodel: gun stowed via weapons.setHidden(true) (rig.visible fallback), replaced by gradient-lit energy hands (vertex-color ramp wrist->fingertips,
  *   orbiting palm wisps) in the weapons overlay scene + golden vignette + baseFov +6. Falls back to world-space hand glows if the overlay scene is missing.
- * Melee viewmodel: a 0.45 s arc palm-thrust animation (same hand mesh, arc-blue materials) so the strike reads on camera.
+ * Melee viewmodel: a 0.45 s bash with the EQUIPPED WEAPON (weapons.gesture('melee')) — no ability hand.
  * While the super is active: weapons.locked = weapons.suppressed = true, weapons.canFire = false (restored after), and superActive = true (weapons/HUD read it).
  * Super bolts: hand bolts (combat.projectile homing, DIRECT damage — no explode, so no smoke spam) + star bolts falling FROM THE SKY every 0.4 s;
  *   sky-bolt landings are resolved here (tracked handles) with a saturated gold burst + small AoE instead of combat.explode's sooty explosion.
@@ -28,6 +28,29 @@ const COL = { grenade: 0xb070ff, melee: 0x53c7ff, class: 0x7cf5b0, super: 0xffb4
 const GOLD_CORE = 0xffa018; // saturated solar core for bolts/hands (survives ACES at noon)
 const ADD = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false };
 const CD = { grenade: 25, melee: 15, class: 20 };  // class = grapple: traversal ability, paced like a real pick
+// Ability hand gestures (right hand, camera space: +X right, +Y up, -Z forward). p = 0..1 of `dur`.
+// The gun swings clear via weapons.gesture(kind) at the same time, so the hand owns the frame.
+// `rel` = the p at which the ability's payload actually leaves the hand (grenade orb spawn).
+const GK = {
+  // Overhand lob: rise in from low-right -> cock HIGH beside the head -> whip forward, orb leaves at rel ->
+  // follow through down-left -> drop out. Authored from measured NDC, not guessed: the overlay camera is fov 55, so
+  // on-screen means |y| <= 0.52*|z| and |x| <= 0.93*|z|. The first version sat at y -0.62..-0.34 and was therefore
+  // BELOW the frame for 73% of its run — the throw played almost entirely off-camera.
+  throw: { dur: 0.66, rel: 0.45, glow: 0xb070ff,
+    // z stays <= -0.34 the whole way: anything nearer than that is on the lens and reads as a flat giant mitten
+    x: [[0, 0.35], [0.16, 0.35], [0.30, 0.29], [0.45, 0.09], [0.62, -0.21], [0.80, -0.06], [1, 0.35]],
+    y: [[0, -0.28], [0.16, -0.16], [0.30, 0.07], [0.45, 0.02], [0.62, -0.16], [0.80, -0.27], [1, -0.28]],
+    z: [[0, -0.34], [0.16, -0.40], [0.30, -0.44], [0.45, -0.62], [0.62, -0.50], [0.80, -0.42], [1, -0.34]],
+    rx: [[0, -1.0], [0.30, -0.90], [0.45, 0.60], [0.62, 1.00], [1, -1.0]],
+    ry: [[0, -0.55], [0.30, -0.35], [0.45, -0.05], [0.62, 0.25], [1, -0.55]],
+    rz: [[0, -0.5], [0.30, -0.60], [0.45, 0.15], [0.62, 0.40], [1, -0.5]] },
+  // hook launch: flat palm punched forward, held open while the rope flies out, then dropped
+  grapple: { dur: 0.50, rel: 0.20, glow: 0x7cf5b0,
+    x: [[0, 0.34], [0.20, 0.15], [0.55, 0.15], [1, 0.34]],
+    y: [[0, -0.58], [0.20, -0.19], [0.55, -0.21], [1, -0.58]],
+    z: [[0, -0.38], [0.20, -0.62], [0.55, -0.60], [1, -0.38]],
+    rx: [[0, -0.6], [0.20, -0.15], [0.55, -0.2], [1, -0.6]], ry: [[0, -0.45], [0.20, 0.05], [1, -0.45]], rz: [[0, -0.4], [0.20, -0.05], [1, -0.4]] },
+};
 // piecewise smoothstep keyframes (same idiom as Weapons): keys = [[t, v], ...]
 function kf(p, keys) {
   if (p <= keys[0][0]) return keys[0][1];
@@ -105,14 +128,14 @@ export class Abilities {
     this.game = game; this.player = player;
     this.superActive = false; this.superMeter = 0; this.superTimeLeft = 0;
     const mk = (id, name, key, cooldown) => ({ id, name, key, cooldown, remaining: 0, ready: true, charge: 1, use: () => this.use(id) });
-    this.list = [mk('grenade', 'Aether Orb', 'G', CD.grenade), mk('melee', 'Arc Palm', 'F', CD.melee), mk('class', 'Grapple Hook', 'Q', CD.class), mk('super', 'Starfall', 'X', 6)];
+    this.list = [mk('grenade', 'Aether Orb', 'G', CD.grenade), mk('melee', 'Arc Strike', 'F', CD.melee), mk('class', 'Grapple Hook', 'Q', CD.class), mk('super', 'Starfall', 'X', 6)];
     this.byId = Object.fromEntries(this.list.map((a) => [a.id, a]));
     this.byId.super.ready = false; this.byId.super.charge = 0;
     this._v1 = new THREE.Vector3(); this._v2 = new THREE.Vector3(); this._v3 = new THREE.Vector3(); this._fwd = new THREE.Vector3(); this._right = new THREE.Vector3(); this._n = new THREE.Vector3();
     this._m4 = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._c = new THREE.Color(); this._out = [];
     this._res = { hit: false, normal: new THREE.Vector3() };
     this._info = { amount: 0, element: 'void', crit: false, point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), dir: new THREE.Vector3(0, -1, 0), owner: player, source: '' };
-    this._meleeAt = -1; this._superFire = 0; this._skyT = 0; this._superHand = 0; this._superWasReady = false;
+    this._meleeAt = -1; this._grenAt = -1; this._superFire = 0; this._skyT = 0; this._superHand = 0; this._superWasReady = false;
     this._vm = null; this._vmT = 0; this._pulse = [0, 0]; this._fovDelta = 0; this._mvPulse = 0;
     this._stars = Array.from({ length: 12 }, () => ({ h: null, age: 0, pos: new THREE.Vector3() })); // tracked sky-bolt handles (landing burst + AoE resolved here)
     this._landFlashT = 0;
@@ -185,15 +208,27 @@ export class Abilities {
       new THREE.MeshBasicMaterial({ ...ADD, map: vignetteTexture(), color: new THREE.Color(0xdd8a10), opacity: 0, depthTest: false }));
     vig.position.z = -1.5; vig.renderOrder = 10; this._vm.vig = vig; this._vm.group.add(vig);
     this._vm.group.visible = false; w.scene.add(this._vm.group);
-    // melee palm-thrust hand (right, arc-blue materials, animated 0.45 s on F)
-    const mcore = new THREE.MeshBasicMaterial({ color: 0x2fa8e8, vertexColors: true, side: THREE.DoubleSide, fog: false });
-    const mshell = new THREE.MeshBasicMaterial({ ...ADD, color: new THREE.Color(COL.melee).multiplyScalar(0.85), opacity: 0.4, side: THREE.DoubleSide });
+    // Ability gesture hand: the SAME armored gauntlet the guns are held with (weapons.abilityHand()) in the same
+    // materials, NOT an energy mitten — the glowing hands belong to the super, where you are literally channelling
+    // Starfall. Throwing a grenade and palm-striking are done with the character's actual hand; the element shows as
+    // a small glow in the palm (the orb being cradled / the arc gathering), not as a see-through limb.
     const mg = new THREE.Group();
-    const mc = new THREE.Mesh(geo, mcore), ms = new THREE.Mesh(geo, mshell); ms.scale.setScalar(1.09);
-    const mglow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(COL.melee), opacity: 0.45 }));
-    mglow.scale.set(0.26, 0.26, 1); mglow.position.set(0, 0.02, -0.06);
-    mg.add(mc, ms, mglow); mg.visible = false; w.scene.add(mg);
-    this._mv = { group: mg, glow: mglow, t: -1 };
+    const hand = w.abilityHand?.() ?? null;
+    // 1.2x (the gesture reaches ~2x further from the eye than the gun grip) and yawed a quarter turn so the camera
+    // sees the knuckles + bracer rather than the palm edge — tuned against frames, not guessed.
+    if (hand) { hand.group.scale.setScalar(1.3); hand.group.rotation.set(0, Math.PI / 2, 0); mg.add(hand.group); }
+    const mglow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(COL.grenade), opacity: 0.45 }));
+    mglow.scale.set(0.17, 0.17, 1); mglow.position.set(0, 0.01, -0.035);
+    // the actual grenade, sitting in the fist until release — you could previously never see the thing being thrown
+    const orb = new THREE.Group();
+    const oc = new THREE.Color(COL.grenade);
+    orb.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.052, 1), new THREE.MeshStandardMaterial({ color: 0x3a1060, emissive: oc, emissiveIntensity: 1.8, roughness: 0.3, metalness: 0 })));
+    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.006, 6, 24), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.85 })));
+    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.005, 6, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.7 })));
+    orb.position.set(0, 0.03, -0.055); orb.visible = false;
+    for (const o of orb.children) o.frustumCulled = false;
+    mg.add(mglow, orb); mg.visible = false; w.scene.add(mg);
+    this._mv = { group: mg, glow: mglow, orb, hand, t: -1, k: GK.throw };
     this._vm.group.visible = true; mg.visible = true; this.game.renderer.compile(w.scene, w.cam); this._vm.group.visible = false; mg.visible = false; // pre-warm
     return true;
   }
@@ -208,7 +243,12 @@ export class Abilities {
       h.position.y = base - 0.35 * (1 - ease) - 0.3 * (1 - out) + 0.008 * Math.sin(t * 2.2 + i * 2.4);
       h.rotation.x = -0.7 * (1 - ease) + 0.05 * Math.sin(t * 1.7 + i);
       if (sway) { h.position.x = (i ? 0.27 : -0.27) - sway.x * 0.4; h.position.y += sway.y * 0.25; }
-      const sc = 1 + 0.22 * this._pulse[i]; h.scale.set(i ? sc : -sc, sc, sc);
+      // every bolt punches the hand forward and snaps the wrist — the super used to fire with the hands
+      // perfectly still, so 6 s of bolts read as a static prop with particles coming off it
+      const pu = this._pulse[i];
+      h.position.z = (i ? -0.50 : -0.52) - 0.13 * pu + 0.05 * pu * pu;
+      h.rotation.x += -0.38 * pu; h.rotation.z = (i ? -1 : 1) * 0.14 * pu;
+      const sc = 1 + 0.22 * pu; h.scale.set(i ? sc : -sc, sc, sc);
       vm.glows[i].material.opacity = 0.32 + 0.4 * this._pulse[i] + 0.06 * Math.sin(t * 9 + i * 3);
     }
     for (const w of vm.wisps) { // palm wisps: tilted orbits, tighter + brighter on fire pulse
@@ -220,18 +260,33 @@ export class Abilities {
     vm.vig.scale.set(hgt * (cam?.aspect || 1.78) * 1.06, hgt, 1);
     vm.vig.material.opacity = (0.17 + 0.05 * Math.sin(t * 5) + 0.1 * Math.max(this._pulse[0], this._pulse[1])) * out * ease;
   }
-  _updateMeleeVM(dt) {
+  /** Start an ability hand gesture (melee punch / grenade lob / grapple launch) and clear the gun out of frame. */
+  _gesture(kind) {
+    if (this.superActive || !this._ensureVM() || !this._mv) return 0;
+    const k = GK[kind]; if (!k) return 0;
+    const mv = this._mv; mv.k = k; mv.t = 0; mv.group.visible = true; this._mvPulse = 0;
+    mv.glow.material.color.setHex(k.glow);              // only the palm glow is elemental; the hand itself is armour
+    this.player.weapons?.gesture?.(kind);
+    return k.dur;
+  }
+  _updateGestureVM(dt) {
     const mv = this._mv; if (!mv || mv.t < 0) return;
-    mv.t += dt; const T = 0.45, p = mv.t / T;
-    if (p >= 1) { mv.t = -1; mv.group.visible = false; return; }
+    const k = mv.k; mv.t += dt; const p = mv.t / k.dur;
+    if (p >= 1) { mv.t = -1; mv.group.visible = false; if (mv.orb) mv.orb.visible = false; return; }
     this._mvPulse *= Math.exp(-9 * dt);
-    const g = mv.group; // wind-up low right -> thrust to centre (impact lands ~0.31 = the 0.14 s strike timer) -> retract
-    g.position.set(kf(p, [[0, 0.42], [0.18, 0.34], [0.34, -0.03], [0.6, -0.03], [1, 0.42]]),
-      kf(p, [[0, -0.52], [0.18, -0.36], [0.34, -0.21], [0.6, -0.22], [1, -0.52]]),
-      kf(p, [[0, -0.26], [0.18, -0.32], [0.34, -0.60], [0.6, -0.58], [1, -0.26]]));
-    g.rotation.set(kf(p, [[0, -0.55], [0.34, 0.18], [1, -0.55]]), kf(p, [[0, -0.5], [0.34, 0.06], [1, -0.5]]), kf(p, [[0, -0.35], [0.34, 0], [1, -0.35]]));
+    const g = mv.group;
+    g.position.set(kf(p, k.x), kf(p, k.y), kf(p, k.z));
+    g.rotation.set(kf(p, k.rx), kf(p, k.ry), kf(p, k.rz));
     const sc = 1 + 0.2 * this._mvPulse; g.scale.setScalar(sc);
-    mv.glow.material.opacity = 0.35 + 0.5 * this._mvPulse;
+    // grenade: the orb sits in the fist, charges as it is cocked, and leaves the hand at `rel`
+    const isThrow = k === GK.throw;
+    const held = isThrow ? (p < k.rel ? 0.25 + 1.5 * (p / k.rel) : Math.max(0, 1.4 - (p - k.rel) * 9)) : 0;
+    if (mv.orb) {
+      mv.orb.visible = isThrow && p < k.rel;
+      if (mv.orb.visible) { const sc = 0.75 + 0.35 * (p / k.rel); mv.orb.scale.setScalar(sc); mv.orb.rotation.set(p * 7, p * 5, 0); }
+    }
+    mv.glow.material.opacity = Math.min(0.9, 0.28 + 0.45 * this._mvPulse + held * 0.4);   // capped: an additive sprite over 1.0 tone-maps to white, not to its hue
+    mv.glow.scale.setScalar(0.15 + held * 0.09);
   }
 
   // ---------- pools ----------
@@ -310,13 +365,22 @@ export class Abilities {
 
   // ---------- grenade ----------
   _throwGrenade() {
-    const { camera, vfx, audio } = this.game; const o = this._oldest(this.orbs);
+    // the orb leaves the HAND, not the eye: play the lob and release at GK.throw.rel (the arm-extended keyframe)
+    const dur = this._gesture('throw');
+    this.game.audio?.play?.('ability-grenade');
+    if (!dur) { this._release(); return; }
+    this._grenAt = this.game.time + GK.throw.rel * dur;
+  }
+  _release() {
+    if (!this.player.alive) return;                       // died mid-throw: the orb never leaves the hand
+    const { camera, vfx } = this.game; const o = this._oldest(this.orbs);
     camera.getWorldDirection(this._fwd); this._right.crossVectors(this._fwd, UP).normalize();
     o.alive = true; o.t = 0; o.bounces = 0; o.bounceT = 0; o.puffT = 0; o.grp.visible = true;
-    o.pos.copy(this.player.eye).addScaledVector(this._fwd, 0.5).addScaledVector(this._right, 0.25).addScaledVector(UP, -0.12);
+    o.pos.copy(this.player.eye).addScaledVector(this._fwd, 0.7).addScaledVector(this._right, 0.16).addScaledVector(UP, -0.05);
     o.vel.copy(this._fwd).addScaledVector(UP, 0.22).normalize().multiplyScalar(20); o.grp.position.copy(o.pos);
     o.trail?.stop?.(); o.trail = vfx?.attach?.('spark-trail', o.grp, { color: COL.grenade, element: 'void' }) || null;
-    this.player.view.kick?.(0.012, -0.004); audio?.play?.('ability-grenade');
+    this._mvPulse = 1;
+    this.player.view.kick?.(0.018, -0.006);
   }
   _updateOrbs(dt, t) {
     const { terrain, world } = this.game;
@@ -349,7 +413,7 @@ export class Abilities {
     camera.getWorldDirection(this._fwd); this._v1.set(this._fwd.x, 0, this._fwd.z).normalize();
     c.velocity.addScaledVector(this._v1, 7.5); if (c.grounded) c.velocity.y = Math.max(c.velocity.y, 1.2); // small lunge
     this._meleeAt = this.game.time + 0.14; audio?.play?.('ability-melee'); this.player.view.kick?.(-0.02, 0.01);
-    if (this._ensureVM() && !this.superActive && this._mv) { this._mv.t = 0; this._mv.group.visible = true; } // palm-thrust viewmodel anim
+    this.player.weapons?.gesture?.('melee');   // bash with the equipped weapon — no ability hand for melee
   }
   _strike() {
     const { camera, vfx, postfx } = this.game, c = COL.melee;
@@ -383,6 +447,7 @@ export class Abilities {
     ctrl.grounded = false;
     view.shake?.(0.25, 0.15);
     p.fovBoost = (p.fovBoost || 0) + 6;
+    this._gesture('grapple');
     this._grap.active = true; this._grap.t = 0; this._grap.anchor.copy(res.point);
     this._rope.visible = this._hook.visible = true;
     this._hook.position.copy(res.point);
@@ -434,6 +499,7 @@ export class Abilities {
     // viewmodel takeover: stow the gun (weapons.setHidden if present, rig fallback), raise glowing energy hands, golden vignette, +6 FOV
     if (typeof w.setHidden === 'function') { w.setHidden(true); this._hidApi = true; }
     else if (w.rig) { this._rigVis = w.rig.visible; w.rig.visible = false; }
+    if (this._grenAt >= 0) { this._grenAt = -1; this._release(); }   // super interrupted a throw: the orb still leaves the hand
     if (this._ensureVM()) { this._vm.group.visible = true; this._vmT = 0; this._pulse[0] = this._pulse[1] = 1; if (this._mv) { this._mv.t = -1; this._mv.group.visible = false; } }
     else for (const h of this.hands) h.visible = true; // fallback: world-space hand glows
     const view = this.player.view; if (view && typeof view.baseFov === 'number') { this._fovDelta = 6; view.baseFov += this._fovDelta; }
@@ -497,12 +563,13 @@ export class Abilities {
   _updateGrapple(dt) {
     const G = this._grap; if (!G || !G.active) return;
     G.t += dt;
-    const LIFE = 0.55, RETRACT = 0.18;
+    const LIFE = 0.55, RETRACT = 0.18, OUT = 0.10;
     const cam = this.game.camera;
-    // hand offset: right and slightly below the eye so the rope reads as thrown, not eye-lasered
-    this._v2.set(0.34, -0.28, -0.15).applyQuaternion(cam.quaternion).add(this.player.eye ?? this.player.position);
+    // hand offset: tracks the grapple gesture hand (right, below the eye) so the rope reads as thrown, not eye-lasered
+    this._v2.set(0.20, -0.24, -0.28).applyQuaternion(cam.quaternion).add(this.player.eye ?? this.player.position);
     const end = this._v3.copy(G.anchor);
-    if (G.t > LIFE - RETRACT) end.lerp(this._v2, (G.t - (LIFE - RETRACT)) / RETRACT);   // reel the hook back in
+    if (G.t < OUT) { const r = G.t / OUT; end.lerp(this._v2, 1 - r * r * (3 - 2 * r)); }  // hook FLIES out (it used to teleport full-length)
+    else if (G.t > LIFE - RETRACT) end.lerp(this._v2, (G.t - (LIFE - RETRACT)) / RETRACT);   // reel the hook back in
     if (G.t >= LIFE) { G.active = false; this._rope.visible = this._hook.visible = false; return; }
     const len = Math.max(0.1, end.distanceTo(this._v2));
     this._rope.position.copy(this._v2);
@@ -543,6 +610,7 @@ export class Abilities {
       if (input.justPressed('KeyQ')) this.use('class'); if (input.justPressed('KeyX')) this.use('super');
     }
     if (this._meleeAt >= 0 && t >= this._meleeAt) { this._meleeAt = -1; this._strike(); }
+    if (this._grenAt >= 0 && t >= this._grenAt) { this._grenAt = -1; this._release(); }
     this._updateGrapple(dt);
     // cooldowns + super meter
     for (const a of this.list) {
@@ -553,7 +621,7 @@ export class Abilities {
     if (!this.superActive) { this._addMeter(dt / 150); const s = this.byId.super; s.charge = this.superMeter; s.ready = this.superMeter >= 1; s.remaining = 0;
       if (s.ready && !this._superWasReady) { this._superWasReady = true; events.emit('ability:ready', { id: 'super' }); this.game.hud?.toast?.('Super ready', { ms: 1500, kind: 'super' }); } }
     else { const s = this.byId.super; s.charge = this.superTimeLeft / 6; s.ready = false; }
-    this._updateOrbs(dt, t); this._updateSigils(dt, t); this._updateSuper(dt, t); this._updateStars(); this._updateMotes(); this._updateVM(dt, t); this._updateMeleeVM(dt);
+    this._updateOrbs(dt, t); this._updateSigils(dt, t); this._updateSuper(dt, t); this._updateStars(); this._updateMotes(); this._updateVM(dt, t); this._updateGestureVM(dt);
     // bursts + rings (instanced, additive: fade by colour). Colour multipliers <= ~1: hue survives ACES/bloom in daylight
     let anyR = false;
     for (const b of this.bursts) {

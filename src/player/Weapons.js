@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DEFS, DEFAULT_SLOTS, ELEMENT_COLORS } from './weapons/defs.js';
-import { makeMaterials, buildGun, makeFlash } from './weapons/models.js';
+import { makeMaterials, buildGun, makeFlash, buildAbilityHand } from './weapons/models.js';
 
 /**
  * Weapons: definitions, first-person viewmodel, firing, recoil, ADS, reload, swap. Destiny 2 feel is THE bar: archetypes that feel
@@ -52,6 +52,22 @@ const K = { // reload keyframes per style (p = 0..1 of reload duration). Mag cho
   hcInsert: [[0.5, 0], [0.58, -0.022], [0.66, -0.022], [0.74, 0], [1, 0]],
   swapOut: [[0, 0], [1, 1]],
 };
+// Ability gestures. throw/grapple: the gun dips aside so the off-hand owns the screen (peak-hold pose, `hold` = the
+// [in, out] fractions of p). melee: no hand at all — you BASH with the weapon you are holding, so the gun itself is
+// the animation and it needs explicit per-channel keys (cock back -> drive across the screen -> settle).
+// Impact lands at p ~= 0.31, matching the 0.14 s strike timer in Abilities.
+const GEST = {
+  throw:   { dur: 0.62, pos: [0.05, -0.10, 0.04], rot: [-0.34, 0.21, 0.36], hold: [0.16, 0.52] },
+  grapple: { dur: 0.50, pos: [0.06, -0.07, 0.03], rot: [-0.22, 0.26, 0.32], hold: [0.12, 0.42] },
+  melee: { dur: 0.45, keys: {
+    x:  [[0, 0], [0.16, 0.10], [0.33, -0.20], [0.55, -0.10], [1, 0]],
+    y:  [[0, 0], [0.16, -0.05], [0.33, 0.03], [0.55, -0.02], [1, 0]],
+    z:  [[0, 0], [0.16, 0.11], [0.33, -0.26], [0.55, -0.06], [1, 0]],
+    rx: [[0, 0], [0.16, 0.30], [0.33, -0.18], [0.55, 0.06], [1, 0]],
+    ry: [[0, 0], [0.16, -0.42], [0.33, 0.62], [0.55, 0.16], [1, 0]],
+    rz: [[0, 0], [0.16, 0.55], [0.33, -0.70], [0.55, -0.15], [1, 0]],
+  } },
+};
 
 export class Weapons {
   constructor(game, player) {
@@ -64,6 +80,7 @@ export class Weapons {
     this._land = new Spring(220, 18);
     this._swapSt = { phase: 0, t: 0, to: 0 }; this._rel = { on: false, t: 0, dur: 1 };
     this._cd = 0; this._queue = 0; this._qT = 0; this._qInt = 0; this._charge = 0; this._bloom = 0; this._trigPrev = false; this._emptyT = 0;
+    this._gestSt = null;
     this._lastFire = -9; this._flashT = 0; this._lastLightT = -9; this._bobPhase = 0; this._bobAmt = 0; this._sprintW = 0; this._cylAngle = 0; this._cylTarget = 0;
     this._lag = new THREE.Vector2(); this._adsPressT = 0; this._adsToggled = false; this._chargeSound = null;
     this._fwd = new THREE.Vector3(); this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._dir = new THREE.Vector3();
@@ -186,6 +203,11 @@ export class Weapons {
   give(id, slot = this.index) { if (!DEFS[id]) return null; const w = this._make(id); this.slots[slot] = w; if (slot === this.index) this._equip(slot, true); return w; }
   setAds(on) { this.adsOn = !!on; this._adsToggled = !!on; }
   // stow/hide the whole viewmodel (Abilities takes over the hands during the super). Also blocks firing while hidden.
+  /** Armored gauntlet for the ability gestures — same parts + materials as the weapon hands. { group, open, fist } */
+  abilityHand() { return buildAbilityHand(this.mats); }
+  /** Abilities call this so the gun clears frame for a throw / grapple / punch. Returns the gesture duration (s). */
+  gesture(kind) { const g = GEST[kind]; if (!g) return 0; this._gestSt = { g, t: 0 }; return g.dur; }
+
   setHidden(on) {
     this._hidden = !!on; this.rig.visible = !this._hidden;
     if (this._hidden) { if (this.scope) this.scope.visible = false; this.flash.visible = false; this.flashLight.intensity = 0; for (const c of this._casings) { c.life = 0; c.mesh.visible = false; } }
@@ -349,6 +371,11 @@ export class Weapons {
     // base pose: hip -> ads -> sprint
     pos.set(d.hip.pos[0], d.hip.pos[1], d.hip.pos[2]); rot.set(d.hip.rot[0], d.hip.rot[1], d.hip.rot[2]);
     pos.lerp(m.adsPos, a); rot.multiplyScalar(1 - a);
+    // ADS is an ARC, not a straight lerp: the gun swings inboard and lifts through the middle of the transition and
+    // settles on the sight, instead of sliding there on a rail. Zero at both ends, so the settled poses are untouched.
+    const arc = a * (1 - a) * 4;
+    pos.x += 0.020 * arc; pos.y += 0.014 * arc; pos.z -= 0.012 * arc;
+    rot.z -= 0.085 * arc; rot.y += 0.045 * arc; rot.x -= 0.030 * arc;
     const s = this._sprintW; pos.x += (d.sprint.pos[0] - pos.x) * s; pos.y += (d.sprint.pos[1] - pos.y) * s; pos.z += (d.sprint.pos[2] - pos.z) * s;
     rot.x += (d.sprint.rot[0] - rot.x) * s; rot.y += (d.sprint.rot[1] - rot.y) * s; rot.z += (d.sprint.rot[2] - rot.z) * s;
     // walk / sprint bob (figure-8), reads controller
@@ -392,6 +419,24 @@ export class Weapons {
       const dur = S.phase === 1 ? d.swapTime * 0.45 : d.swapTime * 0.55;
       const u = Math.min(1, S.t / dur); const e = S.phase === 1 ? u * u : 1 - (1 - (1 - u) * (1 - u)); // ease-in down, ease-out up
       pos.y -= 0.22 * e; pos.x += 0.04 * e; rot.x -= 0.75 * e; rot.z += 0.3 * e;
+    }
+    // ability gesture: swing the gun out of the way and back (see GEST)
+    const G = this._gestSt;
+    if (G) {
+      G.t += dt;
+      const p = G.t / G.g.dur;
+      if (p >= 1) this._gestSt = null;
+      else {
+        const K2 = G.g.keys;
+        if (K2) {                                            // melee bash: explicit swing, the gun IS the weapon
+          pos.x += kf(p, K2.x); pos.y += kf(p, K2.y); pos.z += kf(p, K2.z);
+          rot.x += kf(p, K2.rx); rot.y += kf(p, K2.ry); rot.z += kf(p, K2.rz);
+        } else {
+          const w = kf(p, [[0, 0], [G.g.hold[0], 1], [G.g.hold[1], 1], [1, 0]]);
+          pos.x += G.g.pos[0] * w; pos.y += G.g.pos[1] * w; pos.z += G.g.pos[2] * w;
+          rot.x += G.g.rot[0] * w; rot.y += G.g.rot[1] * w; rot.z += G.g.rot[2] * w;
+        }
+      }
     }
     this.rig.position.copy(pos); this.rig.rotation.set(rot.x, rot.y, rot.z);
     // sniper: hide the gun when fully scoped; our scope picture (mask+reticle) fades in on top

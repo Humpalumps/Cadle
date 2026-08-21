@@ -32,7 +32,36 @@ export const prim = {
   rock: (seed = 1, jag = 0.28, detail = 1) => PRIM[`rock${seed}_${jag}_${detail}`] ??= makeRock(seed, jag, detail),
   // crystal shard: stretched octahedron with a jagged mid band
   crystal: () => PRIM.crystal ??= new THREE.OctahedronGeometry(1, 0).scale(0.35, 1, 0.35),
+  // wing membrane: cambered skin panel with a scalloped trailing edge, closed into a thin lens so it reads from
+  // both faces under a FrontSide material. Unit box: x = span, z = chord (+Z leading edge), y = billow.
+  // ~72 tris — LESS than the beveled RoundedBox it replaces, and it stops the wing looking like a plank.
+  membrane: (lobes = 3) => PRIM['memb' + lobes] ??= makeMembrane(lobes),
 };
+function makeMembrane(lobes) {
+  const NX = 6, NZ = 3, pos = [], uv = [], idx = [];
+  const rowOf = (side) => {
+    const base = pos.length / 3;
+    for (let i = 0; i <= NX; i++) for (let j = 0; j <= NZ; j++) {
+      const u = i / NX, v = j / NZ;                                  // u = span 0..1, v = chord 0 (trailing) .. 1 (leading)
+      const zTrail = -0.5 + 0.10 * Math.abs(Math.sin(u * Math.PI * lobes));  // scallops between the finger bones
+      const z = zTrail + v * (0.5 - zTrail);
+      const camber = Math.sin(v * Math.PI) * (0.3 + 0.7 * u);        // billows more toward the tip
+      const fade = Math.min(1, Math.min(u, 1 - u) / 0.16) * Math.min(1, Math.min(v, 1 - v) / 0.16); // sheets meet at the rim
+      pos.push(u - 0.5, camber * 0.5 + side * 0.05 * fade, z); uv.push(u, v);
+    }
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      const a = base + i * (NZ + 1) + j, b = a + NZ + 1;
+      if (side > 0) idx.push(a, b, a + 1, a + 1, b, b + 1);
+      else idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  };
+  rowOf(1); rowOf(-1);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));   // mergeGeometries needs the same attribute set as the other prims
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
 function makeRock(seed, jag, detail) {
   const g = new THREE.IcosahedronGeometry(1, detail);   // polyhedra are already non-indexed
   const rnd = mulberry32(seed * 7919 + 13);

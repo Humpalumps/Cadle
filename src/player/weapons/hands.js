@@ -33,20 +33,23 @@ function finger(b, c, e1, e2, R, a0, a1, segs, thick, part) {
 }
 
 // forearm + wrist armor reaching off-screen toward the camera's lower corner. wrist = attach point, d = direction to elbow.
-function forearm(b, wrist, dx, dy, dz, part = null) {
+// `len` shortens the arm tube: at full length beside a rifle it reads as a second barrel, so the ability gauntlet
+// (which floats in open frame with nothing to sell the scale) asks for a stub and keeps only the cuff/ring/plate.
+function forearm(b, wrist, dx, dy, dz, part = null, len = 0.30) {
   const d = _d.set(dx, dy, dz).normalize().clone();
-  const arm = alignY(new THREE.CylinderGeometry(0.032, 0.025, 0.30, 10), d.x, d.y, d.z); // narrow at wrist, flares to elbow
-  b.add(arm, 'dark', { p: [wrist[0] + d.x * 0.17, wrist[1] + d.y * 0.17, wrist[2] + d.z * 0.17], part });
+  const arm = alignY(new THREE.CylinderGeometry(0.032, 0.025, len, 10), d.x, d.y, d.z); // narrow at wrist, flares to elbow
+  const am = len * 0.567, ap = len * 0.633;
+  b.add(arm, 'dark', { p: [wrist[0] + d.x * am, wrist[1] + d.y * am, wrist[2] + d.z * am], part });
   const cuff = alignY(new THREE.CylinderGeometry(0.029, 0.026, 0.055, 10), d.x, d.y, d.z);   // metal bracer
   b.add(cuff, 'metal2', { p: [wrist[0] + d.x * 0.055, wrist[1] + d.y * 0.055, wrist[2] + d.z * 0.055], part });
   const ring = alignY(new THREE.TorusGeometry(0.028, 0.0026, 6, 16).rotateX(PI / 2), d.x, d.y, d.z);
   b.add(ring, 'gold', { p: [wrist[0] + d.x * 0.085, wrist[1] + d.y * 0.085, wrist[2] + d.z * 0.085], part });
-  const plate = alignY(rbox(0.052, 0.10, 0.038, 0.006), d.x, d.y, d.z);                       // top-of-forearm plate
-  b.add(plate, 'metal2', { p: [wrist[0] + d.x * 0.19 - dz * 0.012, wrist[1] + d.y * 0.19 + 0.016, wrist[2] + d.z * 0.19 - 0.012], part });
+  const plate = alignY(rbox(0.052, Math.min(0.10, len * 0.34), 0.038, 0.006), d.x, d.y, d.z); // top-of-forearm plate
+  b.add(plate, 'metal2', { p: [wrist[0] + d.x * ap - dz * 0.012, wrist[1] + d.y * ap + 0.016, wrist[2] + d.z * ap - 0.012], part });
 }
 
 // hand around a vertical grip (pistol grips, fusion foregrip). p = grip center, tilt = grip lean (rot X), R = wrap radius.
-export function gripHand(b, { p, tilt = -0.35, R = 0.021, side = 1, part = null } = {}) {
+export function gripHand(b, { p, tilt = -0.35, R = 0.021, side = 1, part = null, armLen = 0.30, armDir = null } = {}) {
   const ax = Math.cos(tilt), az = Math.sin(tilt);                        // grip axis (unit, along tilted +Y)
   const e1 = [side, 0, 0], e2 = [0, az, -ax];                            // arc basis: grip side -> front
   const at = (dy, ox = 0, oy = 0, oz = 0) => [p[0] + ox, p[1] + dy * ax + oy, p[2] + dy * az + oz];
@@ -59,7 +62,10 @@ export function gripHand(b, { p, tilt = -0.35, R = 0.021, side = 1, part = null 
   // armored back-of-hand plate + gold knuckle studs
   b.add(rbox(0.015, 0.052, 0.017, 0.004), 'metal2', { p: at(0.006, side * (R + 0.012)), r: [tilt, 0, 0], part });
   for (let i = 0; i < 3; i++) b.add(new THREE.SphereGeometry(0.003, 6, 5), 'gold', { p: at(0.016 - i * 0.014, side * (R + 0.014)), part });
-  forearm(b, at(-0.040, side * 0.014, 0, 0.024), side * 0.42, -0.72, 0.60, part);
+  // armDir lets a caller aim the arm in the hand's LOCAL frame — the ability gauntlet is yawed a quarter turn, so
+  // the default direction would send the forearm across the screen instead of trailing back past the camera.
+  const ad = armDir ?? [side * 0.42, -0.72, 0.60];
+  forearm(b, at(-0.040, side * 0.014, 0, 0.024), ad[0], ad[1], ad[2], part, armLen);
 }
 
 // support hand under a horizontal tube/handguard along Z. p = tube center, R = wrap radius, dz shifts fingers along the tube.

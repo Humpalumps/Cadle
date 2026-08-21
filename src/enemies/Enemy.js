@@ -60,7 +60,17 @@ export class Enemy {
     this.hurtT = -99; this.staggerT = 0; this.lastStagger = -99; this.fleeCd = 0; this.idleDur = 2; this.strafeDir = 1; this.strafeT = 0; this.distP = 999; this.onGround = !def.flying;
     this.deathT = 0; this.volleyLeft = 0; this.volleyT = 0; this.struck = false; this.phaseIdx = 0; this.phaseFlash = 0; this.glowColor = new THREE.Color();
     this.thinkDt = 0; this.moveDt = 0; this.animDt = 0;
+    // reactive-animation layer (see _animate): a 2-axis spring the shooter drives on every hit, plus turn banking.
+    // Kept OUT of bodies.js: it is added after the body poses itself and subtracted again next frame, so a body that
+    // damps toward a target never fights the layer and every creature type gets flinch for free.
+    this.flinch = new THREE.Vector2(); this.flinchV = new THREE.Vector2();
+    this._fApplied = { on: false, b: null, z: 0, x: 0, h: null, hz: 0, hx: 0 };   // preallocated: no per-frame garbage in the anim path
+    this.fireK = 0; this.fireV = 0;                                  // per-bolt recoil: volleys used to fire with the shooter dead still
+    this.turnRate = 0; this.localVel = new THREE.Vector2();
     this.body.setup(this, asset);
+    this._fBody = this.bones.torso ?? this.bones.body ?? this.bones.core ?? null;
+    this._fHead = this.bones.head ?? this.bones.neck1 ?? this.bones.neck ?? null;
+    if (this._fHead === this._fBody) this._fHead = null;
   }
 
   /** (re)initialise for a spawn at feet position `pos` */
@@ -75,11 +85,11 @@ export class Enemy {
     this.alert = false; this.seen = false; this.lastSeenT = -99; this.hurtT = -99; this.attackCd = 1 + rnd(); this.percT = rnd() * 0.3; this.fleeCd = 0; this.idleDur = 1.5 + rnd() * 3;
     this.flash = 0; this.dissolve = 0; this.telegraph = 0; this.attackT = 0; this.attackKind = null; this.deathT = 0; this.phaseIdx = 0; this.phaseFlash = 0; this.staggerT = 0; this.lastStagger = -99;
     this.onGround = !def.flying; this.phase = rnd() * 6; this.tilt = 0; this.tiltT = 0; this.pitchAnim = 0; this.rollAnim = 0; this.speedN = 0; this.distP = 999;
-    this.thinkDt = 0; this.moveDt = 0; this.animDt = 0; this.steer.set(0, 0, 0); this.wantPos.copy(this.position);
+    this.thinkDt = 0; this.moveDt = 0; this.animDt = 0; this.steer.set(0, 0, 0); this.wantPos.copy(this.position); this.flinch.set(0, 0); this.flinchV.set(0, 0); this._fApplied.on = false; this.fireK = 0; this.fireV = 0; this.turnRate = 0; this.localVel.set(0, 0); this.strafeLean = 0;
     // look: deterministic palette pick per spawn (emissive colour, tint)
     const pal = def.palette[Math.floor(rnd() * def.palette.length)];
     this.glowColor.set(pal[0]); this.u.uEmissive.value.set(pal[0]); this.u.uTint.value.set(pal[1]);
-    this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
+    this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uBump.value = def.bump ?? 0.05; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
     if (this.shieldMat) { this.shieldMat.color.set(pal[0]); this.shieldMat.emissive.set(pal[0]); this.su.uHit.value = 0; this.su.uAlpha.value = 1; }
     this.target.alive = true; this.target.health = this.health; this.target.maxHealth = this.maxHealth; this.target.shield = this.shield; this.target.maxShield = this.maxShield;
     g.combat.register(this.target);
@@ -107,6 +117,14 @@ export class Enemy {
     if (s > 0 && this.shield <= 0) this._shieldBreak();
     this.health = Math.max(0, this.health - a);
     this.flash = 1; this.hurtT = t; this.alert = true; this.lastSeenT = t; this.lastSeen.copy(this.sys.playerPos); this._alertPack(t);
+    // directional flinch impulse, in the creature's own frame: a shot from its right rocks it left, a shot in the
+    // back pitches it forward. Bosses absorb most of it; crits hit harder. This is the read that says "that landed".
+    if (info.dir) {
+      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+      const rx = info.dir.x * cy - info.dir.z * sy, fz = info.dir.x * sy + info.dir.z * cy;
+      const k = Math.min(1, info.amount / this.maxHealth * 7) * (this.def.boss ? 0.3 : 1) * (info.crit ? 1.6 : 1) * 2.6;
+      this.flinchV.x += rx * k; this.flinchV.y += (fz * 0.55 + 0.45) * k;
+    }
     this.target.health = this.health; this.target.shield = this.shield;
     this.game.audio?.play?.('enemy-hurt', { pos: this.center, vol: 0.6 });
     if (this.health <= 0) { this._die(info.owner); return; }
@@ -341,6 +359,7 @@ export class Enemy {
   }
   _fireBolt(pj, damage, spread = 0.05) {
     const g = this.game, pc = this.sys.playerPos, P = g.player;
+    this.fireV += 3.4;                                                // kick the shooter back on every bolt of the volley
     this._muzzle(_w);
     // lead the target a little (Destiny enemies mostly miss a moving player; a bit of lead keeps them honest)
     _v.copy(pc).addScaledVector(P.controller?.velocity ?? _n.set(0, 0, 0), 0.25).sub(_w);
@@ -419,7 +438,13 @@ export class Enemy {
       if (this.facePlayer || this.state === 'attack') { const pf = g.player.position; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
       else if (sp > 0.4) ty = Math.atan2(v.x, v.z);
       const rate = def.turn * (this.state === 'attack' ? 1.5 : 1);
-      this.yaw += THREE.MathUtils.clamp(wrapAngle(ty - this.yaw), -rate * dt, rate * dt);
+      const dyaw = THREE.MathUtils.clamp(wrapAngle(ty - this.yaw), -rate * dt, rate * dt);
+      this.yaw += dyaw;
+      // smoothed turn rate drives the bank in _animate; body-space velocity drives strafe lean (sentinel reads it)
+      this.turnRate = damp(this.turnRate, THREE.MathUtils.clamp(dyaw / Math.max(dt, 1e-3), -4, 4), 8, dt);
+      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+      this.localVel.set((v.x * cy - v.z * sy) / def.speed, (v.x * sy + v.z * cy) / def.speed);
+      this.strafeLean = damp(this.strafeLean, THREE.MathUtils.clamp(-this.localVel.x, -1, 1), 6, dt);
       this.phase += sp * dt * (def.gaitFreq ?? (2.4 / (this.gait?.stepLen ?? 0.5) * 0.5));
       this.tilt = damp(this.tilt, this.tiltT, 4, dt);
       this.center.set(this.position.x, this.position.y + def.center, this.position.z);
@@ -484,11 +509,38 @@ export class Enemy {
 
   // ------------------------------------------------------------------ animation + sync
   _animate(dt, t) {
+    // strip last frame's additive reaction layer so the body poses from a clean base (damp() must not chase it)
+    const L = this._fApplied;
+    if (L.on) { L.b.rotation.z -= L.z; L.b.rotation.x -= L.x; if (L.h) { L.h.rotation.z -= L.hz; L.h.rotation.x -= L.hx; } L.on = false; }
     // ensure the leg parent's world matrix is fresh for IK (root moved this frame)
     this.root.updateMatrix(); this.root.matrixWorld.copy(this.root.matrix);
     if (this.legParent) { this.legParent.updateMatrix(); this.legParent.matrixWorld.multiplyMatrices(this.root.matrixWorld, this.legParent.matrix); }
     this.body.animate(this, dt, t, this.sys.animCtx);
+    this._react(dt);
     for (const b of this.boneList) b.updateMatrix();
+  }
+  /** additive reaction layer: hit-flinch spring + turn bank, applied on top of whatever bodies.js posed. */
+  _react(dt) {
+    const fb = this._fBody; if (!fb) return;
+    const F = this.flinch, V = this.flinchV;
+    if (V.x || V.y || F.x || F.y) {                                  // sub-stepped so a big hit can't blow the spring up
+      const n = Math.min(5, Math.ceil(dt / 0.012)), h = dt / n, K = 165, C = 15;
+      for (let i = 0; i < n; i++) { V.x += (-K * F.x - C * V.x) * h; V.y += (-K * F.y - C * V.y) * h; F.x += V.x * h; F.y += V.y * h; }
+      if (Math.abs(F.x) < 2e-4 && Math.abs(F.y) < 2e-4 && Math.abs(V.x) < 2e-3 && Math.abs(V.y) < 2e-3) { F.set(0, 0); V.set(0, 0); }
+    }
+    if (this.fireV || this.fireK) {                                  // bolt recoil: same spring shape, one axis
+      const n = Math.min(4, Math.ceil(dt / 0.014)), h = dt / n, K = 260, C = 22;
+      for (let i = 0; i < n; i++) { this.fireV += (-K * this.fireK - C * this.fireV) * h; this.fireK += this.fireV * h; }
+      if (Math.abs(this.fireK) < 2e-4 && Math.abs(this.fireV) < 2e-3) { this.fireK = 0; this.fireV = 0; }
+    }
+    // flyers already bank via rollAnim; grounded creatures lean into their turn instead of pivoting like a turret
+    const bank = this.def.flying ? 0 : -this.turnRate * 0.05 * (0.35 + this.speedN * 0.65);
+    const z = F.x + bank, x = F.y - this.fireK * 0.055;
+    if (Math.abs(z) < 2e-4 && Math.abs(x) < 2e-4) return;   // standing still and unhurt: skip the whole layer
+    fb.rotation.z += z; fb.rotation.x += x;
+    const h = this._fHead, hz = h ? z * 0.55 : 0, hx = h ? x * 0.5 : 0;
+    if (h) { h.rotation.z += hz; h.rotation.x += hx; }
+    const L = this._fApplied; L.on = true; L.b = fb; L.z = z; L.x = x; L.h = h; L.hz = hz; L.hx = hx;
   }
   _sync(dt, t, lod) {
     if (lod >= 3) return;                                        // beyond 220 m: skip uniform/weak-point upkeep entirely

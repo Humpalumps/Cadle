@@ -23,6 +23,26 @@ function canvasTex(w, h, draw, { srgb = false, repeat = [1, 1] } = {}) {
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8; return t;
 }
+// Height -> tangent-space normal (Sobel). One extra 256^2 texture for the whole gun set; `normalMap` costs ONE
+// fetch where `bumpMap` costs three, so switching the metals over is cheaper AND sharper than what it replaces.
+function normalFromCanvas(src, strength = 2.4, repeat = [3, 3]) {
+  const w = src.width, h = src.height;
+  const sd = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(w, h), d = img.data;
+  const L = (x, y) => sd[((((y % h) + h) % h) * w + (((x % w) + w) % w)) * 4] / 255;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (L(x + 1, y) - L(x - 1, y)) * strength, dy = (L(x, y + 1) - L(x, y - 1)) * strength;
+    const len = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    d[i] = Math.round((-dx / len * 0.5 + 0.5) * 255);
+    d[i + 1] = Math.round((-dy / len * 0.5 + 0.5) * 255);
+    d[i + 2] = Math.round((1 / len * 0.5 + 0.5) * 255); d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); t.anisotropy = 8;
+  return t;                                                    // linear (no colorSpace): normal maps must not be sRGB-decoded
+}
+
 function makeTextures() {
   const rnd = mulberry32(777);
   // metal: low-freq tonal variation + fine scratches (used as colour map, dark tint applied via material.color)
@@ -114,20 +134,38 @@ function makeTextures() {
     for (let i = 0; i < 6; i++) { const a = i * PI / 3; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a + 1.57) * 3, cy + Math.sin(a + 1.57) * 3); ctx.lineTo(cx + Math.cos(a) * w * 0.5, cy + Math.sin(a) * h * 0.5); ctx.lineTo(cx - Math.cos(a + 1.57) * 3, cy - Math.sin(a + 1.57) * 3); ctx.closePath(); ctx.fill(); }
   });
   star.wrapS = star.wrapT = THREE.ClampToEdgeWrapping;
-  return { metal, rough, wrap, filigrees, petal, star };
+  // machined-steel height: broad forged undulation + fine broach lines + scattered pits/nicks. Drives the normal map
+  // that stops the receiver reading as a smooth plastic slab (it had no map at all).
+  const height = canvasTex(256, 256, (ctx, w, h) => {
+    const img = ctx.createImageData(w, h), d = img.data;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let n = 0.5 + 0.20 * noise2(x / 42, y / 42, 31) + 0.10 * noise2(x / 11, y / 11, 37);
+      n += 0.055 * Math.sin(y * 1.15) * (0.5 + 0.5 * noise2(x / 60, y / 60, 41));   // broach lines across the blank
+      const i = (y * w + x) * 4; d[i] = d[i + 1] = d[i + 2] = Math.round(255 * Math.max(0, Math.min(1, n))); d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1;                        // scratches cut IN
+    for (let i = 0; i < 90; i++) { const x = rnd() * w, y = rnd() * h, a = rnd() * PI, l = 5 + rnd() * 34; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    for (let i = 0; i < 60; i++) { ctx.beginPath(); ctx.arc(rnd() * w, rnd() * h, 0.7 + rnd() * 1.9, 0, PI * 2); ctx.fill(); }
+  });
+  const normal = normalFromCanvas(height.image, 2.6, [6, 6]);   // fine tiling: machining marks, not camo blotches
+  const wrapNormal = normalFromCanvas(wrap.image, 3.2, [2, 4]);                     // leather wrap relief for the grip
+  return { metal, rough, wrap, filigrees, petal, star, normal, wrapNormal };
 }
 
 export function makeMaterials() {
   const T = makeTextures();
   const std = (o) => new THREE.MeshStandardMaterial(o);
   const mats = {
-    metal: std({ color: 0x2e333c, map: T.metal, roughnessMap: T.rough, roughness: 0.95, metalness: 0.9, envMapIntensity: 0.8, bumpMap: T.metal, bumpScale: 0.0018 }),
-    metal2: std({ color: 0x6e7480, map: T.metal, roughnessMap: T.rough, roughness: 0.78, metalness: 0.85, envMapIntensity: 0.85, bumpMap: T.metal, bumpScale: 0.0012 }),
-    dark: std({ color: 0x0c0c10, roughness: 0.7, metalness: 0.3 }),
-    gold: std({ color: 0xd8a94b, roughness: 0.38, metalness: 1.0, envMapIntensity: 1.0, emissive: 0x2a1a05, emissiveIntensity: 0.35 }),   // user decree: viewmodel metals must not throw white sun glints over the meadow (blobcheck-gated)
-    brass: std({ color: 0xffca6a, roughness: 0.35, metalness: 1.0, envMapIntensity: 1.1, emissive: 0x7a4a10, emissiveIntensity: 0.6 }),
-    grip: std({ color: 0x2e211a, roughness: 0.85, metalness: 0.0, bumpMap: T.wrap, bumpScale: 0.0025 }),
-    ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05 }),
+    metal: std({ color: 0x2e333c, map: T.metal, roughnessMap: T.rough, roughness: 0.95, metalness: 0.9, envMapIntensity: 0.8, normalMap: T.normal, normalScale: new THREE.Vector2(0.85, 0.85) }),
+    metal2: std({ color: 0x6e7480, map: T.metal, roughnessMap: T.rough, roughness: 0.78, metalness: 0.85, envMapIntensity: 0.85, normalMap: T.normal, normalScale: new THREE.Vector2(0.7, 0.7) }),
+    // the receiver/frame slab: was a flat untextured black box in every frame — now forged steel with broach lines
+    dark: std({ color: 0x0c0c10, roughnessMap: T.rough, roughness: 0.7, metalness: 0.3, normalMap: T.normal, normalScale: new THREE.Vector2(0.9, 0.9) }),   // no albedo map: the frame stays deep gunmetal, the normal alone supplies the relief
+    gold: std({ color: 0xd8a94b, roughness: 0.38, metalness: 1.0, envMapIntensity: 1.0, emissive: 0x2a1a05, emissiveIntensity: 0.35, normalMap: T.normal, normalScale: new THREE.Vector2(0.3, 0.3) }),   // user decree: viewmodel metals must not throw white sun glints over the meadow (blobcheck-gated) — normalScale kept low so cast gold breaks up without adding new specular hot spots
+    brass: std({ color: 0xffca6a, roughness: 0.35, metalness: 1.0, envMapIntensity: 1.1, emissive: 0x7a4a10, emissiveIntensity: 0.6, normalMap: T.normal, normalScale: new THREE.Vector2(0.25, 0.25) }),
+    grip: std({ color: 0x2e211a, roughness: 0.85, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(1.1, 1.1) }),
+    ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05, normalMap: T.normal, normalScale: new THREE.Vector2(0.45, 0.45) }),
     white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0 }),   // sights stay lit-white but under the day bloom threshold (1.05): 2.2 bloomed into permanent white balls over the grass
     glass: std({ color: 0x9fd0ff, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.28, depthWrite: false, emissive: 0x4080c0, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
     glow: {}, flash: {}, tex: T,
@@ -608,6 +646,29 @@ function beam(b) {
 }
 
 const BUILDERS = { handcannon, autorifle, pulse, shotgun, sniper, fusion, scout, beam };
+
+/**
+ * Standalone armored gauntlet for the ability gestures (grenade lob / grapple launch). Built from the
+ * SAME hands.js sub-assemblies and the SAME gun materials as the weapon viewmodel hands, so the character keeps one
+ * pair of hands — an energy hand belongs to the super (you are channelling Starfall), not to throwing a grenade.
+ * Used by the grenade lob and the grapple launch. Melee does NOT use it — melee is a bash with the equipped weapon.
+ * ~4 merged meshes, only visible for the 0.5-0.62 s a gesture lasts.
+ */
+export function buildAbilityHand(mats) {
+  const b = new Builder(mats, 'kinetic');
+  // gripHand is the good one: 3-segment fingers with knuckle armour, back-of-hand plate, gold studs, bracer forearm.
+  // Curled with the grip hole filled in it is a closed gauntlet — which is how you hold a grenade and launch a hook.
+  // armLen 0.09: the cuff, gold ring and plate collapse into a wrist BRACER. A full-length arm floating in open
+  // frame with no body attached reads as a loose object next to the gun, not as the player's arm.
+  gripHand(b, { p: [0, 0, 0], tilt: -0.25, R: 0.019, side: 1, armLen: 0.11, armDir: [-0.28, -0.95, 0.15] });   // hangs DOWN from the wrist: aimed at the camera you just see its end cap, which reads as a pipe
+  b.add(box(0.032, 0.055, 0.046, 0.011), 'grip', { p: [0, 0, -0.002], r: [-0.25, 0, 0] });
+  // wrist bridge: gripHand's forearm attaches ~4 cm below the grip, a gap the GUN normally hides. Free-floating in
+  // open frame that gap made the bracer read as a separate object next to a disembodied fist.
+  b.add(box(0.031, 0.052, 0.050, 0.010), 'grip', { p: [0.007, -0.020, 0.017], r: [-0.25, 0, 0] });
+  const group = b.build().group;
+  group.frustumCulled = false;
+  return { group };
+}
 
 export function buildGun(archetype, mats, element) {
   const b = new Builder(mats, element);
