@@ -25,6 +25,9 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #ch[data-arch="shotgun"] .tv { display: none; }
 #ch[data-arch="pulse"] .tk, #ch[data-arch="sniper"] .tk { opacity: 0.8; }
 #ch[data-arch="fusion"] .tv { display: none; }
+#ch[data-arch="scout"] .tk { opacity: 0.8; }
+#ch[data-arch="beam"] .tv { display: none; }
+#ch[data-arch="beam"] .th { width: 16px; }
 #ch[data-arch="fusion"] .th { width: 14px; }
 #ch:not([data-arch="handcannon"]):not([data-arch="shotgun"]) .ring { display: none; }
 #chargebar { position: absolute; left: -31px; top: 26px; width: 62px; height: 5px; padding: 1px; background: rgba(6,8,16,0.55); border: 1px solid rgba(216,189,122,0.4); border-radius: 3px; opacity: 0; }
@@ -156,29 +159,16 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #death.on p { animation: fadein 1s 1.1s forwards; }
 @keyframes fadein { to { opacity: 1; } }
 
-/* ---------- start screen & pause menu ---------- */
-#start, #pause { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--ivory); background: radial-gradient(ellipse at center, rgba(10,14,30,0.55), rgba(0,0,0,0.86)); pointer-events: auto; }
+/* ---------- start screen ---------- */
+#start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--ivory); background: radial-gradient(ellipse at center, rgba(10,14,30,0.55), rgba(0,0,0,0.86)); pointer-events: auto; }
 #start { cursor: pointer; }
 /* straight-in boot: the hint floats over the LIVE world (no dark veil, no title) — any click captures the mouse */
 #start.strip { justify-content: flex-end; padding-bottom: 6vh; background: none; }
-#start h1, #pause h1 { font: 300 62px var(--serif); font-variant: small-caps; letter-spacing: 0.32em; margin: 0; color: var(--gold-hi); text-shadow: 0 0 28px rgba(140,190,255,0.55), 0 0 60px rgba(216,189,122,0.3); }
+#start h1 { font: 300 62px var(--serif); font-variant: small-caps; letter-spacing: 0.32em; margin: 0; color: var(--gold-hi); text-shadow: 0 0 28px rgba(140,190,255,0.55), 0 0 60px rgba(216,189,122,0.3); }
 .flourish { width: 420px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); position: relative; }
 .flourish::after { content: '❖'; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); color: var(--gold); font-size: 12px; }
 #start .cta { font: 400 18px var(--serif); font-variant: small-caps; letter-spacing: 0.34em; color: var(--aether); text-shadow: 0 0 12px var(--aether-glow); animation: lowpulse 2s ease-in-out infinite; }
 .controls { font: 400 12px var(--serif); letter-spacing: 0.14em; opacity: 0.6; text-align: center; line-height: 1.9; }
-#pausebox { width: 430px; padding: 26px 34px 22px; background: var(--panel); border: 1px solid var(--gold-dim); box-shadow: 0 0 40px rgba(0,0,0,0.7), inset 0 0 30px rgba(140,190,255,0.05); position: relative; }
-#pausebox::before, #pausebox::after { content: ''; position: absolute; width: 9px; height: 9px; border: 1.5px solid var(--gold); transform: rotate(45deg); background: #0b0e1c; }
-#pausebox::before { top: -5px; left: 50%; margin-left: -5px; } #pausebox::after { bottom: -5px; left: 50%; margin-left: -5px; }
-#pause h1 { font-size: 34px; }
-#pause label { display: block; margin: 13px 0 4px; font: 400 14px var(--serif); font-variant: small-caps; letter-spacing: 0.14em; color: var(--gold-hi); }
-#pause label span { float: right; color: var(--aether); font-variant-numeric: tabular-nums; }
-#pause input[type=range] { width: 100%; accent-color: #d8bd7a; height: 18px; cursor: pointer; }
-#qualrow { display: flex; gap: 6px; margin-top: 4px; }
-#qualrow button, #resume { pointer-events: auto; cursor: pointer; background: rgba(12,16,32,0.7); border: 1px solid var(--gold-dim); color: var(--ivory); font: 400 13px var(--serif); font-variant: small-caps; letter-spacing: 0.12em; padding: 5px 0; flex: 1; transition: all 0.12s; }
-#qualrow button:hover, #resume:hover { border-color: var(--gold-hi); color: var(--gold-hi); box-shadow: 0 0 10px rgba(216,189,122,0.25); }
-#qualrow button.on { background: rgba(216,189,122,0.18); border-color: var(--gold); color: var(--gold-hi); }
-#resume { display: block; width: 100%; margin-top: 20px; padding: 9px 0; font-size: 16px; }
-#pause .controls { margin-top: 14px; }
 
 /* health-only vitals: hp number inside the bar */
 #hbar { position: relative; }
@@ -199,3 +189,202 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #hbar .hpnum { font: 600 12.5px var(--serif); letter-spacing: 0.12em; color: #f8efd8; text-shadow: 0 1px 3px rgba(0,0,0,0.95); z-index: 1; }
 #hbar.low { border-color: rgba(224,85,52,0.9); box-shadow: 0 0 18px rgba(224,85,52,0.45), inset 0 2px 5px rgba(0,0,0,0.85); }
 #lvl { box-shadow: 0 0 14px rgba(211,165,72,0.25); }
+
+/* ==========================================================================================
+   UI KIT — the house component set. Motion vocabulary from beUI (beui.dev/components/motion):
+   segmented tabs with a gliding spring indicator, spring switches, tick-dot range sliders,
+   spring-pressed buttons, a centre-morph modal. beUI is React + motion; this game ships neither
+   and takes no new deps, so the components are rebuilt here in CSS. ONE spring token (--spring)
+   drives all of them, which is what makes a menu feel like a single object instead of a form.
+   ========================================================================================== */
+#ui {
+  --spring: cubic-bezier(.22, 1.42, .36, 1);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ink: #07060f;
+  --glass: linear-gradient(150deg, rgba(20,17,42,.90), rgba(9,8,20,.92));
+  --line: rgba(216,189,122,.26);
+  --text: #ece2c8;
+  --textdim: rgba(232,222,196,.62);
+}
+
+/* ---- scrim + centre-morph modal ---- */
+.ui-scrim { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8,6,20,.55), rgba(2,2,6,.86)); pointer-events: auto;
+  opacity: 0; transition: opacity .22s var(--ease); backdrop-filter: blur(3px); }
+.ui-scrim.on { opacity: 1; }
+.ui-modal { position: relative; width: min(620px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 10px; color: var(--text);
+  box-shadow: 0 30px 90px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,240,205,.10), 0 0 60px rgba(124,91,214,.10);
+  transform: scale(.93); opacity: 0; filter: blur(8px);
+  transition: transform .42s var(--spring), opacity .2s var(--ease), filter .28s var(--ease); }
+.ui-scrim.on .ui-modal { transform: scale(1); opacity: 1; filter: blur(0); }
+/* gold corner studs, the same ornament the HUD frames use */
+.ui-modal::before, .ui-modal::after { content: ""; position: absolute; width: 9px; height: 9px; border: 1.5px solid var(--gold); transform: rotate(45deg); background: #0b0a1a; }
+.ui-modal::before { top: -5px; left: 50%; margin-left: -5px; }
+.ui-modal::after { bottom: -5px; left: 50%; margin-left: -5px; }
+.ui-modal .mhead { padding: 22px 26px 0; text-align: center; }
+.ui-modal h1 { margin: 0; font: 300 34px var(--serif); font-variant: small-caps; letter-spacing: .3em; text-indent: .3em;
+  background: linear-gradient(100deg, #8a6119 18%, #d8bd7a 40%, #fdf3cd 50%, #d8bd7a 60%, #8a6119 82%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.ui-modal .mtitle p { margin: 2px 0 0; font: 400 11px var(--serif); font-variant: small-caps; letter-spacing: .36em; text-indent: .36em; color: var(--aether); opacity: .8; }
+.ui-modal .mflourish { height: 1px; margin: 14px auto 0; width: 76%; background: linear-gradient(90deg, transparent, var(--gold-dim), transparent); position: relative; }
+.ui-modal .mflourish::after { content: "\2756"; position: absolute; left: 50%; top: -8px; transform: translateX(-50%); color: var(--gold); font-size: 10px; }
+.ui-modal .mtabs { padding: 16px 26px 4px; }
+.ui-modal .mbody { padding: 10px 26px 4px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--gold-dim) transparent; }
+.ui-modal .mfoot { display: flex; align-items: center; gap: 8px; padding: 14px 26px 20px; border-top: 1px solid rgba(216,189,122,.14); margin-top: 12px; }
+.ui-modal .mhint { flex: 1; margin: 0; font: 400 11px var(--serif); letter-spacing: .07em; color: var(--textdim); }
+
+/* ---- panes: blur cross-fade between tabs (beUI morphing modal body) ---- */
+.mpane { display: none; }
+.mpane.on { display: block; animation: paneIn .34s var(--ease); }
+@keyframes paneIn { from { opacity: 0; transform: translateY(6px); filter: blur(5px); } to { opacity: 1; transform: none; filter: blur(0); } }
+
+/* ---- rows ---- */
+.ui-row { display: grid; grid-template-columns: 1fr 236px; align-items: center; gap: 18px; padding: 11px 0; border-bottom: 1px solid rgba(216,189,122,.08); }
+.ui-row:last-child { border-bottom: none; }
+.ui-row > label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font: 400 14.5px var(--serif); font-variant: small-caps; letter-spacing: .1em; color: var(--text); }
+.ui-row > label em { flex-basis: 100%; font: italic 400 11.5px var(--serif); letter-spacing: .04em; color: var(--textdim); }
+.ui-row > label b { margin-left: auto; font: 600 13px var(--serif); font-variant-numeric: tabular-nums; color: var(--aether); letter-spacing: .06em; }
+
+/* ---- Range: filled track, tick dots, bar thumb that bounces on change ---- */
+.ui-range { position: relative; height: 26px; display: flex; align-items: center; }
+.ui-range input { -webkit-appearance: none; appearance: none; width: 100%; height: 26px; background: none; cursor: pointer; margin: 0; }
+.ui-range input::-webkit-slider-runnable-track { height: 5px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold) 0 var(--p, 50%), rgba(255,255,255,.10) var(--p, 50%) 100%);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+.ui-range input::-moz-range-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.10); }
+.ui-range input::-moz-range-progress { height: 5px; border-radius: 3px; background: var(--gold); }
+.ui-range input::-webkit-slider-thumb { -webkit-appearance: none; width: 7px; height: 20px; margin-top: -7.5px; border-radius: 3px;
+  background: linear-gradient(180deg, #fdf3cd, var(--gold-hi) 45%, #b8933f); border: none;
+  box-shadow: 0 0 10px rgba(216,189,122,.55), 0 1px 3px rgba(0,0,0,.7);
+  transition: transform .3s var(--spring); }
+.ui-range input::-moz-range-thumb { width: 7px; height: 20px; border: none; border-radius: 3px; background: var(--gold-hi); }
+.ui-range input:hover::-webkit-slider-thumb { transform: scaleY(1.12); }
+.ui-range input:active::-webkit-slider-thumb { transform: scaleY(1.3) scaleX(1.15); }
+.ui-range .ticks { position: absolute; left: 3px; right: 3px; top: 50%; height: 2px; margin-top: -1px; pointer-events: none; opacity: .35;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.65) 0 2px, transparent 2px calc(100% / 10)); }
+.ui-range.bump input::-webkit-slider-thumb { animation: thumbBump .3s var(--spring); }
+@keyframes thumbBump { 0% { transform: scaleY(1.42) scaleX(.85); } 100% { transform: scaleY(1); } }
+
+/* ---- Switch: spring thumb + press squash ---- */
+.ui-switch { position: relative; width: 50px; height: 27px; padding: 0; border-radius: 14px; cursor: pointer;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(216,189,122,.28); box-shadow: inset 0 1px 3px rgba(0,0,0,.6);
+  transition: background .25s var(--ease), border-color .25s var(--ease), box-shadow .25s var(--ease); }
+.ui-switch i { position: absolute; left: 3px; top: 2.5px; width: 20px; height: 20px; border-radius: 50%;
+  background: linear-gradient(180deg, #f4ead2, #b9ac90); box-shadow: 0 1px 4px rgba(0,0,0,.6);
+  transition: transform .42s var(--spring), width .16s var(--ease), background .25s var(--ease); }
+.ui-switch:active i { width: 26px; }
+.ui-switch.on { background: rgba(216,189,122,.30); border-color: var(--gold); box-shadow: inset 0 1px 3px rgba(0,0,0,.4), 0 0 14px rgba(216,189,122,.25); }
+.ui-switch.on i { transform: translateX(23px); background: linear-gradient(180deg, #fdf3cd, var(--gold-hi)); }
+.ui-switch.on:active i { transform: translateX(17px); }
+
+/* ---- Segmented / Tabs: one pill glides between items (beUI layoutId indicator) ---- */
+.ui-seg { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; padding: 3px;
+  border: 1px solid rgba(216,189,122,.22); border-radius: 8px; background: rgba(6,6,16,.55); }
+.ui-seg .ind { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 6px) / var(--n)); border-radius: 6px;
+  background: linear-gradient(180deg, rgba(216,189,122,.30), rgba(216,189,122,.16)); border: 1px solid rgba(246,227,172,.45);
+  box-shadow: 0 0 14px rgba(216,189,122,.22), inset 0 1px 0 rgba(255,245,215,.25);
+  transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .46s var(--spring); }
+.ui-seg button { position: relative; z-index: 1; padding: 7px 4px; border: none; background: none; cursor: pointer;
+  color: var(--textdim); font: 400 12.5px var(--serif); font-variant: small-caps; letter-spacing: .12em;
+  transition: color .22s var(--ease), transform .3s var(--spring); }
+.ui-seg button:hover { color: var(--text); }
+.ui-seg button.on { color: var(--gold-hi); text-shadow: 0 0 10px rgba(216,189,122,.35); }
+.ui-seg button:active { transform: scale(.95); }
+.ui-seg.tabs { padding: 4px; }
+.ui-seg.tabs button { padding: 9px 4px; font-size: 13.5px; }
+
+/* ---- Buttons: spring press ---- */
+.ui-btn { cursor: pointer; padding: 9px 20px; border-radius: 7px; border: 1px solid var(--gold-dim); background: rgba(12,11,26,.7);
+  color: var(--text); font: 400 14px var(--serif); font-variant: small-caps; letter-spacing: .14em;
+  transition: transform .34s var(--spring), border-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease); }
+.ui-btn:hover { border-color: var(--gold-hi); color: var(--gold-hi); box-shadow: 0 0 16px rgba(216,189,122,.22); }
+.ui-btn:active { transform: scale(.95); }
+.ui-btn.primary { background: linear-gradient(180deg, rgba(216,189,122,.26), rgba(216,189,122,.10)); border-color: var(--gold); color: var(--gold-hi); }
+.ui-btn.ghost { background: none; border-color: rgba(216,189,122,.18); color: var(--textdim); }
+
+/* ---- keybind grid ---- */
+.kbgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; padding: 6px 0 10px; }
+.kb { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(216,189,122,.07); }
+.kb kbd { min-width: 74px; text-align: center; padding: 3px 7px; border: 1px solid var(--gold-dim); border-radius: 5px;
+  background: rgba(10,10,22,.75); color: var(--gold-hi); font: 600 11px "Segoe UI", system-ui, sans-serif; letter-spacing: .06em; }
+.kb span { font: 400 13px var(--serif); letter-spacing: .05em; color: var(--textdim); }
+
+/* ==========================================================================================
+   HUD v3 — same information, read at a glance. The v2 vitals bar was a flat orange rectangle
+   with hard quarter lines; abilities were 44 px flat diamonds. Everything below is frame,
+   contrast and motion — no new elements, no per-frame layout.
+   ========================================================================================== */
+#vitals { top: 24px; left: 26px; gap: 13px; }
+#lvl { width: 36px; height: 36px; border-width: 1px; border-radius: 4px;
+  background: linear-gradient(150deg, rgba(30,22,56,.92), rgba(9,8,20,.92));
+  box-shadow: 0 0 16px rgba(0,0,0,.6), 0 0 18px rgba(211,165,72,.20), inset 0 0 10px rgba(216,189,122,.16); }
+#lvl b { font-size: 16px; text-shadow: 0 0 8px rgba(216,189,122,.5); }
+#hbar { width: 326px; height: 22px; border-radius: 4px; border: 1px solid rgba(216,189,122,.72);
+  background: linear-gradient(180deg, rgba(10,8,20,.95), rgba(26,18,38,.92));
+  box-shadow: 0 2px 14px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.9), 0 0 20px rgba(211,165,72,.10); }
+#hbar .fill { background: linear-gradient(180deg, #f7d49b 0%, #e19a48 26%, #c85f2a 62%, #8d3418 100%);
+  box-shadow: inset 0 1px 0 rgba(255,240,208,.55), inset 0 -3px 6px rgba(0,0,0,.35), 0 0 12px rgba(224,140,66,.32); }
+/* quarter ticks: hairlines, not the old opaque black bands that chopped the bar into four boxes */
+#hbar::after { background:
+  repeating-linear-gradient(90deg, transparent 0 24.85%, rgba(0,0,0,.30) 24.85% 25.15%),
+  linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.02) 42%, transparent 60%); }
+#hbar .hpnum { font: 600 12px var(--serif); letter-spacing: .16em; }
+/* one gold stud closing the far end of the vessel (the near end is the level lozenge) */
+#vitals .bars { position: relative; }
+#vitals .bars::after { content: ""; position: absolute; top: 50%; right: -5px; width: 7px; height: 7px;
+  margin-top: -3.5px; transform: rotate(45deg); background: var(--gold); box-shadow: 0 0 8px rgba(216,189,122,.5); }
+
+/* ---- abilities ---- */
+#abil { left: 28px; bottom: 30px; }
+#abrow { gap: 20px; }
+.ab { width: 48px; height: 48px; }
+.ab.sup { width: 68px; height: 68px; }
+.ab .dia { border-radius: 5px; border-width: 1px; border-color: rgba(216,189,122,.62);
+  background: linear-gradient(150deg, rgba(52,44,96,.88), rgba(16,14,36,.90));
+  box-shadow: 0 4px 16px rgba(0,0,0,.6), inset 0 0 14px rgba(140,190,255,.10); }
+.ab.ready .dia { border-color: var(--gold-hi); box-shadow: 0 0 18px rgba(216,189,122,.34), inset 0 0 14px rgba(140,190,255,.20); }
+.ab svg { width: 50%; height: 50%; }
+.ab b { bottom: -19px; font-size: 10.5px; letter-spacing: .18em; padding: 1px 6px; border-radius: 4px;
+  background: rgba(8,8,18,.6); border: 1px solid rgba(216,189,122,.22); color: rgba(246,236,208,.92); }
+#smeter { margin-top: 28px; width: 236px; height: 7px; border-radius: 4px; border-color: rgba(216,189,122,.45);
+  background: linear-gradient(180deg, rgba(8,6,16,.85), rgba(18,14,30,.8)); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
+#smeter i { border-radius: 4px; box-shadow: 0 0 10px rgba(180,144,255,.45); }
+#smeter.full { box-shadow: 0 0 18px rgba(246,227,172,.5), inset 0 1px 3px rgba(0,0,0,.6); }
+
+/* ---- ammo ---- */
+#ammo { right: 32px; bottom: 28px; }
+#wline { font-size: 16px; letter-spacing: .16em; }
+#mag { font: 300 52px/1 var(--serif); color: #fdf6e6; text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 22px rgba(216,189,122,.22); }
+#res { font: 400 20px var(--serif); }
+#rline { height: 3px; width: 190px; background: rgba(216,189,122,.16); }
+#slots i { width: 30px; height: 5px; border-radius: 3px; }
+#ammo::after { content: ""; display: block; height: 1px; margin-top: 7px; margin-left: auto; width: 190px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim)); }
+
+/* ---- toasts / quest / pickups: card language shared with the settings menu ---- */
+.toast { padding: 7px 20px 7px 16px; border: 1px solid var(--line); border-left: 2px solid var(--gold);
+  border-radius: 6px; background: var(--glass); backdrop-filter: blur(4px); box-shadow: 0 6px 22px rgba(0,0,0,.55); }
+#quest { right: 28px; top: 92px; width: 268px; padding: 10px 14px 11px; border-radius: 7px;
+  border: 1px solid rgba(216,189,122,.20); border-right: 2px solid var(--gold);
+  background: linear-gradient(250deg, rgba(20,17,42,.62), rgba(9,8,20,.30)); backdrop-filter: blur(3px); }
+#quest .ql { display: none; }
+#iprompt kbd { border-radius: 5px; }
+
+/* ---- boss bar ---- */
+#boss .bar { height: 10px; border-radius: 4px; border-color: rgba(216,189,122,.55);
+  background: linear-gradient(180deg, rgba(8,6,16,.92), rgba(22,16,34,.9)); box-shadow: inset 0 2px 5px rgba(0,0,0,.85), 0 0 22px rgba(211,165,72,.14); }
+#boss .bname { letter-spacing: .24em; text-indent: .24em; }
+/* shield reads as a rail UNDER the health, not a blue block painted over its left third */
+#boss .bsh, #tgt .tsh { top: auto; bottom: 0; height: 3px; border-radius: 0 0 3px 3px; }
+
+/* ---- start hint: same kit, spring entrance ---- */
+#start.strip { padding-bottom: 15vh; gap: 12px; }   /* clear of the ability row and the ammo block */
+#start .cta { padding: 9px 26px; border-radius: 8px; border: 1px solid var(--gold-dim); background: rgba(9,8,20,.5);
+  backdrop-filter: blur(4px); animation: ctaIn .6s var(--spring), lowpulse 2.4s ease-in-out infinite 1s; }
+@keyframes ctaIn { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
+#start .controls { max-width: 720px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #ui * { animation-duration: .01ms !important; transition-duration: .06s !important; }
+}

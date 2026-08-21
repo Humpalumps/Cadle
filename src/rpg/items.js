@@ -33,6 +33,8 @@ export const ARCHETYPES = [   // mirrors Cadle's armoury (src/player/weapons/def
   { id: 'shotgun',    label: 'Shotgun',      rpm: 80,  damage: 90,  range: 12,  stability: 40, handling: 60, mag: 6 },
   { id: 'sniper',     label: 'Sniper Rifle', rpm: 90,  damage: 130, range: 170, stability: 50, handling: 35, mag: 4 },
   { id: 'fusion',     label: 'Fusion Rifle', rpm: 70,  damage: 118, range: 60,  stability: 27, handling: 32, mag: 5 },
+  { id: 'scout',      label: 'Scout Rifle',  rpm: 200, damage: 30,  range: 110, stability: 66, handling: 52, mag: 14 },
+  { id: 'beam',       label: 'Charge Beam',  rpm: 70,  damage: 132, range: 140, stability: 38, handling: 34, mag: 5 },
 ];
 
 // perk slots: barrel (range/stability), magazine (mag/handling), trait (the one you keep it for)

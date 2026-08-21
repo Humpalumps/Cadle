@@ -502,7 +502,112 @@ function fusion(b) {
   return { flashScale: 0.8, coreBase: 1.2 };
 }
 
-const BUILDERS = { handcannon, autorifle, pulse, shotgun, sniper, fusion };
+
+// Pale Verse — scout rifle, imported from the Aurelen build. Long, light, precision: slim receiver, ivory
+// furniture, a prism sight with a lit reticle ring, and a barrel long enough to read as "reach" in the hand.
+function scout(b) {
+  b.add(profile([[-0.08, -0.028], [-0.08, 0.034], [-0.05, 0.042], [0.20, 0.042], [0.23, 0.028], [0.23, -0.014], [0.10, -0.028]], 0.046), 'metal');
+  b.add(profile([[-0.34, -0.062], [-0.34, 0.016], [-0.30, 0.030], [-0.12, 0.030], [-0.08, 0.024], [-0.08, -0.028], [-0.26, -0.048]], 0.036), 'metal');   // dark stock: an ivory slab this size fills half the screen at ADS
+  b.add(box(0.028, 0.012, 0.095, 0.004), 'grip', { p: [0, 0.040, 0.22] });                    // leather cheek comb (ivory here sits against the eye at ADS and reads as a white slab)
+  b.add(box(0.040, 0.012, 0.055, 0.003), 'gold', { p: [0, -0.052, 0.31], r: [0.12, 0, 0] });  // butt plate
+  b.add(pbox(0.0025, 0.005, 0.24), 'gold', { p: [0.0185, 0.006, 0.19], r: [0.06, 0, 0] }); b.add(pbox(0.0025, 0.005, 0.24), 'gold', { p: [-0.0185, 0.006, 0.19], r: [0.06, 0, 0] });
+  b.add(pbox(0.0025, 0.005, 0.30), 'gold', { p: [0.0235, -0.020, -0.05] }); b.add(pbox(0.0025, 0.005, 0.30), 'gold', { p: [-0.0235, -0.020, -0.05] });
+  filigreeSides(b, [0, 0.006, -0.02], 0.17, 0.044, { x: 0.024, v: 2 });
+  screws(b, [[0.0235, 0.030, 0.06], [0.0235, -0.018, 0.06], [0.0235, 0.030, -0.13], [0.0235, -0.018, -0.13]]);
+  // ejection port + charging handle (moving)
+  b.add(pbox(0.003, 0.013, 0.042), 'dark', { p: [0.0235, 0.014, -0.04] });
+  b.part('bolt', [0.02, 0.018, -0.01]);
+  b.add(box(0.014, 0.011, 0.026, 0.003), 'metal2', { p: [0.031, 0.018, -0.01], part: 'bolt' });
+  b.add(pbox(0.004, 0.011, 0.040), 'metal2', { p: [0.026, 0.014, -0.04], part: 'bolt' });
+  // top rail + prism sight (short scope, gold rings, lit reticle)
+  b.add(box(0.022, 0.008, 0.30, 0.002), 'metal2', { p: [0, 0.046, -0.05] });
+  railNotches(b, 0.0515, 0.07, -0.19);
+  b.add(cylZ(0.0165, 0.0165, 0.115, 18), 'metal', { p: [0, 0.078, -0.02] });
+  b.add(latheZ([[0.0165, 0], [0.023, 0.012], [0.023, 0.03], [0.0, 0.03]], 18), 'metal', { p: [0, 0.078, -0.088] });
+  b.add(cylZ(0.020, 0.020, 0.003, 18), 'glass', { p: [0, 0.078, -0.118] });                   // objective
+  b.add(cylZ(0.0145, 0.0145, 0.003, 18), 'glass', { p: [0, 0.078, 0.038] });                  // ocular
+  b.add(torusZ(0.0225, 0.0018, 6, 24), 'gold', { p: [0, 0.078, -0.117] });
+  b.add(torusZ(0.0165, 0.0015, 6, 24), 'glow', { p: [0, 0.078, 0.039] });                     // reticle ring
+  for (const z of [-0.055, 0.012]) { b.add(torusZ(0.0185, 0.0035, 8, 22), 'metal2', { p: [0, 0.078, z] }); b.add(box(0.018, 0.026, 0.018, 0.003), 'metal2', { p: [0, 0.056, z] }); }
+  // mag (moving) + well
+  b.add(box(0.032, 0.030, 0.050, 0.004), 'metal', { p: [0, -0.036, -0.062] });
+  b.part('mag', [0, -0.046, -0.062]);
+  b.add(box(0.028, 0.086, 0.042, 0.005), 'metal2', { p: [0, -0.090, -0.056], r: [0.14, 0, 0], part: 'mag' });
+  b.add(box(0.030, 0.009, 0.044, 0.002), 'gold', { p: [0, -0.132, -0.050], r: [0.14, 0, 0], part: 'mag' });
+  b.add(pbox(0.004, 0.070, 0.003), 'glow', { p: [0.0125, -0.088, -0.076], r: [0.14, 0, 0], part: 'mag' });
+  // handguard + long barrel + brake
+  b.add(cylZ(0.023, 0.023, 0.20, 8), 'metal2', { p: [0, 0.012, -0.34], r: [0, 0, PI / 8] });
+  for (const z of [-0.28, -0.34, -0.40]) { b.add(pbox(0.004, 0.008, 0.036), 'glow', { p: [0.0225, 0.018, z] }); b.add(pbox(0.004, 0.008, 0.036), 'glow', { p: [-0.0225, 0.018, z] }); }
+  b.add(torusZ(0.026, 0.0035, 8, 24), 'gold', { p: [0, 0.012, -0.245] }); b.add(torusZ(0.026, 0.0035, 8, 24), 'gold', { p: [0, 0.012, -0.435] });
+  b.add(box(0.024, 0.044, 0.028, 0.006), 'grip', { p: [0, -0.026, -0.35], r: [-0.22, 0, 0] });    // leather foregrip
+  b.add(cylZ(0.0095, 0.0105, 0.24, 16), 'metal', { p: [0, 0.012, -0.565] });
+  for (const z of [-0.50, -0.60]) b.add(torusZ(0.0125, 0.0016, 6, 20), 'gold', { p: [0, 0.012, z] });
+  b.add(latheZ([[0.008, 0], [0.012, 0], [0.017, 0.005], [0.017, 0.020], [0.012, 0.022], [0.017, 0.024], [0.017, 0.040], [0.012, 0.043], [0.008, 0.043], [0.008, 0]], 16), 'metal2', { p: [0, 0.012, -0.688] });
+  b.add(torusZ(0.0175, 0.0015, 6, 20), 'gold', { p: [0, 0.012, -0.716] });
+  b.add(box(0.003, 0.011, 0.004, 0.001), 'metal2', { p: [0, 0.036, -0.66] }); b.add(sphere(0.0015, 8), 'white', { p: [0, 0.0425, -0.66] });  // backup front post
+  pistolGrip(b, { p: [0, -0.048, 0.028], h: 0.092 });
+  triggerGuard(b, [0, -0.016, -0.020]);
+  gripHand(b, { p: [0, -0.048, 0.028], tilt: -0.35, R: 0.021, side: 1 });
+  b.part('lhand', [0, 0.008, -0.35]);
+  wrapHand(b, { p: [0, 0.008, -0.35], R: 0.028, part: 'lhand' });
+  b.marker('muzzle', [0, 0.012, -0.742]); b.marker('sight', [0, 0.078, -0.02]); b.marker('port', [0.026, 0.016, -0.05]);
+  return { flashScale: 0.72 };
+}
+
+// Rimecaller — charge beam, imported from the Aurelen build. A shoulder relic, not a gun: a frost prism in
+// a gold cradle, three focusing prongs, and a cell that drops out on reload. Glow stays hue-saturated and
+// capped at the fusion's core intensity — a beam weapon is the easiest thing in the game to turn into a
+// white ball, and CLAUDE.md is explicit that the fix is colour, never brightness.
+function beam(b) {
+  const core = b.mat('core'); core.color.setHex(0x0d1c30); core.emissive.setHex(0x7fd8ff); core.emissiveIntensity = 1.15;
+  b.add(box(0.058, 0.070, 0.28, 0.010), 'metal', { p: [0, 0.014, -0.06] });
+  b.add(box(0.050, 0.018, 0.24, 0.005), 'metal2', { p: [0, 0.048, -0.06] });
+  b.add(box(0.028, 0.014, 0.34, 0.004), 'metal', { p: [0, 0.060, -0.09] });                      // spine
+  b.add(pbox(0.004, 0.003, 0.32), 'gold', { p: [0.011, 0.068, -0.09] }); b.add(pbox(0.004, 0.003, 0.32), 'gold', { p: [-0.011, 0.068, -0.09] });
+  b.add(new THREE.PlaneGeometry(0.17, 0.022).rotateX(-PI / 2), 'filigree0', { p: [0, 0.0705, -0.08] });
+  b.add(pbox(0.003, 0.006, 0.26), 'gold', { p: [0.0295, 0.040, -0.06] }); b.add(pbox(0.003, 0.006, 0.26), 'gold', { p: [-0.0295, 0.040, -0.06] });
+  b.add(pbox(0.003, 0.006, 0.26), 'gold', { p: [0.0295, -0.014, -0.06] }); b.add(pbox(0.003, 0.006, 0.26), 'gold', { p: [-0.0295, -0.014, -0.06] });
+  filigreeSides(b, [0, 0.014, -0.06], 0.19, 0.042, { x: 0.030, v: 1 });
+  screws(b, [[0.0295, 0.042, 0.05], [0.0295, -0.012, 0.05], [0.0295, 0.042, -0.17], [0.0295, -0.012, -0.17]]);
+  b.add(pbox(0.004, 0.036, 0.004), 'core', { p: [0.0295, 0.014, -0.01] }); b.add(pbox(0.004, 0.036, 0.004), 'core', { p: [-0.0295, 0.014, -0.01] });
+  // shoulder stock: the weight cue that says "braced", per the original's heavy pose
+  b.add(profile([[-0.28, -0.052], [-0.28, 0.026], [-0.24, 0.040], [-0.08, 0.040], [-0.08, -0.034], [-0.22, -0.044]], 0.040), 'metal');
+  b.add(box(0.046, 0.086, 0.016, 0.004), 'grip', { p: [0, -0.014, 0.285], r: [0.10, 0, 0] });     // shoulder pad
+  b.add(box(0.048, 0.012, 0.020, 0.003), 'gold', { p: [0, 0.030, 0.286], r: [0.10, 0, 0] });
+  // frost prism in a gold cradle (the barrel is a lens stack, not a tube)
+  b.add(cylZ(0.013, 0.013, 0.25, 14), 'core', { p: [0, 0.016, -0.325] });
+  for (const z of [-0.235, -0.30, -0.365, -0.43]) b.add(torusZ(0.027, 0.006, 10, 28), 'gold', { p: [0, 0.016, z] });
+  for (const z of [-0.268, -0.333, -0.398]) b.add(torusZ(0.025, 0.0026, 8, 28), 'core', { p: [0, 0.016, z] });
+  for (const a of [PI / 2, PI / 2 + 2.09, PI / 2 - 2.09]) b.add(box(0.0075, 0.0075, 0.25, 0.002), 'metal2', { p: [Math.cos(a) * 0.035, 0.016 + Math.sin(a) * 0.035, -0.325] });
+  // three focusing prongs, angled in toward the emitter point
+  for (const a of [PI / 2, PI / 2 + 2.09, PI / 2 - 2.09]) {
+    const cx = Math.cos(a), cy = Math.sin(a);
+    b.add(box(0.010, 0.010, 0.085, 0.003), 'metal', { p: [cx * 0.030, 0.016 + cy * 0.030, -0.485], r: [cy * 0.16, -cx * 0.16, 0] });
+    b.add(sphere(0.0055, 10), 'core', { p: [cx * 0.019, 0.016 + cy * 0.019, -0.524] });
+  }
+  b.add(cylZ(0.017, 0.017, 0.008, 16), 'dark', { p: [0, 0.016, -0.470] });
+  b.add(cylZ(0.010, 0.010, 0.004, 16), 'core', { p: [0, 0.016, -0.474] });
+  b.add(torusZ(0.021, 0.0022, 6, 24), 'gold', { p: [0, 0.016, -0.470] });
+  // aether cell (moving) under the body
+  b.part('cell', [0, -0.030, -0.08]);
+  b.add(cylY(0.018, 0.018, 0.086, 14), 'metal2', { p: [0, -0.064, -0.08], part: 'cell' });
+  b.add(torusZ(0.0188, 0.0026, 6, 20), 'core', { p: [0, -0.068, -0.08], r: [PI / 2, 0, 0], part: 'cell' });
+  b.add(cylY(0.020, 0.020, 0.008, 14), 'gold', { p: [0, -0.108, -0.08], part: 'cell' });
+  // bottom rail + foregrip + sights
+  b.add(box(0.030, 0.012, 0.24, 0.003), 'metal', { p: [0, -0.026, -0.32] });
+  b.add(box(0.028, 0.050, 0.030, 0.006), 'grip', { p: [0, -0.056, -0.30], r: [-0.25, 0, 0] });
+  b.add(torusZ(0.0105, 0.002, 6, 20), 'metal2', { p: [0, 0.086, 0.01] }); b.add(pbox(0.004, 0.012, 0.008), 'metal2', { p: [0, 0.072, 0.01] });
+  b.add(box(0.003, 0.016, 0.004, 0.001), 'metal2', { p: [0, 0.076, -0.24] }); b.add(sphere(0.0018, 8), 'white', { p: [0, 0.086, -0.24] });
+  pistolGrip(b, { p: [0, -0.050, 0.020], h: 0.092 });
+  triggerGuard(b, [0, -0.022, -0.020]);
+  gripHand(b, { p: [0, -0.050, 0.020], tilt: -0.35, R: 0.021, side: 1 });
+  b.part('lhand', [0, -0.056, -0.30]);
+  gripHand(b, { p: [0, -0.056, -0.30], tilt: -0.25, R: 0.019, side: -1, part: 'lhand' });
+  b.marker('muzzle', [0, 0.016, -0.540]); b.marker('sight', [0, 0.086, 0.01] );
+  return { flashScale: 0.9, coreBase: 1.15 };
+}
+
+const BUILDERS = { handcannon, autorifle, pulse, shotgun, sniper, fusion, scout, beam };
 
 export function buildGun(archetype, mats, element) {
   const b = new Builder(mats, element);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Settings } from './settings.js';
 
 /**
  * HUD: DOM-based heads-up display (CSS transforms, no per-frame layout thrash). Visual language: FF14 ornate gold/aether-blue frames
@@ -36,7 +37,7 @@ const AB_ICON = { // 24x24 glyphs
   class: '<path d="M12 3v9M7.5 8.5 12 13l4.5-4.5" stroke="currentColor" stroke-width="1.9" fill="none"/><path d="M4 18.5h16" stroke="currentColor" stroke-width="1.9"/><path d="M7 21h10" stroke="currentColor" stroke-width="1.3" opacity=".6"/>',
   super: '<path d="M12 1l2.6 6.9L22 9.2l-5.2 4.9 1.5 7L12 17.6 5.7 21l1.5-7L2 9.2l7.4-1.3Z"/>',
 };
-const RET_GAP = { handcannon: 10, autorifle: 7, pulse: 8, shotgun: 15, sniper: 6, fusion: 9 };
+const RET_GAP = { handcannon: 10, autorifle: 7, pulse: 8, shotgun: 15, sniper: 6, fusion: 9, scout: 7, beam: 11 };
 const svg = (vb, inner) => `<svg viewBox="0 0 ${vb} ${vb}" fill="currentColor">${inner}</svg>`;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 // text/scaleX setters that only touch the DOM when the value changed
@@ -263,36 +264,22 @@ export class HUD {
     const start = document.createElement('div'); start.id = 'start'; start.className = 'strip';
     start.innerHTML = `<p class="cta">click to take the field</p>
       <p class="controls">wasd move · shift sprint · space jump (double) · lmb fire · rmb aim · q grapple · m map · esc menu</p>`;
-    const pause = document.createElement('div'); pause.id = 'pause'; pause.className = 'hidden';
-    pause.innerHTML = `<div id="pausebox"><h1>Cadle</h1>
-      <label>Sensitivity <span id="sensv"></span></label><input id="sensr" type="range" min="1" max="15" step="0.5">
-      <label>Field of View <span id="fovv"></span></label><input id="fovr" type="range" min="80" max="110" step="1">
-      <label>Quality</label><div id="qualrow">${['low', 'medium', 'high', 'ultra'].map((q) => `<button data-q="${q}">${q}</button>`).join('')}</div>
-      <button id="resume">Resume</button>
-      <p class="controls">esc released the mouse — click resume or the world to continue</p></div>`;
-    this.root.append(start, pause);
+    this.root.append(start);
     const lock = () => g.input.constructor.lock(g.canvas); // user decree: pointer lock must never silently fail — Input.lock handles unadjustedMovement rejection + Chrome relock cooldown (gate-tested)
     start.addEventListener('click', lock);
-    pause.querySelector('#resume').addEventListener('click', lock);
-    // settings (persisted)
-    const view = g.player.view;
-    try { const s = +localStorage.getItem('af.sens'); if (s) view.sens = s; const f = +localStorage.getItem('af.fov'); if (f) view.baseFov = f; } catch {}
-    const sensr = pause.querySelector('#sensr'), fovr = pause.querySelector('#fovr'), sensv = pause.querySelector('#sensv'), fovv = pause.querySelector('#fovv');
-    const sync = () => { sensr.value = view.sens; fovr.value = view.baseFov; sensv.textContent = (+view.sens).toFixed(1); fovv.textContent = Math.round(view.baseFov); };
-    sync();
-    sensr.addEventListener('input', () => { view.sens = +sensr.value; sensv.textContent = (+view.sens).toFixed(1); try { localStorage.setItem('af.sens', view.sens); } catch {} });
-    fovr.addEventListener('input', () => { view.baseFov = +fovr.value; fovv.textContent = Math.round(view.baseFov); try { localStorage.setItem('af.fov', view.baseFov); } catch {} });
-    for (const b of pause.querySelectorAll('#qualrow button')) {
-      b.classList.toggle('on', b.dataset.q === g.quality);
-      b.addEventListener('click', () => { const u = new URLSearchParams(location.search); u.set('q', b.dataset.q); location.search = u.toString(); });
-    }
+    // ESC menu: the beUI-vocabulary settings panel (segmented tabs / spring switches / tick sliders),
+    // src/ui/settings.js. It owns persistence and writes straight through to the live systems; the ONE
+    // pointer-lock path is passed in rather than re-derived, so there is still exactly one caller.
+    const st = this.settings = new Settings(g, this, lock);
+    st.build(this.root);
+    st.apply();
     document.addEventListener('pointerlockchange', () => {
       const locked = !!document.pointerLockElement;
-      if (locked) { this._started = true; g.paused = false; start.classList.add('hidden'); pause.classList.add('hidden'); g.rpg?.screens?.close?.(false); }
+      if (locked) { this._started = true; g.paused = false; start.classList.add('hidden'); st.hide(); g.rpg?.screens?.close?.(false); }
       else if (this._started) {
         g.paused = true;
         // an RPG screen (map/character/inventory) owns this unlock — it pauses without the pause menu
-        if (!g.rpg?.screens?.open) { pause.classList.remove('hidden'); sync(); }
+        if (!g.rpg?.screens?.open) st.show();
       } else start.classList.remove('hidden');
     });
     // before the first capture the world runs unpaused behind the hint — a living title screen

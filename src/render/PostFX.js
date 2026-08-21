@@ -163,13 +163,15 @@ class AutoExposureEffect extends Effect {
   }
   get params() { return this.uniforms.get('aeParams').value; }
   initialize(renderer, alpha, frameBufferType) { this.lumPass.initialize(renderer, alpha, frameBufferType); this.adaptPass.initialize(renderer, alpha, frameBufferType); }
-  update(renderer, inputBuffer, deltaTime) { this.lumPass.render(renderer, inputBuffer); this.adaptPass.render(renderer, null, null, deltaTime); }
+  // `frozen` holds the adaptation where it is. A paused game is a static scene, and an eye-adaptation
+  // curve still running under it is literally "the renderer keeps changing a static scene" (gate rule 2).
+  update(renderer, inputBuffer, deltaTime) { this.lumPass.render(renderer, inputBuffer); this.adaptPass.render(renderer, null, null, this.frozen ? 0 : deltaTime); }
 }
 
 // ---- Grade: FF14 painterly curves (lift/gain/contrast/saturation driven per-frame from sun elevation: warm golden-hour gain,
 //      cool blue-violet dusk/night lift) + film grain + edge-weighted flash tint. Runs after tone mapping.
 const GRADE_FRAG = /* glsl */`
-uniform vec3 lift; uniform vec3 gain; uniform float contrast; uniform float saturation; uniform float grain; uniform vec3 flashColor; uniform float flashAmt;
+uniform vec3 lift; uniform vec3 gain; uniform float contrast; uniform float saturation; uniform float grain; uniform float grainT; uniform vec3 flashColor; uniform float flashAmt;
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor){
   vec3 c = pow(max(inputColor.rgb, 0.0), vec3(1.0 / 2.2));        // grade in display-ish space
   c = c * gain + lift * (1.0 - c);                                  // lift shadows (cool), gain highlights (warm)
@@ -178,7 +180,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   c = mix(vec3(l), c, saturation);
   float edge = smoothstep(0.12, 0.62, distance(uv, vec2(0.5)));     // Destiny-style damage flash: strong at the rim, center stays readable
   c = mix(c, flashColor, flashAmt * mix(0.35, 1.0, edge));
-  float n = fract(sin(dot(floor(uv * resolution) + mod(time * 60.0, 97.0) * vec2(7.13, 3.71), vec2(12.9898, 78.233))) * 43758.5453);
+  float n = fract(sin(dot(floor(uv * resolution) + mod(grainT * 60.0, 97.0) * vec2(7.13, 3.71), vec2(12.9898, 78.233))) * 43758.5453);   // grainT, not the built-in time uniform: it stops with the game
   c += (n - 0.5) * grain * (1.0 - 0.7 * l);                         // grain, weaker in highlights
   outputColor = vec4(pow(max(c, 0.0), vec3(2.2)), inputColor.a);
 }`;
@@ -186,13 +188,14 @@ class GradeEffect extends Effect {
   constructor() {
     super('GradeEffect', GRADE_FRAG, { blendFunction: BlendFunction.SRC, uniforms: new Map([
       ['lift', new THREE.Uniform(new THREE.Vector3(0.015, 0.02, 0.038))], ['gain', new THREE.Uniform(new THREE.Vector3(1.0, 0.99, 0.955))],
-      ['contrast', new THREE.Uniform(0.3)], ['saturation', new THREE.Uniform(1.1)], ['grain', new THREE.Uniform(0.035)],
+      ['contrast', new THREE.Uniform(0.3)], ['saturation', new THREE.Uniform(1.1)], ['grain', new THREE.Uniform(0.035)], ['grainT', new THREE.Uniform(0)],
       ['flashColor', new THREE.Uniform(new THREE.Color(1, 1, 1))], ['flashAmt', new THREE.Uniform(0)]]) });
   }
   get lift() { return this.uniforms.get('lift').value; } get gain() { return this.uniforms.get('gain').value; }
   get contrast() { return this.uniforms.get('contrast').value; } set contrast(v) { this.uniforms.get('contrast').value = v; }
   get saturation() { return this.uniforms.get('saturation').value; } set saturation(v) { this.uniforms.get('saturation').value = v; }
   get grain() { return this.uniforms.get('grain').value; } set grain(v) { this.uniforms.get('grain').value = v; }
+  set grainT(v) { this.uniforms.get('grainT').value = v; }
 }
 
 // ---- Cheap DoF (ADS): one half-res Kawase blur of the frame, mixed in by a depth CoC. ponytail: no near-field bleed handling, upgrade to postprocessing DepthOfFieldEffect (+0.8 ms) if a sniper scope wants bokeh.
@@ -307,6 +310,12 @@ export class PostFX {
     const target = this.exposure * lerp(this.nightExposure, 1.0, day);            // base; bounded scene-luminance adaptation stacks in-shader
     this._exp += (target - this._exp) * Math.min(1, dt * 2.5);
     renderer.toneMappingExposure = this._exp;
+    // freeze the two things that animate independently of the world clock, so a paused frame is a frozen
+    // frame: eye adaptation and film grain (gate rule 2 -- and a pause menu should not crawl or brighten)
+    const frozen = !!this.game.paused;
+    this.autoExposure.frozen = frozen;
+    if (!frozen) this._grainT = (this._grainT ?? 0) + dt;
+    this.grade.grainT = this._grainT ?? 0;
     this.bloom.intensity = 0.5 + 0.35 * night;
     this.bloom.luminanceMaterial.threshold = lerp(this.bloomNightTh, this.bloomDayTh, day); // night emissives (crystals, aetheryte) sit below day threshold; let them halo
     // FF14 grade rides the sun: warm gain + saturation at golden hour, cool blue-violet lift + softer S-curve deep at night

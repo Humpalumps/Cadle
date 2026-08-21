@@ -36,6 +36,7 @@ export const EL = {
   fire: { col: '#ffb057', ink: '#7a3208', mark: 'flame', label: 'Fire' },
   flame: { col: '#ffb057', ink: '#7a3208', mark: 'flame', label: 'Flame' },
   frost: { col: '#9fd8ee', ink: '#123a4c', mark: 'frost', label: 'Frost' },
+  stasis: { col: '#9fd8ee', ink: '#123a4c', mark: 'frost', label: 'Stasis' },
   ice: { col: '#9fd8ee', ink: '#123a4c', mark: 'frost', label: 'Ice' },
   water: { col: '#9fd8ee', ink: '#123a4c', mark: 'frost', label: 'Water' },
   storm: { col: '#cbb9ff', ink: '#2b1f52', mark: 'bolt', label: 'Storm' },

@@ -109,7 +109,7 @@ void main() {
 
   // ---- detail normal: scrolling layers of the baked tileable slope map, fading with distance (anti-shimmer).
   //      Layer 2/3 sample rotated coords + a macro mask trades layer weights spatially: kills the fabric-weave repeat in the 5-30 m band ----
-  float str = uDetail / (1.0 + dist * 0.012);
+  float str = uDetail / (1.0 + dist * 0.0090);   // was 0.012: the ripple normal died by ~40 m, leaving a flat plastic sheet with no glitter (0.0055 pushed the tile repeat into the far field)
   float macro = texture2D(uNormal, p * 0.0046 + vec2(0.006, -0.004) * t).a;
   vec4 n1 = texture2D(uNormal, p * 0.042 + vec2(0.043, 0.025) * t);
   // rotate AND domain-warp the finer layers by the coarse one: the 5-30 m band showed a fabric-weave repeat when the
@@ -132,7 +132,7 @@ void main() {
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   vec3 sunBody = mix(vec3(dot(uSunRad, LUMA)), uSunRad, 0.22);
   vec3 ambBody = mix(vec3(dot(uAmbient, LUMA)), uAmbient, 0.25);
-  vec3 light = sunBody * 0.5 * day + uMoonRad * 0.12 + ambBody * 0.8;   // moon mostly glitters, barely lights the body
+  vec3 light = sunBody * 0.5 * day + uMoonRad * 0.12 + ambBody * 0.52;   // moon mostly glitters, barely lights the body (ambient trimmed: it was milking the whole lake)
   vec3 wc = mix(uShallow, uDeep, 1.0 - exp(-d0 * 0.5));                 // fast fall to deep blue: only a true shelf reads turquoise
   vec3 scatter = wc * light;
   // forward scattering through wave crests when looking toward the sun (golden-hour glow)
@@ -161,7 +161,7 @@ void main() {
   //      near the RT edge fade to the sky gradient instead of clamping (clamped uvs smeared bright sky into solid columns) ----
   vec4 rp = uReflMatrix * vec4(vWorld, 1.0);
   vec2 ruv = rp.xy / rp.w + n.xz * uReflDistort * NdotV / (1.0 + dist * 0.05);
-  float rbias = clamp(dist * 0.004, 0.25, 1.2) + (1.0 - NdotV) * 0.5;   // extra grazing bias: hides 0.4x-target sawtooth/dither fizz where it shows most
+  float rbias = clamp(dist * 0.004, 0.15, 0.7) + (1.0 - NdotV) * 0.35;   // grazing bias, trimmed: the old 1.2 cap blurred the far shore into mush
   vec3 skyR = skyGrad(reflect(-V, n)) * 0.92;
   float noRefl = 1.0 - step(0.5, uHasReflect);   // q=low (and the first frames): the flat sky gradient is the only mirror we have
   // tint that fallback toward the lake body — untinted, grazing Fresnel painted the whole midday far field a flat milky horizon sheet
@@ -219,7 +219,9 @@ void main() {
   float foam = (1.0 - smoothstep(0.0, bandW, iso)) * holes;                   // the contact lace (land side is clipped by the shore alpha)
   float arc = smoothstep(0.10, 0.03, abs(fract(iso * 2.2 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
   foam += arc * smoothstep(0.75, 0.15, iso) * smoothstep(0.5, 0.82, fp) * 0.5 * (1.0 - smoothstep(60.0, 170.0, dist));
-  foam += smoothstep(0.30, 0.72, vCrest / uSumAmp) * smoothstep(0.55, 0.85, fp) * 0.45;  // sparse wave-crest lace in open water
+  // sparse wave-crest lace in open water. 0.30/0.45 put a white cap on roughly a third of the lake at any
+  // instant and read as soap suds from the shore; a lake this calm should only lace the sharpest crests.
+  foam += smoothstep(0.62, 0.92, vCrest / uSumAmp) * smoothstep(0.62, 0.88, fp) * 0.16;
   foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
   vec3 foamCol = vec3(0.8) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
   col = mix(col, foamCol, foam);
@@ -305,9 +307,12 @@ export class Water {
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunRad: { value: new THREE.Color() }, uMoonDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonRad: { value: new THREE.Color() },
       uSkyColor: { value: new THREE.Color() }, uHorizonColor: { value: new THREE.Color() }, uAmbient: { value: new THREE.Color() },
       uFogColor: { value: new THREE.Color() }, uFogParams: { value: new THREE.Vector3(0, 0, 0) }, uCamBelow: { value: 0 },
-      uDetail: { value: 0.13 }, uRough: { value: 0.11 }, uDistort: { value: 0.022 }, uReflDistort: { value: 0.022 }, uSpecMax: { value: 6.0 }, uReflTint: { value: new THREE.Color(0.94, 0.97, 1.0) },
-      uShallow: { value: new THREE.Color(0.05, 0.36, 0.42) }, uDeep: { value: new THREE.Color(0.008, 0.05, 0.13) },
-      uAbsorb: { value: new THREE.Vector3(0.9, 0.3, 0.14) }, uFoamDepth: { value: 0.22 }, uDebug: { value: 0 }, uNight: { value: 0 },
+      // detail 0.13 -> 0.36: the ripple normal is what makes a lake read as water rather than tinted glass.
+      // rough 0.11 -> 0.075: crisper sun glints. absorb/shallow deepened so the middle of Mirrormere is
+      // blue-green instead of the uniform milky turquoise it shipped as.
+      uDetail: { value: 0.36 }, uRough: { value: 0.075 }, uDistort: { value: 0.026 }, uReflDistort: { value: 0.026 }, uSpecMax: { value: 6.0 }, uReflTint: { value: new THREE.Color(0.94, 0.97, 1.0) },
+      uShallow: { value: new THREE.Color(0.035, 0.27, 0.32) }, uDeep: { value: new THREE.Color(0.006, 0.038, 0.105) },
+      uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uDebug: { value: 0 }, uNight: { value: 0 },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms: u, vertexShader: VERT, fragmentShader: FRAG, defines: this.qp.hq ? { WATER_HQ: 1 } : {},

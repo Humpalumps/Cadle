@@ -77,13 +77,14 @@ regenerate EVERY line the character has ever spoken and replace them together.
 
 | Character | Voice (pin on first generation) | Delivery | Files |
 |---|---|---|---|
-| The Vale (narrator) | **PINNED: Magnific voice id 364 — "Sophia Morgan" (ElevenLabs), model eleven_v3, stability 0.6, speed 0.95, similarityBoost default.** Generated 2026-08-20 in one batch. Every future Vale line uses exactly these settings. | ethereal, unhurried, low female register, slight reverb feel; painterly-fantasy narrator, never name trademarked games in prompts | `public/assets/voice/vale-01..04.mp3` |
+| The Vale (narrator) | **PINNED: Magnific voice id 364 — "Sophia Morgan" (ElevenLabs), model eleven_v3, stability 0.6, speed 0.95, similarityBoost default.** Generated 2026-08-20 in one batch. Every future Vale line uses exactly these settings. | ethereal, unhurried, low female register, slight reverb feel; painterly-fantasy narrator, never name trademarked games in prompts | `public/assets/voice/vale-01..04.mp3`, `vale-01b.mp3` |
 
-Portrait: `public/assets/tex/vale_portrait.jpg` (Magnific text-to-image, 512px, shown on the dialogue card — regenerate only together with a deliberate redesign of the character). Registered in `src/core/Assets.js` as `voice-vale-01..04`; `src/rpg/quest.js` plays them at the
+Portrait: `public/assets/tex/vale_portrait.jpg` (Magnific text-to-image, 512px, shown on the dialogue card — regenerate only together with a deliberate redesign of the character). Registered in `src/core/Assets.js` as `voice-vale-01..04` + `voice-vale-01b`; `src/rpg/quest.js` plays them at the
 quest beats and shows the subtitle regardless, so missing files degrade gracefully.
 
 Line scripts (generate verbatim, one batch):
 1. `vale-01` — "Wake, Wayfarer. The Vale remembers you — even if the world does not."
+1b. `vale-01b` — "Follow the rising sun — east, across the meadow, until broken stone climbs the sky. The Sundered Spire is where you begin, Wayfarer." (the marching order: the greeting alone left a new player with a tracker and no idea what it meant. Same pinned voice/settings, generated 2026-08-20.)
 2. `vale-02` — "The Sundered Spire. Aether bleeds where the stone was broken — and something feeds on the wound."
 3. `vale-03` — "The wound breathes easier. Take up the arm the Spire kept for you — you have earned its name."
 4. `vale-04` — "So armed, so named. Walk the Vale, Wayfarer — it has more to remember."

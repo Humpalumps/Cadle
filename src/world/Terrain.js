@@ -80,10 +80,14 @@ export class Terrain {
       const dL = Math.sqrt(lx * lx + lz * lz) + n2(x * 0.015, z * 0.015, s + 11) * 12;
       low = ss(150, 100, dL);
       h = mix(h, 8.2 + (h - 9) * 0.35, low);       // apron stays above the beach band -> grass meets a 6-12 m beach, not a sand pancake
-      h = mix(h, 2.8, ss(98, 74, dL));             // shoreline: ~5 m drop over ~20 m -> waterline near dL 82
-      h = mix(h, -5, ss(72, 32, dL));
+      h = mix(h, 1.6, ss(98, 74, dL));             // shoreline: ~6.5 m drop over ~20 m -> waterline still near dL 82
+      // Deep water now starts much closer in (was ss(72, 32)). Mirrormere was a 1.2 m paddling shelf across
+      // most of its width, and no absorption curve makes 1.2 m of water read as anything but a turquoise
+      // swimming pool: the "water looks bad" report is a BASIN-shape problem as much as a shader one.
+      // Shoreline, beach band and lake footprint are unchanged; only the middle drops away.
+      h = mix(h, -5.5, ss(80, 38, dL));
       const ix = x + 150, iz = z + 60;
-      h += 11 * ss(38, 10, Math.sqrt(ix * ix + iz * iz) + n2(x * 0.05, z * 0.05, s + 12) * 4);
+      h += 12 * ss(38, 10, Math.sqrt(ix * ix + iz * iz) + n2(x * 0.05, z * 0.05, s + 12) * 4);   // island bump raised with the floor so it stays an island
     }
     const rx = x - 140, rz = z - 60; let pl = 0;                         // Sundered Spire plateau: steep craggy rock skirt
     if (rx * rx + rz * rz < 9025) {
@@ -121,15 +125,25 @@ export class Terrain {
         const wz = z + n2(x * 0.0072 + 9.2, z * 0.0072 - 4.1, s + 25) * 48 + n2(x * 0.024 + 3.1, z * 0.024 + 7.7, s + 35) * 8;
         const massif = rmf(wx * 0.0053, wz * 0.0053, s + 17, 3);         // 190/91/44 m arete network — creased crests, band-limited for the 16 m LOD
         const crag = rmf(wx * 0.0135, wz * 0.0135, s + 23, 4);           // 74/36/17/8 m faceted crag detail (near wall renders at 1-4 m stride)
+        // SUMMITS vs COLS: a ~310 m mask so the crest line is a row of separate peaks with saddles between
+        // them. Without it every section of the ring tops out at the same altitude, which from the meadow
+        // reads as one continuous bank — the "elongated slope, not jaggy mountains" report.
+        const summit = 0.30 + 0.85 * ss(0.22, 0.86, fbm2(x * 0.0032 + 3.7, z * 0.0032 - 8.1, s + 41) * 0.5 + 0.5);
+        // crag SQUARED. An rmf crest sits near 1 while its flanks collapse fast, so squaring turns a cosine
+        // swell into a face + arete pair: 40-70 m of relief with steep sides. Linear crag (what shipped) is
+        // exactly the smooth dune the snow then drapes as a bedsheet — the shape fix, not the amount.
+        const teeth = crag * crag;
         // the NW pass lowers the CRESTS, not the rock: crag detail keeps most of its amplitude in the
         // saddle, so the pass reads as a rocky notch instead of a smooth bank (the "mountain looks
         // like a slope" report — pass * everything flattened the whole gap into a dune)
-        let m = wall * (14 + 11 * crag) * (0.65 + 0.35 * pass)
-              + mt * ((30 + 66 * massif) * pass + 20 * crag * (0.55 + 0.45 * pass));   // ring crests ~120-165 m (CLAUDE.md: ~150)
+        let m = wall * (12 + 26 * teeth) * (0.65 + 0.35 * pass)
+              + mt * ((14 + 54 * massif) * summit * pass + 52 * teeth * (0.5 + 0.5 * pass));   // ring crests ~120-175 m (CLAUDE.md: ~150)
         // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
         const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
         const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
-        if (bandAmt > 0.01) m -= (2.0 + 4.0 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
+        // ~23 m-period ledges cut ACROSS the faces. At 400 m the step edge is what reads as rock rather than
+        // felt, and it costs one sin of a value we already have; amplitude raised with the steeper faces.
+        if (bandAmt > 0.01) m -= (4.5 + 8.5 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
         h += m;
       }
       h += ss(462, 530, dm) * 45;
@@ -552,17 +566,41 @@ uniform highp sampler2D uNormal;
 uniform vec2 uCenter;
 uniform vec2 uMorph;
 varying vec3 vWPos;
+// Out-of-world skirt. The 1024 m bake stops at +-512; past it the clipmap used to add
+// (Chebyshev distance x 0.3) with the baked EDGE normal clamped flat across the whole thing: a smooth,
+// unlit four-sided cone that stood over the ring crest as a white bank -- what the "mountains look like
+// elongated slopes, not jaggy mountains" screenshots are actually showing. It is replaced by a ridged
+// 2-octave value noise (222 m / 87 m features) so the land beyond the ring reads as a far hazed massif,
+// and terrainN below finite-differences it so the thing is lit like ground instead of a paper sheet.
+// Angular-only modulation is NOT enough here: constant-in-radius ridges run dead radial and converge into
+// exactly the fan of creases we are removing.
+float skHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float skNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(skHash(i), skHash(i + vec2(1.0, 0.0)), f.x),
+             mix(skHash(i + vec2(0.0, 1.0)), skHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 float terrainH(vec2 w) {
   vec2 c = floor(w + 0.5);
   vec2 cc = clamp(c, -512.0, 511.0);
   float h = texelFetch(uHeight, ivec2(cc + 512.0), 0).r;
-  vec2 o = abs(c) - 511.0;                       // beyond the baked world: keep rising (hidden behind the mountain ring)
-  return h + max(0.0, max(o.x, o.y)) * 0.3;
+  float o = max(0.0, max(abs(c.x), abs(c.y)) - 511.0);
+  if (o <= 0.0) return h;
+  float r1 = 1.0 - abs(skNoise(w * 0.0045) * 2.0 - 1.0);
+  float r2 = 1.0 - abs(skNoise(w * 0.0115 + 7.3) * 2.0 - 1.0);
+  return h + o * (0.05 + 0.30 * (r1 * r1 * 0.8 + r2 * r2 * 0.2));   // tuned so the far range tops out just UNDER the ring crest
 }
 vec3 terrainN(vec2 w) {
   vec4 t = textureLod(uNormal, (w + 512.5) / 1024.0, 0.0);
   vec3 n = vec3(t.r * 2.0 - 1.0, 0.0, t.g * 2.0 - 1.0);
   n.y = sqrt(max(0.0, 1.0 - dot(n.xz, n.xz)));
+  float o = max(abs(w.x), abs(w.y)) - 511.0;
+  if (o > 0.0) {   // real slope for the skirt; the clamped edge normal lit it as one flat sheet
+    const float e = 12.0;
+    float hx = terrainH(w + vec2(e, 0.0)) - terrainH(w - vec2(e, 0.0));
+    float hz = terrainH(w + vec2(0.0, e)) - terrainH(w - vec2(0.0, e));
+    n = normalize(mix(n, normalize(vec3(-hx, 2.0 * e, -hz)), clamp(o / 30.0, 0.0, 1.0)));
+  }
   return n;
 }`;
 // clipmap displacement: world xz from the model matrix (position = snapped origin, scale = spacing); morph odd vertices
@@ -652,7 +690,13 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float snowN = lyr(P.xz * (1.0 / 23.0) + 0.77, 7.0).a;                 // mid-scale breakup: no polygon-edged snow sheets
   float snowN2 = lyr(P.xz * (1.0 / 6.5) + 0.29, 7.0).a;                 // drift-edge breakup at the snowline (kills the flat sheet border)
   // high snowline + hard slope cutoff: snow dusts benches and summits, rock faces stay rock (no chalk-white ring)
-  float wSnow = smoothstep(104.0, 138.0, P.y + (macro - 0.5) * 24.0 + (snowN - 0.5) * 22.0 + (snowN2 - 0.5) * 7.0) * (1.0 - smoothstep(0.22, 0.46, slope + (snowN - 0.5) * 0.13));
+  // slope gate tightened with the steeper ring: snow settles on benches, shoulders and gully floors and
+  // slides off the faces, so a cap reads as a cap. The old 0.22-0.46 gate draped every 30-degree back in
+  // white, which is what turned the whole ring into one smooth bedsheet.
+  float wSnow = smoothstep(100.0, 140.0, P.y + (macro - 0.5) * 28.0 + (snowN - 0.5) * 24.0 + (snowN2 - 0.5) * 8.0) * (1.0 - smoothstep(0.17, 0.42, slope + (snowN - 0.5) * 0.12));
+  // never on the out-of-world skirt: it is a gentle ramp, so a height-and-slope snow test paints ALL of it
+  // white, and a white sheet behind the ring is exactly the bank the mountains were being mistaken for.
+  wSnow *= 1.0 - smoothstep(496.0, 528.0, max(abs(P.x), abs(P.z)));
   float skirtM = smoothstep(76.0, 58.0, ruinD) * smoothstep(38.0, 52.0, ruinD);   // Spire skirt band: broken rock, not a dirt mound
   float rockTh = mix(0.30, 0.12, max(alt, max(mtn, skirtM)));
   float rockW = 0.13 + far * 0.12;                                       // wide blend + multi-octave dither: no sawtooth boundary at the skirt base

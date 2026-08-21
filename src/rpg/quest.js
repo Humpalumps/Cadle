@@ -25,6 +25,12 @@ const LINES = [
   { id: 'voice-vale-04', text: 'So armed, so named. Walk the Vale, Wayfarer — it has more to remember.' },
 ];
 
+// The marching order. Beat 1 used to hand out a quest card with no spoken instruction — the Vale
+// greeted you and then went quiet, so a new player had a tracker but no idea what it meant. This
+// line lands WITH the quest card: she names the direction and the landmark as the objective appears.
+// Same pinned voice as every other Vale line (ASSETS.md "Voice cast"), generated in that voice's settings.
+const DIRECTIVE = { id: 'voice-vale-01b', text: 'Follow the rising sun — east, across the meadow, until broken stone climbs the sky. The Sundered Spire is where you begin, Wayfarer.' };
+
 export class OpeningQuest {
   constructor(game, rpg) {
     this.game = game; this.rpg = rpg;
@@ -59,7 +65,11 @@ export class OpeningQuest {
   _speak(i) {
     if (this._said >= i) return;
     this._said = i;
-    const L = LINES[i]; if (!L) return;
+    const L = LINES[i]; if (L) this._say(L);
+  }
+
+  _say(L) {
+    if (!L) return;
     const g = this.game;
     // one voice, always: the audio file is generated under the pinned voice in ASSETS.md.
     // Missing file -> assets accessor is null-safe -> the card alone carries the line.
@@ -101,11 +111,12 @@ export class OpeningQuest {
         this._speak(0);
       }, 2400);
       setTimeout(() => {
+        this._say(DIRECTIVE);                                  // "go east, to the Spire" — spoken, not just written
         g.hud?.notify?.('New Quest', 'The Sundered Spire');
         g.hud?.toast?.('QUEST STARTED — THE SUNDERED SPIRE', { ms: 3200, kind: 'ability' });
         g.hud?.setQuest?.('The Sundered Spire', 'Reach the ruins to the east');
         try { setWaypoint(null, { x: RUINS.x, z: RUINS.z }); } catch (e) {}   // marked on the map (M)
-      }, 8200);
+      }, 10800);
     } else if (beat === 2) {   // arrived at the ruins
       this._speak(1);
       g.hud?.notify?.('The Sundered Spire', 'something feeds on the wound');

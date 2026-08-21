@@ -136,10 +136,14 @@ function barkTextures(kind, aniso) {
   }
   return { map, normalMap: normalTexture(W, Hh, hf, kind === 'birch' ? 2.2 : 3.6) };
 }
-function rockTexture(aniso, base = [0.66, 0.64, 0.6], tint = [0.8, 0.76, 0.68]) {
+// Rock albedo. It used to top out near 0.91 (tint 0.80 + a 0.18 quartz speckle), which is not a rock --
+// real granite sits at 0.15-0.35 -- and in direct sun a boulder near the camera crossed 212 sRGB
+// luminance, i.e. tools/blobcheck.py's "glowing" bar, whose calibration note expects sunlit rock at
+// 202-208. Toned to ~0.80 peak: still bright granite, no longer a light source.
+function rockTexture(aniso, base = [0.62, 0.60, 0.565], tint = [0.74, 0.70, 0.63]) {
   return noiseTexture(256, 256, (u, v) => {
     const n = tfbm(u, v, 6, 41, 5), cr = Math.pow(1 - Math.abs(tn(u, v, 9, 42)), 8) * 0.7 + Math.pow(1 - Math.abs(tn(u, v, 17, 43)), 12) * 0.4; // cracks
-    const sp = tn(u, v, 90, 44) > 0.55 ? 0.18 : 0; // speckle
+    const sp = tn(u, v, 90, 44) > 0.55 ? 0.095 : 0; // quartz speckle (halved: it was the part that clipped)
     const t = 0.5 + n; return base.map((c, i) => clamp(lerp(c, tint[i], t - 0.5) * (1 - cr * 0.6) + sp, 0, 1));
   }, { aniso });
 }

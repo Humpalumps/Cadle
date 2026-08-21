@@ -306,14 +306,17 @@ void main() {
             vec3 S = sun * powder + amb;
             float ext = dens * sigE;
             float tr = exp(-ext * dt);
-            float aer = 1.0 - exp(-t * 4.2e-5);                                          // distant clouds dissolve into the haze
+            float aer = 1.0 - exp(-t * 8.0e-5);                                          // distant clouds dissolve into the haze
             acc += T * mix(S, skyC, aer) * (1.0 - tr);
             T *= tr;
             if (T < 0.02) break;
           }
         }
-        // let the very last kilometres melt out completely (no razor wall at the shell tangent)
-        float fade = exp(-max(t0 - 16000.0, 0.0) * 9.0e-5) * smoothstep(-0.035, 0.02, d.y);
+        // Let the far kilometres melt out completely. Pulled in from 16 km / 9e-5 because a full-coverage
+        // deck at 20-40 km stacked into a solid white bank sitting on the horizon that read as a smooth
+        // snow massif behind the ring -- the "mountains look like elongated slopes" screenshot. Overhead
+        // cumulus (t0 of a few km) is untouched; only the horizon wall dissolves into haze.
+        float fade = exp(-max(t0 - 9000.0, 0.0) * 1.5e-4) * smoothstep(-0.035, 0.02, d.y);
         acc *= fade; T = 1.0 - (1.0 - T) * fade;
       }
     }

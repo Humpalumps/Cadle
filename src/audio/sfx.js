@@ -79,6 +79,19 @@ export const SFX = {
     tone(S, { type: 'sawtooth', f0: 950, f1: 280, dur: 0.07, gain: 0.35 }); tone(S, { type: 'sine', f0: 1900, f1: 500, dur: 0.04, gain: 0.25 });
     noise(S, { dur: 0.035, f0: 3200, f1: 700, q: 1.2, gain: 0.45 }); noise(S, { t: 0.004, dur: 0.16, f0: 1200, f1: 500, q: 1.2, gain: 0.32 });
     tone(S, { f0: 120, f1: 55, dur: 0.06, gain: 0.35 }); return 0.3; } },
+  // ---- imported archetypes. No generated takes exist for these two yet (ASSET ASK in the report), so
+  // they are pure synth: a scout is a drier, tighter sniper report; the beam is a discharge, not a bang.
+  'shot-scout': { rev: 0.55, dist: 200, vary: 0.03, f: (S) => {
+    gun(S, { crackF0: 5200, crackF1: 900, crackDur: 0.06, crackQ: 0.9, crackG: 1.0, thumpF0: 190, thumpF1: 55, thumpDur: 0.13, thumpG: 0.7,
+    barkG: 0.85, barkDur: 0.20, barkF0: 1500, barkF1: 600, roomG: 0.8, roomDur: 1.25, tailDur: 0.35, tailG: 0.4, tailF: 950, clickG: 0.9 });
+    tone(S, { type: 'sine', f0: 1800, f1: 620, dur: 0.035, gain: 0.18 }); return 1.4; } },
+  'shot-beam': { rev: 0.45, dist: 220, vary: 0.035, f: (S) => {
+    tone(S, { type: 'sawtooth', f0: 1400, f1: 220, dur: 0.22, gain: 0.40, detune: -9 });
+    tone(S, { type: 'sine', f0: 2600, f1: 700, dur: 0.14, gain: 0.30 });
+    noise(S, { dur: 0.09, f0: 6000, f1: 1200, q: 1.1, gain: 0.55 });
+    noise(S, { t: 0.010, dur: 0.5, type: 'lowpass', f0: 2200, f1: 220, gain: 0.35 });
+    tone(S, { f0: 110, f1: 42, dur: 0.18, gain: 0.6, att: 0.002 });
+    noise(S, { t: 0.020, dur: 1.3, att: 0.04, f0: 1000, f1: 260, q: 0.8, gain: 0.55 }); return 1.5; } },
   'fusion-charge': { rev: 0.25, dist: 40, f: (S) => {                                                                                                        // rising whine 0.78 s, snaps at the top
     tone(S, { type: 'sawtooth', f0: 180, f1: 1500, att: 0.7, dur: 0.1, gain: 0.16, detune: -7, sweepDur: 0.78 });
     tone(S, { type: 'triangle', f0: 180, f1: 1500, att: 0.7, dur: 0.1, gain: 0.16, detune: 8, sweepDur: 0.78 });
