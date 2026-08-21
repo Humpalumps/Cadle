@@ -19,10 +19,17 @@ const POOLS = [
   ['Ash Large'],
 ];
 const TARGET_H = { 0: 13, 1: 12, 2: 11 };   // metres; instance scale multiplies on top
-const NEAR = 190, FAR = 540;                // tier split / hard cull (far tier is cheap, so see further than the old 420 m cull)
+const NEAR = 190, FAR = 780;                // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
 const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
 const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
                                             // band fade rides on distance — the fade stepped instead of gliding)
+// Trunks only cast shadows inside this radius. Measured at Whisperwood: 887 near trees are ~1.5 M tris,
+// and every one of them was re-rasterised into all three CSM cascades — the forest's triangle count was
+// mostly shadow re-draws, not the visible canopy. Past ~75 m a 13 m trunk's shadow is a thin smudge under
+// a canopy that is already shadowing the ground, so the read is identical and the cascades get 3x lighter.
+// Same pattern Enemies.js already uses for its skinned meshes (castShadow gated on distance).
+// Well inside NEAR - BAND, so a shadow-caster is never mid-cross-fade.
+const SHADOW_CAST = 75;
 
 export function buildEZTrees(game, trees, vegetation) {
   const t0 = performance.now();
@@ -120,9 +127,14 @@ export function buildEZTrees(game, trees, vegetation) {
       map: t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       color: t.leavesMesh.material.color?.clone() ?? 0xffffff,
     }), mergePatch(erodeFade(0.4), sway));
+    // Impostor: three quads at 60 degrees, not two at 90. A 2-quad cross has two viewing azimuths per
+    // rotation where one card is edge-on and the silhouette collapses to a single flat plane — the
+    // "cardboard tree" tell when you strafe past the treeline. A third quad costs 2 triangles per instance
+    // and keeps at least two cards near-facing from every angle.
     const q0 = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
-    const q1 = q0.clone().rotateY(Math.PI / 2);
-    const cross = mergeGeometries([q0, q1]);
+    const q1 = q0.clone().rotateY(Math.PI / 3);
+    const q2 = q0.clone().rotateY(Math.PI * 2 / 3);
+    const cross = mergeGeometries([q0, q1, q2]);
     const nrm = cross.getAttribute('normal');
     for (let n = 0; n < nrm.count; n++) nrm.setXYZ(n, 0, 1, 0);   // light like ground: no dark backside quad
     const v = { tree: t, branchGeo: t.branchesMesh.geometry, leafGeo: t.leavesMesh.geometry, barkMat, leafMat, cross, impMat: null, w, h };
@@ -172,9 +184,6 @@ export function buildEZTrees(game, trees, vegetation) {
         cols.set([C.r, C.g, C.b], k * 3);
         xz[k * 2] = tr.x; xz[k * 2 + 1] = tr.z;
       });
-      const trunk = new THREE.InstancedMesh(v.branchGeo, v.barkMat, n);
-      const leaves = new THREE.InstancedMesh(v.leafGeo, v.leafMat, n);
-      const imp = new THREE.InstancedMesh(v.cross, v.impMat, n);
       // LOD cross-fade: a tree crossing NEAR used to swap its whole silhouette in one frame, and the
       // rebucket flips a BATCH of them at once — measured as a visible pop of dark canopies whenever you
       // move (worst walking backwards, where the trees that flip are the ones filling the screen). Same
@@ -182,15 +191,29 @@ export function buildEZTrees(game, trees, vegetation) {
       const nearFade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
       const farFade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
       v.branchGeo.setAttribute('aFade', nearFade); v.leafGeo.setAttribute('aFade', nearFade); v.cross.setAttribute('aFade', farFade);
+      // trunkNS draws a different slice of the near tier than trunk, and an InstancedMesh always reads its
+      // attributes from index 0 — so it needs its own instanceMatrix AND its own aFade. Alias the branch
+      // geometry instead of cloning it: same position/normal/uv/index buffers, one extra fade stream.
+      const nsFade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
+      const branchGeoNS = new THREE.BufferGeometry();
+      for (const k in v.branchGeo.attributes) branchGeoNS.setAttribute(k, v.branchGeo.attributes[k]);
+      branchGeoNS.setIndex(v.branchGeo.index); branchGeoNS.boundingSphere = v.branchGeo.boundingSphere;
+      branchGeoNS.setAttribute('aFade', nsFade);
+      const trunk = new THREE.InstancedMesh(v.branchGeo, v.barkMat, n);      // < SHADOW_CAST m: casts
+      const trunkNS = new THREE.InstancedMesh(branchGeoNS, v.barkMat, n);    // SHADOW_CAST..NEAR: drawn, never rasterised into a cascade
+      const leaves = new THREE.InstancedMesh(v.leafGeo, v.leafMat, n);
+      const imp = new THREE.InstancedMesh(v.cross, v.impMat, n);
       trunk.castShadow = trunk.receiveShadow = true;
+      trunkNS.castShadow = false; trunkNS.receiveShadow = true;
       leaves.castShadow = false; leaves.receiveShadow = false;   // leaf shadow pass cost >> its read
       imp.castShadow = imp.receiveShadow = false;
-      trunk.frustumCulled = leaves.frustumCulled = imp.frustumCulled = false;   // rebucketing is the culling
-      trunk.name = 'eztree-trunk'; leaves.name = 'eztree-leaves'; imp.name = 'eztree-impostor';
-      for (const m of [trunk, leaves, imp]) { m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+      trunk.frustumCulled = trunkNS.frustumCulled = leaves.frustumCulled = imp.frustumCulled = false;   // rebucketing is the culling
+      trunk.name = 'eztree-trunk'; trunkNS.name = 'eztree-trunk-ns'; leaves.name = 'eztree-leaves'; imp.name = 'eztree-impostor';
+      for (const m of [trunk, trunkNS, leaves, imp]) { m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
       leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage);
-      game.scene.add(trunk, leaves, imp);
-      sets.push({ mats, cols, xz, n, trunk, leaves, imp, nearFade, farFade });
+      game.scene.add(trunk, trunkNS, leaves, imp);
+      sets.push({ mats, cols, xz, n, trunk, trunkNS, leaves, imp, nearFade, farFade, nsFade,
+        colNS: new Float32Array(n * 3), fadeNS: new Float32Array(n) });
       count += n;
     }
 
@@ -219,23 +242,33 @@ export function buildEZTrees(game, trees, vegetation) {
       const p = cam.position;
       if (p.distanceToSquared(last) < REBUCKET * REBUCKET) return;
       last.copy(p);
-      const N2 = NEAR * NEAR, F2 = FAR * FAR, B2 = (NEAR - BAND) * (NEAR - BAND);
+      const N2 = NEAR * NEAR, F2 = FAR * FAR, B2 = (NEAR - BAND) * (NEAR - BAND), S2 = SHADOW_CAST * SHADOW_CAST;
       for (const s of sets) {
-        let nn = 0, nf = 0;
-        const tm = s.trunk.instanceMatrix.array, im = s.imp.instanceMatrix.array, lc = s.leaves.instanceColor.array;
-        const nfa = s.nearFade.array, ffa = s.farFade.array;
+        let nS = 0, nNS = 0, nf = 0;
+        const tm = s.trunk.instanceMatrix.array, tn = s.trunkNS.instanceMatrix.array;
+        const im = s.imp.instanceMatrix.array, lc = s.leaves.instanceColor.array;
+        const nfa = s.nearFade.array, ffa = s.farFade.array, nsf = s.nsFade.array;
+        // Shadow casters fill tm from the front, the rest fill tn; afterwards tn is appended onto tm so the
+        // leaves (drawn for the whole near tier, never casting) can share one contiguous buffer with trunk.
         for (let i = 0; i < s.n; i++) {
           const dx = s.xz[i * 2] - p.x, dz = s.xz[i * 2 + 1] - p.z, d2 = dx * dx + dz * dz;
+          const src = s.mats.subarray(i * 16, i * 16 + 16);
           // inside the band both tiers draw, dithered against each other; outside it only one does
           const t = d2 <= B2 ? 0 : d2 >= N2 ? 1 : (Math.sqrt(d2) - (NEAR - BAND)) / BAND;
-          if (d2 < N2) { tm.set(s.mats.subarray(i * 16, i * 16 + 16), nn * 16); lc.set(s.cols.subarray(i * 3, i * 3 + 3), nn * 3); nfa[nn] = 1 - t; nn++; }
-          if (d2 >= B2 && d2 < F2) { im.set(s.mats.subarray(i * 16, i * 16 + 16), nf * 16); ffa[nf] = t; nf++; }
+          if (d2 < S2) { tm.set(src, nS * 16); lc.set(s.cols.subarray(i * 3, i * 3 + 3), nS * 3); nfa[nS] = 1; nS++; }   // casters are far inside the band: always fully solid
+          else if (d2 < N2) { tn.set(src, nNS * 16); s.colNS.set(s.cols.subarray(i * 3, i * 3 + 3), nNS * 3); s.fadeNS[nNS] = 1 - t; nsf[nNS] = 1 - t; nNS++; }
+          if (d2 >= B2 && d2 < F2) { im.set(src, nf * 16); ffa[nf] = t; nf++; }
         }
+        tm.set(tn.subarray(0, nNS * 16), nS * 16);                      // near non-casters after the casters
+        lc.set(s.colNS.subarray(0, nNS * 3), nS * 3);                   // and their per-instance leaf tints, in the same order
+        nfa.set(s.fadeNS.subarray(0, nNS), nS);                         // ...and their fades, so the leaves cross-fade with them
+        const nn = nS + nNS;
         s.leaves.instanceMatrix.array.set(tm.subarray(0, nn * 16));
-        s.trunk.count = s.leaves.count = nn; s.imp.count = nf;
-        s.trunk.instanceMatrix.needsUpdate = s.leaves.instanceMatrix.needsUpdate = s.imp.instanceMatrix.needsUpdate = true;
+        s.trunk.count = nS; s.trunkNS.count = nNS; s.leaves.count = nn; s.imp.count = nf;
+        s.trunk.instanceMatrix.needsUpdate = s.trunkNS.instanceMatrix.needsUpdate = true;
+        s.leaves.instanceMatrix.needsUpdate = s.imp.instanceMatrix.needsUpdate = true;
         s.leaves.instanceColor.needsUpdate = true;
-        s.nearFade.needsUpdate = s.farFade.needsUpdate = true;
+        s.nearFade.needsUpdate = s.farFade.needsUpdate = s.nsFade.needsUpdate = true;
       }
     };
     // compile every new tree/impostor program NOW, while the boot splash still covers the screen —

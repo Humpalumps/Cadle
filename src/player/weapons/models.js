@@ -177,8 +177,11 @@ export function makeMaterials() {
     mats.flash[el] = { petal: new THREE.MeshBasicMaterial({ color: hex, map: T.petal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
                        star: new THREE.MeshBasicMaterial({ color: hex, map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }) };
   }
-  mats.flashCore = new THREE.MeshBasicMaterial({ color: 0xffffff, map: T.star, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  for (const el of Object.keys(ELEMENT_COLORS)) { mats.flash[el].petal.opacity = 0.95; mats.flash[el].star.opacity = 0.75; }
+  mats.flashCore = new THREE.MeshBasicMaterial({ color: 0xffffff, map: T.star, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  // Opacity cut hard (petal 0.95 -> 0.4, star 0.75 -> 0.32, core 0.85 -> 0.34). These are ADDITIVE and they overlap,
+  // so the three petals plus star plus core were summing well past white in the middle of the reticle before bloom
+  // even got to them. The element hue is what should read on a flash; the value is what blinds you.
+  for (const el of Object.keys(ELEMENT_COLORS)) { mats.flash[el].petal.opacity = 0.4; mats.flash[el].star.opacity = 0.32; }
   mats.all = [mats.metal, mats.metal2, mats.dark, mats.gold, mats.brass, mats.grip, mats.ivory, mats.white, mats.filigree0, mats.filigree1, mats.filigree2, mats.glass, ...Object.values(mats.glow)];
   return mats;
 }
@@ -678,15 +681,19 @@ export function buildGun(archetype, mats, element) {
 }
 
 // muzzle flash: 3 crossed petals along the barrel + star disc + white core. Reused for all guns (re-parented to the muzzle marker).
-// Kept TIGHT (Destiny reads as a crisp 1-2 frame petal/star, not a bloom blob): ~9 cm petals before per-gun flashScale.
+// Kept TIGHT (Destiny reads as a crisp 1-2 frame petal/star, not a bloom blob): ~5 cm petals before per-gun flashScale.
+// Sized down from 9 cm: on a high-rpm rifle the flash re-triggers before the previous one has faded, so the petals
+// stopped reading as a flash and became a permanent additive lamp sitting on the reticle — you could not see what
+// you were shooting. Three additive layers stack, so area matters more than it looks: half the span is a quarter
+// of the covered pixels. Per-gun flashScale still rides on top.
 export function makeFlash(mats) {
   const g = new THREE.Group(); g.visible = false;
-  const petalGeo = new THREE.PlaneGeometry(0.088, 0.034).translate(0.044, 0, 0); // extends along +X from origin; rotate so it points -Z
+  const petalGeo = new THREE.PlaneGeometry(0.037, 0.015).translate(0.0185, 0, 0); // extends along +X from origin; rotate so it points -Z
   // petals: order ZYX -> Ry(PI/2) maps local +X to -Z (forward), then roll around the barrel axis
   const petals = [0, PI / 2, PI / 4].map((roll) => { const m = new THREE.Mesh(petalGeo, mats.flash.kinetic.petal); m.rotation.order = 'ZYX'; m.rotation.set(0, PI / 2, roll); return m; });
   const [p1, p2, p3] = petals;
-  const star = new THREE.Mesh(new THREE.PlaneGeometry(0.055, 0.055), mats.flash.kinetic.star);
-  const core = new THREE.Mesh(new THREE.PlaneGeometry(0.022, 0.022), mats.flashCore);
+  const star = new THREE.Mesh(new THREE.PlaneGeometry(0.023, 0.023), mats.flash.kinetic.star);
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(0.009, 0.009), mats.flashCore);
   g.add(p1, p2, p3, star, core);
   for (const m of g.children) m.frustumCulled = false;
   g.userData.petals = [p1, p2, p3]; g.userData.star = star; g.userData.core = core;
