@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ParticlePool } from './Particles.js';
 import { Brush } from './Brush.js';
 import { Tracers, Decals, Sigils } from './Extras.js';
+import { Filaments } from './Filaments.js';
 import { makeAtlas, makeDecals, makeSigil, TEX } from './Textures.js';
 
 /**
@@ -56,6 +57,8 @@ export class VFX {
     this.tracers = new Tracers(scene, 256);
     this.decals = new Decals(scene, this.decalAtlas, this.mult < 1 ? 100 : 200);
     this.sigils = new Sigils(scene, this.sigilTex, 6);
+    // GPU ribbon filaments (flame trails, breath plumes, bolts): every live strand in ONE instanced draw pair
+    this.filaments = new Filaments(scene, this.mult < 0.75 ? 48 : 96);
     // pooled flash lights: always in the scene (intensity 0) so shader programs never recompile on light count changes
     const nl = this.mult < 0.75 ? 2 : 4;
     for (let i = 0; i < nl; i++) {
@@ -86,6 +89,7 @@ export class VFX {
     }
     this._updateEmitters(dt);
     this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt); this.decals.update(dt); this.sigils.update(dt);
+    this.filaments.update(dt, t);
     for (const f of this.lights) {
       if (f.t >= f.dur) continue;
       f.t += dt; const k = Math.max(0, 1 - f.t / f.dur);

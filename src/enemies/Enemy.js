@@ -156,7 +156,7 @@ export class Enemy {
     this.attackCd = 1.2;
   }
   _die(killer) {
-    this.alive = false; this.target.alive = false; this._setState('dead'); this.deathT = 0; this.telegraph = 0; this.attackKind = null;
+    this.alive = false; this.target.alive = false; this._setState('dead'); this.deathT = 0; this.telegraph = 0; this.attackKind = null; this._breath?.stop(); this._breath = null;
     this.game.combat.unregister(this.target);
     this.mesh.castShadow = false; if (this.shieldMesh) this.shieldMesh.visible = false;
     this.game.events.emit('enemy:death', { enemy: this, killer });
@@ -217,7 +217,12 @@ export class Enemy {
   }
   _alertPack(t) { if (this.camp) this.camp.alertT = t; }
 
-  _setState(s) { this.state = s; this.stateT = 0; }
+  _setState(s) {
+    // leaving the attack (staggered, killed, interrupted) stops _attack being called at all, so the breath jet has
+    // to be cut here or it burns on forever with nothing left to update it
+    if (s !== 'attack' && this._breath) { this._breath.stop(); this._breath = null; }
+    this.state = s; this.stateT = 0;
+  }
   _startAttack(kind) { this._setState('attack'); this.attackKind = kind; this.struck = false; this.telegraph = 0; this.attackT = 0; this.volleyLeft = 0; }
 
   _think(dt, t) {
@@ -344,8 +349,30 @@ export class Enemy {
       else if (kind === 'throw') this._throwRock();
       else if (kind === 'dive') { this.volleyLeft = def.volley; this.volleyT = 0; }
     }
+    if (def.breath) this._breathe(def, pc, this.stateT > wind * 0.4);
     if (this.volleyLeft > 0) { this.volleyT -= dt; if (this.volleyT <= 0) { this.volleyT = def.volleyGap; this.volleyLeft--; this._fireBolt(def.projectile, def.projectile.damage ?? this.damage, def.volleySpread ?? 0.06); } }
-    if (this.stateT >= total) { this.attackCd = def.attackCooldown * (0.85 + this.sys.rnd() * 0.3); this.attackT = 0; this.telegraph = 0; this.attackKind = null; this._setState('chase'); }
+    if (this.stateT >= total) { this.attackCd = def.attackCooldown * (0.85 + this.sys.rnd() * 0.3); this.attackT = 0; this.telegraph = 0; this.attackKind = null; this._breathe(def, pc, false); this._setState('chase'); }
+  }
+  /** fire breath: one ribbon from the jaw toward the player, held open across the wind-up and the volley. */
+  _breathe(def, pc, on) {
+    if (!on) { if (this._breath) { this._breath.stop(); this._breath = null; } return; }
+    const g = this.game;
+    if (!this._breath || !this._breath.alive) {
+      this._breath = g.vfx?.filaments?.spawn({ color: def.breath.color, width: def.breath.width, spread: def.breath.spread, strands: def.breath.strands }) ?? null;
+      if (!this._breath) return;
+    }
+    const br = def.breath, jaw = this.bones.jaw ?? this.bones.head ?? this.boneRoot;
+    _w.setFromMatrixPosition(jaw.matrixWorld);
+    _n.subVectors(pc, _w); const d = _n.length() || 1; _n.multiplyScalar(1 / d);
+    // stop the jet well SHORT of the player. Aimed straight down the lens a full-length additive ribbon covers the
+    // whole frame and saturates to white — the breath has to read as fire in the world, not as a screen wash.
+    const len = Math.min(br.length, Math.max(1.2, d - (br.standoff ?? 4.5)));
+    this._breath.set(_w, _v.copy(_w).addScaledVector(_n, len));
+    // Fade the jet out entirely as the drake closes. PostFX runs temporally-adapted auto-exposure, so a jet that
+    // fills the frame does not just risk a white blob — it drags the whole scene's exposure down and the world goes
+    // dark for a second afterwards. Off inside `near`, full only beyond `far`.
+    const dCam = _w.distanceTo(this.game.camera.position);
+    this._breath.fade((br.alpha ?? 0.8) * THREE.MathUtils.clamp((dCam - (br.near ?? 8)) / ((br.far ?? 18) - (br.near ?? 8)), 0, 1));
   }
   _hitPlayer(amount, element) {
     const g = this.game, P = g.player; if (!P?.alive) return;
@@ -366,8 +393,12 @@ export class Enemy {
     const dist = _v.length() || 1; _v.multiplyScalar(1 / dist);
     _v.x += (this.sys.rnd() - 0.5) * spread; _v.y += (this.sys.rnd() - 0.5) * spread * 0.6; _v.z += (this.sys.rnd() - 0.5) * spread; _v.normalize();
     const explode = pj.explodeRadius ? { radius: pj.explodeRadius, damage: damage * 0.8, knockback: 2 } : null;
-    g.combat.projectile?.({ origin: _w, dir: _v, speed: pj.speed, damage, element: pj.element, owner: this, team: 'enemy', radius: pj.radius, life: pj.life, explode, source: this.type,
-      visual: { color: this.glowColor.getHex(), size: pj.radius * 1.1, trail: true } });
+    // A `flame` def swaps the generic spark-trail emitter for a GPU ribbon: the whole trail becomes part of the one
+    // batched filament draw instead of a 70-particle-per-second stream, so this is a net REMOVAL of per-frame work.
+    const fl = this.def.flame;
+    const pr = g.combat.projectile?.({ origin: _w, dir: _v, speed: pj.speed, damage, element: pj.element, owner: this, team: 'enemy', radius: pj.radius, life: pj.life, explode, source: this.type,
+      visual: { color: this.glowColor.getHex(), size: pj.radius * 1.1, trail: !fl } });
+    if (fl && pr) g.vfx?.filaments?.spawn({ color: fl.color, width: fl.width, spread: fl.spread, strands: fl.strands })?.follow(pr, fl.lag);
     g.vfx?.flash?.(_w, { color: this.glowColor.getHex(), intensity: 2.5, distance: 6, duration: 0.08 });
     g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 6, scale: 0.5 });
     g.audio?.play?.('enemy-shot', { pos: _w, vol: 0.7 });
@@ -579,5 +610,5 @@ export class Enemy {
     if (this.deathT >= def.deathTime + 0.15) this.sys._despawn(this);
   }
   /** remove from scene (pooled) */
-  sleep() { this.root.visible = false; this.alive = false; this.state = 'dead'; if (this.target.alive) { this.target.alive = false; this.game.combat.unregister(this.target); } this.root.rotation.set(0, 0, 0); this.camp = null; this.slot = null; this._trail?.stop?.(); this._trail = null; }
+  sleep() { this._breath?.stop(); this._breath = null; this.root.visible = false; this.alive = false; this.state = 'dead'; if (this.target.alive) { this.target.alive = false; this.game.combat.unregister(this.target); } this.root.rotation.set(0, 0, 0); this.camp = null; this.slot = null; this._trail?.stop?.(); this._trail = null; }
 }
