@@ -60,6 +60,13 @@ export const DEFS = {
     stagger: 0.25, staggerTime: 0.5,
     radius: 0.65, height: 1.2, center: 0, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.02, 0.12] }],
     palette: [[0xff8a3d, 0xffffff], [0xffb04a, 0xffffff]], glow: 2.3, rim: 0.5, bump: 0.04,
+    // GPU ribbon fire (vfx.filaments). Colours stay DEEP saturated orange: an additive ribbon that tone-maps to
+    // white is the washed-white blob bug, so the heat comes from hue and taper, never from raising the value.
+    flame: { color: 0xff6a14, width: 0.42, spread: 0.16, strands: 3, lag: 0.085 },
+    breath: { color: 0xff5c0e, width: 0.40, spread: 0.20, strands: 3, length: 6.0, standoff: 6.0, alpha: 0.85, near: 11, far: 20 },
+    // near/far: the jet only plays on the APPROACH. A dive ends with the drake passing within a few metres, and a
+    // 6 m jet aimed at the eye from there fills the whole frame — dramatic for one frame, then auto-exposure drags
+    // the world dark behind it. Off inside 11 m, full beyond 20 m; the strafing run is where it reads anyway.
     deathTime: 1.6, xp: 120,
   },
   warden: {
