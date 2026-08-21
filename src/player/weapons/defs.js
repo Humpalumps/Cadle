@@ -77,4 +77,4 @@ export const DEFS = {
     bob: 1.1, swapTime: 0.50,
   },
 };
-export const DEFAULT_SLOTS = ['handcannon', 'autorifle', 'sniper'];   // starting kit: pistol, rifle, sniper (user call)
+export const DEFAULT_SLOTS = ['handcannon', 'autorifle'];   // starting kit: pistol + rifle. Two slots only (user call 2026-08-21)

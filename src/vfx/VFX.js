@@ -35,7 +35,7 @@ import { makeAtlas, makeDecals, makeSigil, TEX } from './Textures.js';
  */
 export const ELEMENT_COLORS = { kinetic: 0xffe9c4, solar: 0xff8a3d, arc: 0x7fd8ff, void: 0xb070ff, stasis: 0x9fd8ff, strand: 0x7cff9c };
 const AETHER = 0x9f7bff, GOLD = 0xffd27a, DUST = 0x857458, DIRT = 0x4a3a28;
-const QMUL = { low: 0.5, medium: 0.75, high: 1, ultra: 1.25 };
+const QMUL = { low: 0.5, medium: 0.75, high: 1 };
 const EMIT_RATE = { trail: 90, 'spark-trail': 70, slide: 45, aura: 30, charge: 40, 'heal-motes': 22, dust: 6, sparks: 8, 'exp-smoke': 11 };
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();

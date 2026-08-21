@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Tree } from '@dgreenheck/ez-tree';
-import { patchMaterial } from './Vegetation.js';
+import { patchMaterial, mergePatch, fadePatch, erodeFade } from './Vegetation.js';
 
 // species mapping: 0 slender birch-alike, 1 gnarled broadleaf, 2 shore willow (closest: droopy ash)
 const POOLS = [
@@ -20,6 +20,9 @@ const POOLS = [
 ];
 const TARGET_H = { 0: 13, 1: 12, 2: 11 };   // metres; instance scale multiplies on top
 const NEAR = 190, FAR = 540;                // tier split / hard cull (far tier is cheap, so see further than the old 420 m cull)
+const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
+const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
+                                            // band fade rides on distance — the fade stepped instead of gliding)
 
 export function buildEZTrees(game, trees, vegetation) {
   const t0 = performance.now();
@@ -40,7 +43,11 @@ export function buildEZTrees(game, trees, vegetation) {
     uniforms: { uWindT: windT },
     vHead: 'uniform float uWindT;',
     fHead: 'float ezNearT(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
-    fAlpha: 'float ezD = length(vViewPosition); if (ezD < 2.6 && smoothstep(1.0, 2.6, ezD) < ezNearT(gl_FragCoord.xy)) discard;',
+    // Dissolve window: 2.6 m was measured too tight. A leaf card is ~1 m across, so at 2.6 m it still spans
+    // a fifth of a 95-degree-FOV screen and reads as a black slab slamming past. Fully gone under 1.5 m,
+    // fully solid past 4.6 m — long enough that the dither creeps instead of strobing, and canopies you
+    // merely walk PAST (their leaves 4.6 m away or more) are untouched.
+    fAlpha: 'float ezD = length(vViewPosition); if (ezD < 4.6 && smoothstep(1.5, 4.6, ezD) < ezNearT(gl_FragCoord.xy)) discard;',
     vBegin: `{
       #ifdef USE_INSTANCING
       vec3 swayI = vec3(instanceMatrix[3]);
@@ -107,11 +114,12 @@ export function buildEZTrees(game, trees, vegetation) {
     const margin = (t.options.leaves?.size ?? 2) * 1.2;
     const h = Math.max(1, b1.max.y + margin * 0.5);
     const w = Math.max(2, Math.max(b1.max.x - b1.min.x, b1.max.z - b1.min.z) + margin);
-    const barkMat = new THREE.MeshStandardMaterial({ map: t.branchesMesh.material.map ?? null, roughness: 0.92, metalness: 0 });
+    const barkMat = patchMaterial(new THREE.MeshStandardMaterial({ map: t.branchesMesh.material.map ?? null, roughness: 0.92, metalness: 0 }),
+      { ...fadePatch, key: 'eztree-bark' });
     const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       color: t.leavesMesh.material.color?.clone() ?? 0xffffff,
-    }), sway);
+    }), mergePatch(erodeFade(0.4), sway));
     const q0 = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
     const q1 = q0.clone().rotateY(Math.PI / 2);
     const cross = mergeGeometries([q0, q1]);
@@ -149,7 +157,8 @@ export function buildEZTrees(game, trees, vegetation) {
     for (const [v, list] of buckets) {
       // one bake per frame: a burst of six RT renders was a visible boot hitch (perf audit 2026-08-20)
       await new Promise((res) => requestAnimationFrame(res));
-      v.impMat = new THREE.MeshStandardMaterial({ map: bakeImpostor(v.tree, v.w, v.h), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
+      v.impMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bakeImpostor(v.tree, v.w, v.h), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
+        { ...erodeFade(0.35), key: 'eztree-impostor' });
       const n = list.length;
       // static per-instance data, written once; rebucketing rewrites the mesh instance buffers from it
       const mats = new Float32Array(n * 16), cols = new Float32Array(n * 3), xz = new Float32Array(n * 2);
@@ -166,6 +175,13 @@ export function buildEZTrees(game, trees, vegetation) {
       const trunk = new THREE.InstancedMesh(v.branchGeo, v.barkMat, n);
       const leaves = new THREE.InstancedMesh(v.leafGeo, v.leafMat, n);
       const imp = new THREE.InstancedMesh(v.cross, v.impMat, n);
+      // LOD cross-fade: a tree crossing NEAR used to swap its whole silhouette in one frame, and the
+      // rebucket flips a BATCH of them at once — measured as a visible pop of dark canopies whenever you
+      // move (worst walking backwards, where the trees that flip are the ones filling the screen). Same
+      // dithered aFade the Vegetation InstLOD sets use: near dissolves out while the impostor dissolves in.
+      const nearFade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
+      const farFade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage);
+      v.branchGeo.setAttribute('aFade', nearFade); v.leafGeo.setAttribute('aFade', nearFade); v.cross.setAttribute('aFade', farFade);
       trunk.castShadow = trunk.receiveShadow = true;
       leaves.castShadow = false; leaves.receiveShadow = false;   // leaf shadow pass cost >> its read
       imp.castShadow = imp.receiveShadow = false;
@@ -174,7 +190,7 @@ export function buildEZTrees(game, trees, vegetation) {
       for (const m of [trunk, leaves, imp]) { m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
       leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage);
       game.scene.add(trunk, leaves, imp);
-      sets.push({ mats, cols, xz, n, trunk, leaves, imp });
+      sets.push({ mats, cols, xz, n, trunk, leaves, imp, nearFade, farFade });
       count += n;
     }
 
@@ -201,21 +217,25 @@ export function buildEZTrees(game, trees, vegetation) {
       lastNow = now;
       windT.value = windClock;
       const p = cam.position;
-      if (p.distanceToSquared(last) < 36) return;
+      if (p.distanceToSquared(last) < REBUCKET * REBUCKET) return;
       last.copy(p);
-      const N2 = NEAR * NEAR, F2 = FAR * FAR;
+      const N2 = NEAR * NEAR, F2 = FAR * FAR, B2 = (NEAR - BAND) * (NEAR - BAND);
       for (const s of sets) {
         let nn = 0, nf = 0;
         const tm = s.trunk.instanceMatrix.array, im = s.imp.instanceMatrix.array, lc = s.leaves.instanceColor.array;
+        const nfa = s.nearFade.array, ffa = s.farFade.array;
         for (let i = 0; i < s.n; i++) {
           const dx = s.xz[i * 2] - p.x, dz = s.xz[i * 2 + 1] - p.z, d2 = dx * dx + dz * dz;
-          if (d2 < N2) { tm.set(s.mats.subarray(i * 16, i * 16 + 16), nn * 16); lc.set(s.cols.subarray(i * 3, i * 3 + 3), nn * 3); nn++; }
-          else if (d2 < F2) { im.set(s.mats.subarray(i * 16, i * 16 + 16), nf * 16); nf++; }
+          // inside the band both tiers draw, dithered against each other; outside it only one does
+          const t = d2 <= B2 ? 0 : d2 >= N2 ? 1 : (Math.sqrt(d2) - (NEAR - BAND)) / BAND;
+          if (d2 < N2) { tm.set(s.mats.subarray(i * 16, i * 16 + 16), nn * 16); lc.set(s.cols.subarray(i * 3, i * 3 + 3), nn * 3); nfa[nn] = 1 - t; nn++; }
+          if (d2 >= B2 && d2 < F2) { im.set(s.mats.subarray(i * 16, i * 16 + 16), nf * 16); ffa[nf] = t; nf++; }
         }
         s.leaves.instanceMatrix.array.set(tm.subarray(0, nn * 16));
         s.trunk.count = s.leaves.count = nn; s.imp.count = nf;
         s.trunk.instanceMatrix.needsUpdate = s.leaves.instanceMatrix.needsUpdate = s.imp.instanceMatrix.needsUpdate = true;
         s.leaves.instanceColor.needsUpdate = true;
+        s.nearFade.needsUpdate = s.farFade.needsUpdate = true;
       }
     };
     // compile every new tree/impostor program NOW, while the boot splash still covers the screen —

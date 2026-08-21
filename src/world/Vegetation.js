@@ -406,7 +406,7 @@ export class Vegetation {
   async init() {
     const { game } = this; const t0 = performance.now();
     const q = game.renderer.qualityPreset, aniso = q.anisotropy;
-    const Q = { low: 0.6, medium: 0.8, high: 1, ultra: 1.4 }[game.quality] ?? 1; this.Q = Q;
+    const Q = { low: 0.6, medium: 0.8, high: 1 }[game.quality] ?? 1; this.Q = Q;
     const rng = mulberry32(game.seed + 4242);
     // painted assets (ASSETS.md): painterly leaf cluster card + seamless ridged bark, via the preloader (never load files ourselves)
     const leafCard = game.assets?.tex?.('leaf_card') ?? null;

@@ -63,7 +63,7 @@ export class Terrain {
     this._n = new THREE.Vector3();
     const P = (x, z) => new THREE.Vector3(x, this.heightAt(x, z), z);
     this.POI = { spawn: P(0, 0), aetheryte: P(0, -28), lake: P(-170, -70), ruins: P(140, 60), forest: P(0, -235), crystal: P(300, 0), arena: P(-60, 260) };
-    this._R = game.quality === 'low' ? 256 : game.quality === 'ultra' ? 1024 : 512;   // layer texture resolution
+    this._R = game.quality === 'low' ? 256 : 512;   // layer texture resolution
     this._baked = this._bakeAsync();                    // workers start now, overlapping the other systems' init
   }
 
@@ -281,7 +281,7 @@ export class Terrain {
   async init() {
     const { renderer, scene, camera } = this.game;
     const q = renderer.qualityPreset;
-    const n = { low: 128, medium: 160, high: 192, ultra: 256 }[this.game.quality] ?? 192;  // cells per level (multiple of 4)
+    const n = { low: 128, medium: 160, high: 192 }[this.game.quality] ?? 192;  // cells per level (multiple of 4)
     const E = n / 2, H = E / 2 - 1;
     const L = Math.ceil(Math.log2(1024 / E)) + 1;                       // levels until the coarsest covers the whole world
     const t0 = performance.now();

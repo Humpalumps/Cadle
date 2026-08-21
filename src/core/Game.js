@@ -28,7 +28,7 @@ export class Game {
     this.canvas = canvas;
     this.params = new URLSearchParams(location.search);
     this.auto = this.params.get('auto') === '1';      // automation harness: no click-to-start, synthetic input allowed
-    this.quality = this.params.get('q') || 'high';     // low | medium | high | ultra
+    this.quality = ['low', 'medium', 'high'].includes(this.params.get('q')) ? this.params.get('q') : 'high';   // ultra removed (2026-08-21): high IS the top preset
     this.seed = Number(this.params.get('seed') || 1337);
     this.debug = this.params.get('debug') === '1';
 

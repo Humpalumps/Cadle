@@ -15,7 +15,7 @@ import { mulberry32 } from '../core/Noise.js';
  *   water.isWater(x, z)               terrain below water level here?
  *   water.heightAt(x, z)              animated surface height (level + wave displacement), for splashes/buoyancy
  *   water.submergedDepth(pos) / (x, y, z)  meters below the surface (0 when dry)
- *   water.mesh, water.material, water.reflectionEnabled, water.setQuality('low'|'medium'|'high'|'ultra')
+ *   water.mesh, water.material, water.reflectionEnabled, water.setQuality('low'|'medium'|'high')
  *   water.excludeFromReflection(obj) / includeInReflection(obj)   hide expensive objects from the reflection pass
  *   water.debug = 0|1|2|3|4|5   shader debug view (reflection / refraction grab / depth / foam / normal)
  * Owns: game.world.water
@@ -24,7 +24,6 @@ const QP = {  // refl = reflection res scale, everyN = render reflection every N
   low:    { refl: 0,    fine: 128, span: 256, hq: 0, grab: 0, everyN: 1 },
   medium: { refl: 0.3,  fine: 160, span: 320, hq: 1, grab: 1, everyN: 2 },
   high:   { refl: 0.35, fine: 200, span: 320, hq: 1, grab: 1, everyN: 3 },  // perf: the planar mirror re-renders the scene — every 3rd frame reads the same at half res
-  ultra:  { refl: 0.5,  fine: 240, span: 384, hq: 1, grab: 1, everyN: 1 },
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
 const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees

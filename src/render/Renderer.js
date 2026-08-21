@@ -4,7 +4,6 @@ export const QUALITY = {
   low:    { pixelRatio: 0.75, shadowMap: 1024, anisotropy: 4,  msaa: 0 },
   medium: { pixelRatio: 1.0,  shadowMap: 2048, anisotropy: 8,  msaa: 0 },
   high:   { pixelRatio: 1.0, shadowMap: 2048, anisotropy: 16, msaa: 0 },   // perf: dpr 1.25-1.5 was shading 1.6-2.25x the pixels of 1080p — the single biggest q=high cost; SMAA carries the edges
-  ultra:  { pixelRatio: Math.min(devicePixelRatio, 2),   shadowMap: 4096, anisotropy: 16, msaa: 0 },
 };
 
 export function createRenderer(canvas, quality = 'high') {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Settings } from './settings.js';
+import * as MAP from './mapscreen.js';
 
 /**
  * HUD: DOM-based heads-up display (CSS transforms, no per-frame layout thrash). Visual language: FF14 ornate gold/aether-blue frames
@@ -31,12 +32,14 @@ const ELEM_ICON = {
   stasis: '<path d="M8 1v14M2.2 4.7l11.6 6.6M13.8 4.7 2.2 11.3" stroke="currentColor" stroke-width="1.6" fill="none"/>',
   strand: '<path d="M3 2c4 3 6 9 10 12M13 2C9 5 7 11 3 14" stroke="currentColor" stroke-width="1.6" fill="none"/>',
 };
-const AB_ICON = { // 24x24 glyphs
-  grenade: '<circle cx="12" cy="12" r="5.6"/><path d="M12 2v3.4M12 18.6V22M2 12h3.4M18.6 12H22" stroke="currentColor" stroke-width="1.7"/>',
-  melee: '<path d="M12 2l2.1 7.9L22 12l-7.9 2.1L12 22l-2.1-7.9L2 12l7.9-2.1Z"/>',
-  class: '<path d="M12 3v9M7.5 8.5 12 13l4.5-4.5" stroke="currentColor" stroke-width="1.9" fill="none"/><path d="M4 18.5h16" stroke="currentColor" stroke-width="1.9"/><path d="M7 21h10" stroke="currentColor" stroke-width="1.3" opacity=".6"/>',
-  super: '<path d="M12 1l2.6 6.9L22 9.2l-5.2 4.9 1.5 7L12 17.6 5.7 21l1.5-7L2 9.2l7.4-1.3Z"/>',
+const AB_ICON = { // 24x24 glyphs — each one has to READ as the ability it fires (user call 2026-08-21).
+  // Drawn fat on purpose: they render ~25 px inside the diamond, so nothing thinner than ~2 px survives.
+  grenade: '<circle cx="10.5" cy="14.5" r="6.8"/><path d="M15.4 9.6 18.6 6.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M19.4 1.6 20.6 5.2 24 6.4l-3.4 1.2-1.2 3.6-1.2-3.6L14.8 6.4l3.4-1.2Z"/>',
+  melee: '<path d="M7.2 21.6c-2.2-1.6-3.3-3.6-3.3-6V10a1.5 1.5 0 0 1 3 0v2.6h.4V4.6a1.55 1.55 0 0 1 3.1 0v8h.4V3.2a1.55 1.55 0 0 1 3.1 0v9.4h.4V6.4a1.5 1.5 0 0 1 3 0v7.8c0 3.5-1.3 6-3.6 7.4Z"/><path d="M20.4 1.4 16 8.6h3.4l-1.2 5.2L23 6.2h-3.4Z"/>',
+  class: '<path d="M2.4 2.2c3.4 1.4 6 3.3 7.7 5.7 1.5 2.1 2.3 4.4 2.4 6.8" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><rect x="10.6" y="12.4" width="6" height="2.8" rx="1"/><path d="M13.6 15.2v3.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M13.6 18.4c0 2.4-1.6 3.8-4.2 4.1M13.6 18.4c0 2.4 1.6 3.8 4.2 4.1" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/>',
+  super: '<path d="M15 1.4 16.7 6.7 22 8.4l-5.3 1.7L15 15.4l-1.7-5.3L8 8.4l5.3-1.7Z"/><path d="M9.4 12.2 4.2 17.4M12.4 15.2 9 18.6M6.4 9.2 2.6 13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" opacity=".75"/><path d="M4 21.4c0-1.5 3.6-2.6 8-2.6s8 1.1 8 2.6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
 };
+const MM_SPAN = 300;   // metres across the minimap disc — wide enough that the lake/ruins/forest edges read
 const RET_GAP = { handcannon: 10, autorifle: 7, pulse: 8, shotgun: 15, sniper: 6, fusion: 9, scout: 7, beam: 11 };
 const svg = (vb, inner) => `<svg viewBox="0 0 ${vb} ${vb}" fill="currentColor">${inner}</svg>`;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -66,11 +69,12 @@ const TEMPLATE = `
   <div id="wline"><span id="wname"></span><span id="welem"></span></div>
   <div id="wnums"><span id="mag">—</span><span id="res">—</span></div>
   <div id="rline"><i></i></div>
-  <div id="slots"><i></i><i></i><i></i></div>
 </div>
+<div id="wslots"></div>
+<div id="minimap"><canvas width="164" height="164"></canvas><i class="rim"></i><b class="np">N</b><div class="zone"></div><div class="wpd"></div></div>
 <div id="abil"><div id="abrow"></div><div id="smeter"><i></i></div></div>
 <div id="pickups"></div>
-<div id="quest" class="hidden"><div class="qt"></div><div class="qo"></div><div class="ql"></div></div>
+<div id="quest" class="hidden"><div class="qt"></div><div class="qo"></div></div>
 <div id="toasts"></div>
 <div id="notify"><h2></h2><div class="fl"></div><p></p></div>
 <div id="iprompt"><kbd>E</kbd><span></span></div>
@@ -92,7 +96,9 @@ export class HUD {
     this.hbar = $('#hbar');
     this.hFill = $('#hbar .fill'); this.hGhost = $('#hbar .ghost'); this.hpNum = $('#hbar .hpnum');
     this.wname = $('#wname'); this.welem = $('#welem'); this.mag = $('#mag'); this.res = $('#res');
-    this.rline = $('#rline'); this.rFill = $('#rline i'); this.slotEls = [...$('#slots').children];
+    this.rline = $('#rline'); this.rFill = $('#rline i');
+    this.wslots = $('#wslots'); this.slotEls = [];
+    this.mmCv = $('#minimap canvas'); this.mmZone = $('#minimap .zone'); this.mmWpd = $('#minimap .wpd');
     this.tgtEl = $('#tgt'); this.tgtName = $('#tgt .tn'); this.tgtLvl = $('#tgt .tlvl'); this.tgtFill = $('#tgt .tfill'); this.tgtSh = $('#tgt .tsh'); this.tgtGhost = $('#tgt .ghost');
     this.bossEl = $('#boss'); this.bossName = $('#boss .bname'); this.bossFill = $('#boss .bfill'); this.bossSh = $('#boss .bsh');
     this.notifyEl = $('#notify'); this.toastsEl = $('#toasts'); this.promptEl = $('#iprompt'); this.promptTxt = $('#iprompt span');
@@ -116,6 +122,16 @@ export class HUD {
     this.arcPool = []; this.arcI = 0;
     const dd = $('#dmgdir');
     for (let i = 0; i < 8; i++) { const a = document.createElement('div'); a.className = 'arc'; dd.appendChild(a); this.arcPool.push(a); }
+
+    // Minimap: blits a window out of the SAME cached parchment hillshade the map screen (M) uses, so the
+    // one 512x512 heightAt() pass is paid once for both. Kicked off on idle so it never lands in a boot frame.
+    this._mmT = -9; this._mmX = 1e9; this._mmZ = 0; this._mmYaw = 9; this._mmZoneT = -9;
+    // 8 ms slices: the whole sheet is ~1 s of heightAt() and one blocking pass shows up as a second-long
+    // p99 spike in the perf report. setTimeout(0), not requestIdleCallback: the game never goes idle at 140 fps, so idle callbacks either
+    // never fire or fire twice a second and the sheet takes a minute. A 0 ms timeout yields to the event loop
+    // between slices, so the loop keeps rendering and each frame gives up at most one slice.
+    const buildSheet = () => { try { const c = g.rpg?.ctx; if (!c || !MAP.build(c, 8)) setTimeout(buildSheet, 0); } catch (e) {} };
+    setTimeout(buildSheet, 300);
 
     this._v = new THREE.Vector3(); this._v2 = new THREE.Vector3();
     this._acc = 0; this._slow = 0; this._gap = 10; this._boss = null; this._bossFn = null;
@@ -246,13 +262,93 @@ export class HUD {
     this.welem.style.color = EL_COL[w.element] ?? '#fff';
     this.ch.dataset.arch = w.archetype;
     this.wname.parentElement.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 250 });
-    const ws = this.game.player.weapons;
-    this.slotEls.forEach((el, i) => {
-      setCls(el, 'on', i === ws.index);
-      const sw = ws.slots?.[i];
-      if (sw && i !== ws.index) el.style.background = `${EL_COL[sw.element] ?? '#fff'}3a`;
-      else el.style.background = '';
+    this._syncSlots();
+  }
+
+  /** Carried loadout, bottom-centre: one card per slot (two — kinetic + energy). Rebuilt only when the slot
+   *  list itself changes; the ammo line ticks in update(). */
+  _syncSlots() {
+    const ws = this.game.player.weapons; if (!ws?.slots?.length) return;
+    if (this.slotEls.length !== ws.slots.length) {
+      this.wslots.innerHTML = '';
+      this.slotEls = ws.slots.map((_, i) => {
+        const d = document.createElement('div'); d.className = 'wslot';
+        d.innerHTML = `<b class="k">${i + 1}</b><s class="wel"></s><span class="wn"></span><span class="wa"></span>`;
+        this.wslots.appendChild(d);
+        return { el: d, nm: d.querySelector('.wn'), am: d.querySelector('.wa'), ic: d.querySelector('.wel') };
+      });
+    }
+    this.slotEls.forEach((c, i) => {
+      const sw = ws.slots[i]; if (!sw) return;
+      setCls(c.el, 'on', i === ws.index);
+      setT(c.nm, sw.name);
+      const col = EL_COL[sw.element] ?? '#fff';
+      if (c.el._col !== col) {
+        c.el._col = col; c.el.style.setProperty('--el', col);
+        c.ic.innerHTML = svg(16, ELEM_ICON[sw.element] ?? ELEM_ICON.kinetic); c.ic.style.color = col;
+      }
     });
+  }
+
+  /** Minimap, 10 Hz: one drawImage out of the cached sheet + a handful of markers. North-up (the arrow
+   *  turns, not the world — cheaper AND easier to read at a glance than a rotating map). */
+  _minimap(t) {
+    const g = this.game, ctx = g.rpg?.ctx, p = g.player.position;
+    if (!ctx || !this.mmCv) return;
+    const yaw = g.player.yaw ?? 0;
+    if (t - this._mmT < 0.1 && Math.abs(p.x - this._mmX) < 0.6 && Math.abs(p.z - this._mmZ) < 0.6 && Math.abs(yaw - this._mmYaw) < 0.02) return;
+    this._mmT = t; this._mmX = p.x; this._mmZ = p.z; this._mmYaw = yaw;
+    const cv = this.mmCv, W = cv.width, R = W / 2, c = this._mmCtx ??= cv.getContext('2d');
+    const SPAN = MM_SPAN, k = W / SPAN;                       // px per metre
+    const toX = (x) => (x - p.x) * k + R, toY = (z) => (z - p.z) * k + R;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W, W);
+    c.save(); c.beginPath(); c.arc(R, R, R, 0, 6.2832); c.clip();
+    const sheet = MAP.sheet();
+    if (sheet) {
+      const size = ctx.world.size ?? 1024, PN = MAP.sheetRes;
+      const sw = SPAN / size * PN;
+      c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+      c.drawImage(sheet, (p.x - SPAN / 2 + size / 2) / size * PN, (p.z - SPAN / 2 + size / 2) / size * PN, sw, sw, 0, 0, W, W);
+    } else { c.fillStyle = '#cdbb93'; c.fillRect(0, 0, W, W); }
+    // landmarks in range
+    for (const l of ctx.world.landmarks ?? []) {
+      const x = toX(l.position.x), y = toY(l.position.z);
+      if (x < 6 || x > W - 6 || y < 6 || y > W - 6) continue;
+      c.fillStyle = 'rgba(20,14,6,0.85)'; c.beginPath(); c.arc(x, y, 3.4, 0, 6.2832); c.fill();
+      c.fillStyle = '#e9c46a'; c.beginPath(); c.arc(x, y, 2.1, 0, 6.2832); c.fill();
+    }
+    // enemies you can already see on the tracker: red pips, cheap (list is short)
+    for (const e of g.combat?.list ?? []) {
+      if (!e.alive || e.team !== 'enemy') continue;
+      const x = toX(e.position.x), y = toY(e.position.z);
+      if (x < 4 || x > W - 4 || y < 4 || y > W - 4) continue;
+      c.fillStyle = '#d8402a'; c.beginPath(); c.arc(x, y, 2.4, 0, 6.2832); c.fill();
+    }
+    // quest waypoint: on the map if it fits, clamped to the rim as a chevron if it does not
+    const wp = MAP.waypoint;
+    if (wp) {
+      const dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
+      const inside = d * k < R - 10;
+      const x = inside ? toX(wp.x) : R + dx / d * (R - 9), y = inside ? toY(wp.z) : R + dz / d * (R - 9);
+      c.save(); c.translate(x, y);
+      c.fillStyle = '#b98fd6'; c.strokeStyle = 'rgba(20,14,6,0.9)'; c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(0, -6); c.lineTo(4.6, 0); c.lineTo(0, 6); c.lineTo(-4.6, 0); c.closePath();
+      c.fill(); c.stroke(); c.restore();
+      setT(this.mmWpd, Math.round(d) + ' m');
+    } else setT(this.mmWpd, '');
+    // player arrow (yaw 0 = north = up)
+    c.save(); c.translate(R, R); c.rotate(-yaw);
+    c.fillStyle = '#8fd8ff'; c.strokeStyle = 'rgba(10,14,26,0.95)'; c.lineWidth = 1.6;
+    c.beginPath(); c.moveTo(0, -7.5); c.lineTo(5.2, 6); c.lineTo(0, 3); c.lineTo(-5.2, 6); c.closePath();
+    c.fill(); c.stroke(); c.restore();
+    c.restore();
+    // zone label = nearest landmark (1 Hz)
+    if (t - this._mmZoneT > 1) {
+      this._mmZoneT = t;
+      let best = null, bd = 1e9;
+      for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
+      setT(this.mmZone, best ? best.name : '');
+    }
   }
 
   // ---------- menus ----------
@@ -309,6 +405,10 @@ export class HUD {
     if (w) {
       if (this._wSeen !== w) { this._wSeen = w; this._refreshWeapon(w); }
       setT(this.mag, String(w.ammo)); setT(this.res, String(w.reserve));
+      for (let i = 0; i < this.slotEls.length; i++) {
+        const sw = p.weapons.slots[i]; if (!sw) continue;
+        setT(this.slotEls[i].am, sw.ammo + ' / ' + sw.reserve);
+      }
       setCls(this.mag, 'low', w.ammo > 0 && w.ammo <= Math.max(2, w.magSize * 0.25));
       setCls(this.mag, 'empty', w.ammo === 0);
       const rel = this._reloadT0 >= 0 && w.reloading;
@@ -352,6 +452,8 @@ export class HUD {
       setX(this.smFill, ab.superActive ? clamp01(ab.superTimeLeft / 6) : clamp01(ab.superMeter ?? 0));
       setCls(this.smeter, 'full', (ab.superMeter ?? 0) >= 1 || ab.superActive);
     }
+
+    this._minimap(t);
 
     // damage numbers (project + float)
     const cam = g.camera, W = this._w ?? innerWidth, H = this._h ?? innerHeight;
