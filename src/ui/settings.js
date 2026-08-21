@@ -20,10 +20,10 @@
 
 const KEY = 'cadle.settings';
 const DEF = { sens: 5, fov: 100, invertY: 0, shake: 1, bob: 1, fps: 0, master: 0.9, sfx: 1, music: 0.3, ambient: 0.55 };
-const QUALITIES = ['low', 'medium', 'high', 'ultra'];
+const QUALITIES = ['low', 'medium', 'high'];
 const BINDS = [
   ['W A S D', 'Move'], ['Shift', 'Sprint'], ['Space', 'Jump / double jump'], ['Ctrl', 'Slide'],
-  ['Mouse 1', 'Fire'], ['Mouse 2', 'Aim'], ['R', 'Reload'], ['1 2 3', 'Weapon slots'],
+  ['Mouse 1', 'Fire'], ['Mouse 2', 'Aim'], ['R', 'Reload'], ['1 2', 'Weapon slots'],
   ['G', 'Grenade'], ['F', 'Melee'], ['Q', 'Class ability'], ['X', 'Super'],
   ['E', 'Interact'], ['M', 'Map'], ['C', 'Character'], ['I', 'Inventory'], ['K', 'Skills'],
   ['F3', 'Performance overlay'], ['Esc', 'This menu'],

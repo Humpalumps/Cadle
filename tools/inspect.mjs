@@ -5,7 +5,7 @@
 //   node tools/inspect.mjs --name tour                       # default tour script
 //   node tools/inspect.mjs --name x --steps '[{"wait":1},{"shot":"a"}]'
 //   node tools/inspect.mjs --name x --script tools/scripts/combat.json
-//   flags: --w 1920 --h 1080 --q high|medium|low|ultra --seed 1337 --headed --url http://127.0.0.1:5173/ --params "foo=1"
+//   flags: --w 1920 --h 1080 --q high|medium|low --seed 1337 --headed --url http://127.0.0.1:5173/ --params "foo=1"
 //          --nolock   (default: waits for an exclusive lock so perf numbers aren't skewed by parallel runs; use --nolock for quick screenshot-only iteration)
 //
 // Step types (JSON objects, run in order):

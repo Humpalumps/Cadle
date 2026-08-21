@@ -81,9 +81,6 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #res::before { content: '·'; margin-right: 8px; color: var(--gold-dim); }
 #rline { position: relative; height: 3px; width: 176px; margin: 3px 0 6px auto; background: rgba(216,189,122,0.18); border-radius: 2px; }
 #rline i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); border-radius: 2px; will-change: transform; }
-#slots { display: flex; justify-content: flex-end; gap: 6px; }
-#slots i { width: 26px; height: 4px; background: rgba(230,220,200,0.22); border-radius: 2px; transition: background 0.15s, box-shadow 0.15s; }
-#slots i.on { background: var(--gold-hi); box-shadow: 0 0 8px var(--gold-dim); }
 
 /* ---------- abilities (bottom-left) ---------- */
 #abil { position: absolute; left: 30px; bottom: 30px; }
@@ -92,7 +89,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .ab.sup { width: 62px; height: 62px; }
 .ab .dia { position: absolute; inset: 0; transform: rotate(45deg); overflow: hidden; border: 1.5px solid var(--gold); background: var(--panel); box-shadow: 0 0 12px rgba(0,0,0,0.55), inset 0 0 10px rgba(140,190,255,0.10); border-radius: 3px; }
 .ab .in { position: absolute; inset: -30%; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; }
-.ab svg { width: 46%; height: 46%; color: var(--aether); filter: drop-shadow(0 0 5px var(--aether-glow)); }
+.ab svg { width: 58%; height: 58%; color: var(--aether); filter: drop-shadow(0 0 5px var(--aether-glow)); }
 .ab.sup svg { color: var(--gold-hi); filter: drop-shadow(0 0 7px rgba(246,227,172,0.7)); }
 .ab .cd { position: absolute; inset: -30%; will-change: background; }
 .ab.ready .cd { background: none !important; }
@@ -146,11 +143,43 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #pickups div { font: 400 14px var(--serif); font-variant: small-caps; letter-spacing: 0.1em; color: var(--ivory); text-shadow: 0 1px 3px #000; }
 #pickups div::before { content: '◆ '; color: var(--gold); font-size: 10px; }
 
-#quest { position: absolute; right: 30px; top: 96px; width: 250px; text-align: right; }
-#quest .qt { font: 500 16px var(--serif); font-variant: small-caps; letter-spacing: 0.12em; color: var(--gold-hi); text-shadow: 0 1px 4px #000; }
-#quest .qt::before { content: '◆ '; color: var(--gold); font-size: 11px; }
-#quest .qo { margin-top: 3px; font: 400 13px var(--serif); color: rgba(235,228,210,0.82); text-shadow: 0 1px 3px #000; letter-spacing: 0.04em; }
-#quest .ql { height: 1px; margin: 6px 0 0 auto; width: 180px; background: linear-gradient(90deg, transparent, var(--gold-dim)); }
+#quest { position: absolute; right: 26px; top: 236px; width: 258px; text-align: right; }
+#quest .qt { font: 500 15px var(--serif); font-variant: small-caps; letter-spacing: 0.13em; color: var(--gold-hi); text-shadow: 0 1px 4px #000; }
+#quest .qt::before { content: '◆ '; color: var(--gold); font-size: 10px; }
+#quest .qo { margin-top: 3px; font: 400 12.5px var(--serif); color: rgba(235,228,210,0.84); text-shadow: 0 1px 3px #000; letter-spacing: 0.04em; }
+
+/* ---------- minimap (top-right) ---------- */
+#minimap { position: absolute; right: 26px; top: 26px; width: 164px; height: 164px; }
+#minimap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; display: block;
+  box-shadow: inset 0 0 26px rgba(12,8,4,0.55), 0 6px 22px rgba(0,0,0,0.55); }
+#minimap .rim { position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid var(--gold);
+  box-shadow: 0 0 14px rgba(216,189,122,0.22), inset 0 0 10px rgba(0,0,0,0.55); }
+#minimap .rim::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid rgba(216,189,122,0.28); }
+#minimap .np { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font: 600 10px var(--serif);
+  letter-spacing: 0.16em; color: #6b5424; text-shadow: 0 1px 0 rgba(255,244,214,0.5); }
+#minimap .zone { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap;
+  font: 500 13px var(--serif); font-variant: small-caps; letter-spacing: 0.2em; color: var(--gold-hi); text-shadow: 0 1px 4px #000, 0 0 10px rgba(0,0,0,0.8); }
+#minimap .wpd { position: absolute; left: 50%; top: 172px; transform: translateX(-50%); white-space: nowrap;
+  font: 500 11.5px var(--serif); letter-spacing: 0.10em; color: #e2c8f5; text-shadow: 0 1px 4px #000, 0 0 8px rgba(0,0,0,0.9); }
+
+/* ---------- carried loadout (bottom-centre) ---------- */
+#wslots { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; gap: 10px; }
+.wslot { position: relative; display: flex; align-items: center; gap: 9px; min-width: 178px; padding: 7px 12px 7px 9px;
+  background: linear-gradient(150deg, rgba(14,17,34,0.62), rgba(7,9,20,0.72)); border: 1px solid rgba(216,189,122,0.26);
+  border-radius: 3px; box-shadow: 0 3px 14px rgba(0,0,0,0.45); opacity: 0.62;
+  transition: opacity 0.16s var(--ease), border-color 0.16s var(--ease), transform 0.18s var(--spring); }
+.wslot::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--el, #fff); opacity: 0.7; }
+.wslot.on { opacity: 1; border-color: var(--gold); transform: translateY(-3px);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.55), 0 0 14px rgba(216,189,122,0.16), inset 0 0 12px rgba(140,190,255,0.06); }
+.wslot .k { width: 17px; height: 17px; flex: none; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--gold-dim); border-radius: 2px; font: 600 10px 'Segoe UI', sans-serif; color: var(--gold-hi); background: rgba(6,8,16,0.7); }
+.wslot.on .k { border-color: var(--gold); background: rgba(216,189,122,0.16); }
+.wslot .wel { flex: none; display: flex; }
+.wslot .wel svg { width: 13px; height: 13px; filter: drop-shadow(0 0 4px currentColor); opacity: 0.9; }
+.wslot .wn { flex: 1; font: 500 13px var(--serif); font-variant: small-caps; letter-spacing: 0.09em; color: var(--ivory);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px #000; }
+.wslot .wa { font: 500 12px 'Segoe UI', system-ui, sans-serif; font-variant-numeric: tabular-nums; color: rgba(240,236,222,0.66); }
+.wslot.on .wa { color: var(--gold-hi); }
 
 /* ---------- death screen ---------- */
 #death { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; opacity: 0; transition: opacity 0.9s; background: radial-gradient(ellipse at center, rgba(30,0,0,0.35), rgba(10,0,0,0.88)); }
@@ -358,14 +387,13 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #mag { font: 300 52px/1 var(--serif); color: #fdf6e6; text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 22px rgba(216,189,122,.22); }
 #res { font: 400 20px var(--serif); }
 #rline { height: 3px; width: 190px; background: rgba(216,189,122,.16); }
-#slots i { width: 30px; height: 5px; border-radius: 3px; }
 #ammo::after { content: ""; display: block; height: 1px; margin-top: 7px; margin-left: auto; width: 190px;
   background: linear-gradient(90deg, transparent, var(--gold-dim)); }
 
 /* ---- toasts / quest / pickups: card language shared with the settings menu ---- */
 .toast { padding: 7px 20px 7px 16px; border: 1px solid var(--line); border-left: 2px solid var(--gold);
   border-radius: 6px; background: var(--glass); backdrop-filter: blur(4px); box-shadow: 0 6px 22px rgba(0,0,0,.55); }
-#quest { right: 28px; top: 92px; width: 268px; padding: 10px 14px 11px; border-radius: 7px;
+#quest { right: 26px; top: 236px; width: 268px; padding: 10px 14px 11px; border-radius: 7px;
   border: 1px solid rgba(216,189,122,.20); border-right: 2px solid var(--gold);
   background: linear-gradient(250deg, rgba(20,17,42,.62), rgba(9,8,20,.30)); backdrop-filter: blur(3px); }
 #quest .ql { display: none; }

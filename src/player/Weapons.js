@@ -7,7 +7,7 @@ import { makeMaterials, buildGun, makeFlash } from './weapons/models.js';
  * distinct (rpm, recoil pattern, damage falloff, handling), punchy audio/visual feedback, snappy ADS, reload with weight.
  *
  * Archetypes: handcannon (140rpm, heavy recoil, crisp), autorifle (600rpm, controllable), pulse (3-burst), shotgun (pellets, short range),
- *   sniper (high zoom, bolt, huge crit), fusion (charge then 7 bolts). Slots: [kinetic, energy, power]. Keys 1/2/3 + wheel swap, R reload, LMB fire, RMB ADS (hold; tap = toggle).
+ *   sniper (high zoom, bolt, huge crit), fusion (charge then 7 bolts). Slots: [kinetic, energy] (two, user call). Keys 1/2 + wheel swap, R reload, LMB fire, RMB ADS (hold; tap = toggle).
  * Viewmodel: procedurally modeled guns (src/player/weapons/models.js) rendered in an OVERLAY scene (own PerspectiveCamera fov 55) via game.postfx.setOverlay(scene, camera),
  *   lit by own sun/hemi mirroring game.sky + a muzzle point light + a small PMREM env for the metals. Procedural animation layers: idle sway/breath, walk/sprint bob
  *   (reads controller), sprint lowered pose, ADS blend (sight marker on the camera axis; view.setAds), recoil springs (per-archetype), reload (per style: mag/cylinder/pump/bolt/cell
@@ -15,7 +15,7 @@ import { makeMaterials, buildGun, makeFlash } from './weapons/models.js';
  * Firing: rpm-accurate cadence, game.combat.hitscan per shot/pellet, hip spread + bloom, camera kick via view.kick, ammo/reserve/reload, empty click + auto-reload,
  *   muzzle flash mesh (petals+star, ~2 frames) + vfx.emit('muzzle') + vfx.tracer + vfx.flash + audio.play('shot-<archetype>').
  * Exposes: game.player.weapons.current = { id, name, archetype, element, ammo, magSize, reserve, damage, rpm, range, zoom, ads:0..1, reloading, firing, rarity, spread(rad), charge(0..1, fusion) }
- *          slots[3], index, swap(i), reload(), addAmmo(slotIndex, n), muzzleWorld (Vector3), fireCount, give(id, slot) (any of DEFS keys), defs, setAds(bool),
+ *          slots[2], index, swap(i), reload(), addAmmo(slotIndex, n), muzzleWorld (Vector3), fireCount, give(id, slot) (any of DEFS keys), defs, setAds(bool),
  *          setHidden(bool) (stow/hide the viewmodel + block firing — Abilities takes the hands over during the super)
  * Events: 'weapon:fire' {weapon, hit, origin, dir}, 'weapon:reload' {weapon}, 'weapon:reloaded' {weapon}, 'weapon:swap' {weapon}, 'weapon:empty' {weapon}
  */
@@ -200,7 +200,7 @@ export class Weapons {
     const active = input.active && this.player.alive && !this.game.paused;
     let trigger = false, trigJust = false;
     if (active) {
-      if (input.justPressed('Digit1')) this.swap(0); else if (input.justPressed('Digit2')) this.swap(1); else if (input.justPressed('Digit3')) this.swap(2);
+      if (input.justPressed('Digit1')) this.swap(0); else if (input.justPressed('Digit2')) this.swap(1);
       if (input.mouse.wheel) this.swap(this.index + (input.mouse.wheel > 0 ? 1 : -1));
       if (input.justPressed('KeyR')) this.reload();
       trigger = input.mouseDown(0); trigJust = input.mouseJustPressed(0);

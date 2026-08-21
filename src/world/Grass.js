@@ -43,8 +43,7 @@ const TRAIL_LIFE = 4.0;
 const PRESETS = {
   low:    { R: [9, 26, 52],    P: [23, 8, 2],  N: 256, step: 0.5, cast: false },
   medium: { R: [13, 42, 84],   P: [34, 13, 3], N: 384, step: 0.5, cast: false },
-  high:   { R: [18, 60, 116],  P: [55, 18, 3], N: 512, step: 0.5, cast: false },  // perf: near-ring shadow casting re-runs the blade vertex shader per CSM cascade; ultra only
-  ultra:  { R: [24, 76, 146],  P: [72, 25, 4], N: 640, step: 0.5, cast: true },
+  high:   { R: [18, 60, 116],  P: [55, 18, 3], N: 512, step: 0.5, cast: false },  // perf: near-ring shadow casting re-runs the blade vertex shader per CSM cascade — never worth it
 };
 
 // ---------------- GLSL ----------------

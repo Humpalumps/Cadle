@@ -15,7 +15,7 @@ import {
  *   -> final: auto-exposure (GPU 1x1 adapted scene luminance, bounded) + chromatic aberration (kick) + bloom (threshold rides
  *      time-of-day so night emissives glow) + tone map (ACES, time-of-day exposure) + FF14 grade (sun-elevation-keyed warm
  *      gain / cool lift / saturation; dusk keyed deep so the warm horizon survives) + grain + flash + vignette
- *   -> SMAA (ULTRA at q>=high).
+ *   -> SMAA (HIGH preset at q>=medium).
  * NO TAA: a jittered temporal resolve never settles on a static scene (the 13% current-frame term is a different subpixel
  *   sample every frame) and it amplified the animated grain through its neighborhood clamp -> the user-visible "screen
  *   jitters at q=high, clean at q=low". SMAA + no jitter = a rock-stable image, and it bought back ~0.3 ms.
@@ -26,7 +26,7 @@ import {
  *   postfx.kick(strength)                     chromatic aberration pulse (explosions, big hits)
  *   postfx.setDof({ focus, range, strength, enabled })  used when ADS with sniper etc (optional, cheap half-res blur by CoC, ~0.2 ms)
  *   postfx.exposure (number, base; time-of-day + bounded scene-luminance adaptation on top), .bloom, .vignette, .ao, .godrays, .grade, .tone handles
- *   postfx.setBypass(bool)                    world+overlay only (perf A/B), postfx.setQuality('low'|'medium'|'high'|'ultra')
+ *   postfx.setBypass(bool)                    world+overlay only (perf A/B), postfx.setQuality('low'|'medium'|'high')
  *   postfx.profile(frames) -> Promise<{on,off,cost}>  GPU ms of the whole post chain (timer queries, alternates bypass per frame)
  *   postfx.readLum() -> Promise<number>       adapted average scene luminance (pre-exposure; debug/calibration)
  *   postfx.godraysSource (Object3D|null)     override the god-rays light source (e.g. game.sky.sunMesh); null = internal disc
@@ -36,8 +36,7 @@ import {
 const QUALITY = {
   low:    { ao: false, aoSamples: 0,  godrays: false, godraysScale: 0.4,  godraysSamples: 24, dof: false, smaa: SMAAPreset.MEDIUM },
   medium: { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 26, dof: true,  smaa: SMAAPreset.HIGH },
-  high:   { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 22, dof: false, smaa: SMAAPreset.HIGH },  // perf: DoF+ULTRA SMAA cost more than they read at 1080p; dof stays on ultra
-  ultra:  { ao: true,  aoSamples: 14, godrays: true,  godraysScale: 0.55, godraysSamples: 44, dof: true,  smaa: SMAAPreset.ULTRA },
+  high:   { ao: true,  aoSamples: 8,  godrays: true,  godraysScale: 0.4,  godraysSamples: 22, dof: false, smaa: SMAAPreset.HIGH },  // perf: DoF + ULTRA SMAA cost more than they read at 1080p
 };
 
 const FS_VERT = /* glsl */`varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }`;

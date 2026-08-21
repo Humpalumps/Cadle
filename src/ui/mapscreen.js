@@ -24,22 +24,32 @@ export function reset() { view.zoom = 1; view.cx = 0; view.cz = 0; }
 
 // ---------------------------------------------------------------- the parchment
 // Built lazily on first open, then cached forever. ~0.2s of heightAt() once.
-export function build(ctx) {
-  if (paperCv) return;
+/** Build the cached parchment sheet.
+ *  `budgetMs > 0` slices the work across calls and returns false until it is finished — the HUD minimap
+ *  builds it that way, because the 512x512 heightAt() pass is ~1 s of blocking JS and a boot-time hitch
+ *  that size shows up as a p99 spike in the perf report. The map screen (M) still calls build(ctx) with
+ *  no budget: by then a single blocking pass is what the player is waiting for anyway.
+ */
+let bs = null;                          // in-progress slice state
+export function build(ctx, budgetMs = 0) {
+  if (paperCv) return true;
   const N = PN;
   const size = sizeOf(ctx), half = size / 2;
   const wl = ctx.world.waterLevel || 0;
-  paperCv = document.createElement('canvas');
-  paperCv.width = paperCv.height = N;
-  const t = paperCv.getContext('2d');
-  const img = t.createImageData(N, N);
-  const d = img.data;
-  const hs = new Float32Array(N * N);
-  for (let j = 0; j < N; j++) {
-    const z = -half + (j + 0.5) / N * size;
-    for (let i = 0; i < N; i++) hs[j * N + i] = ctx.world.heightAt(-half + (i + 0.5) / N * size, z);
+  const t0 = performance.now();
+  const over = () => budgetMs > 0 && performance.now() - t0 > budgetMs;
+  if (!bs) bs = { hs: new Float32Array(N * N), row: 0, prow: 0, img: null };
+  while (bs.row < N) {
+    const j = bs.row, z = -half + (j + 0.5) / N * size;
+    for (let i = 0; i < N; i++) bs.hs[j * N + i] = ctx.world.heightAt(-half + (i + 0.5) / N * size, z);
+    bs.row++;
+    if (over()) return false;
   }
-  for (let j = 0; j < N; j++) {
+  const hs = bs.hs;
+  bs.img ??= new ImageData(N, N);
+  const d = bs.img.data;
+  while (bs.prow < N) {
+    const j = bs.prow;
     for (let i = 0; i < N; i++) {
       const o = j * N + i;
       const h = hs[o];
@@ -75,8 +85,14 @@ export function build(ctx) {
       const q = o * 4;
       d[q] = clamp(r, 0, 255); d[q + 1] = clamp(g, 0, 255); d[q + 2] = clamp(b, 0, 255); d[q + 3] = 255;
     }
+    bs.prow++;
+    if (over()) return false;
   }
-  t.putImageData(img, 0, 0);
+  paperCv = document.createElement('canvas');
+  paperCv.width = paperCv.height = N;
+  const t = paperCv.getContext('2d');
+  t.putImageData(bs.img, 0, 0);
+  bs = null;
   // parchment wash: the sheet is older and browner toward its edges
   t.globalCompositeOperation = 'multiply';
   const vg = t.createRadialGradient(N / 2, N / 2, N * 0.30, N / 2, N / 2, N * 0.74);
@@ -84,10 +100,16 @@ export function build(ctx) {
   vg.addColorStop(1, 'rgba(186,158,110,1)');
   t.fillStyle = vg; t.fillRect(0, 0, N, N);
   t.globalCompositeOperation = 'source-over';
+  return true;
 }
 
 // ---------------------------------------------------------------- fog of war
 // Stamped from screens.update(), i.e. only while the player is actually walking.
+/** The cached parchment hillshade (null until build() has run) + its resolution — the HUD minimap
+ *  blits a window out of the same sheet instead of generating a second one. */
+export const sheet = () => paperCv;
+export const sheetRes = PN;
+
 export function stamp(ctx) {
   if (!fog) { fog = new Uint8Array(FOG_N * FOG_N); fogDirty = true; }
   const size = sizeOf(ctx), half = size / 2;

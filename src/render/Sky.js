@@ -485,7 +485,6 @@ const CLOUD_Q = {
   low: { scale: 0.42, steps: 20, light: 2 },
   medium: { scale: 0.50, steps: 32, light: 3 },
   high: { scale: 0.50, steps: 36, light: 3 },   // perf: 48x4 at 0.55 blew the sky budget once the GLSL3 fix made clouds actually render
-  ultra: { scale: 0.70, steps: 64, light: 4 },
 };
 
 export class Sky {

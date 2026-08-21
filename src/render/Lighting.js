@@ -37,7 +37,6 @@ const PRESET = {
   low:    { sizes: [1024, 1024],        splits: [0.22, 1],        dist: 90,  stagger: true },
   medium: { sizes: [2048, 1024, 1024],  splits: [0.07, 0.26, 1],  dist: 140, stagger: true },
   high:   { sizes: [2048, 2048, 2048],  splits: [0.055, 0.21, 1], dist: 180, stagger: true },
-  ultra:  { sizes: [4096, 2048, 2048],  splits: [0.045, 0.17, 1], dist: 260, stagger: false },
 };
 const PAD = [1.15, 1.05, 1.05, 1.05];        // cascade-0 gets extra room so one-frame-old camera pose never starves it
 const PCF_RADIUS = [1.3, 2.2, 3.0, 3.0];     // hardware-PCF vogel-disk radius in texels: crisp near contact, wide+soft far (no far-field crosshatch)
