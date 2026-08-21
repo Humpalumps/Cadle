@@ -39,6 +39,9 @@ export class PlayerCamera {
     this.game = game; this.player = player;
     this.yaw = 0; this.pitch = 0; this.pitchLimit = 89 * DEG;
     this.sens = 5;
+    // settings knobs (src/ui/settings.js writes these): invert pitch, and scales for the two things
+    // players most often want dialled down for comfort. 1 = shipped feel, 0 = off.
+    this.invertY = 0; this.shakeScale = 1; this.bobScale = 1;
     this.baseFov = 100; this.fov = this.baseFov; this.vFov = 64.5;   // fov is horizontal; vFov is what camera.fov gets
     this.sprintKick = 8; this.slideKick = 3;                 // slideKick = extra FOV over the sprint kick, held flat for the slide
     this.adsIn = 0.18; this.adsOut = 0.24;
@@ -81,7 +84,7 @@ export class PlayerCamera {
   look(yaw, pitch) { this.yaw = yaw; this.pitch = THREE.MathUtils.clamp(pitch, -this.pitchLimit, this.pitchLimit); }
   setAds(t) { this._adsExt = true; this._adsTarget = typeof t === 'number' ? THREE.MathUtils.clamp(t, 0, 1) : t ? 1 : 0; }
   // trauma-based: shake amount = trauma^2, so small hits barely register and big ones land hard
-  shake(strength = 0.5) { this.trauma = Math.min(1, this.trauma + strength); }
+  shake(strength = 0.5) { this.trauma = Math.min(1, this.trauma + strength * this.shakeScale); }
   kick(pitch, yaw = 0) {
     this._shotN++;
     if (this._sinceKick < 0.25) {                 // chained shot (automatic/pulse cadence):
@@ -120,7 +123,7 @@ export class PlayerCamera {
     if (input.active) {
       const s = this.sensitivity * Math.tan(this.fov * 0.5 * DEG) / Math.tan(this.baseFov * 0.5 * DEG);
       this.yaw -= input.mouse.dx * s;
-      this.pitch = m.clamp(this.pitch - input.mouse.dy * s, -this.pitchLimit, this.pitchLimit);
+      this.pitch = m.clamp(this.pitch - input.mouse.dy * s * (this.invertY ? -1 : 1), -this.pitchLimit, this.pitchLimit);
     }
 
     // --- recoil: kicks land fully in ≤2 frames (follow 140/s → 95% in 25 ms). Recovery is rate-capped while kicks keep
@@ -164,7 +167,7 @@ export class PlayerCamera {
       const adj = this._bobSync * approach(10, dt); this.bobPhase += adj; this._bobSync -= adj;   // phase-lock to footstep events
     }
     const sp = Math.sin(this.bobPhase), s2p = Math.sin(this.bobPhase * 2);
-    const bobK = this.bobAmt * adsDamp, bs = this._sprint;   // sprint: ~2× roll so the run visibly rocks; vertical actually DROPS ~30%
+    const bobK = this.bobAmt * adsDamp * this.bobScale, bs = this._sprint;   // sprint: ~2× roll so the run visibly rocks; vertical actually DROPS ~30%
     // (Destiny keeps the camera itself calm at a run and puts the energy into the viewmodel + roll — a bouncing eye reads as nausea, not speed)
     this.bobOffset.set(sp * 0.012 * bobK * (1 + 0.5 * bs), s2p * 0.022 * bobK * (1 - 0.06 * bs), 0);
     const bobPitch = s2p * 0.2 * DEG * bobK * (1 + 0.6 * bs), bobRoll = sp * 0.35 * DEG * bobK * (1 + 1.0 * bs);

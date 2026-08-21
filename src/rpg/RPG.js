@@ -20,7 +20,7 @@ import { reserveNames } from './names.js';
 import { Screens } from '../ui/Screens.js';
 import { OpeningQuest } from './quest.js';
 
-const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle' };
+const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle', scout: 'Scout Rifle', beam: 'Charge Beam' };
 
 // world layout from CLAUDE.md — the map's landmark set
 const LANDMARKS = [

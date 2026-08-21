@@ -320,7 +320,7 @@ export class Props {
     const stones = new THREE.Mesh(flat(mergeAll(parts, tints)), this.stoneMat); stones.castShadow = stones.receiveShadow = true; stones.name = 'meadow-stones'; scene.add(stones);
     // user decree: 4.0 on a 0.1 m flickering octahedron = sub-pixel warm blobs at distance (blobcheck-gated).
     // 1.4 keeps the flame reading and its night halo (night bloom threshold 0.28) without daytime white balls.
-    const flameMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xff9a40, emissiveIntensity: 1.4, roughness: 0.6 }), { key: 'flame', uniforms: { uTime: U.uTime }, fHead: 'uniform float uTime; varying float vPh;', vHead: 'varying float vPh;', vBegin: 'vPh = fract(instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.21);',
+    const flameMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xff9a40, emissiveIntensity: 0.95, roughness: 0.6 }), { key: 'flame', uniforms: { uTime: U.uTime }, fHead: 'uniform float uTime; varying float vPh;', vHead: 'varying float vPh;', vBegin: 'vPh = fract(instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.21);',
       fEmissive: 'totalEmissiveRadiance *= 0.8 + 0.2 * sin(uTime * 9.0 + vPh * 6.28) * sin(uTime * 4.3 + vPh * 9.0);' });
     const fl = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.1).scale(1, 1.7, 1), flameMat, flames.length); flames.forEach((p, i) => fl.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z))); fl.name = 'lantern-flames'; scene.add(fl);
     // warm ground-glow decals instead of point lights (bloom + emissive carry the look; zero lighting cost, no recompile storms)
@@ -333,16 +333,22 @@ export class Props {
 
   _buildMushrooms(rng, h, veg, Q) {
     const { scene } = this.game, U = this.U;
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0, emissive: 0x30ffd8, emissiveIntensity: 2.2 }), mergePatch(fadePatch, {
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0, emissive: 0x30ffd8, emissiveIntensity: 2.2 }), mergePatch(fadePatch, {
       key: 'mushroom', uniforms: { uTime: U.uTime, uSunI: U.uSunI ?? { value: 1 } }, vHead: 'attribute float aGlow; varying float vGlow; varying float vPh;', vBegin: 'vGlow = aGlow; vPh = fract(instanceMatrix[3].x * 0.17 + instanceMatrix[3].z * 0.29);',
       fHead: 'uniform float uTime; uniform float uSunI; varying float vGlow; varying float vPh;',
-      fEmissive: 'totalEmissiveRadiance *= vGlow * (0.75 + 0.25 * sin(uTime * 1.7 + vPh * 6.28)) * (0.55 + 1.7 * (1.0 - clamp(uSunI, 0.0, 1.0)));', // night-boosted: real glow after dark
+      // Night-boosted glow, but daylight-capped. A sunlit near-white cap already sits near 1.0 linear; the old
+      // 0.55 day term put another ~0.9 of cyan emissive on top, which crossed the 1.05 day bloom threshold and
+      // bloomed every cap into a washed-white ball (gate blobcheck). Same rule as everywhere else in this repo:
+      // saturate the COLOUR (the cap albedo below is now real mint, not white), cap the INTENSITY, and close it
+      // with a HUE-PRESERVING luminance cap (per-component min would clip cyan to grey) that tightens in
+      // daylight and opens up at night, where a glowing mushroom blooming its own colour is the point.
+      fEmissive: 'totalEmissiveRadiance *= vGlow * (0.75 + 0.25 * sin(uTime * 1.7 + vPh * 6.28)) * (0.14 + 2.1 * (1.0 - clamp(uSunI, 0.0, 1.0))); float mLum = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722)); float mCap = mix(1.15, 0.55, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= mCap / max(mLum, mCap);',
     }));
     const mesh = new THREE.InstancedMesh(mushroomGeometry(), mat, 1); mesh.receiveShadow = true; mesh.name = 'mushrooms'; scene.add(mesh);
     const lod = new InstLOD({ near: [mesh], nearDist: 52 * Q, band: 10, color: true });
     const M = new THREE.Matrix4(), Qt = new THREE.Quaternion(), S = V3(1, 1, 1), E = new THREE.Euler(), C = new THREE.Color();
     const glowPts = [];
-    const add = (x, z, s) => { const y = h(x, z); E.set((rng() - 0.5) * 0.3, rng() * 6.28, (rng() - 0.5) * 0.3); Qt.setFromEuler(E); S.setScalar(s); M.compose(V3(x, y - 0.02, z), Qt, S); const hue = rng(); C.setRGB(0.8 + hue * 0.3, 1.0, 0.9 + (1 - hue) * 0.2); lod.add(M, C);
+    const add = (x, z, s) => { const y = h(x, z); E.set((rng() - 0.5) * 0.3, rng() * 6.28, (rng() - 0.5) * 0.3); Qt.setFromEuler(E); S.setScalar(s); M.compose(V3(x, y - 0.02, z), Qt, S); const hue = rng(); C.setRGB(0.34 + hue * 0.22, 0.80, 0.70 + (1 - hue) * 0.16);   // mint cap, not white: a white albedo in full sun is already at the bloom threshold before the glow is added lod.add(M, C);
       if (s > 0.75 && glowPts.length < 450 && rng() < 0.6) glowPts.push([x, y + 0.06, z, 0.7 + s * 0.9]); };
     for (const t of veg?.trees ?? []) { if (t.z > -175 || Math.abs(t.x) > 260 || rng() < 0.45) continue; const n = 1 + Math.floor(rng() * 4); for (let i = 0; i < n; i++) { const a = rng() * 6.28, d = t.r + 0.3 + rng() * 1.4; add(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.5 + rng() * 1.3); } }
     for (let i = 0; i < 700; i++) { const x = (rng() - 0.5) * 500, z = -190 - rng() * 230; if (Math.hypot(x, z + 28) < 10) continue; const n = 1 + Math.floor(rng() * 3); for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2, z + (rng() - 0.5) * 2, 0.4 + rng() * 1.0); }

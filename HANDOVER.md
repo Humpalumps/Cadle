@@ -91,6 +91,101 @@ One Workflow call fans out one agent per piece; each piece runs `critic → (fix
 
 ## 4. Current state
 
+**Updated: 2026-08-21 (UI + visuals polish wave — branch `claude/game-ui-visuals-polish-26a5fb`).**
+
+Landed in this wave, all verified in the running game:
+
+- **Mountains read as mountains.** Three separate causes, all fixed in `Terrain.js`/`Sky.js`: (1) the ring's crag term
+  was *linear* ridged noise — a cosine swell, i.e. a dune — so it is now squared (`teeth`) into face+arete pairs with
+  40-70 m of relief, plus a ~310 m `summit` mask so the crest line is peaks-and-cols instead of one bank at a constant
+  altitude, and the bedding-plane ledges went from 2-6 m to 4.5-13 m; (2) the out-of-world skirt past ±512 m was
+  `Chebyshev distance × 0.3` with the baked EDGE normal clamped flat across it — a smooth four-sided cone, unlit, that
+  stood over the ring as the white "elongated slope" in the user's screenshots. It is now a ridged 2-octave value noise
+  (222 m / 87 m) with a finite-differenced normal, tuned to top out just under the ring crest; (3) the snow slope gate
+  was 0.22-0.46, which draped every 30° back in white — tightened to 0.17-0.42 so snow sits on benches and gullies.
+- **Water.** The milky-turquoise pool is gone. Open-water crest foam was laced across ~a third of the lake at any instant
+  (threshold 0.30, weight 0.45 → 0.62/0.16); the ripple normal died by ~40 m leaving a flat plastic sheet (detail
+  0.13 → 0.36, distance falloff 0.012 → 0.009); absorption/shallow deepened; grazing mip bias trimmed so the far shore
+  is a mirror, not mush. **The basin shape mattered as much as the shader**: Mirrormere was a 1.2 m paddling shelf across
+  most of its width and no absorption curve makes 1.2 m of water look deep, so the middle now drops to -5.5 (shoreline,
+  beach band and lake footprint unchanged; the island bump was raised with the floor so it stays an island).
+- **UI.** New `src/ui/settings.js` + a "UI KIT" block in `ui.css`: the beUI (beui.dev/components/motion) component
+  vocabulary — segmented tabs with a spring layoutId indicator, spring switches with a press squash, tick-dot range
+  sliders, spring-pressed buttons, a centre-morph modal with a blur cross-fade — rebuilt in plain DOM/CSS because the
+  game ships no React or motion runtime. **This is the house standard for every menu from here on.** Four tabs
+  (Gameplay / Video / Audio / Controls) driving real settings: sensitivity, invert-Y, FOV, camera shake, head bob,
+  quality, perf overlay, four audio buses, and a keybind reference. Persisted as one JSON blob under `cadle.settings`
+  (old `af.sens`/`af.fov` migrated). HUD v3 on top: reframed vitals vessel, larger ability diamonds with keycaps,
+  serif ammo block, card-style toasts/quest tracker, shield rails under health bars instead of over them.
+- **Weapons.** `scout` (Pale Verse) and `beam` (Rimecaller) imported from the Aurelen build
+  (`C:/Users/ianca/Desktop/FPS`) — the only two archetypes with no counterpart here. Original tuning intent, this
+  repo's schema, models rebuilt from scratch in the house language (`models.js`). Both drop: added to `AR_LABEL`
+  (`RPG.js`) and the `ARCHETYPES` fallback (`items.js`). `beam` pierces — `Weapons._shoot` now forwards `def.pierce`
+  to `combat.hitscan` (verified: one charge shot took 132 off all three golems in a line).
+- **Opening quest.** The Vale now gives the marching order (`voice-vale-01b`) as the quest card lands, in her pinned
+  voice. Previously she greeted you and went quiet.
+- **Tree flicker + frozen-world jitter (gate rule 2) — fixed at the source.** `EZTrees.js` drove its wind clock from
+  `performance.now()`, so the canopy kept moving while `game.paused`; the frozen-world probe saw the trees, and only the
+  trees, change frame to frame. It now accumulates its own clock that stops with the game. Same pass: the LOD-rebucket
+  probe renders in *every* scene pass (including the water's mirrored reflection camera) and now early-outs unless it is
+  the main camera; leaves dissolve within ~2.6 m of the eye so backing into a canopy no longer slams black polygons
+  across the frame; and the sway patch got a `key` (a keyless `patchMaterial` patch shares the "undefined" program-cache
+  slot with every other keyless one). **Result: a paused frame is now bit-identical frame to frame — jitter 0.0 vs the
+  2.0 limit, and vs 2.4-3.7 before.**
+- **Blob sources closed.** (a) Glowing mushrooms had a near-white cap albedo and an uncapped daylight glow — the albedo
+  is real mint now and the emissive carries a hue-preserving luminance cap that tightens in daylight and opens at night.
+  (b) `GRASS_LUM_CAP` 0.60 → 0.50: blobcheck's header asserts grass "can never reach" its 212 bar *because of* that cap,
+  but 0.60 linear leaves ACES + the FF14 grade at ~220, so pale cream flower heads were tripping the meadow detector.
+  0.50 puts it back under the bar (203 over-threshold pixels → 6) and is visually free — frame mean/p99 luminance move
+  114.6 → 114.5 and 177.6 → 177.1. (c) Rock albedo peaked near 0.91 (tint 0.80 + a 0.18 quartz speckle), which is not a
+  rock; toned to ~0.80 peak.
+- **PostFX freezes with the game.** Eye adaptation and film grain both animated independently of the world clock, so a
+  paused frame kept changing. Both now hold while `game.paused` — correct for the gate and for a pause menu that should
+  not crawl or brighten.
+
+### Gate status at merge
+
+`node tools/gate.mjs` — **invariants PASS, jitter PASS (0.0 at both qualities, was 2.4-3.7), pointer lock PASS
+(engage + re-acquire), blobcheck FAIL on 24 lines, every one of them a 10-16 px speck.**
+
+For comparison, the same gate on the base commit (`1c02cfc`, this branch stashed, same box, same server): jitter FAIL
+3.057, blobcheck FAIL with 140+ lines including 29-37-cluster frames. So every blob source with a real cause was
+found and closed — glowing mushrooms, the grass luminance cap being above the detector's bar after the grade, 0.91
+albedo boulders, lantern flames, wisp glow tone-mapping to near-white at night. What is left is at the detector's
+noise floor: single 10-16 px clusters of sunlit grass-blade edge and one distant point of aether glow at 23:00.
+Pushing those under 212 sRGB means darkening the meadow or turning off night glow, so they are **left deliberately**
+and flagged here rather than tuned away. **A merge on a red gate is a decision, and this is the decision that was
+made** — if the next wave wants a green gate, the honest lever is `tools/blobcheck.py`'s `MIN_AREA`/`LUM_BRIGHT`
+(orchestrator-owned), not more grade-flattening.
+
+### Known issues / next fixes (this wave)
+
+1. **`tools/gate.mjs` hardcodes `http://127.0.0.1:5173`.** A worktree cannot be gated without taking that port over from
+   the main dev server. Give it a `--url`/env override.
+2. **`tools/blobcheck.py`'s calibration note is stale and should be corrected** (tools/ is orchestrator-owned, so it
+   was not touched here): it says grass is capped at 0.60 linear "(~198 sRGB) so it can never reach" the 212 bar.
+   Measured through ACES + the FF14 grade, 0.60 arrives at ~220, which is why the meadow kept tripping its own
+   detector. The cap moved to 0.50; the note needs to say so, or the next person re-raises it. Also worth revisiting:
+   `MIN_AREA = 12` px is small enough that one sunlit blade edge counts as a blob.
+3. **The q=high gate harness run intermittently exceeds its 600 s timeout** on a contended box (it did on the baseline
+   run twice). A timeout kills the run with no `report.json`, which reads as a gate failure rather than "not measured".
+4. **Perf A/B was inconclusive**, not negative. Alternating before/after tours on this box varied as much between two
+   runs of the *same* code (60 → 32 fps) as between versions; the deterministic counters were flat (draw calls
+   130/130 meadow, 193/202 ruins). Per-system cost was not moved by design: every change is constants, one extra
+   `fbm2` inside the mountain-ring branch of `heightAt` (async bake only), and a few vertex-shader instructions on
+   out-of-world skirt vertices. Re-measure on a quiet machine before trusting any number.
+5. **`beam` pierces without falloff** — the Aurelen original had `pierceFalloff: 0.75`; `Combat.hitscan`'s `pierce` is a
+   boolean, so all targets in the line take full damage. Add per-hit attenuation to `Combat` if it plays too strong.
+6. **No generated gunshot takes for the two new archetypes.** ASSET ASK: `shot-scout-{1..4}.mp3`,
+   `shot-beam-{1..4}.mp3`. They run on the synth recipes in `sfx.js` until then.
+7. **Impostor tier swap is still a hard pop** at the 190 m boundary (rebucketed every 6 m of camera movement, no
+   crossfade). Visible if you watch for it; a dither crossfade over a ~15 m band is the fix.
+8. **beUI coverage is only what the settings menu needed.** Toasts, the pause modal and the tabs are on the kit; the
+   RPG screens (`Screens.js`, `rpgscreens.js`, `mapscreen.js`) still use the older parchment language and should be
+   migrated to the same tokens next.
+
+*(previous state below)*
+
 **Updated: 2026-08-20 (blob/pointer-lock fix + guardrail hardening PR).**
 
 - **Fifth blob recurrence fixed at the source (fresh clone was visibly broken; gate failed).** Live causes found by bisection + gate screenshots: (1) three r185 gives GLSL3 `ShaderMaterial`s NO `gl_FragColor` alias — both cloud shaders in Sky.js failed to compile (console shader errors, no clouds; this was also the q=high frozen-jitter breach — after the fix, frozen diff is ~0.8 vs the 2.0 limit, all remaining variation is film grain); (2) the vfx `trail` preset wisps drag across the meadow 24/7 was WHITE at hdr 2.5 → drifting white/purple flashing streaks; (3) viewmodel `white` sight emissive 2.2 + glossy gold/brass (roughness 0.22-0.3, envMap 1.6) → permanent white/warm glints in every frame; (4) lantern flames emissive 4.0 → sub-pixel warm blobs; (5) sunlit grass silvering × translucency could cross the 1.05 day bloom threshold field-wide. Fixes: Sky GLSL3 `out` vars; trail saturated + hdr 1.1; sights 0.9 / metals roughness ≥ 0.35; flames 1.4; and the structural one — **`GRASS_LUM_CAP` in Grass.js: the final outgoing luminance of grass is hue-preserving-capped at 0.60**, closing every current and future term at once (see CLAUDE.md architectural law).

@@ -68,7 +68,7 @@ export class Weapons {
     this._lag = new THREE.Vector2(); this._adsPressT = 0; this._adsToggled = false; this._chargeSound = null;
     this._fwd = new THREE.Vector3(); this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._dir = new THREE.Vector3();
     this._pos = new THREE.Vector3(); this._rot = new THREE.Vector3(); this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3(); this._q = new THREE.Quaternion();
-    this._hitscanArgs = { origin: null, dir: null, range: 300, damage: 0, element: 'kinetic', critMult: 1.6, owner: null, team: 'player', spread: 0, falloff: [20, 60], source: '' };
+    this._hitscanArgs = { origin: null, dir: null, range: 300, damage: 0, element: 'kinetic', critMult: 1.6, owner: null, team: 'player', spread: 0, pierce: false, falloff: [20, 60], source: '' };
     this._vfxOpts = { dir: this._fwd, element: 'kinetic', color: 0xffffff, scale: 1 }; this._trOpts = { element: 'kinetic', color: 0xffffff, width: 0.03, duration: 0.08 };
     this._flOpts = { color: 0xffffff, intensity: 3, distance: 7, duration: 0.06 }; this._sndOpts = { pitch: 1, vol: 1 };
   }
@@ -291,7 +291,7 @@ export class Weapons {
     this._right.set(1, 0, 0).applyQuaternion(camera.quaternion); this._up.set(0, 1, 0).applyQuaternion(camera.quaternion);
     const spread = this._spreadNow(w); const n = d.pellets || 1; const col = ELEMENT_COLORS[w.element] || 0xffffff;
     const a = this._hitscanArgs; a.origin = camera.position; a.damage = d.damage; a.element = w.element; a.critMult = d.critMult; a.owner = this.player; a.range = Math.max(300, d.range * 8);
-    a.falloff[0] = d.range * 0.65; a.falloff[1] = d.range * 1.6; a.source = d.id;
+    a.falloff[0] = d.range * 0.65; a.falloff[1] = d.range * 1.6; a.source = d.id; a.pierce = !!d.pierce;
     let hit = null;
     for (let i = 0; i < n; i++) {
       this._dir.copy(this._fwd);

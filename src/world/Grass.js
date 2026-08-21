@@ -278,9 +278,15 @@ diffuseColor.rgb = vGrassColor;`;
 // (flower emissive, wisp glow, tip specular, rim emissive, gust silvering × translucency stacking).
 // Per-term clamps kept missing the next term, so this caps the FINAL outgoing luminance instead:
 // hue-preserving, so over-bright tips flatten toward their own color instead of clipping to white.
+// 0.60 -> 0.50: tools/blobcheck.py counts anything over 212 sRGB luminance as "glowing" and its header
+// asserts grass "can never reach this" because of this cap -- but 0.60 linear comes out of ACES + the
+// FF14 grade at ~220, so the pale cream flower heads were tripping the meadow blob detector at noon and
+// dawn. 0.50 puts the ceiling back under the bar (measured: 203 over-threshold pixels -> 6) and costs
+// nothing visible: it only clamps the top 0.04% of pixels, and frame mean/p99 luminance are unchanged
+// (114.6 -> 114.5, 177.6 -> 177.1).
 const GRASS_LUM_CAP = /* glsl */`
 	float grassLum = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
-	outgoingLight *= 0.60 / max(grassLum, 0.60);
+	outgoingLight *= 0.50 / max(grassLum, 0.50);
 `;
 
 // resolved at compile time (after other systems' ShaderChunk patches): wrapped diffuse + back-light translucency

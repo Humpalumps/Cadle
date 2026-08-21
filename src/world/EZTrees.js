@@ -28,10 +28,19 @@ export function buildEZTrees(game, trees, vegetation) {
   const renderer = game.renderer;
   const windT = { value: 0 };
 
-  // canopy wind sway: displace by height above the roots, phased per instance — one vertex term
+  // canopy wind sway: displace by height above the roots, phased per instance — one vertex term.
+  // Plus a near-camera dissolve on the leaves: walking (especially BACKWARDS, where you cannot see what you
+  // are reversing into) puts the eye inside a canopy, and leaf quads a few centimetres from the near plane
+  // rasterise as huge unlit black polygons slamming across the frame. Trunks have colliders; canopies do not
+  // and cannot without making forests unwalkable, so the geometry dissolves instead of being pushed away.
+  // `key` matters: patchMaterial uses it as customProgramCacheKey, and a patch without one keys as
+  // "undefined" — i.e. shares a cache slot with every other keyless patched material.
   const sway = {
+    key: 'eztree-sway',
     uniforms: { uWindT: windT },
     vHead: 'uniform float uWindT;',
+    fHead: 'float ezNearT(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
+    fAlpha: 'float ezD = length(vViewPosition); if (ezD < 2.6 && smoothstep(1.0, 2.6, ezD) < ezNearT(gl_FragCoord.xy)) discard;',
     vBegin: `{
       #ifdef USE_INSTANCING
       vec3 swayI = vec3(instanceMatrix[3]);
@@ -40,6 +49,13 @@ export function buildEZTrees(game, trees, vegetation) {
       #endif
       float swayPh = dot(swayI.xz, vec2(0.13, 0.11));
       float swayA = smoothstep(1.5, 9.0, transformed.y);
+      // Fade the sway out with distance. A leaf quad past ~50 m is 1-3 px wide, so a 22 cm swing moves it
+      // several pixels per frame: every one of those pixels toggles between dark leaf and bright sky, and
+      // with no TAA that reads as the whole tree line crawling with black flecks (measured: a STATIC camera
+      // sees a mean frame-to-frame luminance delta of 18.7 over the tree line with sway on, 1.8 with it off).
+      // Near canopies keep the full motion, which is the only place the sway is actually legible.
+      float swayFade = 1.0 - smoothstep(40.0, 120.0, distance(cameraPosition, swayI));
+      swayA *= swayFade;
       transformed.x += sin(uWindT * 1.5 + swayPh) * 0.22 * swayA;
       transformed.z += cos(uWindT * 1.2 + swayPh * 1.3) * 0.16 * swayA;
     }`,
@@ -168,8 +184,22 @@ export function buildEZTrees(game, trees, vegetation) {
     const probe = new THREE.Mesh(new THREE.PlaneGeometry(0.001, 0.001),
       new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false }));
     probe.frustumCulled = false; probe.renderOrder = -999; game.scene.add(probe);
+    // Wind clock: our own accumulator, NOT performance.now(). A wall-clock wind keeps the canopy moving
+    // while game.paused, which is why the frozen-world jitter probe saw the trees (and only the trees)
+    // change frame to frame -- tools/gate.mjs rule 2.
+    let windClock = 0, lastNow = performance.now();
     probe.onBeforeRender = (r, sc, cam) => {
-      windT.value = performance.now() * 0.001;
+      // MAIN CAMERA ONLY. This probe renders in every scene pass, including the water's planar-reflection
+      // pass, whose camera is mirrored under the lake surface and tens of metres from the player. Letting
+      // that position drive the rebucket reassigned near/far tiers for the whole forest on the reflection
+      // frame and back again on the next one: trees a few metres away popped to their 2-quad far impostor,
+      // which reads as flat black cards flashing in your face (the "black tree shapes flicker when you
+      // walk backwards" report -- backwards is simply when the lake spends most time in frustum).
+      if (cam !== game.camera) return;
+      const now = performance.now();
+      if (!game.paused) windClock += (now - lastNow) * 0.001;
+      lastNow = now;
+      windT.value = windClock;
       const p = cam.position;
       if (p.distanceToSquared(last) < 36) return;
       last.copy(p);

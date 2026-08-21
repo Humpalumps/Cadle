@@ -18,7 +18,7 @@ export const DEFS = {
     projectile: { speed: 24, radius: 0.2, element: 'arc', life: 4 },
     fleeAt: 0.35, fleeTime: 3.2, strafe: 1, stagger: 0.3, staggerTime: 0.35,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
-    palette: [[0x66d9ff, 0x2a3348], [0xb070ff, 0x2a2640], [0x7cffd8, 0x243838], [0x9fd8ff, 0x2c3250]], glow: 1.1, rim: 0.6, // user decree: wisps must not read as white blobs across the meadow — keep hue, no ACES white-clip
+    palette: [[0x66d9ff, 0x2a3348], [0xb070ff, 0x2a2640], [0x7cffd8, 0x243838], [0x9fd8ff, 0x2c3250]], glow: 0.85, rim: 0.6, // user decree: wisps must not read as white blobs across the meadow (1.1 x the night dayGlow multiplier still tone-mapped to a near-white 211,224,226 ball at 23:00 -- blobcheck caught it; hue kept, intensity cut) — keep hue, no ACES white-clip
     deathTime: 1.1, xp: 8,
   },
   hound: {

@@ -41,6 +41,7 @@ for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusio
 for (let i = 1; i <= 4; i++) AUDIO[`explosion-${i}`] = `/assets/sfx/explosion-${i}.mp3`;
 // opening-quest voice lines (see ASSETS.md "Voice cast" — ONE pinned voice per character, always)
 for (let i = 1; i <= 4; i++) AUDIO[`voice-vale-0${i}`] = `/assets/voice/vale-0${i}.mp3`;
+AUDIO['voice-vale-01b'] = '/assets/voice/vale-01b.mp3';   // the marching order that follows the wake line
 AUDIO['field-theme'] = '/assets/music/field-theme.mp3';
 AUDIO['night-theme'] = '/assets/music/night-theme.mp3';
 

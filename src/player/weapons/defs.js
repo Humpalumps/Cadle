@@ -55,5 +55,26 @@ export const DEFS = {
     hip: { pos: [0.17, -0.15, -0.36], rot: [0.02, 0.08, 0.02] }, sprint: { pos: [0.17, -0.19, -0.36], rot: [-0.45, 0.35, 0.3] }, adsZ: 0.42, zoom: 1.3,
     bob: 1.0, swapTime: 0.45,
   },
+  // ---- imported from the Aurelen build (C:/Users/ianca/Desktop/FPS, src/combat/defs.js). Those two
+  // archetypes had no counterpart here, so they are the ones worth carrying over; the tuning is the
+  // original's intent (scout = 200 rpm 2.0x precision marksman, beam = 0.55 s charge piercing lance)
+  // restated in this file's schema, and the models are rebuilt from scratch in the house language.
+  scout: {
+    id: 'scout', name: 'Pale Verse', archetype: 'scout', element: 'void', rarity: 'legendary',
+    fireMode: 'auto', rpm: 200, damage: 30, critMult: 2.0, range: 80, magSize: 14, reserve: 126, maxReserve: 182, reloadTime: 1.9, reloadStyle: 'mag',
+    spread: { hip: 0.0105, ads: 0.0012, bloom: 0.0055, decay: 7 },
+    kick: { pitch: 0.016, yaw: 0.0042, vz: 1.05, vx: 5.6, roll: 1.8, yawV: 0.8, k: 245, c: 19 }, shake: 0.20,
+    hip: { pos: [0.17, -0.15, -0.38], rot: [0.02, 0.08, 0.02] }, sprint: { pos: [0.17, -0.19, -0.38], rot: [-0.45, 0.35, 0.3] }, adsZ: 0.34, zoom: 1.9,
+    bob: 1.0, swapTime: 0.44,
+  },
+  beam: {
+    id: 'beam', name: 'Rimecaller', archetype: 'beam', element: 'stasis', rarity: 'legendary',
+    fireMode: 'charge', chargeTime: 0.55, bolts: 1, boltInterval: 0, rpm: 0, damage: 132, critMult: 1.9, range: 120, magSize: 5, reserve: 18, maxReserve: 26, reloadTime: 2.6, reloadStyle: 'cell',
+    pierce: true,                                    // the lance goes THROUGH the line (Combat.hitscan supports it)
+    spread: { hip: 0.014, ads: 0.0, bloom: 0.0, decay: 8 },
+    kick: { pitch: 0.038, yaw: 0.008, vz: 2.6, vx: 11.0, roll: 3.2, yawV: 1.2, k: 160, c: 14 }, shake: 0.55,
+    hip: { pos: [0.18, -0.16, -0.36], rot: [0.02, 0.08, 0.02] }, sprint: { pos: [0.18, -0.20, -0.36], rot: [-0.45, 0.35, 0.3] }, adsZ: 0.40, zoom: 1.6,
+    bob: 1.1, swapTime: 0.50,
+  },
 };
 export const DEFAULT_SLOTS = ['handcannon', 'autorifle', 'sniper'];   // starting kit: pistol, rifle, sniper (user call)
