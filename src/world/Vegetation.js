@@ -550,16 +550,16 @@ export class Vegetation {
     // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout)
     const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.22, metalness: 0.0, flatShading: true, clearcoat: 0.85, clearcoatRoughness: 0.12, envMapIntensity: 1.6 }), {
       key: 'crystal', uniforms: { uTime: U.uTime, uSunI: U.uSunI, uSunColor: U.uSunColor, uSunDirV: U.uSunDirV },
-      vHead: 'varying float vPh; varying float vLy; varying vec3 vON;', vBegin: `
+      vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN;', vBegin: `
         #ifdef USE_INSTANCING
           vPh = fract(dot(instanceMatrix[3].xz, vec2(0.137, 0.291)));
         #else
           vPh = 0.0;
         #endif
-        vLy = position.y; vON = objectNormal;`,
-      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; varying vec3 vON;
+        vLy = position.y; vFN = objectNormal;`,
+      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN;
         float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`,
-      fMap: `{ float fh = facetHash(vON);                                                  // stable per-facet value (flat normals)
+      fMap: `{ float fh = facetHash(vFN);                                                  // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
         diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
         diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
@@ -569,7 +569,7 @@ export class Vegetation {
         vec3 Vd = normalize(vViewPosition);                                      // fragment -> camera
         vec3 Nn = normalize(normal);
         float fres = pow(1.0 - clamp(abs(dot(Vd, Nn)), 0.0, 1.0), 2.2);          // broad Fresnel: a rim you can actually see at noon
-        float fh = facetHash(vON);
+        float fh = facetHash(vFN);
         float grad = mix(1.2, 0.45, clamp(vLy / 2.2, 0.0, 1.0));                 // bright core at the base, cool tips
         float streak = 0.82 + 0.3 * sin(vLy * 7.0 + fh * 21.0);
         float back = max(dot(-Vd, uSunDirV), 0.0);                               // sun behind the shard, shining through
