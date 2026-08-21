@@ -336,12 +336,15 @@ export class Weapons {
     // muzzle flash (viewmodel, 1-2 frames) + world vfx + audio + events
     this._flashT = 0.03; this._fireAnimT = 0; this._cylTarget += Math.PI / 3;
     if (w.model.port && (d.pellets ? true : d.fireMode !== 'charge')) this._eject(w.model.port);
-    const fs = (w.model.flashScale || 1) * (0.8 + Math.random() * 0.45); this.flash.scale.set(fs, fs, fs * (0.8 + Math.random() * 0.5)); this.flash.rotation.z = Math.random() * Math.PI * 2;
-    // world muzzle sprites: TIGHT (the VFX preset is authored ~0.3 m; x0.3 keeps it a crisp petal pop, not a screen-filling bloom blob)
-    this._vfxOpts.element = w.element; this._vfxOpts.color = col; this._vfxOpts.scale = (w.model.flashScale || 1) * 0.3;
+    // Shrink hard while aiming: ADS puts the muzzle directly behind the reticle, so the same flash that reads as
+    // punch from the hip is the thing standing between you and the target you are trying to track.
+    const fs = (w.model.flashScale || 1) * (0.8 + Math.random() * 0.45) * (1 - 0.45 * this.ads);
+    this.flash.scale.set(fs, fs, fs * (0.8 + Math.random() * 0.5)); this.flash.rotation.z = Math.random() * Math.PI * 2;
+    // world muzzle sprites: TIGHT (the VFX preset is authored ~0.3 m; x0.15 keeps it a crisp petal pop, not a screen-filling bloom blob)
+    this._vfxOpts.element = w.element; this._vfxOpts.color = col; this._vfxOpts.scale = (w.model.flashScale || 1) * 0.15 * (1 - 0.35 * this.ads);
     vfx?.emit?.('muzzle', this.muzzleWorld, this._vfxOpts);
     // dynamic light flashes are expensive in the forward renderer: throttle to <=11/s regardless of rpm
-    if (t - this._lastLightT > 0.09) { this._lastLightT = t; this._flOpts.color = col; this._flOpts.intensity = 1.6 + (w.model.flashScale || 1); vfx?.flash?.(this.muzzleWorld, this._flOpts); }
+    if (t - this._lastLightT > 0.09) { this._lastLightT = t; this._flOpts.color = col; this._flOpts.intensity = 0.5 + 0.35 * (w.model.flashScale || 1); vfx?.flash?.(this.muzzleWorld, this._flOpts); }
     this._sndOpts.pitch = 0.96 + Math.random() * 0.08; audio?.play?.('shot-' + d.archetype, this._sndOpts);
     events.emit('weapon:fire', { weapon: w, hit, origin: camera.position, dir: this._fwd });
   }
@@ -447,9 +450,10 @@ export class Weapons {
       for (const sm of this._scopeMats) sm.opacity = scoped * (sm.userData.o ?? (sm.userData.o = sm.opacity));
       this.scope.position.set(-this._lag.x * 0.004, -this._lag.y * 0.003 - R.rx.x * 0.02, 0); // subtle sway + recoil bump
     }
-    // muzzle flash (1-2 frames)
+    // muzzle flash (1-2 frames). The viewmodel point light sits ~30 cm from the camera, so it lights the gun
+    // itself far more than anything in the world — 2.6 was blowing the barrel and hands to white every shot.
     this._flashT -= dt; const fl = this._flashT > 0 && !this._hidden;
-    this.flash.visible = fl; this.flashLight.intensity = fl ? 2.6 : 0;
+    this.flash.visible = fl; this.flashLight.intensity = fl ? 0.7 * (1 - 0.4 * this.ads) : 0;
   }
   // Destiny reloads are HAND performances: the support hand (P.lhand) leaves its grip, grabs the moving part and
   // drives it. P.litem = the thing in the hand (speedloader/shell), pivot-identical to lhand so it just copies it.

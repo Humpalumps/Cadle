@@ -22,8 +22,11 @@ import { mulberry32 } from '../core/Noise.js';
  */
 const QP = {  // refl = reflection res scale, everyN = render reflection every N frames, grab = refraction framebuffer copy
   low:    { refl: 0,    fine: 128, span: 256, hq: 0, grab: 0, everyN: 1 },
-  medium: { refl: 0.3,  fine: 160, span: 320, hq: 1, grab: 1, everyN: 2 },
-  high:   { refl: 0.35, fine: 200, span: 320, hq: 1, grab: 1, everyN: 3 },  // perf: the planar mirror re-renders the scene — every 3rd frame reads the same at half res
+  medium: { refl: 0.35, fine: 160, span: 320, hq: 1, grab: 1, everyN: 2 },
+  // measured: the mirror re-render is 0.28-0.47 ms and the surface draw 0.34 ms, so the old 0.35x/every-3rd
+  // was budgeting against a cost that isn't there. The detail LOD in FRAG pays for a sharper, fresher mirror:
+  // 0.5x every 2nd frame kills the smeared far shore and the half-second reflection lag when you strafe.
+  high:   { refl: 0.5,  fine: 200, span: 320, hq: 1, grab: 1, everyN: 2 },
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
 const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees
@@ -116,9 +119,17 @@ void main() {
   vec2 p2 = mat2(0.66, -0.75, 0.75, 0.66) * p + (n1.rg * 2.0 - 1.0) * 2.5;
   vec4 n2 = texture2D(uNormal, p2 * 0.105 + vec2(-0.058, 0.047) * t);
   vec2 d = (n1.rg * 2.0 - 1.0) * (0.7 + 0.6 * macro) + (n2.rg * 2.0 - 1.0) * (0.9 - 0.55 * macro);
+  // Detail LOD. Past ~130 m one ripple of the finest layer is well under a pixel, so the third normal
+  // octave, the caustic dapple and the star glint stop being detail and become aliasing — they were
+  // paying four texture fetches per pixel to make the far lake crawl. Fading them out is both cheaper
+  // and cleaner; dist is uniform across a quad, so the branch is coherent.
+  float hqNear = 1.0 - smoothstep(70.0, 130.0, dist);
 #ifdef WATER_HQ
-  vec4 n3 = texture2D(uNormal, p2 * 0.26 + vec2(0.081, -0.089) * t);
-  d += (n3.rg * 2.0 - 1.0) * 0.35;
+  vec4 n3 = vec4(0.5, 0.5, 1.0, 0.0);
+  if (hqNear > 0.0) {
+    n3 = texture2D(uNormal, p2 * 0.26 + vec2(0.081, -0.089) * t);
+    d += (n3.rg * 2.0 - 1.0) * 0.35 * hqNear;
+  }
 #endif
   vec3 n = normalize(vec3(vGN.x - d.x * str, vGN.y, vGN.z - d.y * str));
   if (uCamBelow > 0.5) n = -n;
@@ -147,11 +158,13 @@ void main() {
   grab *= mix(1.0, 0.82, smoothstep(0.0, 0.6, d0));   // submerged bed reads slightly darker (wet sand); keep the sand visible through clear shallows
 #ifdef WATER_HQ
   // caustic dapple on the bed: product of two scrolled height fields, projected along the refracted ray, fading with depth
-  vec2 bp = vWorld.xz + R.xz * path;
-  float c1 = texture2D(uNormal, bp * 0.13 + vec2(0.035, 0.021) * t).a;
-  float c2 = texture2D(uNormal, bp * 0.095 - vec2(0.027, -0.033) * t).a;
-  float caust = pow(max(c1 * c2 * 4.6 - 0.5, 0.0), 2.0);
-  grab *= 1.0 + caust * smoothstep(0.04, 0.3, d0) * exp(-d0 * 0.3) * (0.9 * day + 0.04 * uNight * clamp(uMoonDir.y * 2.0, 0.0, 1.0));
+  if (hqNear > 0.0) {
+    vec2 bp = vWorld.xz + R.xz * path;
+    float c1 = texture2D(uNormal, bp * 0.13 + vec2(0.035, 0.021) * t).a;
+    float c2 = texture2D(uNormal, bp * 0.095 - vec2(0.027, -0.033) * t).a;
+    float caust = pow(max(c1 * c2 * 4.6 - 0.5, 0.0), 2.0);
+    grab *= 1.0 + caust * hqNear * smoothstep(0.04, 0.3, d0) * exp(-d0 * 0.3) * (0.9 * day + 0.04 * uNight * clamp(uMoonDir.y * 2.0, 0.0, 1.0));
+  }
 #endif
   // no-grab fallback: dim the body so the turquoise stays saturated instead of washing milky-white at noon
   vec3 refr = mix(scatter * 0.6, grab * T + scatter * (1.0 - T), uHasGrab);
@@ -203,7 +216,7 @@ void main() {
   // star-glint twinkle everywhere at night (not just the moon azimuth): sparse product threshold of two scrolling height layers
   float star = smoothstep(0.86, 0.985, n3.a) * smoothstep(0.72, 0.95, n1.a);
   // flat magnitude: the old 1/(1+dist) falloff drew a bright blue disc centred on the player. Only fade far, where it aliases.
-  col += vec3(0.6, 0.75, 1.0) * (star * star * uNight * 1.15 * (1.0 - smoothstep(80.0, 240.0, dist)));
+  col += vec3(0.6, 0.75, 1.0) * (star * star * uNight * 1.15 * hqNear);   // hqNear, not its own falloff: n3 stops being fetched at 130 m, so the twinkle has to be gone by then or it pops off
 #endif
 
   // ---- shoreline foam: a pixel-crisp lace line hugging every contact isoline (fwidth-normalised width, noise-wobbled, breathing)
