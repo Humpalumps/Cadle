@@ -92,3 +92,20 @@ Line scripts (generate verbatim, one batch):
 Generation (Magnific MCP, when connected): `audio_tts` per line with the pinned voice →
 `creations_wait` → download IMMEDIATELY (URL tokens expire) → mp3 into `public/assets/voice/` →
 fill the voice id into the table above → commit the mp3s.
+
+## UI item art — `public/assets/ui/items/` (256×256 RGBA PNG, ~720 KB total)
+
+Painted inventory thumbnails, one per weapon archetype and armour slot. Generated 1536² on a flat
+studio grey, background cut locally with an edge-connected flood fill (the grey never touches the item
+interior), trimmed, padded 5% and packed to 256².
+
+| files | for |
+|---|---|
+| `handcannon.png`, `autorifle.png`, `pulse.png`, `scout.png`, `shotgun.png`, `sniper.png`, `fusion.png`, `beam.png` | weapon tiles — filename = `item.archetype` |
+| `head.png`, `arms.png`, `chest.png`, `legs.png`, `cloak.png` | armour tiles — filename = `item.slot` |
+
+Usage: DOM only (inventory / character screens), `<img src="/assets/ui/items/<key>.png">` via
+`art()` in `src/ui/rpgscreens.js`; `Screens._build()` warms them once with `new Image()`. Same
+relative-path rule as everything else. A missing file falls back to the drawn SVG silhouette in
+`ITEM_ICON`, so the screens never break. Style: dark gunmetal + gold filigree + blue-violet aether,
+even diffuse lighting — the house look.

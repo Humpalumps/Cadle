@@ -59,6 +59,48 @@ function perkList(item, title = 'Perks') {
     </div>`).join('');
 }
 
+// ---------------------------------------------------------------- item icons
+// Every AAA loot screen puts a picture on the item; a wall of names is a spreadsheet, not a bag.
+// These are inline SVG on a 24 box, currentColor so the rarity tint drives them, and drawn as
+// silhouettes so they still read at the 34 px they render in a grid tile.
+const ITEM_ICON = {
+  // Guns are drawn as one silhouette on a shared skeleton — receiver on the middle band, grip down and
+  // right — so a bag of twelve reads as twelve guns at 52 px, and each keeps one feature that names it:
+  // the cylinder, the magazine, the pump, the scope, the coil, the emitter.
+  handcannon: '<path d="M5.4 8.2h10.2v4.4H5.4Z"/><path d="M15.6 9.3h6.1v2.4h-6.1Z"/><circle cx="8.6" cy="10.4" r="3.4"/><circle cx="8.6" cy="10.4" r="1.2" fill="#0b0a16"/><path d="M11.4 12.6h3.6l-2.1 7.2H8.6Z"/><path d="M5.4 12.6h4.2v1.5H5.4Z" opacity=".6"/>',
+  autorifle: '<path d="M1.2 8.6h15.4v4.1H1.2Z"/><path d="M16.6 9.5h6.2v2.3h-6.2Z"/><path d="M8.2 12.7h3.5l-1 5.8H6.9Z"/><path d="M12.6 12.7h3.4l-2 7.1h-3.3Z"/><path d="M1.2 12.7h3v3.1h-3Z" opacity=".65"/>',
+  pulse: '<path d="M1.6 8.8h14.6v4H1.6Z"/><path d="M16.2 9.6h6.2v2.3h-6.2Z"/><path d="M8.4 12.9h3.4l-.9 5.4H7.2Z"/><path d="M12.4 12.9h3.4l-2 7h-3.3Z"/><circle cx="18" cy="6.4" r="1.1"/><circle cx="20.2" cy="6.4" r="1.1"/><circle cx="22.4" cy="6.4" r="1.1"/>',
+  scout: '<path d="M1.6 9h13.6v3.8H1.6Z"/><path d="M15.2 9.8h7.4v2.2h-7.4Z"/><path d="M11.6 12.9h3.3l-2 6.9h-3.2Z"/><path d="M7.6 12.9h3.2l-.9 4.6H6.6Z"/><rect x="6.2" y="5.4" width="7.4" height="2.6" rx="1.2"/><path d="M8.4 8h1.4v1.2H8.4Z" opacity=".55"/>',
+  shotgun: '<path d="M1.2 8h18.2v2.6H1.2Z"/><path d="M1.2 10.9h13.4v2.1H1.2Z" opacity=".62"/><path d="M6.4 13.2h4.4l-.7 3.4H5.7Z" opacity=".85"/><path d="M11.6 13h3.4l-2 6.8H9.6Z"/><path d="M19.4 8h3.2v2.6h-3.2Z" opacity=".7"/>',
+  sniper: '<path d="M0.8 10.2h20.9v2.3H0.8Z"/><rect x="7.4" y="5.4" width="9.4" height="3.2" rx="1.3"/><path d="M9.4 8.6h1.3v1.6H9.4ZM14.2 8.6h1.3v1.6h-1.3Z" opacity=".6"/><path d="M11.4 12.7h3.3l-2 7.1H9.4Z"/><path d="M0.8 12.5h4.6v3.3H0.8Z" opacity=".62"/>',
+  fusion: '<path d="M2.4 7.8h10.4v7.4H2.4Z"/><path d="M13.6 8.6h2.2v5.8h-2.2ZM16.6 8.6h2.2v5.8h-2.2ZM19.6 8.6h2.2v5.8h-2.2Z" opacity=".8"/><path d="M6.4 15.4h3.4l-1.9 4.6H4.6Z"/><path d="M12.8 10.4h9.6v1.4h-9.6Z" opacity=".45"/>',
+  beam: '<path d="M2.2 8.4h10.2v6.4H2.2Z"/><path d="M12.6 9.6h2.8v4h-2.8Z" opacity=".85"/><path d="M15.6 8.4 22.8 11.6 15.6 14.8Z"/><path d="M6.2 15h3.4l-1.8 4.8H4.4Z"/>',
+  head: '<path d="M12 2c4.6 0 7.4 2.9 7.4 7.2v4.2c0 3.6-2.4 6-4.6 6.6l-.6 3H9.8l-.6-3c-2.2-.6-4.6-3-4.6-6.6V9.2C4.6 4.9 7.4 2 12 2Z"/><path d="M7.6 9.6h8.8v3.2H7.6Z" fill="#0b0a16"/>',
+  arms: '<path d="M8.6 2.6h11.2l1.4 5-2.2 1.6.9 3.4-2 1.2.7 3-1.9 1.1.5 3.4-4.6 1.8-4.6-1.8.5-3.4-1.9-1.1.7-3-2-1.2.9-3.4-2.2-1.6Z"/>',
+  chest: '<path d="M8.4 2.4 12 4.6l3.6-2.2 5.4 2.6-1.4 5.4 1 1.6-1.8 9.6H5.2L3.4 12l1-1.6L3 5Z"/><path d="M12 6.6 13.8 21h-3.6Z" fill="#0b0a16" opacity=".55"/>',
+  legs: '<path d="M4.8 2.4h14.4l-.8 5.4-1.4 14h-4l-.9-9.2h-.2L11 21.8H7l-1.4-14Z"/>',
+  cloak: '<path d="M12 2.2 16.6 5l4.6 3.4-2.6 2 2 10.4h-6.2l-.8-9h-1.2l-.8 9H3.4l2-10.4-2.6-2L7.4 5Z"/>',
+};
+const SLOT_LABEL = { weapon: 'Armament', head: 'Helm', arms: 'Gauntlets', chest: 'Cuirass', legs: 'Greaves', cloak: 'Mantle' };
+
+// Painted item art (ASSETS.md → public/assets/ui/items/, 256 px RGBA cut-outs, one per archetype and
+// armour slot). The SVG silhouettes above stay as the fallback: if a file is missing the screens still
+// render, exactly like every other generated asset in this project.
+const ART = new Set(['handcannon', 'autorifle', 'pulse', 'scout', 'shotgun', 'sniper', 'fusion', 'beam',
+  'head', 'arms', 'chest', 'legs', 'cloak']);
+export const ART_URLS = [...ART].map((k) => `/assets/ui/items/${k}.png`);
+const artKey = (it) => (!it ? '' : it.kind === 'weapon' ? it.archetype : it.slot);
+const isvg = (inner) => `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${inner}</svg>`;
+
+/** The picture for an item: painted art when we have it, the drawn silhouette when we do not. */
+function art(it, alt = '') {
+  const k = artKey(it);
+  if (ART.has(k)) return `<img src="/assets/ui/items/${k}.png" alt="${esc(alt)}" draggable="false" loading="lazy">`;
+  return isvg(ITEM_ICON[k] || ITEM_ICON.chest);
+}
+/** Same, for an empty equipment slot: always the silhouette, and always dimmed by CSS. */
+const slotGhost = (slot) => isvg(ITEM_ICON[slot] || ITEM_ICON.chest);
+
 const lozenge = () => `<svg width="9" height="9" viewBox="0 0 9 9"><path d="M4.5 0 9 4.5 4.5 9 0 4.5Z" fill="${C.gold}" stroke="rgba(50,36,14,.6)"/></svg>`;
 const gem = () => `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 0 10 3.4 8 10H2L0 3.4Z" fill="${C.goldLt}" stroke="${C.goldDk}"/></svg>`;
 
@@ -98,6 +140,17 @@ export function equippedWeapon(ctx) {
   return { it: { name: w.name || 'Bare hands', rarity: 'common', archetypeLabel: w.archetype || w.kind, element: 'kinetic', perks: [] }, s: w, src: 'combat' };
 }
 
+function dollSlot(ctx, slot, it) {
+  const r = it ? rarOf(ctx, it.rarity) : null;
+  return `<button class="dslot ${it ? '' : 'empty'}" ${r ? `style="--r:${rarCss(r.color)}"` : ''}
+    data-act="slotjump" data-id="${slot}" data-nav="doll"
+    title="${esc(it ? it.name : 'nothing in this slot — opens the bag showing what fits')}">
+    <span class="ic">${it ? art(it, it.name) : slotGhost(slot)}</span>
+    <span class="sl">${SLOT_LABEL[slot] || slot}</span>
+    <span class="nm">${it ? esc(it.name) : 'empty'}</span>
+    <span class="pw">${it ? n0(it.power) : ''}</span></button>`;
+}
+
 export function renderChar(ctx, body) {
   const { it, s } = equippedWeapon(ctx);
   const st = ctx.rpg.stats || {};
@@ -105,16 +158,34 @@ export function renderChar(ctx, body) {
   const r = rarOf(ctx, it.rarity);
   const el = elOf(ctx, it.element);
   const dps = s.damage && s.rpm ? Math.round(s.damage * s.rpm / 60) : null;
+  const eq = ctx.rpg.equipped || {};
 
   const meta = [it.archetypeLabel || it.archetype, el && el.label, it.power ? 'Power ' + it.power : null,
     it.upgrades ? '+' + it.upgrades : null].filter(Boolean).join(' · ');
 
+  // The loadout, as pictures, in slot order — what every AAA sheet leads with. A two-column table
+  // of names is a spreadsheet. An empty slot is a button: it opens the bag filtered to that slot.
+  const doll = `
+    <div class="card doll">
+      <h3>Loadout</h3>
+      <div class="dgrid">
+        ${dollSlot(ctx, 'weapon', eq.weapon || (it && it.id ? it : null))}
+        ${['head', 'arms', 'chest', 'legs', 'cloak'].map(sl => dollSlot(ctx, sl, eq[sl])).join('')}
+      </div>
+      <div class="btnrow"><button class="btn" data-act="goinv" data-nav="char">Open the bag <kbd>I</kbd></button></div>
+    </div>`;
+
   const wcard = `
     <div class="card">
       <h3>Armament</h3>
-      <div class="wname">${esc(it.name)}</div>
-      <div class="rar" style="--r:${rarCss(r.color)}"><i></i>${esc(r.label)}</div>
-      <div class="wel">${esc(meta)}</div>
+      <div class="dhead" style="--r:${rarCss(r.color)}">
+        <span class="ic big">${art(it, it.name)}</span>
+        <span class="dh">
+          <span class="wname">${esc(it.name)}</span>
+          <span class="rar"><i></i>${esc(r.label)}</span>
+          <span class="wel">${esc(meta)}</span>
+        </span>
+      </div>
       ${el ? `<div class="stat"><span class="n">${esc(el.note)}</span></div>` : ''}
       <div class="rows">
         ${stat('Impact', n0(s.damage), { max: 140, note: 'damage a single shot lands, before crits' })}
@@ -134,8 +205,13 @@ export function renderChar(ctx, body) {
   const rank = `
     <div class="card">
       <h3>Wayfarer</h3>
-      <div class="row"><b>Rank ${ctx.rpg.level || 1}</b><span>${n0(xp)} / ${n0(next)} xp</span></div>
-      <div class="xp"><i style="width:${clamp(xp / Math.max(1, next), 0, 1) * 100}%"></i></div>
+      <div class="rankhead">
+        <b class="lvl"><span>${ctx.rpg.level || 1}</span></b>
+        <span class="rk">
+          <span class="row"><b>Rank ${ctx.rpg.level || 1}</b><span>${n0(xp)} / ${n0(next)} xp</span></span>
+          <span class="xp"><i style="width:${clamp(xp / Math.max(1, next), 0, 1) * 100}%"></i></span>
+        </span>
+      </div>
       <div class="rows">
         ${stat('Power', n0(st.power), { max: 400, note: 'average power of the six things you are wearing' })}
         ${stat('Vitality', n0(p.maxHealth), { max: 220, note: 'health before the ward is gone' })}
@@ -151,7 +227,7 @@ export function renderChar(ctx, body) {
       </div>
       <div class="ptbanner">Points to spend <b>${pts}</b>
         <button class="btn ${pts ? 'gold' : ''}" data-act="goskills" data-nav="char"
-          ${pts ? '' : 'aria-disabled="true"'}>${pts ? 'Spend them' : 'Open skill tree'}</button>
+          ${pts ? '' : 'aria-disabled="true"'}>${pts ? 'Spend them' : 'Skill tree'} <kbd>K</kbd></button>
       </div>
       ${(st.setBonuses || []).length ? `<div class="rows"><h3>Set bonuses</h3>${(st.setBonuses || [])
         .map(b => `<div class="perk"><span class="g">${lozenge()}</span><span class="t">${esc(b)}</span></div>`).join('')}</div>` : ''}
@@ -168,51 +244,49 @@ export function renderChar(ctx, body) {
   const standing = `
     <div class="card wide">
       <h3>Standing</h3>
-      <div class="rows">
+      <div class="rows cols2">
         ${Object.keys(MEAN).map(k => stat(k, n0(st[k]), {
           max: 100, pips: tiers[k] || 0, note: MEAN[k](),
         })).join('')}
       </div>
     </div>`;
 
-  const eq = ctx.rpg.equipped || {};
-  const slots = ['head', 'arms', 'chest', 'legs', 'cloak'];
-  const raiment = `
-    <div class="card wide">
-      <h3>Raiment</h3>
-      <div class="rows">
-        ${slots.map(sl => {
-          const a = eq[sl];
-          if (!a) return `<div class="stat"><span class="k">${sl}</span><span class="v">empty</span><span class="d"></span><span class="n">nothing worn — look in your inventory</span></div>`;
-          const ar = rarOf(ctx, a.rarity);
-          const best = Object.keys(a.stats || {}).sort((x, y) => a.stats[y] - a.stats[x])[0];
-          return `<div class="stat"><span class="k">${sl}</span>
-            <span class="v">${esc(a.name)}</span>
-            <span class="d"><span class="rar" style="--r:${rarCss(ar.color)}"><i></i></span> ${n0(a.power)}</span>
-            <span class="n">${esc(a.setLabel || '')}${best ? ' · best stat ' + best + ' +' + a.stats[best] : ''}</span></div>`;
-        }).join('')}
-      </div>
-      <div class="btnrow"><button class="btn" data-act="goinv" data-nav="char">Open inventory</button></div>
-    </div>`;
-
-  body.innerHTML = currencyStrip(ctx, false) + `<div class="cols">${wcard}${rank}${standing}${raiment}</div>`;
+  body.innerHTML = currencyStrip(ctx, false) + `<div class="cols">${doll}${rank}${wcard}${standing}</div>`;
 }
 
 // ---------------------------------------------------------------- inventory
-const inv = { sel: null, filter: 'all', armed: null };
+const inv = { sel: null, filter: 'all', armed: null, sort: 'power' };
+const RANK = { common: 0, uncommon: 1, rare: 2, legendary: 3, exotic: 4 };
 
 function allItems(ctx) {
   const eq = ctx.rpg.equipped || {};
   const worn = ['weapon', 'head', 'arms', 'chest', 'legs', 'cloak'].map(k => eq[k]).filter(Boolean);
   const bag = (ctx.rpg.inventory || []).slice();
-  return worn.map(i => ({ it: i, worn: true })).concat(bag.map(i => ({ it: i, worn: false })));
+  return worn.map((i, k) => ({ it: i, worn: true, idx: -1 - k }))
+    .concat(bag.map((i, k) => ({ it: i, worn: false, idx: k })));
 }
 
+// filter is 'all' | 'weapons' | 'armour' | an armour slot ('head'...): clicking an empty slot on the
+// character sheet drops you straight into the bag showing only what can go in it.
 function filtered(ctx) {
   const all = allItems(ctx);
   const f = inv.filter;
-  const keep = f === 'all' ? all : all.filter(e => e.it.kind === (f === 'weapons' ? 'weapon' : 'armour'));
-  return keep.sort((a, b) => (b.worn - a.worn) || ((b.it.power || 0) - (a.it.power || 0)));
+  const keep = f === 'all' ? all
+    : f === 'weapons' ? all.filter(e => e.it.kind === 'weapon')
+    : f === 'armour' ? all.filter(e => e.it.kind === 'armour')
+    : all.filter(e => e.it.slot === f);
+  const by = inv.sort;
+  return keep.sort((a, b) => (b.worn - a.worn) || (
+    by === 'rarity' ? ((RANK[b.it.rarity] || 0) - (RANK[a.it.rarity] || 0)) || ((b.it.power || 0) - (a.it.power || 0))
+      : by === 'new' ? b.idx - a.idx
+      : (b.it.power || 0) - (a.it.power || 0)));
+}
+
+// power against what you already have on, for the corner badge on a tile
+function powerDelta(ctx, e) {
+  if (e.worn) return 0;
+  const cmp = compareTo(ctx, e.it);
+  return cmp ? n0(e.it.power) - n0(cmp.power) : 0;
 }
 
 const WSTAT = [['damage', 'Impact', 140], ['rpm', 'Rounds / min', 700], ['mag', 'Magazine', 60],
@@ -227,7 +301,7 @@ function compareTo(ctx, it) {
 }
 
 function detail(ctx, entry) {
-  if (!entry) return `<div class="detail"><div class="empty">Choose something from the list.<br>Arrow keys move, Enter picks.</div></div>`;
+  if (!entry) return `<div class="detail"><div class="empty">Nothing picked.<br>Arrows move · Enter or E equips · Delete dismantles.</div></div>`;
   const it = entry.it, worn = entry.worn;
   const r = rarOf(ctx, it.rarity);
   const el = elOf(ctx, it.element);
@@ -245,19 +319,26 @@ function detail(ctx, entry) {
         max, bar: s[k], cmp: cs ? cs[k] : null, delta: delta(n0(s[k]), cs ? n0(cs[k]) : null),
       })).join('');
 
-  const meta = [r.label, it.archetypeLabel || it.slot, el && el.label,
+  const meta = [it.archetypeLabel || SLOT_LABEL[it.slot] || it.slot, el && el.label,
     it.setLabel, it.upgrades ? '+' + it.upgrades : null,
     it.masterwork ? 'Masterwork' : null].filter(Boolean).join(' · ');
 
   const acts = [];
-  if (!worn) acts.push(`<button class="btn gold" data-act="equip" data-id="${it.id}" data-nav="act">Equip</button>`);
+  if (!worn) acts.push(`<button class="btn gold" data-act="equip" data-id="${it.id}" data-nav="act">Equip <kbd>E</kbd></button>`);
   acts.push(`<button class="btn" data-act="upgrade" data-id="${it.id}" data-nav="act">Upgrade${it.upgrades ? ' (+' + it.upgrades + ')' : ''}</button>`);
   acts.push(`<button class="btn" data-act="infuse" data-id="${it.id}" data-nav="act">Infuse</button>`);
   if (!worn) acts.push(`<button class="btn warn" data-act="dismantle" data-id="${it.id}" data-nav="act">${inv.armed === it.id ? 'Sure? Break it' : 'Dismantle'}</button>`);
 
-  return `<div class="detail">
-    <div class="wname">${esc(it.name)}</div>
-    <div class="rar" style="--r:${rarCss(r.color)}"><i></i>${esc(meta)}</div>
+  return `<div class="detail" style="--r:${rarCss(r.color)}">
+    <div class="dhead">
+      <span class="ic big">${art(it, it.name)}</span>
+      <span class="dh">
+        <span class="wname">${esc(it.name)}</span>
+        <span class="rar"><i></i>${esc(r.label)}${worn ? ' · equipped' : ''}</span>
+        <span class="wel">${esc(meta)}</span>
+      </span>
+      <span class="pwbig">${n0(it.power)}<u>power</u></span>
+    </div>
     ${it.flavour ? `<div class="stat"><span class="n">${esc(it.flavour)}</span></div>` : ''}
     <div class="rows">
       ${stat('Power', n0(it.power), { max: 400, delta: delta(n0(it.power), cmp ? n0(cmp.power) : null) })}
@@ -269,34 +350,50 @@ function detail(ctx, entry) {
   </div>`;
 }
 
+// One bag tile: picture, power, and how it stacks against what is already on you. The name sits
+// under the icon so the grid still reads as a list when you are hunting one specific roll.
+function tile(ctx, e) {
+  const it = e.it, r = rarOf(ctx, it.rarity), d = powerDelta(ctx, e);
+  const dl = d ? `<span class="dl ${d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲' : '▼'}${Math.abs(d)}</span>` : '';
+  return `<button class="tile ${e.worn ? 'worn' : ''} ${it.id === inv.sel ? 'sel' : ''}"
+    style="--r:${rarCss(r.color)}" data-act="pick" data-id="${it.id}" data-nav="list"
+    data-equip="${e.worn ? '' : it.id}" aria-pressed="${it.id === inv.sel}"
+    title="${esc(it.name)} — ${esc(r.label)}">
+    <span class="ic">${art(it, it.name)}</span>
+    <span class="pw">${n0(it.power)}</span>${dl}
+    <span class="nm">${esc(it.name)}</span></button>`;
+}
+
+const FILTERS = [['all', 'All'], ['weapons', 'Arms'], ['armour', 'Raiment'],
+  ['head', 'Helm'], ['arms', 'Gauntlets'], ['chest', 'Cuirass'], ['legs', 'Greaves'], ['cloak', 'Mantle']];
+const SORTS = [['power', 'Power'], ['rarity', 'Rarity'], ['new', 'Newest']];
+const seg = (items, cur, act) => `<div class="seg">${items.map(([k, l]) =>
+  `<button class="${cur === k ? 'on' : ''}" data-act="${act}" data-id="${k}" data-nav="filter"
+    aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
+
 export function renderInv(ctx, body) {
   const list = filtered(ctx);
   if (!list.some(e => e.it.id === inv.sel)) inv.sel = list.length ? list[0].it.id : null;
   const entry = list.find(e => e.it.id === inv.sel) || null;
+  const held = (ctx.rpg.inventory || []).length;
 
-  const chips = [['all', 'Everything'], ['weapons', 'Weapons'], ['armour', 'Raiment']]
-    .map(([k, l]) => `<button class="btn ${inv.filter === k ? 'on' : ''}" data-act="filter" data-id="${k}"
-        data-nav="filter" aria-pressed="${inv.filter === k}">${l}</button>`).join('');
-
-  const items = list.length ? list.map(e => {
-    const it = e.it, r = rarOf(ctx, it.rarity), el = elOf(ctx, it.element);
-    const meta = [r.label, it.archetypeLabel || it.slot, el && el.label].filter(Boolean).join(' · ');
-    return `<button class="it ${e.worn ? 'worn' : ''} ${it.id === inv.sel ? 'sel' : ''}"
-      style="--r:${rarCss(r.color)}" data-act="pick" data-id="${it.id}" data-nav="list"
-      aria-pressed="${it.id === inv.sel}">
-      <span class="eq" aria-hidden="true"></span>
-      <span class="nm">${esc(it.name)}</span>
-      <span class="mt">${esc(meta)}</span>
-      <span class="pw">${n0(it.power)}</span></button>`;
-  }).join('') : '<div class="empty">Your bag is empty. Aurelen is not.</div>';
+  // Empty sockets pad the grid out to a full bag. Every loot game does this: a half-empty grid of
+  // sockets reads as "room for more", four floating cards read as an unfinished list.
+  const SOCKETS = 24;
+  const ghosts = Math.max(0, SOCKETS - list.length);
+  const grid = `<div class="bag" role="list">${list.map(e => tile(ctx, e)).join('')}` +
+    `<span class="tile ghost" aria-hidden="true"></span>`.repeat(ghosts) + '</div>' +
+    (list.length ? '' : '<div class="empty">Nothing here yet. The Vale is generous to those who go looking.</div>');
 
   body.innerHTML = currencyStrip(ctx, true) + `
+    <div class="invtop">
+      ${seg(FILTERS, inv.filter, 'filter')}
+      <span class="spacer"></span>
+      ${seg(SORTS, inv.sort, 'sort')}
+      <span class="cap">${held} / 120 held</span>
+    </div>
     <div class="invcols">
-      <div>
-        <div class="filters">${chips}<span style="flex:1"></span>
-          <span class="rar" style="align-self:center">${list.length} item${list.length === 1 ? '' : 's'}</span></div>
-        <div class="ilist" role="list">${items}</div>
-      </div>
+      <div class="bagwrap">${grid}</div>
       ${detail(ctx, entry)}
     </div>`;
 }
@@ -359,6 +456,8 @@ export function act(ctx, el, say) {
   switch (a) {
     case 'pick': inv.sel = id; inv.armed = null; return 'inv';
     case 'filter': inv.filter = id; inv.armed = null; return 'inv';
+    case 'sort': inv.sort = id; return 'inv';
+    case 'slotjump': inv.filter = id === 'weapon' ? 'weapons' : id; inv.sel = null; inv.armed = null; return 'inv';
     case 'equip': {
       const ok = ctx.rpg.equip(id);
       say(ok ? 'equipped' : 'that would not go on', ok ? 'good' : 'bad');
