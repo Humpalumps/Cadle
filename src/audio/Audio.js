@@ -43,10 +43,11 @@ export class Audio {
     this.panningModel = 'equalpower';                         // 'HRTF' is ~4x the panner cost; equalpower + inverse rolloff reads fine for an FPS
     this.maxVoices = game.quality === 'low' ? 16 : 32;
     this.voices = []; this._last = new Map(); this._perFrame = 0; this._gen = 0;
+    this._vo = null; this._voGen = 0; this._voQueue = [];   // dialogue is a SINGLE channel, and lines QUEUE rather than cut each other off
     this.debugLastPlayed = []; this.debugCounts = {};
     this.musicTrack = 'field'; this.ambientZone = null; this.zone = 'meadow';
     this.buffers = {};                                      // decoded AI takes (shot-*-1..4, explosion-1..4, field/night-theme); recipes read them via S.bufs
-    this._musicAuto = true; this._musicDuck = 1; this._inCombat = false; this._combatT = -1e9; this._musicT = 0;
+    this._musicAuto = true; this._musicDuck = 1; this._voiceDuck = 1; this._inCombat = false; this._combatT = -1e9; this._musicT = 0;
     this.ambientSys = new Ambient(this); this.musicSys = new Music(this);
     this._tmpPos = new THREE.Vector3(); this._fwd = new THREE.Vector3(); this._up = new THREE.Vector3(); this._zoneT = 0; this._lastPX = null; this._lastPZ = 0; this._zoneFast = false;
   }
@@ -143,7 +144,14 @@ export class Audio {
   // ---------- public controls ----------
   setMaster(v) { this._setVol('master', v, this.master); }
   setSfxVol(v) { this._setVol('sfx', v, this.buses?.sfx); if (this.buses?.fb && this.ctx) this.buses.fb.gain.setTargetAtTime(this.volumes.sfx, this.ctx.currentTime, 0.05); }
-  setMusicVol(v) { v = clamp(+v || 0, 0, 1.5); this.volumes.music = v; if (this.buses?.music && this.ctx) this.buses.music.gain.setTargetAtTime(v * this._musicDuck, this.ctx.currentTime, 0.05); }
+  setMusicVol(v) { v = clamp(+v || 0, 0, 1.5); this.volumes.music = v; this._applyMusicGain(0.05); }
+  /** Single writer for the music bus: volume x combat duck x dialogue duck. The dialogue duck used to write the
+   *  gain node directly, which fought _trackTick — whichever ran last won, so the music could sit at the wrong
+   *  level indefinitely. */
+  _applyMusicGain(tau) {
+    if (!this.buses?.music || !this.ctx) return;
+    this.buses.music.gain.setTargetAtTime(this.volumes.music * this._musicDuck * this._voiceDuck, this.ctx.currentTime, tau);
+  }
   setAmbientVol(v) { this._setVol('ambient', v, this.buses?.ambient); }
   _setVol(k, v, node) { v = clamp(+v || 0, 0, 1.5); this.volumes[k] = v; if (node && this.ctx) node.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05); }
   music(track) {
@@ -164,18 +172,68 @@ export class Audio {
   // ---------- play ----------
   // Voice lines (quest dialogue): not in the SFX registry, decoded straight from game.assets.
   // Ducks music briefly so the Vale reads over the field theme.
-  playVoice(name, vol = 1) {
+  /** Stop whatever line is talking. Short ramp instead of a hard stop so cutting her off does not click. */
+  stopVoice(fade = 0.12, keepDuck = false) {
+    const vo = this._vo; this._vo = null;
+    if (!keepDuck) this._voQueue.length = 0;
+    if (!vo) return;
+    const ctx = this.ctx, now = ctx.currentTime;
+    try {
+      vo.g.gain.cancelScheduledValues(now);
+      vo.g.gain.setValueAtTime(vo.g.gain.value, now);
+      vo.g.gain.linearRampToValueAtTime(0, now + fade);
+      vo.src.stop(now + fade + 0.02);
+    } catch (e) {}
+    // keepDuck: a replacement line is starting immediately. Un-ducking here and re-ducking a millisecond later
+    // captured the mid-ramp (already ducked) gain as the new base, and the music never came back up.
+    if (!keepDuck) this._duckMusic(false);
+  }
+  /** Dialogue duck: a factor the single music-gain writer composes, so it stacks correctly with the combat duck. */
+  _duckMusic(on) {
+    this._voiceDuck = on ? 0.35 : 1;
+    this._applyMusicGain(on ? 0.12 : 0.4);
+  }
+  /**
+   * Play one dialogue line. The Vale is a SINGLE voice channel — starting a line stops the one before it.
+   * Previously every call made its own BufferSource with nothing stopping the last, so two beats landing
+   * close together (the opening quest's directive vs. arriving at the ruins) had her talking over herself.
+   */
+  playVoice(name, vol = 1, opts = EMPTY) {
     const ctx = this.ctx; if (!ctx || ctx.state !== 'running') return;
+    // She is mid-sentence: wait her out rather than cutting her off. Clobbering the playing line stopped the
+    // overlap but simply truncated it instead — the opening quest's marching order lost half its words to the
+    // arrival line. Cap the backlog so a burst of beats cannot queue a monologue.
+    if (this._vo && !opts.interrupt) {
+      this._voQueue.push({ name, vol });
+      if (this._voQueue.length > 2) this._voQueue.shift();
+      return;
+    }
+    this._startVoice(name, vol);
+  }
+  _startVoice(name, vol) {
+    const ctx = this.ctx;
+    const gen = ++this._voGen;
     this.game.assets.audioBuffer(ctx, name).then((buf) => {
-      if (!buf) return;
+      if (!buf || gen !== this._voGen) return;          // a newer line was asked for while this one decoded
+      this.stopVoice(0.10, true);          // hand the duck straight over to the incoming line
       const src = ctx.createBufferSource(); src.buffer = buf;
       const g = ctx.createGain(); g.gain.value = vol;
       src.connect(g); g.connect(this.buses?.sfx ?? ctx.destination);
-      const mg = this.buses?.music?.gain;
-      if (mg) { const v0 = mg.value; mg.setTargetAtTime(v0 * 0.35, ctx.currentTime, 0.2); mg.setTargetAtTime(v0, ctx.currentTime + buf.duration, 0.5); }
       src.start();
+      this._vo = { src, g, gen, name };
+      src.onended = () => {
+        if (!this._vo || this._vo.gen !== gen) return;
+        this._vo = null;
+        const nxt = this._voQueue.shift();
+        if (nxt) this._startVoice(nxt.name, nxt.vol);      // keep the duck: the channel is still busy
+        else this._duckMusic(false);
+      };
+      this._duckMusic(true);
     }).catch(() => {});
   }
+  /** true while a dialogue line is talking (quest/debug). */
+  get voiceBusy() { return !!this._vo; }
+  get voiceQueued() { return this._voQueue.length; }
 
   play(name, o = EMPTY) {
     const rec = SFX[name]; if (!rec) { if (this.game.debug) console.warn('audio: unknown sfx', name); return NOOP; }
@@ -279,7 +337,7 @@ export class Audio {
     const inCombat = this.game.time - this._combatT < 6;
     if (inCombat === this._inCombat) return;
     this._inCombat = inCombat; this._musicDuck = inCombat ? 0.35 : 1;
-    if (this.ctx && this.buses) this.buses.music.gain.setTargetAtTime(this.volumes.music * this._musicDuck, this.ctx.currentTime, inCombat ? 0.5 : 2.2);
+    this._applyMusicGain(inCombat ? 0.5 : 2.2);
   }
   _zoneAt(x, z) {
     if (Math.hypot(x, z) > 380) return 'mountain';

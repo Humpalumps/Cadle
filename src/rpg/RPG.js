@@ -171,6 +171,10 @@ export class RPG {
     // ---------- convenience mirrors on game.rpg ----------
     this.stats = R.stats;
     this.addXp = R.addXp; this.dropLoot = R.dropLoot; this.pickup = R.pickup; this.equip = R.equip;
+    // activeDrops/clearDrops were wired onto R but never onto the instance, so game.rpg.activeDrops was undefined.
+    // The opening quest uses it to check whether its reward is still on the ground — seeing nothing, it re-dropped
+    // a legendary every 5 s for the whole of beat 3.
+    this.activeDrops = R.activeDrops; this.clearDrops = R.clearDrops;
 
     this.screens = new Screens(g, ctx);
     this.quest = new OpeningQuest(g, R);

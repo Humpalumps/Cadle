@@ -101,6 +101,9 @@ export class OpeningQuest {
 
   _advance(beat) {
     const g = this.game, R = this.rpg;
+    // Leaving beat 1 cancels the pending marching order. Sprinting east reaches the ruins in ~9 s and the
+    // directive was scheduled at 10.8 s, so it used to fire on top of the arrival line.
+    if (beat !== 1) clearTimeout(this._dirT);
     this.beat = beat; this._save();
     if (beat === 1) {          // wake: a staged moment, not a pileup — zone title, then her words, then the quest lands
       const y = g.terrain?.heightAt?.(AETHERYTE.x, AETHERYTE.z) ?? 0;
@@ -110,7 +113,9 @@ export class OpeningQuest {
         g.postfx?.flash?.(0xb08cff, 0.35, 0.5);
         this._speak(0);
       }, 2400);
-      setTimeout(() => {
+      clearTimeout(this._dirT);
+      this._dirT = setTimeout(() => {
+        if (this.beat !== 1) return;                           // already at the ruins: the marching order is moot
         this._say(DIRECTIVE);                                  // "go east, to the Spire" — spoken, not just written
         g.hud?.notify?.('New Quest', 'The Sundered Spire');
         g.hud?.toast?.('QUEST STARTED — THE SUNDERED SPIRE', { ms: 3200, kind: 'ability' });
