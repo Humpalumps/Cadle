@@ -6,6 +6,31 @@ Read this first if you are picking this project up cold (new session, new agent,
 
 ---
 
+## 0. Latest wave — THE TEN BIOMES (2026-08-21)
+
+The world is now **2048 × 2048 m with ten biomes** (was 1024 m / one region). `src/world/Biomes.js` is the single
+source of truth for the layout and the per-region data; CLAUDE.md "World layout" has the full table and the rules.
+
+Shipped in this wave:
+- `Biomes.js` (new): geometry constants + a data row per biome (fog grade, ground layer, grass density, enemy
+  roster, level band, landmark, ambient zone, dry/lava/float/gravity flags).
+- `Terrain.js`: world 2048 m, 2048² bake (same cost — the bake is per-texel and the texel is still 1 m), a mountain
+  ring that is a BAND pierced by 9 passes, 9 outer height kernels (`BH[]`), 12 splat layers (+ash/ice/muck/voidstone),
+  `biomeBlend / grassAt / dryAt / gravityAt`.
+- `Grass.js`: blades take the ground's hue (biome-tinted `colorAt`) but are clamped green-dominant and value-capped,
+  so a pale floor can never bleach them into white spikes (that was a new instance of the meadow-blob failure mode).
+- `Vegetation.js` + `EZTrees.js`: per-biome scatter tables, conifer (species 3) and dead (species 4) trees.
+- `Props.js`: nine landmarks + floating isles + updraft columns. `Water.js`: dry mask, per-biome water look, lava skin.
+- `Sky.js`: local aerial-perspective grade per biome + real underwater fog.
+- `enemies/*`: 17 new types on 9 rigs (3 new: giant, wraith, serpent), camps streamed by distance.
+- `vite.config.js`: **bug fix** — `**/.claude/worktrees/**` in `watch.ignored` made a dev server running *inside* a
+  worktree ignore every source file, so edits silently did nothing. Patterns are root-anchored now.
+
+Known gaps / next actions: Dragon Peaks reads bland grey (wants nests + ice/gold accents); the celestial/void isles
+have no bridges between them yet; no per-biome music cues; `q=low` not re-profiled since the world grew.
+
+---
+
 ## 1. The job (from the user, verbatim intent)
 
 Build a browser FPS-RPG in Three.js at **Destiny 2** level for game mechanics and **Final Fantasy XIV** level for the mystical look. Utterly perfect, beautiful, responsive. Three pillars in order: **graphics, performance, game mechanics (smooth)**. Later, after fundamentals are signed off: world bosses with mechanics, quests, story mode with voiced NPCs.

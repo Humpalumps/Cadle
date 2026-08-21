@@ -33,6 +33,7 @@ src/render/Renderer.js      WebGLRenderer + quality presets                (orch
 src/render/Sky.js           sky/atmosphere/time-of-day/clouds/stars        (sky builder)
 src/render/Lighting.js      sun/shadows(CSM)/hemi/env                       (lighting builder)
 src/render/PostFX.js        composer pipeline, overlay pass, effects       (postfx builder)
+src/world/Biomes.js         THE 10-BIOME MAP: layout consts + per-biome data  (orchestrator; read-only for everyone else)
 src/world/Terrain.js        heightfield LOD + material + heightAt/normalAt (terrain builder)
 src/world/Water.js          lakes/rivers: reflect/refract/foam/waves       (water builder)
 src/world/Grass.js          instanced grass, wind, interaction, LOD        (grass builder)
@@ -71,21 +72,58 @@ Each file's header doc-comment is the **contract** (methods, fields, events). Im
 ## Look & feel bar (what "done" means)
 - **Graphics (FF14)**: painterly-realistic, saturated-but-soft, dramatic skies with volumetric-looking clouds and god rays, long view distances with atmospheric haze, glowing aether crystals / floating motes, ornate stone ruins, lush grass + water with real reflections, golden-hour warmth, magical blue-violet night with stars and aurora. Clean anti-aliasing, no shimmer, no popping, soft shadows, proper color management (linear workflow, ACES/AgX tone map, filmic grade).
 - **Feel (Destiny 2)**: 90-105 FOV, instant input response, acceleration curves that feel weighty-but-snappy, sprint with FOV kick, slide with momentum, double jump with air control, landing dip, ADS snap (~0.2 s), per-archetype recoil + audio punch, hit markers + damage numbers, satisfying enemy stagger/death, ability cooldown loop, weapon swap animation. 60+ fps always; hitches are failures.
-- **World**: an open zone (~1 km²) with a spawn landmark, a lake, a ruin, a forest, cliffs/mountains at the edges, enemy camps, a world-boss arena. Readable, beautiful from every angle the tour script looks at.
+- **World**: an open world of ~4 km² holding **ten biomes** (see World layout). Each one has to hold up on its own —
+  its own ground, silhouette, palette, haze, weather of light, bestiary and ambient bed — and the walk between any two
+  of them has to read as a journey, not a texture swap. Readable, beautiful from every angle the tour script looks at.
 
-## World layout (shared coordinates — everyone places things consistently; terrain builder shapes the land to match)
-- Terrain 1024×1024 m centered at origin, `terrain.waterLevel` ≈ 4 (terrain builder sets; water fills wherever ground < waterLevel).
-- **Spawn meadow**: origin, gentle rolling grass, radius ~90. **Aetheryte landmark** (giant floating crystal on a stone plinth) at (0, h, -28) — Props.
-- **Lake "Mirrormere"**: basin centered (-170, -, -70), radius ~85, shoreline beaches; a small island at (-150, -, -60).
-- **Ruins "Sundered Spire"**: plateau at (140, -, 60), radius ~60: broken pillars, arches, a central shattered tower; enemy camp.
-- **Forest "Whisperwood"**: z < -180 (north), dense trees with glowing mushrooms/motes, x from -250..250.
-- **Crystal fields**: east (x > 220), clusters of tall glowing aether crystals, hounds/wisps.
-- **Boss arena "The Hollow Crown"**: circular flat arena radius 45 at (-60, -, 260) ringed by monoliths (south).
-- **Mountains/cliffs**: ring beyond radius ~380 rising to ~150 m (impassable edge), with a mountain pass vista to the NW.
-- Enemy camps: near ruins, forest edge, crystal fields. Keep spawn meadow mostly peaceful (a few wisps).
+## World layout — TEN BIOMES (shared coordinates; `src/world/Biomes.js` is the single source of truth)
+Terrain is **2048 × 2048 m** centered at origin, `terrain.waterLevel` ≈ 4 (water fills wherever ground < waterLevel
+AND `terrain.dryAt(x,z)` is 0). Everything below is derived from `Biomes.js` — read the table, do not hardcode.
+
+**HOME BOWL (r < 330) — biome 1, "The Vale" (Meadow).** Unchanged from v0.5:
+- **Spawn meadow**: origin, gentle rolling grass, radius ~90. **Aetheryte** at (0, h, -28) — Props.
+- **Lake "Mirrormere"**: basin centered (-170, -, -70), radius ~85, beaches; island at (-150, -, -60).
+- **Ruins "Sundered Spire"**: plateau at (140, -, 60), radius ~60; enemy camp + the Warden.
+- **Forest "Whisperwood"** (the Enchanted Forest's home-side edge): z < -180, x -250..250.
+- **Crystal fields**: east (x > 220, inside r 400). **Boss arena "The Hollow Crown"**: radius 45 at (-60, -, 260).
+
+**MOUNTAIN RING (r 330..600).** Craggy wall rising to ~150 m — but it is a BAND, not the end of the world:
+it comes back down past ~580 m, and it is **pierced by 9 passes**, one on each outer biome's bearing
+(`THETA0 + k*STEP`, k = 0..8). A pass bottoms out ~35 m above the meadow: a real climb, always walkable.
+
+**THE NINE OUTER REGIONS (r 550..970).** Circles of radius `RR` (210 m) centred at radius `RB` (760 m) on
+bearings 40° apart, starting due north. Adjacent regions are ~100 m apart, so the whole annulus is one
+continuous walkable belt — **every biome touches its two neighbours and has its own pass home. Nothing is
+teleport-only.** k / bearing / centre / level band:
+
+| k | bearing | biome | centre (x, z) | levels | the read |
+|---|---------|-------|---------------|--------|----------|
+| 0 | -95° N  | 🌲 Whisperwood Deep (forest)   | (-66, -757)  | 5-11  | closed canopy, fae light, The Elderheart |
+| 1 | -55° NE | ❄️ Frostveil Tundra (tundra)   | (436, -623)  | 11-17 | glacier shelves, pines, ice shards, The Glacier Throne |
+| 2 | -15° E  | ✨ Celestial Isles (celestial) | (734, -197)  | 30-38 | high marble plateau + **floating isles**, The Empyrean Gate |
+| 3 | +25° ESE| 🏔️ Dragon Peaks (dragon)       | (689, 321)   | 24-32 | 200 m peaks, nest ledges, Kharaz-Dun Gate |
+| 4 | +65° SE | 🔥 Infernal Wastes (infernal)  | (321, 689)   | 18-25 | caldera, **lava rivers**, black ash, The Cinder Maw |
+| 5 | +105° S | 🏰 The Lost Realm (lost)       | (-197, 734)  | 40-50 | endgame: rampart ring, 16 monoliths, The Convergence |
+| 6 | +145° SW| 🌑 Shadowfen (shadowfen)       | (-623, 436)  | 15-22 | knee-deep peat murk, dead wood, The Hagstone |
+| 7 | +185° W | 🌊 The Sunken Kingdom (sunken) | (-757, -66)  | 20-28 | real sea basin, swim it, The Drowned Court |
+| 8 | +225° NW| 🕳️ The Void (void)             | (-537, -537) | 34-44 | shelves over an abyss, **0.55 gravity**, **floating isles**, The Unmaking |
+
+**EDGE (r > 960)**: impassable crag wall.
+
+How each system reads the table (do NOT re-derive any of this):
+- height: `terrain.heightAt` (the 9 kernels live in `Terrain.BH[]`, indexed by the same k — closure-free, they are
+  stringified into the bake workers). `terrain.biomeAt/biomeBlend/grassAt/dryAt/gravityAt` are the queries.
+- ground: `FRAG_SPLAT` picks one of 12 layer textures per region (8 ash, 9 ice, 10 muck, 11 voidstone are new).
+- Grass density/tint, Vegetation scatter (`BTREE`/`BROCK`/`BSPIRE`), Props landmarks, Sky fog grade, Water look,
+  Enemy camps and Ambient beds are all keyed off the biome id.
+- **Enemy camps stream by distance** (`STREAM` = 300 m in Enemies.js): the 40-alive cap follows the player around
+  the map instead of being spent at spawn. Keep the spawn meadow peaceful (2 wisps).
+- Floating isles (celestial, void) are walkable box colliders; **updraft columns** at the landmark lift you up
+  (`props.updrafts`, read by PlayerController).
 
 ## Automation API (`window.__game`, see src/main.js) — use from harness `{eval: "..."}` steps
 `stats()` (fps, frameMs, cpuMs, gpuMs, calls, tris, memMB, systems{per-system CPU ms}), `resetStats()`, `state()`, `teleport(x,y|null,z)`, `look(yaw,pitch)` (yaw 0 = -Z/north, -1.5708 = +X/east), `setHour(h)`, `poi()`,
-`spawn(type,x,z,opts)`, `spawnNear(type,dist)`, `lineup()` (one of each enemy type, passive), `passive(bool)`, `killAll()`, `clearEnemies()`, `dummy(dist)` (static target),
+`biomes()` (the 9 outer biome centres), `goto('tundra'|...[, backOffMetres])` (teleport to a biome heart), `biomeAt(x?,z?)`,
+`spawn(type,x,z,opts)`, `spawnNear(type,dist)`, `lineup([types])` (a row of enemies, passive), `passive(bool)`, `killAll()`, `clearEnemies()`, `dummy(dist)` (static target),
 `give(weaponId,slot)`, `swap(i)`, `reload()`, `ads(bool)`, `ability('grenade'|'melee'|'class'|'super')` (charges + uses), `damagePlayer(n)`, `respawn()`, `god(bool)`,
 `vfxShowcase()`, `flash()`, `kick()`, `bypassPostfx(bool)`, `audioSelfTest()`, `input.press/release/move/button`, `game` (the Game instance: game.<system>.*).

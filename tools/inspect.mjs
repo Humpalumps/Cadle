@@ -35,7 +35,7 @@ const name = args.name || 'run';
 const W = +(args.w || 1920), H = +(args.h || 1080);
 const q = args.q || 'high';
 const seed = args.seed || 1337;
-const base = args.url || 'http://127.0.0.1:5173/';
+const base = args.url || process.env.CADLE_URL || 'http://127.0.0.1:5173/';   // CADLE_URL: run a second dev server (e.g. a worktree on another port)
 const outDir = path.resolve('tools/out', name);
 fs.rmSync(outDir, { recursive: true, force: true }); fs.mkdirSync(outDir, { recursive: true });
 

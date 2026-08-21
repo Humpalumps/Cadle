@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32, hash2, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
+import { ORDER, RB, RR, RING_IN, RING_OUT, EDGE, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
 
 /**
  * Terrain: heightfield mesh + height/normal queries used by everything else (player, grass, water, props, AI).
@@ -30,8 +31,10 @@ import { mulberry32, hash2, noise2, smoothstep, clamp, lerp } from '../core/Nois
  *     far-scale albedo patches (contrast survives distance), shoreline wetness, cavity AO, aether motes.
  */
 const WL = 4.0;
-const TEX = 1024;            // height/normal bake resolution (1 texel = 1 m), covers [-512, 512)
-const LAYERS = 8;            // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro)
+const SIZE = 2048;           // world extent (m). 10 biomes: home bowl + mountain ring + 9 outer regions (see Biomes.js)
+const TEX = 2048;            // height/normal bake resolution (1 texel = 1 m), covers [-1024, 1024)
+const HALF = TEX / 2;
+const LAYERS = 12;           // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro) 8 ash 9 ice 10 muck 11 voidstone
 
 const ss = smoothstep, mix = lerp, n2 = noise2;
 // unrolled fbm/ridged (same lattice + seed scheme as Noise.js fbm/ridged, no options object => ~2x faster)
@@ -54,15 +57,85 @@ const rmf = (x, y, s, oct) => {
   return sum / nrm;
 };
 
+// ---------------------------------------------------------------- outer-biome height kernels
+// Indexed by the wedge index k — SAME ORDER as Biomes.ORDER. Signature (x, z, h, s, w, cx, cz) -> h,
+// where h is the base landscape, w the 0..1 region weight and (cx,cz) the region centre.
+// CLOSURE-FREE on purpose: these are stringified into the bake workers alongside heightAt.
+const BH = [
+  function bhForest(x, z, h, s, w, cx, cz) {                                   // Whisperwood Deep: rolling wooded hills + dells
+    const hills = fbm3(x * 0.006 + 31, z * 0.006 - 17, s + 201) * 11 + rmf(x * 0.011, z * 0.011, s + 202, 3) * 9;
+    const dell = ss(0.62, 0.30, fbm2(x * 0.004 - 8, z * 0.004 + 12, s + 203) * 0.5 + 0.5) * 7;
+    return mix(h, 15 + hills - dell, w);
+  },
+  function bhTundra(x, z, h, s, w, cx, cz) {                                   // Frostveil: glacier shelves + a frozen basin
+    const g = fbm3(x * 0.0045 + 7, z * 0.0045 + 3, s + 211);
+    let t = 24 + g * 13 + rmf(x * 0.014, z * 0.014, s + 212, 3) * 6;
+    t -= 4.5 * Math.sin(t * 0.42 + n2(x * 0.009, z * 0.009, s + 213) * 3.4);   // ice terraces / pressure ridges
+    const bd = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.012, z * 0.012, s + 214) * 18;
+    t = mix(t, 5.2, ss(96, 52, bd));                                           // frozen lake (sits at/below WL -> real ice-cold water)
+    return mix(h, t, w);
+  },
+  function bhCelestial(x, z, h, s, w, cx, cz) {                                // Celestial Isles: shattered high plateau, chasms below the floating isles
+    const pl = 62 + fbm3(x * 0.007 + 9, z * 0.007 - 4, s + 221) * 9;
+    const cut = ss(0.34, 0.15, ridged3(x * 0.0065, z * 0.0065, s + 222));      // narrow gulfs between the shelves
+    return mix(h, mix(pl, pl - 48, cut), w);
+  },
+  function bhDragon(x, z, h, s, w, cx, cz) {                                   // Dragon Peaks: the biggest rock in the world
+    const wx = x + n2(x * 0.008, z * 0.008, s + 231) * 42, wz = z + n2(x * 0.008 + 5, z * 0.008 - 3, s + 232) * 42;
+    const m = rmf(wx * 0.0058, wz * 0.0058, s + 233, 3), c = rmf(wx * 0.016, wz * 0.016, s + 234, 4);
+    const ledge = 9.0 * Math.sin(m * 142 * 0.21 + (x - z) * 0.008);            // nest ledges cut across the faces
+    return mix(h, 18 + m * 142 + c * c * 55 - ledge * ss(0.26, 0.62, m), w);
+  },
+  function bhInfernal(x, z, h, s, w, cx, cz) {                                 // Infernal Wastes: caldera cone, ash plains, channelled flows
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.01, z * 0.01, s + 241) * 16;
+    let t = 13 + fbm3(x * 0.008 + 5, z * 0.008, s + 242) * 7 + rmf(x * 0.02, z * 0.02, s + 243, 3) * 5;
+    t += ss(152, 42, d) * 98;                                                  // cone
+    t -= ss(48, 22, d) * 62;                                                   // crater
+    t -= ss(0.58, 0.88, ridged3(x * 0.0095 + 3, z * 0.0095 - 2, s + 244)) * 9; // lava channels
+    return mix(h, t, w);
+  },
+  function bhLost(x, z, h, s, w, cx, cz) {                                     // The Lost Realm: ceremonial plain inside a ruined rampart ring
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.011, z * 0.011, s + 251) * 12;
+    let t = 32 + fbm3(x * 0.007 + 13, z * 0.007 + 9, s + 252) * 5;
+    t += 30 * ss(118, 146, d) * ss(192, 160, d);                               // rampart ring
+    t -= 7 * ss(62, 22, d);                                                    // sunken plaza
+    return mix(h, t, w);
+  },
+  function bhShadowfen(x, z, h, s, w, cx, cz) {                                // Shadowfen: hummocks in standing water (WL = 4)
+    const hum = fbm4(x * 0.021 + 3, z * 0.021 - 7, s + 261);
+    const t = 3.05 + (hum > 0 ? hum : 0) * 3.4 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.5;
+    return mix(h, t, w);
+  },
+  function bhSunken(x, z, h, s, w, cx, cz) {                                   // The Sunken Kingdom: a real sea basin with coral ridges
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
+    let t = -27 + fbm3(x * 0.006 + 21, z * 0.006 - 11, s + 271) * 10;
+    t += ridged3(x * 0.013, z * 0.013, s + 272) * 15;                          // coral shelves
+    t += ss(110, 200, d) * 33;                                                 // basin rim climbs to the shore
+    return mix(h, t, w);
+  },
+  function bhVoid(x, z, h, s, w, cx, cz) {                                     // The Void: shelves of broken reality over an abyss
+    const r1 = ridged3(x * 0.0055 + 5, z * 0.0055 - 9, s + 281);
+    const plat = 46 + fbm3(x * 0.009, z * 0.009, s + 282) * 7;                 // shelves are FLAT: you fight on them
+    return mix(h, mix(plat, -40, ss(0.34, 0.155, r1)), w);
+  },
+];
+// biome centres, [cx, cz] per k — literal so the worker gets them without importing Biomes.js
+const BC = ORDER.map((_, k) => { const c = centerOf(k); return [c.x, c.z]; });
+// mean LINEAR albedo of each biome's floor + how much of the ground it covers (mirrors FRAG_SPLAT's biome layer)
+const BALB = [[0.10, 0.135, 0.05], [0.55, 0.62, 0.72], [0.46, 0.39, 0.29], [0.21, 0.20, 0.18], [0.055, 0.042, 0.038], [0.34, 0.31, 0.38], [0.10, 0.11, 0.07], [0.30, 0.31, 0.28], [0.075, 0.062, 0.10]];
+const BCOV = [0.72, 1.0, 0.55, 0.6, 1.0, 0.6, 0.8, 0.9, 1.0];
+
 export class Terrain {
   constructor(game) {
     this.game = game;
-    this.size = 1024;
+    this.size = SIZE;
     this.waterLevel = WL;
     this.seed = game.seed;
     this._n = new THREE.Vector3();
     const P = (x, z) => new THREE.Vector3(x, this.heightAt(x, z), z);
     this.POI = { spawn: P(0, 0), aetheryte: P(0, -28), lake: P(-170, -70), ruins: P(140, 60), forest: P(0, -235), crystal: P(300, 0), arena: P(-60, 260) };
+    this.biomePOI = {};                                                  // the 9 outer biome hearts (POI.forest stays Whisperwood, the home-side forest edge)
+    for (let k = 0; k < ORDER.length; k++) { const c = centerOf(k); this.biomePOI[ORDER[k]] = P(c.x, c.z); if (!this.POI[ORDER[k]]) this.POI[ORDER[k]] = this.biomePOI[ORDER[k]]; }
     this._R = game.quality === 'low' ? 256 : 512;   // layer texture resolution
     this._baked = this._bakeAsync();                    // workers start now, overlapping the other systems' init
   }
@@ -102,22 +175,26 @@ export class Terrain {
     }
     const ax = x + 60, az = z - 260; let ar = 0;                         // Hollow Crown arena: flat disc + rocky rim wall
     if (ax * ax + az * az < 7225) { const dA = Math.sqrt(ax * ax + az * az); ar = ss(62, 47, dA); h = mix(h, 11, ar); h += 6 * ss(48, 58, dA) * ss(84, 62, dA); }
-    const keep = (1 - me) * (1 - low) * (1 - pl) * (1 - ar);
+    const keep = (1 - me) * (1 - low) * (1 - pl) * (1 - ar) * ss(520, 420, d0);   // home features stop at the mountain feet
     if (keep > 0.001) {                                                  // bluffs, forest hills, crystal ridges
       let add = ss(0.52, 0.62, fbm3(x * 0.004 + 11, z * 0.004 - 5, s + 31)) * 6;
       if (z < -140) { const fo = ss(-140, -220, z) * ss(300, 240, Math.abs(x)); if (fo > 0) add += fo * (3 + fbm3(x * 0.006 + 3, z * 0.006, s + 8) * 5); }
       if (x > 190) add += ss(190, 260, x) * (3 + ridged3(x * 0.008, z * 0.008, s + 9) * 9);
       h += keep * add;
     }
-    if (d0 > 236) {                                                      // mountain ring: craggy wall + sharp warped crests + varied strata ledges + NW pass
+    if (d0 > 236 && d0 < 600) {                                          // mountain ring: craggy wall, warped crests, strata ledges — pierced by 9 passes
+      // The ring is now a BAND, not a wall at the end of the world: `env` brings the land back down
+      // past ~600 m so the biome belt beyond it is walkable, and every outer biome has its own notch.
+      const env = ss(580, 452, d0);
       const dm = d0 + fbm3(x * 0.004, z * 0.004, s + 21) * 60;
       const mt = ss(352, 462, dm), wall = ss(326, 380, dm);
       const belt = ss(238, 306, dm) * ss(404, 340, dm) * (1 - ar);       // approach belt: rocky knolls/scree, not a featureless dirt ramp
-      let da = Math.abs(Math.atan2(z, x) + 2.356); if (da > Math.PI) da = 2 * Math.PI - da;
-      const pass = 1 - 0.72 * ss(0.6, 0.15, da);
+      const th = Math.atan2(z, x) - THETA0;                              // angular distance to the NEAREST biome bearing
+      const da = Math.abs(th - Math.round(th / STEP) * STEP);
+      const pass = 1 - 0.86 * ss(0.26, 0.055, da);
       if (belt > 0.01) {                                                 // warped creased knolls + boulder-scale bumps across the whole approach
         const bx = x + n2(x * 0.019, z * 0.019, s + 39) * 13, bz = z + n2(x * 0.019 + 4, z * 0.019 - 6, s + 40) * 13;
-        h += belt * (0.4 + 0.6 * pass) * (rmf(bx * 0.017, bz * 0.017, s + 29, 4) * 14 - 3.9 + n2(x * 0.062, z * 0.062, s + 30) * 1.7);
+        h += env * belt * (0.4 + 0.6 * pass) * (rmf(bx * 0.017, bz * 0.017, s + 29, 4) * 14 - 3.9 + n2(x * 0.062, z * 0.062, s + 30) * 1.7);
       }
       if (mt > 0 || wall > 0) {
         // TWO-stage domain warp: ridge lines bend and fork instead of running as parallel arcs around the ring
@@ -136,17 +213,26 @@ export class Terrain {
         // the NW pass lowers the CRESTS, not the rock: crag detail keeps most of its amplitude in the
         // saddle, so the pass reads as a rocky notch instead of a smooth bank (the "mountain looks
         // like a slope" report — pass * everything flattened the whole gap into a dune)
-        let m = wall * (12 + 26 * teeth) * (0.65 + 0.35 * pass)
-              + mt * ((14 + 54 * massif) * summit * pass + 52 * teeth * (0.5 + 0.5 * pass));   // ring crests ~120-175 m (CLAUDE.md: ~150)
+        let m = wall * (12 + 26 * teeth) * (0.35 + 0.65 * pass)
+              + mt * ((14 + 54 * massif) * summit * pass + 52 * teeth * (0.25 + 0.75 * pass));   // ring crests ~120-175 m (CLAUDE.md: ~150); a pass bottoms out ~35 m over the meadow
         // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
         const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
         const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
         // ~23 m-period ledges cut ACROSS the faces. At 400 m the step edge is what reads as rock rather than
         // felt, and it costs one sin of a value we already have; amplitude raised with the steeper faces.
         if (bandAmt > 0.01) m -= (4.5 + 8.5 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
-        h += m;
+        h += m * env;
       }
-      h += ss(462, 530, dm) * 45;
+    }
+    if (d0 > 470) {                                                      // one of the 9 outer biomes (Biomes.js layout)
+      let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
+      const c = BC[k], bx = x - c[0], bz = z - c[1];
+      const w = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz));
+      if (w > 0.001) h = BH[k](x, z, h, s, w, c[0], c[1]);
+    }
+    if (d0 > EDGE) {                                                     // world edge: impassable crag wall
+      const e = ss(EDGE, EDGE + 100, d0);
+      h += e * (150 + ridged3(x * 0.009, z * 0.009, s + 291) * 90) + ss(EDGE + 80, EDGE + 200, d0) * 120;
     }
     return h;
   }
@@ -157,14 +243,51 @@ export class Terrain {
   }
   slopeAt(x, z) { return 1 - clamp(this.normalAt(x, z, this._n).y, 0, 1); }
   biomeAt(x, z) {
+    const d2 = x * x + z * z;
+    if (d2 > RING_IN * RING_IN) {                      // outside the home bowl: one of the 9 outer regions, else ring/corridor rock
+      const k = wedgeAt(x, z);
+      if (weightAt(x, z, k) > 0.02) return ORDER[k];
+      if (d2 > RING_OUT * RING_OUT) return 'wilds';
+    }
     const h = this.heightAt(x, z);
-    if (h > 45 || x * x + z * z > 160000) return 'mountain';
+    if (h > 45 || d2 > 160000) return 'mountain';
     const lx = x + 170, lz = z + 70; if (lx * lx + lz * lz < 13225 && h < WL + 2.5) return 'lake';
     const ax = x + 60, az = z - 260; if (ax * ax + az * az < 3600) return 'arena';
     const rx = x - 140, rz = z - 60; if (rx * rx + rz * rz < 5184) return 'ruins';
     if (z < -180 && Math.abs(x) < 260) return 'forest';
     if (x > 220) return 'crystal';
     return 'meadow';
+  }
+
+  /** 0..1 ground-cover density. Grass.js prefers this over its own biome-name heuristics. */
+  grassAt(x, z) {
+    const d2 = x * x + z * z;
+    if (d2 > RING_IN * RING_IN) {
+      const k = wedgeAt(x, z), w = weightAt(x, z, k);
+      const wild = 0.5 * (1 - ss(28, 56, this.heightAt(x, z)));      // ring rock + the corridors between regions: patchy scrub
+      return mix(wild, BIOMES[ORDER[k]].grass.d, w);
+    }
+    const b = this.biomeAt(x, z);
+    return b === 'meadow' ? 1 : b === 'crystal' ? 0.7 : b === 'forest' ? 0.6 : b === 'ruins' ? 0.2 : 0;
+  }
+
+  /** { id, w } — nearest outer biome + its 0..1 weight. w = 0 anywhere in the home bowl. Allocation-free. */
+  biomeBlend(x, z, out = this._bb ??= { id: 'meadow', w: 0, k: -1 }) {
+    out.id = 'meadow'; out.w = 0; out.k = -1;
+    if (x * x + z * z < RING_IN * RING_IN) return out;
+    const k = wedgeAt(x, z); out.k = k; out.id = ORDER[k]; out.w = weightAt(x, z, k);
+    return out;
+  }
+  /** 0..1 "no standing water here" mask (Infernal ash + the Void abyss). Water/Lava read it. */
+  dryAt(x, z) {
+    const b = this.biomeBlend(x, z, this._bd ??= {});
+    return BIOMES[b.id]?.dry ? b.w : 0;
+  }
+  /** Gravity multiplier for the player/projectiles (the Void's broken physics). */
+  gravityAt(x, z) {
+    const b = this.biomeBlend(x, z, this._bg ??= {});
+    const g = BIOMES[b.id]?.gravity;
+    return g ? mix(1, g, b.w) : 1;
   }
 
   // exact JS twin of the layer-7 alpha macro noise the shader samples (same seeded permutation table)
@@ -204,7 +327,7 @@ export class Terrain {
     const skirtM = ss(76, 58, rd) * ss(38, 52, rd);
     const arenaM = 1 - ss(43, 49, Math.hypot(x + 60, z - 260));
     const forestM = ss(-150, -215, z + (macro - 0.5) * 40) * ss(290, 245, Math.abs(x));
-    const mtn = Math.max(ss(26, 40, h + (macro - 0.5) * 10), ss(340, 400, d0c + (macro - 0.5) * 70));
+    const mtn = Math.max(ss(26, 40, h + (macro - 0.5) * 10), ss(340, 400, d0c + (macro - 0.5) * 70) * (1 - ss(500, 580, d0c)));
     const crystalM = ss(195, 260, x + (macro - 0.5) * 40) * (1 - mtn);
     const alt = ss(26, 58, h);
     let wSnow = ss(104, 138, h + (macro - 0.5) * 24) * (1 - ss(0.22, 0.46, slope));
@@ -243,6 +366,12 @@ export class Terrain {
     // the shader ramps this macro contrast in with camera distance; Grass mostly uses colorAt for FAR blades, so carry ~60% of it
     const vg = (1 - neut) * 0.55, mC = macroC * 0.62 + macro2C * 0.38;
     r *= mix(1, mix(0.60, 1.36, mC), vg); g *= mix(1, mix(0.70, 1.24, mC), vg); b *= mix(1, mix(0.50, 1.02, mC), vg);
+    if (d0c > 470) {                                   // outer biome floor: same layer choice as the shader, one mean colour
+      let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
+      const c = BC[k], bx = x - c[0], bz = z - c[1];
+      const bw = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz)) * BCOV[k];
+      if (bw > 0.002) { const a = BALB[k]; r = mix(r, a[0], bw); g = mix(g, a[1], bw); b = mix(b, a[2], bw); }
+    }
     const wet = lakeM * ss(WL + 6.5, WL + 0.2, h);
     r *= mix(1, 0.30, wet); g *= mix(1, 0.35, wet); b *= mix(1, 0.44, wet);
     return out.setRGB(r, g, b);
@@ -253,7 +382,7 @@ export class Terrain {
     const N = TEX, R = this._R;
     const out = { hgt: new Float32Array(N * N), nrm: new Uint8Array(N * N * 4), layers: new Uint8Array(LAYERS * R * R * 4), R };
     const merge = (r) => { out.hgt.set(r.hgt, r.y0 * N); out.nrm.set(r.nrm, r.y0 * N * 4); for (const L of r.layers) out.layers.set(L.data, L.l * R * R * 4); };
-    const fallback = (e) => { console.warn('[terrain] worker bake unavailable, baking on the main thread', e?.message ?? e); merge(bakeKernel({ seed: this.seed, w: 0, W: 1, R })); return out; };
+    const fallback = (e) => { console.warn('[terrain] worker bake unavailable, baking on the main thread', e?.message ?? e); merge(bakeKernel({ seed: this.seed, w: 0, W: 1, R, N })); return out; };
     try {
       const W = Math.min(6, Math.max(2, navigator.hardwareConcurrency || 4));
       // the worker is built from this module's own function sources, so it always bakes exactly what heightAt() says
@@ -261,6 +390,9 @@ export class Terrain {
         `const clamp=${clamp};const smoothstep=${smoothstep};const lerp=(a,b,t)=>a+(b-a)*t;const fade=(t)=>t*t*t*(t*(t*6-15)+10);`,
         mulberry32.toString(), hash2.toString(), noise2.toString(),
         `const ss=smoothstep,mix=lerp,n2=noise2;const fbm2=${fbm2};const fbm3=${fbm3};const fbm4=${fbm4};const rg=${rg};const ridged3=${ridged3};const ridged4=${ridged4};const rmf=${rmf};`,
+        // biome layout + the 9 outer height kernels, injected as literals so the worker bakes exactly what heightAt() says
+        `const THETA0=${THETA0};const STEP=${STEP};const RR=${RR};const EDGE=${EDGE};const BC=${JSON.stringify(BC)};const LAYERS=${LAYERS};`,
+        `const BH=[${BH.map((f) => f.toString()).join(',')}];`,
         `const T={seed:0,heightAt:function ${Terrain.prototype.heightAt}};`,
         layerTex.toString(), bakeKernel.toString(),
         `self.onmessage=(e)=>{const r=bakeKernel(e.data);postMessage(r,[r.hgt.buffer,r.nrm.buffer,...r.layers.map((x)=>x.data.buffer)]);};`,
@@ -271,7 +403,7 @@ export class Terrain {
         const wk = new Worker(url);
         wk.onmessage = (e) => { merge(e.data); wk.terminate(); res(); };
         wk.onerror = (e) => { wk.terminate(); rej(e); };
-        wk.postMessage({ seed: this.seed, w, W, R });
+        wk.postMessage({ seed: this.seed, w, W, R, N });
       }));
       return Promise.all(jobs).then(() => { URL.revokeObjectURL(url); return out; }, fallback);
     } catch (e) { return Promise.resolve(fallback(e)); }
@@ -283,7 +415,7 @@ export class Terrain {
     const q = renderer.qualityPreset;
     const n = { low: 128, medium: 160, high: 192 }[this.game.quality] ?? 192;  // cells per level (multiple of 4)
     const E = n / 2, H = E / 2 - 1;
-    const L = Math.ceil(Math.log2(1024 / E)) + 1;                       // levels until the coarsest covers the whole world
+    const L = Math.ceil(Math.log2(SIZE / E)) + 1;                       // levels until the coarsest covers the whole world
     const t0 = performance.now();
     const R = this._R;
 
@@ -300,23 +432,23 @@ export class Terrain {
     // --- instant preview bake (main thread, ~0.2 s): terrain exists on the first frame; workers replace it when they land ---
     const hgtQ = new Float32Array(TEX * TEX);
     {
-      const C = 257, st = 4, cq = new Float32Array(C * C);                 // 4 m analytic grid -> bilinear 1 m upsample
-      for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) cq[j * C + i] = this.heightAt(i * st - 512, j * st - 512);
+      const SH = 3, st = 1 << SH, C = (TEX >> SH) + 1, cq = new Float32Array(C * C);   // 8 m analytic grid -> bilinear 1 m upsample (~66k heightAt, ~0.1 s)
+      for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) cq[j * C + i] = this.heightAt(i * st - HALF, j * st - HALF);
       for (let j = 0; j < TEX; j++) {
-        const j0 = j >> 2, fj = (j & 3) / 4, r0 = j0 * C, r1 = Math.min(j0 + 1, C - 1) * C;
+        const j0 = j >> SH, fj = (j & (st - 1)) / st, r0 = j0 * C, r1 = Math.min(j0 + 1, C - 1) * C;
         for (let i = 0; i < TEX; i++) {
-          const i0 = i >> 2, fi = (i & 3) / 4, i1 = Math.min(i0 + 1, C - 1);
+          const i0 = i >> SH, fi = (i & (st - 1)) / st, i1 = Math.min(i0 + 1, C - 1);
           const a = cq[r0 + i0], b = cq[r0 + i1], c = cq[r1 + i0], d = cq[r1 + i1];
           hgtQ[j * TEX + i] = a + (b - a) * fi + (c - a + (a - b + d - c) * fi) * fj;
         }
       }
       heightTex.image.data = hgtQ; heightTex.needsUpdate = true;
     }
-    const RQ = 512, nrmQdata = new Uint8Array(RQ * RQ * 4);                // preview normals from the preview height (AO = 1)
+    const RQ = 512, RQS = TEX / RQ, nrmQdata = new Uint8Array(RQ * RQ * 4);   // preview normals from the preview height (AO = 1)
     {
       const Hs = (i, j) => hgtQ[Math.min(TEX - 1, Math.max(0, j)) * TEX + Math.min(TEX - 1, Math.max(0, i))];
       for (let j = 0, k = 0; j < RQ; j++) for (let i = 0; i < RQ; i++, k += 4) {
-        const I = 2 * i, J = 2 * j, dx = Hs(I + 2, J) - Hs(I - 2, J), dz = Hs(I, J + 2) - Hs(I, J - 2);
+        const I = RQS * i, J = RQS * j, dx = Hs(I + 2, J) - Hs(I - 2, J), dz = Hs(I, J + 2) - Hs(I, J - 2);
         const il = 1 / Math.sqrt(dx * dx * 0.0625 + 1 + dz * dz * 0.0625);
         nrmQdata[k] = (-dx * 0.25 * il * 0.5 + 0.5) * 255; nrmQdata[k + 1] = (-dz * 0.25 * il * 0.5 + 0.5) * 255; nrmQdata[k + 2] = 255; nrmQdata[k + 3] = 255;
       }
@@ -392,7 +524,7 @@ export class Terrain {
         .catch((e) => { console.warn(`[terrain] asset ${nm} unavailable (${e?.message ?? e}), procedural fallback`); return null; })));
     Promise.all([this._baked, imgP]).then(([b, imgs]) => {
       this._hgt = b.hgt;                       // exact 1 m height field (Water reuses it if it rebakes)
-      let err = 0; for (let k = 0; k < 64; k++) { const i = (k * 97 + 5) % TEX, j = (k * 389 + 11) % TEX; err = Math.max(err, Math.abs(b.hgt[j * TEX + i] - this.heightAt(i - 512, j - 512))); }
+      let err = 0; for (let k = 0; k < 64; k++) { const i = (k * 97 + 5) % TEX, j = (k * 389 + 11) % TEX; err = Math.max(err, Math.abs(b.hgt[j * TEX + i] - this.heightAt(i - HALF, j - HALF))); }
       console.log(`[terrain] full bake done ${(performance.now() - t0).toFixed(0)} ms after init (${err > 1e-4 ? 'MISMATCH ' + err : 'exact'}), layers ${R}, assets ${imgs.filter(Boolean).length}/${ASSET_LAYERS.length}; staggering uploads`);
       // STAGGERED upload: one item per frame so the bake landing never hitches (was a ~1.1 s single-frame stall).
       const step = (label, fn) => () => { const s0 = performance.now(); fn(); const ms = performance.now() - s0; if (ms > 4) console.log(`[terrain] upload ${label} ${ms.toFixed(0)} ms`); };
@@ -436,7 +568,7 @@ export class Terrain {
 // ======================================================================= bake kernels (run in workers; stringified, so keep them closure-free)
 // One job = a band of height rows (+6 row halo) -> heights + normal/AO, plus every LAYERS-th layer texture.
 function bakeKernel(job) {
-  const { seed, w, W, R } = job; const N = 1024;
+  const { seed, w, W, R, N } = job;
   T.seed = seed;
   const y0 = Math.floor(w * N / W), y1 = Math.floor((w + 1) * N / W), h0 = Math.max(0, y0 - 6), h1 = Math.min(N, y1 + 6);
   const band = new Float32Array((h1 - h0) * N);
@@ -453,7 +585,7 @@ function bakeKernel(job) {
     nrm[k] = (-dx * 0.5 * il * 0.5 + 0.5) * 255; nrm[k + 1] = (-dz * 0.5 * il * 0.5 + 0.5) * 255; nrm[k + 2] = ao * 255; nrm[k + 3] = 255;
   }
   const layers = [];
-  for (let l = w; l < 8; l += W) layers.push({ l, data: layerTex(l, R, seed) });
+  for (let l = w; l < LAYERS; l += W) layers.push({ l, data: layerTex(l, R, seed) });
   return { hgt, nrm, layers, y0 };
 }
 
@@ -547,11 +679,36 @@ function layerTex(layer, R, seed) {
       const grit = (vnoise(u + 0.7, v + 0.7, 512) - 0.5) * 0.075 + (vnoise(u + 0.2, v + 0.4, 200) - 0.5) * 0.055;  // crisp masonry grain that survives mips
       r = mix(mix(mix(0.54, 0.70, hv) * sh, 0.50, mossy) * crack + grit, 0.42, mortar); g = mix(mix(mix(0.50, 0.65, hv) * sh, 0.52, mossy) * crack + grit, 0.39, mortar); b = mix(mix(mix(0.44, 0.57, hv) * sh, 0.42, mossy) * crack + grit * 0.8, 0.33, mortar);
       h = 1 - mortar * 0.35 - (1 - crack) * 0.35;
-    } else {                      // detail: bump normal (rg), bump height (b), macro noise (a)
+    } else if (layer === 7) {     // detail: bump normal (rg), bump height (b), macro noise (a)
       const c = bumpH[j * R + i], k2 = R * 0.03 * 0.5;                           // slope per uv * 0.03 (same strength at any R)
       const dx = (bumpH[j * R + ((i + 1) % R)] - bumpH[j * R + ((i + R - 1) % R)]) * k2, dy = (bumpH[((j + 1) % R) * R + i] - bumpH[((j + R - 1) % R) * R + i]) * k2;
       const il = 1 / Math.sqrt(dx * dx + 1 + dy * dy);
       r = -dx * il * 0.5 + 0.5; g = -dy * il * 0.5 + 0.5; b = c; h = fbm(u + 7.7, v + 7.7, 2, 3);   // alpha: LOW-freq macro (patches ~1/6 tile scale)
+    } else if (layer === 8) {     // Infernal Wastes: volcanic ash over cracked basalt (the fissure GLOW is emissive, added in the splat)
+      const n1 = fbm(u, v, 7, 5), cr = ridge(u, v, 5, 4);
+      const crack = ss(0.86, 1.0, cr), grit = (vnoise(u, v, 512) - 0.5) * 0.05;
+      const base = mix(0.020, 0.078, n1);
+      r = base * 1.05 + crack * 0.30 + grit; g = base * 0.95 + crack * 0.085 + grit * 0.7; b = base * 0.92 + crack * 0.012 + grit * 0.5;
+      h = n1 * 0.7 - crack * 0.5;
+    } else if (layer === 9) {     // Frostveil: glacier ice - blue-white, pressure fractures, rare sparkle (kept well under 1.0)
+      const n1 = fbm(u, v, 5, 4), fr = ridge(u + 1.7, v + 1.7, 8, 3);
+      const frac = ss(0.88, 1.0, fr) * 0.5, sp = vnoise(u, v, 512) > 0.991 ? 0.10 : 0;
+      const base = mix(0.46, 0.70, n1);
+      r = base * 0.80 * (1 - frac * 0.25) + sp; g = base * 0.92 * (1 - frac * 0.15) + sp; b = base * 1.12 + sp;
+      h = n1 - frac * 0.4;
+    } else if (layer === 10) {    // Shadowfen: peat muck, algae mats, gas-bubble pocks
+      const n1 = fbm(u, v, 6, 5), alg = ss(0.55, 0.78, fbm(u + 4, v + 4, 3, 3));
+      worley(u, v, 26, 26); const bub = ss(0.24, 0.16, wd) * 0.5, grit = (vnoise(u, v, 400) - 0.5) * 0.05;
+      r = mix(0.055, 0.118, n1) + grit; g = mix(0.052, 0.108, n1) + grit; b = mix(0.030, 0.056, n1) + grit * 0.6;
+      r = mix(r, 0.085, alg); g = mix(g, 0.158, alg); b = mix(b, 0.045, alg);
+      r *= 1 - bub * 0.3; g *= 1 - bub * 0.2; b *= 1 - bub * 0.3;
+      h = n1 * 0.6 + alg * 0.25 - bub * 0.4;
+    } else {                      // The Void: near-black stone shot through with violet fracture veins
+      const n1 = fbm(u, v, 6, 5), vn = ridge(u + 2.3, v + 2.3, 6, 4);
+      const vein = ss(0.87, 1.0, vn), grit = (vnoise(u, v, 512) - 0.5) * 0.04;
+      const base = mix(0.030, 0.092, n1);
+      r = base * 0.95 + vein * 0.16 + grit; g = base * 0.80 + vein * 0.05 + grit * 0.6; b = base * 1.30 + vein * 0.34 + grit;
+      h = n1 * 0.7 - vein * 0.4;
     }
     out[k] = enc(r); out[k + 1] = enc(g); out[k + 2] = enc(b); out[k + 3] = (h < 0 ? 0 : h > 1 ? 1 : h) * 255;
   }
@@ -566,7 +723,7 @@ uniform highp sampler2D uNormal;
 uniform vec2 uCenter;
 uniform vec2 uMorph;
 varying vec3 vWPos;
-// Out-of-world skirt. The 1024 m bake stops at +-512; past it the clipmap used to add
+// Out-of-world skirt. The 2048 m bake stops at the world edge; past it the clipmap used to add
 // (Chebyshev distance x 0.3) with the baked EDGE normal clamped flat across the whole thing: a smooth,
 // unlit four-sided cone that stood over the ring crest as a white bank -- what the "mountains look like
 // elongated slopes, not jaggy mountains" screenshots are actually showing. It is replaced by a ridged
@@ -582,19 +739,19 @@ float skNoise(vec2 p) {
 }
 float terrainH(vec2 w) {
   vec2 c = floor(w + 0.5);
-  vec2 cc = clamp(c, -512.0, 511.0);
-  float h = texelFetch(uHeight, ivec2(cc + 512.0), 0).r;
-  float o = max(0.0, max(abs(c.x), abs(c.y)) - 511.0);
+  vec2 cc = clamp(c, -${HALF}.0, ${HALF - 1}.0);
+  float h = texelFetch(uHeight, ivec2(cc + ${HALF}.0), 0).r;
+  float o = max(0.0, max(abs(c.x), abs(c.y)) - ${HALF - 1}.0);
   if (o <= 0.0) return h;
   float r1 = 1.0 - abs(skNoise(w * 0.0045) * 2.0 - 1.0);
   float r2 = 1.0 - abs(skNoise(w * 0.0115 + 7.3) * 2.0 - 1.0);
   return h + o * (0.05 + 0.30 * (r1 * r1 * 0.8 + r2 * r2 * 0.2));   // tuned so the far range tops out just UNDER the ring crest
 }
 vec3 terrainN(vec2 w) {
-  vec4 t = textureLod(uNormal, (w + 512.5) / 1024.0, 0.0);
+  vec4 t = textureLod(uNormal, (w + ${HALF}.5) / ${TEX}.0, 0.0);
   vec3 n = vec3(t.r * 2.0 - 1.0, 0.0, t.g * 2.0 - 1.0);
   n.y = sqrt(max(0.0, 1.0 - dot(n.xz, n.xz)));
-  float o = max(abs(w.x), abs(w.y)) - 511.0;
+  float o = max(abs(w.x), abs(w.y)) - ${HALF - 1}.0;
   if (o > 0.0) {   // real slope for the skirt; the clamped edge normal lit it as one flat sheet
     const float e = 12.0;
     float hx = terrainH(w + vec2(e, 0.0)) - terrainH(w - vec2(e, 0.0));
@@ -654,7 +811,7 @@ const FRAG_SPLAT = /* glsl */`
 vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
 {
   vec3 P = vWPos;
-  vec4 nt = texture(uNormal, (P.xz + 512.5) / 1024.0);
+  vec4 nt = texture(uNormal, (P.xz + ${HALF}.5) / ${TEX}.0);
   vec3 gN = vec3(nt.r * 2.0 - 1.0, 0.0, nt.g * 2.0 - 1.0); gN.y = sqrt(max(0.0, 1.0 - dot(gN.xz, gN.xz)));
   tAO = nt.b;
   float slope = 1.0 - gN.y;
@@ -683,8 +840,28 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float arenaM = 1.0 - smoothstep(43.0, 49.0, length(P.xz - vec2(-60.0, 260.0)));
   float forestM = smoothstep(-150.0, -215.0, P.z + (macro - 0.5) * 40.0) * smoothstep(290.0, 245.0, abs(P.x));
   // mountain mask: grass/forest only live on genuinely low ground (kills the green terrace stripes on cliff ledges)
-  float mtn = max(smoothstep(26.0, 40.0, P.y + (macro - 0.5) * 10.0), smoothstep(340.0, 400.0, length(P.xz) + (macro - 0.5) * 70.0));
-  float crystalM = smoothstep(195.0, 260.0, P.x + (macro - 0.5) * 40.0) * (1.0 - mtn);
+  float rad = length(P.xz);
+  float home = 1.0 - smoothstep(300.0, 400.0, rad);                          // home-bowl features never leak into the biome belt
+  forestM *= home;
+  float mtn = max(smoothstep(26.0, 40.0, P.y + (macro - 0.5) * 10.0), smoothstep(340.0, 400.0, rad + (macro - 0.5) * 70.0) * (1.0 - smoothstep(500.0, 580.0, rad)));
+  float crystalM = smoothstep(195.0, 260.0, P.x + (macro - 0.5) * 40.0) * (1.0 - mtn) * home;
+  // --- outer biome (Biomes.js: 9 circles of radius RR centred on a ring of radius RB) ---
+  float bAng = atan(P.z, P.x);
+  float bK = mod(floor((bAng - ${THETA0}) / ${STEP} + 0.5), 9.0);
+  float bA = ${THETA0} + bK * ${STEP};
+  float bD = length(P.xz - vec2(cos(bA), sin(bA)) * ${RB}.0) + (macro - 0.5) * 26.0;
+  float bW = 1.0 - smoothstep(${RR * 0.62}, ${RR}.0, bD);
+  float bLayer = 1.0, bScl = 3.6, bRough = 0.90, bCov = 0.72, bSnow = 0.0, bRockCut = 0.0; vec3 bTint = vec3(1.0);
+  if (bK < 0.5)      { bLayer = 1.0;  bScl = 3.4; bCov = 0.72; bTint = vec3(0.86, 1.10, 0.80); }                  // forest floor
+  else if (bK < 1.5) { bLayer = 9.0;  bScl = 6.5; bCov = 1.00; bRough = 0.45; bSnow = 1.0; bRockCut = 0.55; }     // tundra glacier
+  else if (bK < 2.5) { bLayer = 6.0;  bScl = 4.6; bCov = 0.62; bRough = 0.62; bTint = vec3(1.16, 1.00, 0.72); }   // celestial: sun-warmed marble, never neutral white
+  else if (bK < 3.5) { bLayer = 3.0;  bScl = 6.0; bCov = 0.60; bTint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
+  else if (bK < 4.5) { bLayer = 8.0;  bScl = 3.2; bCov = 1.00; bRough = 0.92; bRockCut = 0.80; }                  // infernal ash
+  else if (bK < 5.5) { bLayer = 6.0;  bScl = 4.2; bCov = 0.60; bTint = vec3(0.92, 0.86, 1.14); }                  // lost realm
+  else if (bK < 6.5) { bLayer = 10.0; bScl = 3.0; bCov = 0.80; bRough = 0.55; bRockCut = 0.45; }                  // shadowfen muck
+  else if (bK < 7.5) { bLayer = 4.0;  bScl = 3.0; bCov = 0.90; bRough = 0.70; bTint = vec3(0.78, 0.95, 0.94); bRockCut = 0.55; }   // sunken reef
+  else               { bLayer = 11.0; bScl = 4.0; bCov = 1.00; bRough = 0.68; bRockCut = 0.88; }                  // voidstone
+  float wB = bW * bCov;
   float alt = smoothstep(26.0, 58.0, P.y);           // mountain altitude: rock takes over sooner, dirt turns to scree
   // --- layer weights ("over" compositing, then height-sharpened) ---
   float snowN = lyr(P.xz * (1.0 / 23.0) + 0.77, 7.0).a;                 // mid-scale breakup: no polygon-edged snow sheets
@@ -696,7 +873,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float wSnow = smoothstep(100.0, 140.0, P.y + (macro - 0.5) * 28.0 + (snowN - 0.5) * 24.0 + (snowN2 - 0.5) * 8.0) * (1.0 - smoothstep(0.17, 0.42, slope + (snowN - 0.5) * 0.12));
   // never on the out-of-world skirt: it is a gentle ramp, so a height-and-slope snow test paints ALL of it
   // white, and a white sheet behind the ring is exactly the bank the mountains were being mistaken for.
-  wSnow *= 1.0 - smoothstep(496.0, 528.0, max(abs(P.x), abs(P.z)));
+  wSnow *= 1.0 - smoothstep(${HALF - 32}.0, ${HALF}.0, max(abs(P.x), abs(P.z)));
   float skirtM = smoothstep(76.0, 58.0, ruinD) * smoothstep(38.0, 52.0, ruinD);   // Spire skirt band: broken rock, not a dirt mound
   float rockTh = mix(0.30, 0.12, max(alt, max(mtn, skirtM)));
   float rockW = 0.13 + far * 0.12;                                       // wide blend + multi-octave dither: no sawtooth boundary at the skirt base
@@ -705,17 +882,20 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float beltM = smoothstep(238.0, 296.0, beltD) * (1.0 - smoothstep(348.0, 412.0, beltD));
   wRock = max(wRock, beltM * smoothstep(0.26, 0.60, macro2C + (det2.b - 0.5) * 0.30) * smoothstep(0.02, 0.09, slope));
   wRock = max(wRock, skirtM * smoothstep(0.10, 0.20, slope + (macro - 0.5) * 0.08));
+  wRock *= 1.0 - bW * bRockCut;      // in the Wastes/Void/glacier/reef the CLIFF is the biome's own stone, not generic strata
   float wSand = lakeM * smoothstep(uWater + 1.9, uWater + 0.9, P.y + (macro2 - 0.5) * 0.9);
   float wStone = max(ruinM, arenaM);
   float wDirt = clamp(smoothstep(0.12, 0.26, slope + (macro2 - 0.5) * 0.06) + smoothstep(0.64, 0.80, macro2) * 0.7 + crystalM * 0.35 + alt * 0.5 + mtn * 0.75, 0.0, 1.0);
+  wSnow = max(wSnow, bW * bSnow * (1.0 - smoothstep(0.40, 0.68, slope)));    // Frostveil is snowbound at 25 m, not 120
   float wForest = forestM * (1.0 - mtn);
   float wGrass = 1.0 - mtn;
   wGrass *= 1.0 - wForest;
   float k = 1.0 - wDirt; wGrass *= k; wForest *= k;
-  k = 1.0 - wStone; wGrass *= k; wForest *= k; wDirt *= k;
-  k = 1.0 - wSand; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k;
-  k = 1.0 - wRock; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wSand *= k;
-  k = 1.0 - wSnow; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wSand *= k; wRock *= k;
+  k = 1.0 - wB; wGrass *= k; wForest *= k; wDirt *= k;                       // the biome floor sits over grass/forest/dirt...
+  k = 1.0 - wStone; wGrass *= k; wForest *= k; wDirt *= k; wB *= k;
+  k = 1.0 - wSand; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wB *= k;
+  k = 1.0 - wRock; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wSand *= k; wB *= k;   // ...but cliffs and snow still win
+  k = 1.0 - wSnow; wGrass *= k; wForest *= k; wDirt *= k; wStone *= k; wSand *= k; wRock *= k; wB *= k;
   // --- sample layers (top projection; rock triplanar). Asset albedos live in the array; hex-tiling kills the repeat.
   float farC = smoothstep(50.0, 280.0, camD);                            // albedo macro contrast ramps in EARLY (aerial is not a paint fill)
   vec4 cG = mix(lyrHex(P.xz * (1.0 / 3.7), 0.0, 3.0), lyr(P.xz * (1.0 / 11.0) + 0.31, 0.0), 0.35);
@@ -760,18 +940,22 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     vec3 bX = vec3(0.0, dX.g * 2.0 - 1.0, dX.r * 2.0 - 1.0) * bw.x, bZ = vec3(dZ.r * 2.0 - 1.0, dZ.g * 2.0 - 1.0, 0.0) * bw.z;
     bump = mix(bump, (bX + bZ) * 0.7 * detFade + bump * bw.y, wRock);
   }
+  // biome floor: ONE array fetch, layer index chosen above. Sampled outside every branch so the
+  // hex-tile derivatives stay in uniform control flow.
+  vec4 cB = vec4(0.0);
+  if (wB > 0.002) { cB = lyrHex(P.xz / bScl, bLayer, 3.0); cB.rgb *= bTint * mix(0.78, 1.24, macro2C); }
   // height-sharpened blend
   float e = 0.35;
-  float sG = wGrass * (e + cG.a), sF = wForest * (e + cF.a), sD = wDirt * (e + cD.a), sS = wSand * (e + cS.a), sW = wSnow * (e + cW.a), sT = wStone * (e + cT.a), sR = wRock * (e + cR.a);
-  sG *= sG; sF *= sF; sD *= sD; sS *= sS; sW *= sW; sT *= sT; sR *= sR;
-  float sum = sG + sF + sD + sS + sW + sT + sR + 1e-5;
-  vec3 alb = (cG.rgb * sG + cF.rgb * sF + cD.rgb * sD + cS.rgb * sS + cW.rgb * sW + cT.rgb * sT + cR.rgb * sR) / sum;
-  float rough = (0.86 * sG + 0.92 * sF + 0.93 * sD + 0.78 * sS + 0.62 * sW + 0.80 * sT + 0.84 * sR) / sum;
+  float sG = wGrass * (e + cG.a), sF = wForest * (e + cF.a), sD = wDirt * (e + cD.a), sS = wSand * (e + cS.a), sW = wSnow * (e + cW.a), sT = wStone * (e + cT.a), sR = wRock * (e + cR.a), sB = wB * (e + cB.a);
+  sG *= sG; sF *= sF; sD *= sD; sS *= sS; sW *= sW; sT *= sT; sR *= sR; sB *= sB;
+  float sum = sG + sF + sD + sS + sW + sT + sR + sB + 1e-5;
+  vec3 alb = (cG.rgb * sG + cF.rgb * sF + cD.rgb * sD + cS.rgb * sS + cW.rgb * sW + cT.rgb * sT + cR.rgb * sR + cB.rgb * sB) / sum;
+  float rough = (0.86 * sG + 0.92 * sF + 0.93 * sD + 0.78 * sS + 0.62 * sW + 0.80 * sT + 0.84 * sR + bRough * sB) / sum;
   // snow: cool ambient tint so the caps read blue-grey, not blown white
   alb = mix(alb, alb * vec3(0.88, 0.94, 1.08), sW / sum);
   // macro tint: meadow warm/cool patches; stone/rock/snow stay neutral (no olive ruins, no mauve scree)
   vec3 tint = mix(vec3(0.84, 0.87, 0.70), vec3(1.10, 1.07, 0.98), macro) * (0.90 + 0.20 * macro2);
-  tint = mix(tint, vec3(1.0), clamp((sT + sR + sW) / sum, 0.0, 1.0));
+  tint = mix(tint, vec3(1.0), clamp((sT + sR + sW + sB) / sum, 0.0, 1.0));
   alb *= tint;
   alb = mix(alb, alb * vec3(0.78, 0.86, 0.74), forestM * 0.6);
   alb = mix(alb, alb * vec3(0.92, 0.84, 1.12) + vec3(0.02, 0.01, 0.05), crystalM * 0.7);
@@ -790,6 +974,11 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   alb *= 1.0 + (det.b - 0.5) * 0.5 * detFade + (det2.b - 0.5) * 0.2 * (1.0 - 0.6 * far) + (det0.b - 0.5) * 0.45 * nearF;
   // crystal fields: faint aether motes in the ground
   tEmis = crystalM * vec3(0.35, 0.25, 0.9) * smoothstep(0.82, 0.96, det.b) * (0.5 + 0.5 * sin(uTime * 1.5 + det2.b * 20.0)) * 0.6;
+  // Biome ground glow. ARCHITECTURAL LAW: saturate the HUE, cap the VALUE - a ground emissive that can reach the
+  // bloom threshold turns into drifting white balls. Deep orange fissures / violet void veins, both well under 1.
+  float bCov2 = sB / sum;
+  if (bK > 3.5 && bK < 4.5) tEmis += vec3(0.90, 0.155, 0.012) * bCov2 * smoothstep(0.30, 0.06, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
+  if (bK > 7.5)             tEmis += vec3(0.34, 0.10, 0.85) * bCov2 * smoothstep(0.30, 0.05, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
   tRough = rough;
   diffuseColor.rgb *= alb;
 }`;

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp, lerp, smoothstep } from '../core/Noise.js';
-import { InstLOD, patchMaterial, triplanarPatch, fadePatch, mergePatch, noiseTexture, normalFromLuma, tn, tfbm } from './Vegetation.js';
+import { InstLOD, patchMaterial, triplanarPatch, fadePatch, mergePatch, noiseTexture, normalFromLuma, makeRockGeometry, tn, tfbm } from './Vegetation.js';
+import { OUTER } from './Biomes.js';
 
 /**
  * Props: hand-placed landmarks (procedural geometry, seeded detail), all colliding:
@@ -62,6 +63,19 @@ function runeColumnTexture(rng) {
 
 // ---------------------------------------------------------------- geometry helpers
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+// per-landmark sigil colour (linear HDR: additive rings must read at noon without tone-mapping to white,
+// so the HUE is saturated and only one channel goes above 1)
+const LANDMARK_STONE = {
+  forest:    { glyph: [0.35, 1.9, 0.75] },
+  tundra:    { glyph: [0.62, 1.35, 2.3] },
+  celestial: { glyph: [2.3, 1.55, 0.55] },
+  dragon:    { glyph: [2.1, 1.0, 0.35] },
+  infernal:  { glyph: [2.4, 0.55, 0.12] },
+  lost:      { glyph: [1.35, 0.75, 2.4] },
+  shadowfen: { glyph: [0.55, 1.9, 0.5] },
+  sunken:    { glyph: [0.45, 1.5, 1.9] },
+  void:      { glyph: [1.1, 0.4, 2.4] },
+};
 const flat = (g) => { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }; // faceted stone
 /** Merge parts to one non-indexed geometry. tints: per-part [r,g,b] array (or one tint for all) -> vertex colors
  *  (stoneMat has vertexColors on: per-block tint kills the single-beige-albedo read). */
@@ -150,7 +164,197 @@ export class Props {
     this._buildArena(rng, h, col);
     this._buildMeadow(rng, h, col);
     this._buildMushrooms(rng, h, veg, Q);
+    this._buildBiomeLandmarks(rng, h, col);
+    this._buildVillage(rng, h, col);
   }
+
+  /**
+   * Hearthfall — the Vale's hamlet (biome 1 is "grasslands, VILLAGES, wildflowers"). Nine cottages and a well
+   * on the gentle rise east of the meadow, far enough from the Aetheryte plaza to read as its own place.
+   * All one merged mesh + one merged thatch mesh: two draw calls for a village.
+   */
+  _buildVillage(rng, h, col) {
+    const { scene } = this.game;
+    const CX = 118, CZ = -96;                       // meadow, clear of the aetheryte (0,-28) and the lake
+    const walls = [], wallT = [], roofs = [], roofT = [];
+    const W = (g, t) => { walls.push(g); wallT.push(t); };
+    const R = (g, t) => { roofs.push(g); roofT.push(t); };
+
+    const cottage = (x, z, ry, w, d, wh) => {
+      const y = h(x, z) - 0.15;
+      const body = new THREE.BoxGeometry(w, wh, d).rotateY(ry).translate(x, y + wh / 2, z);
+      W(body, [0.86, 0.82, 0.72]);
+      // plinth course: a stone footing stops the walls looking like they were dropped on the grass
+      W(new THREE.BoxGeometry(w + 0.35, 0.45, d + 0.35).rotateY(ry).translate(x, y + 0.22, z), [0.62, 0.60, 0.56]);
+      // thatched hip roof: a 4-sided pyramid. (A pair of leaning slabs needs the pitch maths to be exactly
+      // right from every yaw; a cone with 4 segments is correct by construction and one geometry cheaper.)
+      R(new THREE.ConeGeometry(Math.hypot(w, d) * 0.60, 2.4, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + 1.15, z), [0.50, 0.38, 0.21]);
+      R(new THREE.ConeGeometry(Math.hypot(w, d) * 0.30, 0.9, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + 2.6, z), [0.42, 0.32, 0.17]);
+      // chimney + a dark doorway so the silhouette is not a plain shed
+      const cx2 = x + Math.sin(ry) * (w * 0.32), cz2 = z + Math.cos(ry) * (w * 0.32);
+      W(new THREE.BoxGeometry(0.7, wh + 2.6, 0.7).rotateY(ry).translate(cx2, y + (wh + 2.6) / 2, cz2), [0.58, 0.54, 0.5]);
+      W(new THREE.BoxGeometry(1.0, 1.9, 0.18).rotateY(ry).translate(x + Math.cos(ry) * (d / 2 + 0.02), y + 0.95, z - Math.sin(ry) * (d / 2 + 0.02)), [0.16, 0.12, 0.09]);
+      const rad = Math.max(w, d) * 0.5;
+      col.add({ type: 'box', box: new THREE.Box3(V3(x - rad, y - 1, z - rad), V3(x + rad, y + wh + 1.6, z + rad)) });
+    };
+
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * Math.PI * 2 + rng() * 0.4, r = 13 + rng() * 11;
+      cottage(CX + Math.cos(a) * r, CZ + Math.sin(a) * r, a + Math.PI / 2 + (rng() - 0.5) * 0.5,
+        4.6 + rng() * 2.2, 5.6 + rng() * 2.4, 3.0 + rng() * 0.9);
+    }
+    // the well the whole place is built around
+    const wy = h(CX, CZ);
+    W(new THREE.CylinderGeometry(1.5, 1.65, 1.1, 12).translate(CX, wy + 0.5, CZ), [0.6, 0.58, 0.54]);
+    W(new THREE.CylinderGeometry(1.15, 1.15, 0.9, 12).translate(CX, wy + 0.7, CZ), [0.10, 0.10, 0.12]);
+    for (const s of [1, -1]) W(new THREE.BoxGeometry(0.22, 2.6, 0.22).translate(CX + s * 1.3, wy + 2.0, CZ), [0.45, 0.34, 0.2]);
+    R(new THREE.BoxGeometry(3.6, 0.26, 2.4).rotateX(0.35).translate(CX, wy + 3.5, CZ + 0.35), [0.5, 0.38, 0.2]);
+    R(new THREE.BoxGeometry(3.6, 0.26, 2.4).rotateX(-0.35).translate(CX, wy + 3.5, CZ - 0.35), [0.5, 0.38, 0.2]);
+    col.add({ type: 'sphere', pos: V3(CX, wy + 0.6, CZ), r: 1.8 });
+    // low field walls between the nearest cottages: the hamlet reads as enclosed, not as scattered sheds
+    for (let i = 0; i < 7; i++) {
+      const a = i / 7 * Math.PI * 2 + 0.2, r = 27 + rng() * 4;
+      const x = CX + Math.cos(a) * r, z = CZ + Math.sin(a) * r, y = h(x, z);
+      W(new THREE.BoxGeometry(7 + rng() * 5, 0.9, 0.6).rotateY(a + Math.PI / 2).translate(x, y + 0.35, z), [0.58, 0.56, 0.5]);
+    }
+
+    const wm = new THREE.Mesh(flat(mergeAll(walls, wallT)), this.stoneMat);
+    wm.castShadow = wm.receiveShadow = true; wm.name = 'village-walls'; scene.add(wm);
+    const rm = new THREE.Mesh(flat(mergeAll(roofs, roofT)), this.stoneMat);
+    rm.castShadow = rm.receiveShadow = true; rm.name = 'village-thatch'; scene.add(rm);
+    this.landmarks.village = V3(CX, wy, CZ);
+  }
+
+
+  /**
+   * The nine outer-region landmarks (Biomes.js). One merged stone mesh + one additive floor glyph per region,
+   * built from a shared kit (pillar / slab / arch / dais / ring) so nine hero silhouettes cost nine draw calls.
+   * Celestial and the Void additionally get FLOATING ISLES: walkable box colliders under real rock domes, with
+   * an updraft column at the landmark so you can actually get up there.
+   */
+  _buildBiomeLandmarks(rng, h, col) {
+    const { scene } = this.game;
+    const isles = [];
+
+    for (const B of OUTER) {
+      const CX = B.cx, CZ = B.cz, CY = h(CX, CZ);
+      const parts = [], tints = [];
+      const P = (g, t) => { parts.push(g); tints.push(t ?? B.stone ?? [0.8, 0.78, 0.74]); };
+      const T = LANDMARK_STONE[B.id];
+      // ---- kit -------------------------------------------------------------
+      const pillar = (x, z, ph, r = 1.1, taper = 0.82, tint) => {
+        const y = h(x, z);
+        P(new THREE.CylinderGeometry(r * taper, r, ph, 9).translate(x, y + ph / 2 - 0.4, z), tint);
+        col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + ph - 1, z), r: r * 1.05 });
+      };
+      const slab = (x, y, z, w, hh, d, ry = 0, tint) => {
+        const g = new THREE.BoxGeometry(w, hh, d); if (ry) g.rotateY(ry);
+        P(g.translate(x, y, z), tint);
+        col.add({ type: 'box', box: new THREE.Box3(V3(x - w / 2, y - hh / 2, z - d / 2), V3(x + w / 2, y + hh / 2, z + d / 2)) });
+      };
+      const dais = (r0, steps, step = 0.55, tint) => {
+        for (let i = 0; i < steps; i++) {
+          const r = r0 - i * (r0 * 0.16), y = CY + i * step;
+          P(new THREE.CylinderGeometry(r - 0.3, r, step, 14).translate(CX, y + step / 2, CZ), tint);
+          col.add({ type: 'box', box: new THREE.Box3(V3(CX - r * 0.72, CY - 2, CZ - r * 0.72), V3(CX + r * 0.72, y + step, CZ + r * 0.72)), walkable: true });
+        }
+        return CY + steps * step;
+      };
+      const gate = (span, ph, ry, tint) => {                                   // two legs + a lintel
+        const dx = Math.cos(ry) * span / 2, dz = Math.sin(ry) * span / 2;
+        pillar(CX - dx, CZ - dz, ph, 1.6, 0.72, tint); pillar(CX + dx, CZ + dz, ph, 1.6, 0.72, tint);
+        slab(CX, CY + ph + 0.3, CZ, span + 3.4, 1.8, 3.0, ry, tint);
+        slab(CX, CY + ph + 1.9, CZ, span * 0.6, 1.2, 2.4, ry, tint);
+      };
+      const ring = (n, rad, fn) => { for (let i = 0; i < n; i++) fn(i / n * Math.PI * 2, i); };
+
+      // ---- the nine ---------------------------------------------------------
+      if (B.id === 'forest') {                                                  // The Elderheart: stones round a titanic stump
+        P(new THREE.CylinderGeometry(5.2, 6.4, 3.4, 13).translate(CX, CY + 1.3, CZ), [0.42, 0.34, 0.22]);
+        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 4.2, CY - 2, CZ - 4.2), V3(CX + 4.2, CY + 3.0, CZ + 4.2)), walkable: true });
+        ring(7, 13, (a) => { const x = CX + Math.cos(a) * 13, z = CZ + Math.sin(a) * 13, y = h(x, z), hh = 6.5 + rng() * 3.5;
+          P(monolithGeometry(hh, rng).rotateX(0.13).rotateY(-a).translate(x, y, z), [0.5, 0.56, 0.44]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.4 }); });
+      } else if (B.id === 'tundra') {                                           // The Glacier Throne
+        const top = dais(11, 4, 0.7, [0.78, 0.86, 0.96]);
+        slab(CX, top + 4.6, CZ - 3.2, 9, 9.2, 1.6, 0, [0.72, 0.82, 0.96]);      // throne back
+        slab(CX, top + 0.9, CZ, 7.4, 1.6, 5.0, 0, [0.7, 0.8, 0.95]);            // seat
+        ring(4, 15, (a) => pillar(CX + Math.cos(a) * 15, CZ + Math.sin(a) * 15, 12 + rng() * 4, 1.2, 0.5, [0.74, 0.85, 0.98]));
+      } else if (B.id === 'celestial') {                                        // The Empyrean Gate + the isles above it
+        dais(13, 3, 0.6, [0.86, 0.83, 0.76]);
+        gate(15, 17, 0.6, [0.9, 0.86, 0.78]);
+        ring(6, 21, (a) => pillar(CX + Math.cos(a) * 21, CZ + Math.sin(a) * 21, 9 + rng() * 5, 0.9, 0.86, [0.88, 0.85, 0.78]));
+        isles.push({ x: CX, z: CZ, y0: CY + 52, n: 7, spread: 90, tint: [0.86, 0.84, 0.78] });
+      } else if (B.id === 'dragon') {                                           // Kharaz-Dun Gate, cut into the mountain
+        slab(CX, CY + 11, CZ, 40, 22, 6, 0.3, [0.62, 0.6, 0.58]);               // the wall
+        slab(CX, CY + 6.5, CZ + 2.6, 13, 13, 4, 0.3, [0.2, 0.18, 0.17]);        // the dark doorway
+        pillar(CX - 11, CZ - 2, 20, 2.4, 0.8, [0.72, 0.66, 0.5]); pillar(CX + 11, CZ + 2, 20, 2.4, 0.8, [0.72, 0.66, 0.5]);
+        ring(2, 17, (a, i) => pillar(CX + Math.cos(a + 1.2) * 17, CZ + Math.sin(a + 1.2) * 17, 15 + i * 4, 3.0, 0.7, [0.66, 0.62, 0.56]));
+      } else if (B.id === 'infernal') {                                         // The Cinder Maw: obsidian teeth round the crater
+        ring(9, 26, (a, i) => { const x = CX + Math.cos(a) * 26, z = CZ + Math.sin(a) * 26, y = h(x, z), hh = 9 + (i % 3) * 5 + rng() * 4;
+          P(monolithGeometry(hh, rng).rotateX(0.3 * Math.cos(a)).rotateZ(0.3 * Math.sin(a)).rotateY(-a).translate(x, y, z), [0.20, 0.16, 0.15]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.7 }); });
+        gate(17, 20, 1.9, [0.17, 0.14, 0.14]);
+      } else if (B.id === 'lost') {                                             // The Convergence: the endgame ring
+        const top = dais(20, 4, 0.6, [0.80, 0.74, 0.88]);
+        P(new THREE.ConeGeometry(3.0, 22, 8).translate(CX, top + 11, CZ), [0.84, 0.76, 0.94]);
+        col.add({ type: 'capsule', a: V3(CX, top, CZ), b: V3(CX, top + 20, CZ), r: 2.6 });
+        ring(16, 34, (a) => { const x = CX + Math.cos(a) * 34, z = CZ + Math.sin(a) * 34, y = h(x, z), hh = 11 + rng() * 6;
+          P(monolithGeometry(hh, rng).rotateY(-a).translate(x, y, z), [0.78, 0.72, 0.9]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 }); });
+      } else if (B.id === 'shadowfen') {                                        // The Hagstone: a holed stone over a stake circle
+        pillar(CX - 3.4, CZ, 13, 1.5, 0.9, [0.42, 0.46, 0.38]); pillar(CX + 3.4, CZ, 13, 1.5, 0.9, [0.42, 0.46, 0.38]);
+        slab(CX, CY + 13.4, CZ, 11, 2.2, 3.0, 0, [0.40, 0.44, 0.36]);
+        ring(11, 12, (a) => { const x = CX + Math.cos(a) * 12, z = CZ + Math.sin(a) * 12, y = h(x, z), hh = 3 + rng() * 2.5;
+          P(new THREE.CylinderGeometry(0.10, 0.28, hh, 6).rotateX((rng() - 0.5) * 0.5).rotateZ((rng() - 0.5) * 0.5).translate(x, y + hh / 2, z), [0.30, 0.26, 0.2]); });
+      } else if (B.id === 'sunken') {                                           // The Drowned Court: a colonnade under the sea
+        const top = dais(15, 3, 0.7, [0.72, 0.78, 0.74]);
+        ring(10, 22, (a, i) => pillar(CX + Math.cos(a) * 22, CZ + Math.sin(a) * 22, i % 4 === 1 ? 5 + rng() * 3 : 15 + rng() * 5, 1.35, 0.8, [0.70, 0.80, 0.76]));
+        slab(CX, top + 2.6, CZ - 4, 8, 5.2, 1.4, 0, [0.68, 0.78, 0.76]);        // the throne nobody sits on
+      } else {                                                                  // void — The Unmaking: shattered ring, nothing holding it up
+        ring(10, 24, (a, i) => { const x = CX + Math.cos(a) * 24, z = CZ + Math.sin(a) * 24, y = h(x, z) + 6 + (i % 4) * 5, hh = 8 + rng() * 6;
+          P(monolithGeometry(hh, rng).rotateX(0.5 * Math.cos(a * 2)).rotateZ(0.5 * Math.sin(a * 3)).rotateY(-a).translate(x, y, z), [0.30, 0.26, 0.40]);
+          col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + hh, z), r: 1.5 }); });
+        isles.push({ x: CX, z: CZ, y0: CY + 46, n: 8, spread: 100, tint: [0.32, 0.27, 0.42] });
+      }
+
+      if (parts.length) {
+        const m = new THREE.Mesh(flat(mergeAll(parts, tints)), this.stoneMat);
+        m.castShadow = m.receiveShadow = true; m.name = 'landmark-' + B.id; scene.add(m);
+      }
+      // floor sigil: additive, HDR colour so it reads at noon; hue is the region's, VALUE stays modest
+      const gl = new THREE.Mesh(new THREE.RingGeometry(6, 11, 96).rotateX(-Math.PI / 2), this.glyphMat(glyphTexture(512, 6 / 11, 1, rng), new THREE.Color(...T.glyph)));
+      gl.name = 'glyph-' + B.id; gl.position.set(CX, CY + 0.2, CZ); gl.userData.speed = 0.035 * (B.k % 2 ? -1 : 1);
+      this._rot.push(gl); scene.add(gl);
+      this.landmarks[B.id] = V3(CX, CY, CZ);
+    }
+
+    if (isles.length) this._buildIsles(isles, rng, h, col);
+  }
+
+  /** Floating isles: flattened rock domes with a flat walkable cap, plus an updraft column at the centre. */
+  _buildIsles(specs, rng, h, col) {
+    const { scene } = this.game;
+    const parts = [], tints = [];
+    this.updrafts = this.updrafts ?? [];
+    for (const s of specs) {
+      for (let i = 0; i < s.n; i++) {
+        const a = rng() * Math.PI * 2, r = i === 0 ? 0 : 20 + rng() * s.spread;
+        const x = s.x + Math.cos(a) * r, z = s.z + Math.sin(a) * r;
+        const y = s.y0 + (i === 0 ? 0 : (rng() - 0.5) * 46);
+        const R = i === 0 ? 26 : 11 + rng() * 15;
+        const g = makeRockGeometry(2, (rng() * 1e6) | 0);
+        g.scale(R, R * 0.5, R * 0.92); g.translate(x, y, z);
+        parts.push(g); tints.push([s.tint[0] * (0.86 + rng() * 0.28), s.tint[1] * (0.86 + rng() * 0.28), s.tint[2] * (0.86 + rng() * 0.28)]);
+        // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
+        col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
+      }
+      this.updrafts.push({ x: s.x, z: s.z, r: 13, top: s.y0 + 30 });
+    }
+    const m = new THREE.Mesh(mergeAll(parts, tints), this.stoneMat);
+    m.castShadow = m.receiveShadow = true; m.name = 'floating-isles'; scene.add(m);
+  }
+
 
   _buildAetheryte(rng, h, col) {
     const { scene } = this.game; const X = 0, Z = -28, Y = h(X, Z) - 0.15; this.landmarks.aetheryte = V3(X, Y, Z);

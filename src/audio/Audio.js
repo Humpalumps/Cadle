@@ -30,6 +30,7 @@ import { makeNoise, makeImpulse, EPS } from './synth.js';
 import { SFX, SFX_NAMES } from './sfx.js';
 import { Ambient } from './ambient.js';
 import { Music } from './music.js';
+import { BIOMES } from '../world/Biomes.js';
 
 const NOOP = Object.freeze({ stop() {}, setPos() {} });
 const EMPTY = Object.freeze({});
@@ -340,7 +341,13 @@ export class Audio {
     this._applyMusicGain(inCombat ? 0.5 : 2.2);
   }
   _zoneAt(x, z) {
-    if (Math.hypot(x, z) > 380) return 'mountain';
+    const r = Math.hypot(x, z);
+    if (r > 330) {                                    // outside the home bowl: the region's own bed
+      const b = this.game.terrain?.biomeBlend?.(x, z, this._zb ??= {});
+      if (b && b.w > 0.25) return BIOMES[b.id]?.zone ?? 'wilds';
+      return r > 600 ? 'wilds' : 'mountain';
+    }
+    if (r > 380) return 'mountain';
     if (Math.hypot(x + 60, z - 260) < 60) return 'arena';
     if (Math.hypot(x + 170, z + 70) < 110) return 'lake';
     if (Math.hypot(x - 140, z - 60) < 75) return 'ruins';

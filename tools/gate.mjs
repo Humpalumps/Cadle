@@ -6,7 +6,8 @@
 import { spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const URL = 'http://127.0.0.1:5173/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
+const BASE = process.env.CADLE_URL || 'http://127.0.0.1:5173/';
+const URL = BASE.replace(/\/$/, '') + '/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
 let failed = false;
 
 console.log('[gate] source invariants...');

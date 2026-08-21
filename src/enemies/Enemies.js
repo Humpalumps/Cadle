@@ -3,6 +3,7 @@ import { mulberry32 } from '../core/Noise.js';
 import { BODIES } from './bodies.js';
 import { DEFS } from './defs.js';
 import { Enemy } from './Enemy.js';
+import { OUTER } from '../world/Biomes.js';
 
 /**
  * Enemies: spawner + AI + procedural creature models with procedural animation (ref: github.com/Ariescar/anyCreature —
@@ -28,6 +29,7 @@ import { Enemy } from './Enemy.js';
  *   'enemy:phase' {enemy, phase}
  */
 const MAX_ALIVE = 40;
+const STREAM = 300;      // m: camps outside this radius are not populated (and get recycled when the cap is tight)
 const _v = new THREE.Vector3(), _c = new THREE.Vector3();
 
 export class Enemies {
@@ -42,7 +44,8 @@ export class Enemies {
   }
   init() {
     const t0 = performance.now();
-    for (const type of Object.keys(DEFS)) { this.assets[type] = BODIES[type].build(); this.pools[type] = []; }
+    const built = {};   // types that share a body share its geometry (23 types, 9 rigs)
+    for (const type of Object.keys(DEFS)) { const bn = DEFS[type].body ?? type; this.assets[type] = built[bn] ??= BODIES[bn].build(); this.pools[type] = []; }
     this.populate();
     this.game.events.on('weapon:fire', () => this._noise(this.game.player.position, 22));
     this.game.events.on('combat:explosion', (e) => { if (e?.owner === this.game.player || e?.owner?.kind === 'player') this._noise(e.point, 30); });
@@ -85,11 +88,12 @@ export class Enemies {
   /** one of each type in a row 12 m in front of the player, facing them, passive (for lineup screenshots) */
   lineup(pos) {
     const P = this.game.player; const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw); const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
-    const c = pos ? _c.set(pos.x, 0, pos.z) : _c.set(P.position.x + fx * 13, 0, P.position.z + fz * 13);
-    const types = ['wisp', 'hound', 'sentinel', 'golem', 'drake', 'warden'], gap = [0, 2.6, 3.2, 4.2, 4.6, 5.5]; const out = [];
-    let x = -9.5; this.passive = true;
+    const c = pos && !Array.isArray(pos) ? _c.set(pos.x, 0, pos.z) : _c.set(P.position.x + fx * 13, 0, P.position.z + fz * 13);
+    const types = Array.isArray(pos) ? pos : (this._lineupTypes ?? ['wisp', 'hound', 'sentinel', 'golem', 'drake', 'warden']);
+    const out = [];
+    let x = -(types.length - 1) * 2.4; this.passive = true;
     for (let i = 0; i < types.length; i++) {
-      x += gap[i]; const e = this.spawn(types[i], { x: c.x + rx * x, z: c.z + rz * x }, { level: 3, yaw: Math.atan2(P.position.x - (c.x + rx * x), P.position.z - (c.z + rz * x)) });
+      x += i ? 4.8 : 0; const e = this.spawn(types[i], { x: c.x + rx * x, z: c.z + rz * x }, { level: 3, yaw: Math.atan2(P.position.x - (c.x + rx * x), P.position.z - (c.z + rz * x)) });
       if (e) {
         if (e.def.flying) { e.position.y = this.heightAt(e.position.x, e.position.z) + Math.min(e.def.hover, 2.4); e.root.position.copy(e.position); e.wantPos.copy(e.position); } // pin flyers into frame (drake hovers 11 m otherwise)
         e.home.copy(e.position); e.idleDur = 99; out.push(e);
@@ -128,7 +132,16 @@ export class Enemies {
     camp('forest-east', 75, -192, 32, 3, [['hound', 2, 4, 26], ['wisp', 2, 6, 28], ['drake', 1, 0, 8]]);
     camp('crystal-north', 262, -25, 36, 2, [['hound', 2, 6, 30], ['wisp', 4, 6, 34]]);                               // crystal fields
     camp('crystal-south', 256, 88, 36, 4, [['golem', 1, 2, 12], ['wisp', 2, 8, 30], ['hound', 1, 8, 30], ['drake', 1, 0, 8]]);
-    for (const c of this.camps) for (const s of c.slots) this._spawnSlot(c, s);
+    // --- the nine outer regions: roster + level band come from Biomes.js, one camp each.
+    for (const b of OUTER) {
+      const [lo, hi] = b.level;
+      camp(b.short, b.cx, b.cz, 120, Math.round((lo + hi) / 2), b.enemies, {
+        respawn: b.id === 'lost' ? 180 : 60,
+        levelOf: (type) => (DEFS[type].boss ? hi : lo + Math.floor(this.rnd() * (hi - lo + 1))),
+      });
+    }
+    // Only the home region is populated up front — the rest stream in as the player travels (see update).
+    for (const c of this.camps) for (const s of c.slots) if (s.pos.lengthSq() < 340 * 340) this._spawnSlot(c, s);
   }
   _campPoint(cx, cz, r0, r1, flying) {
     const T = this.game.terrain; let best = null, bs = 9;
@@ -174,9 +187,19 @@ export class Enemies {
     this._respT = (this._respT ?? 0) + dt;
     if (this._respT > 0.25) {
       this._respT = 0;
+      // Camp streaming. The world is 2048 m with ten regions; populating every slot would blow the
+       // 40-alive cap at spawn and leave every distant biome empty forever. Instead a slot is eligible
+       // only inside STREAM m of the player, and when the cap is full the FARTHEST live camp enemy is
+       // recycled to make room for a much nearer one (1.6x margin = no thrash on the boundary).
       for (const c of this.camps) for (const s of c.slots) {
-        if (s.enemy || t - s.deadAt < c.respawn || this.list.length >= this.maxAlive) continue;
-        if (s.pos.distanceToSquared(P.position) < 50 * 50) continue;
+        if (s.enemy || t - s.deadAt < c.respawn) continue;
+        const d2 = s.pos.distanceToSquared(P.position);
+        if (d2 < 50 * 50 || d2 > STREAM * STREAM) continue;
+        if (this.list.length >= this.maxAlive) {
+          const far = this._farthestCampEnemy();
+          if (!far || far.position.distanceToSquared(P.position) < d2 * 1.6) continue;
+          this._despawnAlive(far);
+        }
         this._spawnSlot(c, s);
       }
     }

@@ -19,6 +19,7 @@ import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMO
 import { reserveNames } from './names.js';
 import { Screens } from '../ui/Screens.js';
 import { OpeningQuest } from './quest.js';
+import { LANDMARKS as BIOME_LANDMARKS } from '../world/Biomes.js';
 
 const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle', scout: 'Scout Rifle', beam: 'Charge Beam' };
 
@@ -30,6 +31,7 @@ const LANDMARKS = [
   { name: 'Whisperwood', position: { x: 0, z: -220 } },
   { name: 'The Crystal Fields', position: { x: 250, z: 30 } },
   { name: 'The Hollow Crown', position: { x: -60, z: 260 } },
+  ...BIOME_LANDMARKS,          // the nine outer regions (Biomes.js)
 ];
 
 export class RPG {

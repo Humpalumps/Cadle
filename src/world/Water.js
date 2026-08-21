@@ -30,6 +30,14 @@ const QP = {  // refl = reflection res scale, everyN = render reflection every N
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
 const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees
+// per-biome water look: shallow tint, deep tint, per-channel absorption (higher = light dies sooner)
+const WATER_LOOK = {
+  shadowfen: { sh: [0.052, 0.098, 0.040], dp: [0.010, 0.024, 0.010], ab: [2.60, 1.15, 2.80] },   // peat murk, almost no visibility
+  sunken:    { sh: [0.018, 0.205, 0.300], dp: [0.002, 0.016, 0.072], ab: [1.55, 0.36, 0.12] },   // open ocean: blue goes deep
+  tundra:    { sh: [0.075, 0.215, 0.310], dp: [0.008, 0.045, 0.115], ab: [1.45, 0.55, 0.26] },   // meltwater under ice
+  void:      { sh: [0.030, 0.020, 0.075], dp: [0.004, 0.002, 0.020], ab: [2.20, 2.40, 1.30] },
+  infernal:  { sh: [0.180, 0.045, 0.010], dp: [0.060, 0.012, 0.002], ab: [0.60, 2.40, 3.20] },   // molten: the uLava skin does the rest
+};
 const COARSE = 32;   // coarse skirt cell (m); fine grid snaps to it
 const G = 9.81;
 
@@ -76,7 +84,7 @@ uniform sampler2D uHeight; uniform sampler2D uNormal; uniform sampler2D uReflect
 uniform float uInvSize; uniform float uHeightOffset; uniform mat4 uReflMatrix; uniform float uHasReflect; uniform float uHasGrab; uniform vec2 uGrabSize;
 uniform vec3 uSunDir; uniform vec3 uSunRad; uniform vec3 uMoonDir; uniform vec3 uMoonRad;
 uniform vec3 uSkyColor; uniform vec3 uHorizonColor; uniform vec3 uAmbient; uniform vec3 uFogColor; uniform vec3 uFogParams; // density, near, far (near<far -> linear fog)
-uniform float uTime; uniform float uCamBelow; uniform float uDetail; uniform float uRough; uniform float uDistort; uniform float uReflDistort;
+uniform float uTime; uniform float uLava; uniform float uCamBelow; uniform float uDetail; uniform float uRough; uniform float uDistort; uniform float uReflDistort;
 uniform float uSpecMax; uniform float uSumAmp; uniform float uLevel; uniform vec3 uReflTint;
 uniform vec3 uShallow; uniform vec3 uDeep; uniform vec3 uAbsorb; uniform float uFoamDepth; uniform float uDebug; uniform float uNight;
 varying vec3 vWorld; varying vec3 vGN; varying float vViewZ; varying float vCrest;
@@ -248,6 +256,18 @@ void main() {
   alpha *= mix(clamp(cover + F * 2.5 + foam + 0.25, 0.0, 1.0) * 0.95, 1.0, uHasGrab);
   alpha = max(alpha, foam * smoothstep(0.0, 0.02, depth));                      // the contact lace survives the shore alpha ramp
   if (uCamBelow > 0.5) alpha = 0.85;
+  // Lava. The Infernal channels are the same water surface wearing a molten skin: a scrolling crust of
+  // dark basalt with incandescent cracks between the plates. ARCHITECTURAL LAW — the hot colour is a deep
+  // SATURATED orange whose value stays under 1, so it tone-maps as fire instead of clipping into a white blob.
+  if (uLava > 0.001) {
+    vec2 lu = vWorld.xz * 0.021 + vec2(uTime * 0.0055, uTime * -0.0035);
+    float a1 = texture2D(uNormal, lu).b, a2 = texture2D(uNormal, lu * 3.1 - uTime * 0.006).b;
+    float crust = smoothstep(0.40, 0.80, a1 * 0.65 + a2 * 0.35);
+    vec3 hot = vec3(0.95, 0.21, 0.020) * (0.50 + 0.50 * (1.0 - crust));
+    vec3 skin = vec3(0.055, 0.030, 0.024) * (0.55 + 0.85 * a2);
+    col = mix(col, mix(hot, skin, crust), uLava);
+    alpha = mix(alpha, 1.0, uLava);
+  }
   if (uDebug > 0.5) {   // 1 reflection, 2 refraction grab, 3 depth, 4 foam, 5 normal
     if (uDebug < 1.5) col = texture2D(uReflect, clamp(rp.xy / rp.w, 0.0, 1.0)).rgb;
     else if (uDebug < 2.5) col = texture2D(uGrab, gl_FragCoord.xy / uGrabSize).rgb;
@@ -281,10 +301,13 @@ export class Water {
   }
 
   // ---------------------------------------------------------------- public API
-  isWater(x, z) { return this.game.terrain.heightAt(x, z) < this.level; }
+  /** Terrain height as WATER sees it: the Infernal ash and the Void abyss are dry by decree (terrain.dryAt), so
+   *  a chasm floor 40 m down there is a chasm, not a lake. Kept in sync with the same term in _bakeHeight. */
+  _bed(x, z) { const T = this.game.terrain; return T.heightAt(x, z) + (T.dryAt ? T.dryAt(x, z) * 300 : 0); }
+  isWater(x, z) { return this._bed(x, z) < this.level; }
   heightAt(x, z) {
     // matches the vertex shader's depth damping (waves die in the shallows) so splashes/buoyancy sit on the visible surface
-    const bed = this.game.terrain.heightAt(x, z) - this.level;
+    const bed = this._bed(x, z) - this.level;
     const f = Math.min(1, Math.max(0, (-bed - 0.05) / 1.15));
     const fade = f * f * (3 - 2 * f);
     let y = this.level; const t = this.time;
@@ -322,10 +345,13 @@ export class Water {
       // detail 0.13 -> 0.36: the ripple normal is what makes a lake read as water rather than tinted glass.
       // rough 0.11 -> 0.075: crisper sun glints. absorb/shallow deepened so the middle of Mirrormere is
       // blue-green instead of the uniform milky turquoise it shipped as.
+      uLava: { value: 0 },
       uDetail: { value: 0.36 }, uRough: { value: 0.075 }, uDistort: { value: 0.026 }, uReflDistort: { value: 0.026 }, uSpecMax: { value: 6.0 }, uReflTint: { value: new THREE.Color(0.94, 0.97, 1.0) },
       uShallow: { value: new THREE.Color(0.035, 0.27, 0.32) }, uDeep: { value: new THREE.Color(0.006, 0.038, 0.105) },
       uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uDebug: { value: 0 }, uNight: { value: 0 },
     };
+    // Mirrormere's tuned look is the base; the biome water presets below are lerped in by biome weight.
+    this._baseWater = { sh: u.uShallow.value.clone(), dp: u.uDeep.value.clone(), ab: u.uAbsorb.value.clone() };
     this.material = new THREE.ShaderMaterial({
       uniforms: u, vertexShader: VERT, fragmentShader: FRAG, defines: this.qp.hq ? { WATER_HQ: 1 } : {},
       transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false, lights: false,
@@ -359,7 +385,7 @@ export class Water {
       const z = reuse ? j - R / 2 : -S / 2 + (j + 0.5) * S / R;
       for (let i = 0; i < R; i++) {
         const x = reuse ? i - R / 2 : -S / 2 + (i + 0.5) * S / R;
-        const h = (reuse ? hg[j * R + i] : terrain.heightAt(x, z)) - L;
+        const h = (reuse ? hg[j * R + i] : terrain.heightAt(x, z)) - L + (terrain.dryAt ? terrain.dryAt(x, z) * 300 : 0);
         data[j * R + i] = toH(Math.max(-60, Math.min(60, h)));
         if (h < 0.6) { n++; if (x < minX) minX = x; if (x > maxX) maxX = x; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z; }
       }
@@ -441,8 +467,22 @@ export class Water {
     m.visible = this.hasWater;
   }
 
+  /** Water reads as the place it is in: peat murk in the fen, open ocean over the Sunken Kingdom, meltwater in the tundra. */
+  _gradeWater(camera) {
+    const u = this.uniforms, base = this._baseWater; if (!base) return;
+    u.uShallow.value.copy(base.sh); u.uDeep.value.copy(base.dp); u.uAbsorb.value.copy(base.ab);
+    const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._wb ??= {});
+    u.uLava.value = b && b.id === 'infernal' ? b.w : 0;
+    const P = b && b.w > 0.002 ? WATER_LOOK[b.id] : null; if (!P) return;
+    const w = b.w;
+    u.uShallow.value.setRGB(base.sh.r + (P.sh[0] - base.sh.r) * w, base.sh.g + (P.sh[1] - base.sh.g) * w, base.sh.b + (P.sh[2] - base.sh.b) * w);
+    u.uDeep.value.setRGB(base.dp.r + (P.dp[0] - base.dp.r) * w, base.dp.g + (P.dp[1] - base.dp.g) * w, base.dp.b + (P.dp[2] - base.dp.b) * w);
+    u.uAbsorb.value.set(base.ab.x + (P.ab[0] - base.ab.x) * w, base.ab.y + (P.ab[1] - base.ab.y) * w, base.ab.z + (P.ab[2] - base.ab.z) * w);
+  }
+
   _updateUniforms(camera) {
     const { sky, scene } = this.game, u = this.uniforms;
+    this._gradeWater(camera);
     u.uTime.value = this.time; u.uDebug.value = this.debug | 0;
     u.uSunDir.value.copy(sky.sunDir);
     u.uSunRad.value.copy(sky.sunColor).multiplyScalar((sky.sunIntensity ?? 1) * this.sunStrength);

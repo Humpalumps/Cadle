@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BIOMES } from '../world/Biomes.js';
 
 /**
  * Sky + atmosphere + time of day. Owns: sky dome (physically-inspired scattering, FF14-dramatic), sun disc, moon, stars, clouds, aether/aurora at night,
@@ -727,7 +728,35 @@ export class Sky {
     // sun mesh follows the camera
     this.sunMesh.position.copy(camera.position).addScaledVector(this.sunDir, 1500);
     this.sunMesh.visible = this.sunDir.y > -0.08;
-    scene.fog.color.copy(this.fogColor); scene.fog.density = this.fogDensity;
+    this._gradeFog(camera);
+    scene.fog.color.copy(this._fogC); scene.fog.density = this._fogD;
+  }
+
+  /**
+   * Aerial perspective is LOCAL: push the haze toward the biome the camera is standing in, keeping the
+   * sky's own time-of-day luminance so night still reads as night and dawn still reads as dawn. Only the
+   * hue and the density move — one lerp per frame, no allocation.
+   */
+  _gradeFog(camera) {
+    const out = this._fogC ??= new THREE.Color();
+    out.copy(this.fogColor); this._fogD = this.fogDensity;
+    // Submerged: the whole world is seen through the water column, so the fog IS the water. Colour comes
+    // from whatever look Water is currently wearing, so the fen is green murk and the Sunken Kingdom is blue.
+    const wtr = this.game.world?.water;
+    if (wtr?.level != null && camera.position.y < wtr.level && wtr.isWater?.(camera.position.x, camera.position.z)) {
+      const sh = wtr.uniforms?.uShallow?.value;
+      if (sh) { out.setRGB(sh.r * 2.1, sh.g * 2.1, sh.b * 2.1); this._fogD = 0.055; return; }
+    }
+    const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._bb ??= {});
+    const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
+    if (!B || !B.fog) return;
+    const cache = this._fogCache ??= new Map();
+    let c = cache.get(b.id);
+    if (!c) { c = new THREE.Color(B.fog).convertSRGBToLinear(); cache.set(b.id, c); }
+    const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
+    const k = L(out) / Math.max(1e-4, L(c)), w = b.w * 0.85;
+    out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
+    this._fogD = this.fogDensity * (1 + ((B.fogMul ?? 1) - 1) * b.w);
   }
 
   dispose() {

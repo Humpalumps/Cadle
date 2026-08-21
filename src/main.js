@@ -27,6 +27,9 @@ window.__game = {
     enemies: game.enemies.list.length, vfx: game.vfx.stats?.(), audio: game.audio.debugCounts }),
   // --- world / time ---
   poi: () => game.terrain.POI,
+  biomes: () => Object.fromEntries(Object.entries(game.terrain.biomePOI ?? {}).map(([k, v]) => [k, v.toArray().map((n) => +n.toFixed(1))])),
+  biomeAt: (x, z) => game.terrain.biomeAt(x ?? P().position.x, z ?? P().position.z),
+  goto: (id, off = 0) => { const p = game.terrain.biomePOI?.[id] ?? game.terrain.POI?.[id]; if (!p) return null; const k = 1 - off / Math.max(1, Math.hypot(p.x, p.z)); const x = p.x * k, z = p.z * k; P().controller.teleport({ x, y: game.terrain.heightAt(x, z) + 0.6, z }); return [x, z]; },
   // --- combat & enemies ---
   spawn: (type, x, z, opts) => game.enemies.spawn(type, { x, z }, opts),          // e.g. spawn('hound', 5, -10)
   spawnNear: (type, dist = 10, opts) => { const p = P().position, y = P().yaw; return game.enemies.spawn(type, { x: p.x - Math.sin(y) * dist, z: p.z - Math.cos(y) * dist }, opts); },

@@ -16,7 +16,8 @@ import * as THREE from 'three';
  * Swimming: Space = ascend/surface swim (spring-held ~1.1 m depth, never breaches, state stays 'swim'); crouch = sink; exit water via shore/step-up or standing depth.
  * Events:  'player:jump' {n:1|2, slide}, 'player:land' {impact, hard}, 'player:slide' {speed}, 'player:footstep' {surface:'grass'|'rock'|'water', speed, crouched, sprint}
  */
-const approach = (k, dt) => 1 - Math.exp(-k * dt);          // frame-rate independent exponential blend factor
+const approach = (k, dt) => 1 - Math.exp(-k * dt);   // frame-rate independent exponential blend factor
+const EMPTY = [];
 const STEEP = Math.cos(THREE.MathUtils.degToRad(50));        // ground normal.y below this = no traction, slide down
 const { clamp, lerp } = THREE.MathUtils;
 const STAND = 0.7;                                           // (fraction of r²) how far our center may hang past a box edge and still stand on it
@@ -33,7 +34,7 @@ export class PlayerController {
     this.accelK = 15;      // 95% of target in ~0.2 s
     this.decelK = 20;      // stop in ~0.15 s
     this.airAccel = 22;    // m/s² along wish, capped at the cap's projection (Quake-style) -> strong air control, slide-jump keeps speed
-    this.gravity = 20; this.jumpSpeed = 8.0; this.jump2Speed = 7.2; this.jump2Boost = 4.5; this.floatTime = 0.55; this.floatGravity = 0.3;
+    this.gravity = 20; this.gravityScale = 1; this.jumpSpeed = 8.0; this.jump2Speed = 7.2; this.jump2Boost = 4.5; this.floatTime = 0.55; this.floatGravity = 0.3;
     this.maxJumps = 2; this.coyoteTime = 0.12; this.jumpBufferTime = 0.15;
     this.slideBoost = 1.25; this.slideDecel = 8; this.slideDuration = 1.05; this.slideMinSpeed = 5.5; this.slideCooldown = 0.25;
     this.hardLanding = 13; this.landSlowTime = 0.35; this.sprintResume = 0.2;
@@ -191,7 +192,20 @@ export class PlayerController {
     }
 
     // ---------------- vertical velocity ----------------
-    let g = this.gravity;
+    // The Void breaks gravity (BIOMES.void.gravity): floatier fall, same jump impulse — you hang.
+    const gScale = this.game.terrain?.gravityAt?.(this.position.x, this.position.z) ?? 1;
+    this.gravityScale += (gScale - this.gravityScale) * (1 - Math.exp(-3 * dt));   // eased so crossing the rim is a drift, not a snap
+    let g = this.gravity * this.gravityScale;
+    // Aether updrafts (Props.updrafts): the way up to the floating isles. Inside the column you rise to a
+    // ceiling and hold; step out and you fall normally. Gravity is cancelled, not fought, so it feels like lift.
+    this.updraft = 0;
+    for (const u of this.game.world?.props?.updrafts ?? EMPTY) {
+      const dx = this.position.x - u.x, dz = this.position.z - u.z;
+      if (dx * dx + dz * dz > u.r * u.r || this.position.y > u.top) continue;
+      this.updraft = 1; g = 0;
+      v.y += (14 - v.y) * (1 - Math.exp(-4 * dt));
+      break;
+    }
     if (this.swimming) {
       // buoyancy spring toward a target depth; Space held = surface swim (held just under the surface, never breaches), crouch = sink
       let targetY = this._waterH - this.swimDepth + 0.1;

@@ -218,6 +218,23 @@ vec3 transformed; vec3 objectNormal;
   dry = clamp(dry + smoothstep(0.47, 0.82, mac) * 0.95, 0.0, 1.0);
   vec3 tipC = mix(vec3(0.11, 0.27, 0.045), vec3(0.32, 0.30, 0.06), dry * 0.7 + r4 * r4 * 0.2);
   tipC = mix(tipC, tcol * 1.35, 0.3);
+  // Biome hue coupling. tcol is terrain.colorAt, which is biome-tinted, so dividing its hue by the Vale's
+  // reference hue gives EXACTLY 1.0 in the meadow (the tuned look is untouched) and swings the blades olive
+  // in the fen / sage on the isles / rust in the wastes everywhere else. Value range stays the meadow's.
+  {
+    float tLum = max(1e-4, dot(tcol, vec3(0.2126, 0.7152, 0.0722)));
+    vec3 tHue = (tcol / tLum) / vec3(0.575, 1.210, 0.171);   // measured mean hue of terrain.colorAt across the spawn meadow
+    tHue = clamp(tHue, vec3(0.45), vec3(1.45));
+    tHue.g = max(tHue.g, 0.80);                              // ground cover is never bleached white by a neutral floor
+    tipC *= mix(vec3(1.0), tHue, 0.62);
+  }
+  {
+    // Ground cover is GREEN cover. A pale floor (celestial marble, the Lost Realm plain, snow) used to bleach
+    // the blades into bone-white spikes: force green dominance and cap the absolute value. In the Vale the
+    // blades are already well inside both limits, so the tuned meadow is bit-identical.
+    tipC.g = max(tipC.g, max(tipC.r, tipC.b) * 1.15);
+    tipC = min(tipC, vec3(0.42, 0.52, 0.30));
+  }
   tipC *= mix(vec3(0.84, 1.02, 1.10), vec3(1.16, 1.00, 0.68), r8 * r8);   // per-blade cool<->warm green: kills the single-tone golf-course read
   vec3 rootC = mix(tipC * 0.62, tcol * 0.8, 0.35);                 // roots melt into the ground tone, never near-black
   vec3 col = mix(rootC, tipC, smoothstep(-0.2, 0.75, v)) * (1.0 + (r4 - 0.5) * 0.35 * (1.0 - farF));

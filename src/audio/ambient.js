@@ -14,6 +14,17 @@ const ZONES = {
   crystal:  { wind: 0.18, windF: 460, rustle: 0,    lap: 0,    hum: 0.07, whistle: 0,    birds: 0.3, insects: 0.3, wisps: 1.6 },
   arena:    { wind: 0.30, windF: 700, rustle: 0,    lap: 0,    hum: 0.03, whistle: 0.06, birds: 0.2, insects: 0.2, wisps: 0.5 },
   mountain: { wind: 0.42, windF: 900, rustle: 0,    lap: 0,    hum: 0,    whistle: 0.08, birds: 0.2, insects: 0,   wisps: 0.1 },
+  // --- the nine outer regions (Biomes.js `zone`). windF doubles as the bed's character: a low cutoff is a
+  // rumble (wastes, void), a high one is a thin cold howl (tundra, peaks).
+  wilds:     { wind: 0.34, windF: 780, rustle: 0.02, lap: 0,    hum: 0.01, whistle: 0.05, birds: 0.5, insects: 0.5, wisps: 0.3 },
+  tundra:    { wind: 0.46, windF: 980, rustle: 0,    lap: 0.02, hum: 0.02, whistle: 0.11, birds: 0.1, insects: 0,   wisps: 0.5 },
+  celestial: { wind: 0.28, windF: 700, rustle: 0.01, lap: 0,    hum: 0.10, whistle: 0.03, birds: 0.6, insects: 0.2, wisps: 1.2 },
+  dragon:    { wind: 0.46, windF: 900, rustle: 0,    lap: 0,    hum: 0.01, whistle: 0.10, birds: 0.2, insects: 0.1, wisps: 0.2 },
+  infernal:  { wind: 0.34, windF: 240, rustle: 0,    lap: 0,    hum: 0.13, whistle: 0.04, birds: 0,   insects: 0.15, wisps: 0.6 },
+  lost:      { wind: 0.26, windF: 620, rustle: 0,    lap: 0,    hum: 0.09, whistle: 0.05, birds: 0.15, insects: 0.3, wisps: 1.4 },
+  shadowfen: { wind: 0.12, windF: 230, rustle: 0.05, lap: 0.09, hum: 0.02, whistle: 0,    birds: 0.4, insects: 1.8, wisps: 1.0 },
+  sunken:    { wind: 0.30, windF: 520, rustle: 0,    lap: 0.18, hum: 0.04, whistle: 0,    birds: 0.5, insects: 0.2, wisps: 0.5 },
+  void:      { wind: 0.20, windF: 175, rustle: 0,    lap: 0,    hum: 0.15, whistle: 0.07, birds: 0,   insects: 0,   wisps: 1.6 },
 };
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 

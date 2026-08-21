@@ -420,5 +420,157 @@ const warden = {
   },
 };
 
-export const BODIES = { wisp, hound, sentinel, golem, drake, warden };
+
 export { plantLegs };
+
+// ---------------------------------------------------------------- GIANT: hulking two-legged brute (Ice Giant)
+// Reads at 100 m: tiny head, huge shoulders, arms past the knees, a crown of shards down the spine.
+const giant = {
+  build() {
+    const R = new Rig(), { root } = R;
+    const HIDE = 0x7d8794, PLATE = 0x4b5464, SHARD = 0xffffff, FUR = 0x9aa3ad;
+    const pelvis = R.bone('pelvis', root, 0, 2.05, 0);
+    R.part(pelvis, prim.boxB(), { p: [0, 2.1, 0], s: [0.74, 0.5, 0.56], color: PLATE, mottle: 0.16 });
+    R.part(pelvis, prim.boxB(), { p: [0, 1.72, 0.02], s: [0.6, 0.4, 0.5], color: FUR, mottle: 0.3 });        // hide kilt
+    const torso = R.bone('torso', pelvis, 0, 0.5, 0);
+    R.part(torso, prim.sphere(), { p: [0, 3.15, -0.06], s: [1.02, 0.92, 0.76], color: HIDE });
+    R.part(torso, prim.sphere(), { p: [0, 2.62, 0.12], s: [0.72, 0.5, 0.58], color: FUR, mottle: 0.22 });    // gut
+    R.part(torso, prim.boxB(), { p: [0, 3.62, -0.3], s: [0.92, 0.4, 0.44], color: FUR, mottle: 0.26 });      // shoulder mantle
+    R.mirror(torso, prim.hex(), { p: [0.9, 3.62, -0.02], r: [0, 0, 0.95], s: [0.36, 0.13, 0.36], color: PLATE, flat: true, mottle: 0.1 });
+    for (let i = 0; i < 4; i++) {                                                                             // spine shards
+      const sx = i % 2 ? 0.26 : -0.26;
+      R.part(torso, prim.crystal(), { p: [sx, 3.92 - i * 0.3, -0.48], r: [-0.45, 0, sx > 0 ? 0.3 : -0.3], s: [0.13, 0.44 - i * 0.05, 0.13], color: SHARD, glow: 0.8, flat: true });
+    }
+    const head = R.bone('head', torso, 0, 1.22, 0.1);
+    R.part(head, prim.sphere(), { p: [0, 4.1, 0.12], s: [0.4, 0.42, 0.4], color: HIDE });
+    R.part(head, prim.boxB(), { p: [0, 3.95, 0.4], r: [0.16, 0, 0], s: [0.3, 0.22, 0.3], color: HIDE, mottle: 0.22 });   // heavy jaw
+    R.mirror(head, prim.cone(), { p: [0.3, 4.44, -0.02], r: [-0.2, 0, -0.62], s: [0.12, 0.6, 0.12], color: SHARD, glow: 0.55, flat: true });   // horns
+    R.mirror(head, prim.sphere(), { p: [0.16, 4.16, 0.38], s: 0.055, color: SHARD, glow: 1 });
+    for (const [n, sx] of [['R', 1.0], ['L', -1.0]]) {
+      const sh = R.bone('sh' + n, torso, sx * 1.02, 0.52, 0), el = R.bone('el' + n, sh, 0, -1.02, 0), hd = R.bone('hd' + n, el, 0, -0.95, 0);
+      R.part(sh, prim.limb(0.78), { p: [sx * 1.02, 3.67, 0], s: [0.3, 1.02, 0.3], color: HIDE, mottle: 0.2 });
+      R.part(el, prim.limb(1.05), { p: [sx * 1.02, 2.65, 0], s: [0.26, 0.95, 0.26], color: HIDE, mottle: 0.2 });
+      R.part(hd, prim.rock(6 + (n === 'R' ? 1 : 0), 0.24), { p: [sx * 1.02, 1.55, 0.04], s: [0.42, 0.42, 0.42], color: PLATE, flat: true });
+      R.part(el, prim.crystal(), { p: [sx * 1.22, 2.4, 0.06], r: [0, 0, sx > 0 ? -1.15 : 1.15], s: [0.09, 0.24, 0.09], color: SHARD, glow: 0.7, flat: true });
+    }
+    for (const [n, x] of [['L', 0.44], ['R', -0.44]]) {
+      const hip = R.bone('hip' + n, pelvis, x, 0, 0), knee = R.bone('knee' + n, pelvis, x, -1.05, 0);
+      R.part(hip, prim.limb(0.9), { p: [x, 2.05, 0], s: [0.3, 1.05, 0.3], color: PLATE, mottle: 0.2 });
+      R.part(knee, prim.limb(1.2), { p: [x, 1.0, 0], s: [0.27, 0.92, 0.27], color: HIDE, mottle: 0.2 });
+      R.part(knee, prim.rock(8, 0.18), { p: [x, 0.16, 0.12], s: [0.38, 0.2, 0.5], color: PLATE, flat: true });
+    }
+    return R.build();
+  },
+  setup(e) {
+    const b = e.bones;
+    e.legs = [makeLeg(b, 'hipL', 'kneeL', [0.44, 0, 0], [0.5, -2.05, 0.1], 1.05, 1.05, [0, 0, 1], 0),
+              makeLeg(b, 'hipR', 'kneeR', [-0.44, 0, 0], [-0.5, -2.05, 0.1], 1.05, 1.05, [0, 0, 1], 1)];
+    e.legParent = b.pelvis; e.gait = { stepLen: 0.95, stepTime: 0.46, lift: 0.3, lead: 0.26 };
+  },
+  animate(e, dt, t, A) {
+    const b = e.bones, ph = e.phase, sp = e.speedN, sw = SW(e), tg = e.telegraph;
+    b.pelvis.position.y = 2.05 + Math.abs(Math.sin(ph)) * 0.09 * sp + (e.state === 'stagger' ? -0.22 : 0);
+    b.pelvis.rotation.z = Math.sin(ph) * 0.06 * sp; b.pelvis.rotation.x = e.tilt;
+    const raise = seg(sw, 0, 0.24), crash = seg(sw, 0.27, 0.36), rec = seg(sw, 0.5, 1);
+    b.torso.rotation.x = damp(b.torso.rotation.x, 0.06 - 0.34 * raise + 0.9 * crash - 0.6 * rec, 13, dt);
+    b.torso.rotation.y = damp(b.torso.rotation.y, -Math.sin(ph) * 0.12 * sp, 6, dt);
+    if (e.alert) aimAt(b.head, A.eye, 0.85, 0.5, 5, dt); else relaxBone(b.head, 2, dt);
+    const armUp = 2.5 * raise - 3.5 * crash + 1.0 * rec;
+    for (const n of ['R', 'L']) {
+      const s = n === 'R' ? 1 : -1;
+      b['sh' + n].rotation.x = damp(b['sh' + n].rotation.x, Math.sin(ph + (s > 0 ? 0 : Math.PI)) * 0.35 * sp - armUp, 13, dt);
+      b['sh' + n].rotation.z = damp(b['sh' + n].rotation.z, -s * (0.2 + 0.32 * raise - 0.3 * rec + tg * 0.15), 6, dt);
+      b['el' + n].rotation.x = damp(b['el' + n].rotation.x, -0.42 - 0.45 * raise + 0.5 * rec, 8, dt);
+    }
+    if (e.onGround) stepLegs(e.legs, b.pelvis, e.velocity, dt, t, A.heightAt, e.gait);
+  },
+};
+
+// ---------------------------------------------------------------- WRAITH: hooded revenant, floats, robe trails into rags
+const wraith = {
+  build() {
+    const R = new Rig(), { root } = R;      // root = body centre (flyer)
+    const CLOTH = 0x2a2733, CLOTH2 = 0x3b3648, GLOW = 0xffffff, HOLLOW = 0x0a0a12;
+    const body = R.bone('body', root, 0, 0, 0);
+    R.part(body, prim.cone(), { p: [0, -0.5, 0], r: [Math.PI, 0, 0], s: [0.5, 1.45, 0.44], color: CLOTH, mottle: 0.26, flat: true });   // robe: point down
+    R.part(body, prim.sphere(), { p: [0, 0.3, 0], s: [0.4, 0.36, 0.38], color: CLOTH2, mottle: 0.2 });                                   // shoulders
+    R.mirror(body, prim.hex(), { p: [0.34, 0.36, -0.02], r: [0, 0, 0.8], s: [0.2, 0.05, 0.2], color: CLOTH2, flat: true, mottle: 0.12 });
+    const head = R.bone('head', body, 0, 0.52, 0);
+    R.part(head, prim.cone(), { p: [0, 0.6, -0.02], s: [0.29, 0.5, 0.3], color: CLOTH2, flat: true, mottle: 0.18 });   // hood
+    R.part(head, prim.sphere(), { p: [0, 0.5, 0.13], s: [0.17, 0.19, 0.15], color: HOLLOW, mottle: 0.05 });            // nothing inside it
+    R.mirror(head, prim.sphere(), { p: [0.075, 0.53, 0.23], s: 0.045, color: GLOW, glow: 1 });
+    for (const [n, sx] of [['R', 1], ['L', -1]]) {
+      const sh = R.bone('sh' + n, body, sx * 0.36, 0.26, 0), el = R.bone('el' + n, sh, 0, -0.4, 0);
+      R.part(sh, prim.limb(0.7), { p: [sx * 0.38, 0.2, 0], s: [0.095, 0.42, 0.095], color: CLOTH2, mottle: 0.2 });
+      R.part(el, prim.limb(0.5), { p: [sx * 0.38, -0.22, 0.04], s: [0.085, 0.4, 0.085], color: CLOTH, mottle: 0.22 });
+      R.part(el, prim.crystal(), { p: [sx * 0.4, -0.58, 0.07], r: [0.35, 0, 0], s: [0.07, 0.2, 0.07], color: GLOW, glow: 1, flat: true });
+    }
+    for (let i = 0; i < 5; i++) {
+      const rb = R.bone('rag' + i, body, 0, -0.85, 0), a = i / 5 * Math.PI * 2 + 0.3;
+      R.part(rb, prim.cone(), { p: [Math.cos(a) * 0.28, -1.3, Math.sin(a) * 0.28], r: [Math.PI, 0, 0], s: [0.085, 0.66 + (i % 2) * 0.18, 0.085], color: CLOTH, flat: true, mottle: 0.3 });
+    }
+    return R.build();
+  },
+  setup(e) { e.rags = []; for (let i = 0; i < 5; i++) e.rags.push(e.bones['rag' + i]); },
+  animate(e, dt, t, A) {
+    const b = e.bones, tt = t + e.seedT, sw = SW(e), reach = seg(sw, 0, 0.3) - seg(sw, 0.34, 0.5);
+    b.body.position.y = Math.sin(tt * 1.1) * 0.16 + Math.sin(tt * 2.3) * 0.05 + (e.state === 'stagger' ? -0.2 : 0);
+    b.body.rotation.z = Math.sin(tt * 0.7) * 0.09;
+    b.body.rotation.x = e.tilt * 0.5 + reach * 0.2;
+    if (e.alert) aimAt(b.head, A.eye, 1.1, 0.6, 6, dt); else relaxBone(b.head, 1.5, dt);
+    for (const n of ['R', 'L']) {
+      const s = n === 'R' ? 1 : -1;
+      b['sh' + n].rotation.x = damp(b['sh' + n].rotation.x, -0.25 - reach * 1.5 + Math.sin(tt * 0.9 + s) * 0.12, 9, dt);
+      b['sh' + n].rotation.z = damp(b['sh' + n].rotation.z, -s * (0.35 - reach * 0.25) + Math.sin(tt * 0.6 + s * 2) * 0.08, 5, dt);
+      b['el' + n].rotation.x = damp(b['el' + n].rotation.x, -0.55 + reach * 0.5, 8, dt);
+    }
+    for (let i = 0; i < 5; i++) {                                     // rags drift like they are underwater
+      const r = e.rags[i];
+      r.rotation.x = Math.sin(tt * 1.3 + i * 1.4) * 0.22 + e.speedN * 0.3;
+      r.rotation.z = Math.cos(tt * 1.1 + i * 2.1) * 0.2;
+    }
+  },
+};
+
+// ---------------------------------------------------------------- SERPENT: long segmented swimmer of air or sea
+const serpent = {
+  build() {
+    const R = new Rig(), { root } = R;      // root = body centre (flyer); +Z forward, segments run back along -Z
+    const SCALE1 = 0x2f6a72, SCALE2 = 0x9fd8c8, FIN = 0xffffff, GLOW = 0xffffff;
+    const SEGS = 7, GAP = 0.62;
+    let parent = root, seg0 = null;
+    for (let i = 0; i < SEGS; i++) {
+      const b = R.bone('seg' + i, parent, 0, 0, i ? -GAP : 0); parent = b; if (!i) seg0 = b;
+      const z = -GAP * i, s = 0.30 * (1 - i * 0.085);
+      R.part(b, prim.sphere(), { p: [0, 0, z], s: [s, s * 0.92, 0.4], color: i % 2 ? SCALE1 : SCALE2, mottle: 0.16 });
+      R.part(b, prim.hex(), { p: [0, s * 0.85, z], r: [0.2, 0, 0], s: [s * 0.5, 0.05, 0.26], color: SCALE1, flat: true, mottle: 0.1 });   // dorsal plate
+      if (i % 2 === 1) R.mirror(b, prim.membrane(2), { p: [s * 1.1, 0.02, z], r: [0, 0, 0.55], s: [0.44, 0.09, 0.36], color: FIN, glow: 0.3, flat: true });
+      if (i === SEGS - 1) R.mirror(b, prim.membrane(3), { p: [0.22, 0.05, z - 0.34], r: [0, 0.5, 1.15], s: [0.62, 0.1, 0.5], color: FIN, glow: 0.35, flat: true });   // tail fluke
+    }
+    const head = R.bone('head', seg0, 0, 0, 0.5);
+    R.part(head, prim.sphere(), { p: [0, 0, 0.7], s: [0.29, 0.27, 0.42], color: SCALE1 });
+    R.part(head, prim.boxB(), { p: [0, -0.05, 1.05], r: [0.09, 0, 0], s: [0.21, 0.15, 0.31], color: SCALE1, mottle: 0.18 });   // snout
+    R.mirror(head, prim.sphere(), { p: [0.14, 0.09, 0.86], s: 0.055, color: GLOW, glow: 1 });
+    R.mirror(head, prim.membrane(3), { p: [0.3, 0.14, 0.6], r: [0, 0.3, 0.75], s: [0.5, 0.1, 0.42], color: FIN, glow: 0.4, flat: true });   // head fins
+    R.part(head, prim.crystal(), { p: [0, 0.28, 0.62], r: [-0.3, 0, 0], s: [0.08, 0.28, 0.08], color: GLOW, glow: 0.9, flat: true });       // crest
+    for (let i = 0; i < 4; i++) R.mirror(head, prim.cone(), { p: [0.13, -0.12, 1.16 - i * 0.06], r: [Math.PI * 0.55, 0, 0.2], s: [0.03, 0.09, 0.03], color: FIN, glow: 0.3, flat: true });   // teeth
+    return R.build();
+  },
+  setup(e) { e.segs = []; for (let i = 0; i < 7; i++) e.segs.push(e.bones['seg' + i]); },
+  animate(e, dt, t, A) {
+    const b = e.bones, tt = t + e.seedT, sw = SW(e);
+    const drive = 0.9 + e.speedN * 1.6 + e.telegraph * 0.8;
+    // lateral undulation down the chain: each segment lags the one in front, amplitude grows toward the tail
+    for (let i = 0; i < e.segs.length; i++) {
+      const s = e.segs[i];
+      s.rotation.y = Math.sin(tt * (2.2 + e.speedN * 1.6) - i * 0.85) * 0.20 * drive * (0.45 + i * 0.13);
+      s.rotation.x = Math.sin(tt * 1.3 - i * 0.6) * 0.055 * drive + (i === 0 ? e.tilt * 0.6 : 0);
+    }
+    // strike: the head lunges forward
+    const lunge = seg(sw, 0.05, 0.34) - seg(sw, 0.36, 0.6);
+    b.head.position.z = 0.5 + lunge * 0.45;
+    if (e.alert) aimAt(b.head, A.eye, 0.9, 0.7, 7, dt); else relaxBone(b.head, 2, dt);
+  },
+};
+
+export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent };

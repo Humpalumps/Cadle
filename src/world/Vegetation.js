@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, fbm, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
+import { BIOMES } from './Biomes.js';
 
 /**
  * Vegetation: procedural trees (3 species, instanced, near mesh + baked billboard impostor LOD, wind sway,
@@ -19,6 +20,50 @@ import { mulberry32, fbm, noise2, smoothstep, clamp, lerp } from '../core/Noise.
  * Exports helpers for Props: InstLOD, patchMaterial, triplanarPatch, fadePatch, erodeFade, makeRockGeometry,
  *   noiseTexture, rgbaTexture, normalFromLuma
  */
+
+// ---------------------------------------------------------------- per-biome scatter tables (Biomes.js ids)
+// One line per outer region: what grows there, what stone it is made of, what its spires look like.
+// `p` is the accept probability at the region's heart; it fades out with the biome weight.
+const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
+const BTREE = {
+  forest:    { p: 0.52, sp: [0, 1] },      // Whisperwood Deep: closed canopy (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
+  tundra:    { p: 0.13, sp: [3] },         // sparse frozen conifers
+  celestial: { p: 0.05, sp: [0] },
+  dragon:    { p: 0.11, sp: [3] },         // pines on the lower ledges
+  infernal:  { p: 0.00, sp: [4] },         // nothing grows in the ash
+  lost:      { p: 0.04, sp: [1] },
+  shadowfen: { p: 0.32, sp: [4, 2] },      // drowned dead wood + willows
+  sunken:    { p: 0.00, sp: [2] },
+  void:      { p: 0.05, sp: [4] },
+};
+// [accept probability, linear rock tint]
+const BROCK = {
+  forest:    { p: 0.05, col: [0.80, 0.95, 0.78] },   // mossy
+  tundra:    { p: 0.12, col: [1.05, 1.08, 1.15] },   // frost-bleached
+  celestial: { p: 0.09, col: [1.12, 1.06, 0.94] },   // sunlit marble
+  dragon:    { p: 0.22, col: [0.92, 0.90, 0.92] },
+  infernal:  { p: 0.17, col: [0.26, 0.20, 0.18] },   // basalt
+  lost:      { p: 0.08, col: [0.92, 0.86, 1.10] },
+  shadowfen: { p: 0.06, col: [0.62, 0.70, 0.55] },
+  sunken:    { p: 0.14, col: [0.72, 0.92, 0.92] },
+  void:      { p: 0.18, col: [0.34, 0.28, 0.46] },
+};
+// biome spires reuse the crystal geometry: [p, linear instance tint, [minScale, maxScale]].
+// Colours stay SATURATED and the bright ones stay modest in value — an emissive spire that tone-maps
+// to white is the washed-white blob bug (CLAUDE.md architectural law).
+const BSPIRE = {
+  forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9] },   // fae light
+  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4] },   // ice shards
+  celestial: { p: 0.070, col: [1.05, 0.86, 0.42], s: [2.2, 4.2] },   // gold light-shards
+  dragon:    { p: 0.020, col: [0.86, 0.80, 0.74], s: [1.4, 2.8] },
+  infernal:  { p: 0.090, col: [0.30, 0.11, 0.08], s: [1.6, 3.6] },   // obsidian: dark, no glow
+  lost:      { p: 0.055, col: [0.78, 0.58, 1.10], s: [2.0, 3.8] },
+  shadowfen: { p: 0.045, col: [0.48, 1.00, 0.42], s: [0.8, 1.7] },   // witchlight
+  sunken:    { p: 0.100, col: [1.00, 0.46, 0.58], s: [1.2, 2.8] },   // coral fans
+  void:      { p: 0.120, col: [0.52, 0.22, 1.05], s: [2.0, 4.8] },   // void shards
+};
+// grove noise for the outer regions (separate lattice from the home Whisperwood, so they clump differently)
+const grove2 = (x, z) => smoothstep(0.10, 0.52, fbm(x * 0.0075, z * 0.0075, { octaves: 3, seed: 41 }) * 0.5 + 0.5);
 
 // ---------------------------------------------------------------- shader patch helpers
 const F32 = (a, n) => new THREE.BufferAttribute(Float32Array.from(a), n);
@@ -589,6 +634,7 @@ export class Vegetation {
   // ------------------------------------------------------------ placement (deterministic, biome driven)
   _place(rng) {
     const { terrain } = this.game, col = this.game.world.colliders, wl = terrain.waterLevel, half = terrain.size / 2 - 10;
+    const bb = {}, B = (x, z) => (terrain.biomeBlend ? terrain.biomeBlend(x, z, bb) : NO_BIOME);
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Qt = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler(), C = new THREE.Color();
     const lakeD = (x, z) => Math.hypot(x + 170, z + 70), ruinD = (x, z) => Math.hypot(x - 140, z - 60), arenaD = (x, z) => Math.hypot(x + 60, z - 260), aethD = (x, z) => Math.hypot(x, z + 28);
     const ok = (x, z) => Math.abs(x) < half && Math.abs(z) < half;
@@ -602,17 +648,22 @@ export class Vegetation {
       const grove = smoothstep(0.12, 0.45, fbm(x * 0.009, z * 0.009, { octaves: 3, seed: 9 }));
       let p = forest * 0.62 + (1 - forest) * (grove * 0.22 + 0.012);
       if (r0 < 95) p *= 0.2; if (x > 220) p *= 0.3; if (ruinD(x, z) < 80) p *= 0.25;
+      if (r0 > 300) p *= smoothstep(430, 320, r0);                      // home-bowl groves stop at the mountain feet
+      const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
+      if (bTree) p = p * (1 - bt.w) + bTree.p * grove2(x, z) * bt.w;
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
-      const y = terrain.heightAt(x, z); if (y > 95 || y < wl + 0.4) continue;
+      const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
       if (u0 > p) continue;
       if (terrain.slopeAt(x, z) > 0.5) continue;
       let species; const u = rng();
-      if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
-      const sp = treeSpec[species]; const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : 0.8 + rng() * 0.4;
+      if (bTree && bt.w > 0.45) species = bTree.sp[(u * bTree.sp.length) | 0];
+      else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
+      const sp = treeSpec[species] ?? treeSpec[species === 3 ? 0 : 1];
+      const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 ? 0.7 + rng() * 0.6 : 0.8 + rng() * 0.4;
       E.set((rng() - 0.5) * 0.08, rng() * Math.PI * 2, (rng() - 0.5) * 0.08); Qt.setFromEuler(E); P.set(x, y - 0.25 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       const tint = 0.76 + rng() * 0.44; C.setRGB(tint * (0.86 + rng() * 0.3), tint, tint * (0.8 + rng() * 0.32)); // strong per-instance hue jitter (yellow-green .. teal-green)
-      this.treeSets[species].lod.add(M, C);
+      (this.treeSets[species] ?? this.treeSets[species === 3 ? 0 : 1]).lod.add(M, C);
       const r = Math.max(0.28, sp.colR * scale);
       this.trees.push({ x, y, z, species, scale, r });
       col.add({ type: 'capsule', a: new THREE.Vector3(x, y - 1, z), b: new THREE.Vector3(x, y + sp.colH * scale, z), r });
@@ -623,21 +674,26 @@ export class Vegetation {
       const r0 = Math.hypot(x, z); if (r0 < 18 || aethD(x, z) < 12 || arenaD(x, z) < 48) continue;
       const y = terrain.heightAt(x, z); if (y < wl - 1) continue; const slope = terrain.slopeAt(x, z); if (slope > 0.75) continue;
       const rd = ruinD(x, z); let p = 0.04 + smoothstep(20, 60, y) * 0.03 + smoothstep(0.15, 0.45, slope) * 0.05; if (y > 50) p *= 0.4;
-      if (rd < 45) p = rd < 12 ? 0 : 0.35; if (x > 220) p += 0.1; if (r0 < 60) p *= 0.5; if (lakeD(x, z) < 110 && y < wl + 3) p += 0.12;
+      if (rd < 45) p = rd < 12 ? 0 : 0.35; if (x > 220 && r0 < 400) p += 0.1; if (r0 < 60) p *= 0.5; if (lakeD(x, z) < 110 && y < wl + 3) p += 0.12;
+      const br = B(x, z), bRock = br.w > 0.02 ? BROCK[br.id] : null;
+      if (bRock) p = p * (1 - br.w) + bRock.p * br.w;
       if (rng() > p) continue;
       const big = rng() < (slope > 0.2 || y > 30 ? 0.35 : 0.15) && rd > 45;
       const kind = big ? 0 : 1 + Math.floor(rng() * 3); const scale = big ? 2.2 + rng() * 3 : (rd < 45 ? 0.35 + rng() * 0.7 : 0.5 + rng() * 1.3);
       E.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5); Qt.setFromEuler(E);
       P.set(x, y - 0.3 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       const g = 0.75 + rng() * 0.35; C.setRGB(g * (1 + (rng() - 0.5) * 0.1), g, g * (1 - rng() * 0.08));
+      if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], br.w), C.g * lerp(1, t[1], br.w), C.b * lerp(1, t[2], br.w)); }
       this.rockSets[kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, y - 0.3 * scale + 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
     // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
-    const addCrystal = (x, z, scale, variant) => {
+    const addCrystal = (x, z, scale, variant, tint) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
       P.set(x, y - 0.1 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
-      const hue = rng(); C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
+      const hue = rng();
+      if (tint) { const j = 0.88 + hue * 0.24; C.setRGB(tint[0] * j, tint[1] * j, tint[2] * j); }   // biome spire: ice / obsidian / coral / void shard
+      else C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
       this.crystalSets[variant].add(M, C); this.crystals.push({ x, y, z, scale });
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, y + 0.4 * scale, z), r: scale * 0.75 });
     };
@@ -645,13 +701,19 @@ export class Vegetation {
       const x = gx + (rng() - 0.5) * 10, z = gz + (rng() - 0.5) * 10; if (!ok(x, z)) continue;
       const r0 = Math.hypot(x, z); if (r0 < 22 || ruinD(x, z) < 40 || arenaD(x, z) < 50 || aethD(x, z) < 10) continue;
       const y = terrain.heightAt(x, z); if (y < wl + 0.3 || y > 110 || terrain.slopeAt(x, z) > 0.6) continue;
-      const field = smoothstep(215, 250, x) * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.02, z * 0.02, { octaves: 3, seed: 19 }));
-      const forest = smoothstep(-180, -220, z) * smoothstep(270, 240, Math.abs(x));
-      const p = field * 0.38 * smoothstep(80, 45, y) + forest * 0.025; if (rng() > p) continue; // fields stay off the snowy slopes
-      const scale = field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
-      addCrystal(x, z, scale, Math.floor(rng() * 3));
+      const home = smoothstep(400, 300, r0);
+      const field = smoothstep(215, 250, x) * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.02, z * 0.02, { octaves: 3, seed: 19 })) * home;
+      const forest = smoothstep(-180, -220, z) * smoothstep(270, 240, Math.abs(x)) * home;
+      let p = field * 0.38 * smoothstep(80, 45, y) + forest * 0.025;   // fields stay off the snowy slopes
+      const bc = B(x, z), bSpire = bc.w > 0.02 ? BSPIRE[bc.id] : null;
+      if (bSpire) p = p * (1 - bc.w) + bSpire.p * bc.w * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.016, z * 0.016, { octaves: 3, seed: 23 }));
+      if (rng() > p) continue;
+      const scale = bSpire && bc.w > 0.4 ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
+        : field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
+      addCrystal(x, z, scale, Math.floor(rng() * 3), bSpire && bc.w > 0.4 ? bSpire.col : null);
     }
     // hero formations: a handful of towering (8-13 m) clusters in the eastern fields — FF14 landmark scale
+    // (home bowl only; each outer biome gets its own landmark from Props)
     let heroes = 0;
     for (let i = 0; i < 300 && heroes < 9; i++) {
       const x = 235 + rng() * 140, z = -150 + rng() * 300;

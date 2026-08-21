@@ -21,7 +21,7 @@ let NEXT_ID = 1;
 
 export class Enemy {
   constructor(sys, type, asset) {
-    this.sys = sys; this.game = sys.game; this.type = type; this.def = DEFS[type]; this.asset = asset; this.body = BODIES[type];
+    this.sys = sys; this.game = sys.game; this.type = type; this.def = DEFS[type]; this.asset = asset; this.body = BODIES[this.def.body ?? type];
     const def = this.def;
     this.id = 0; this.level = 1; this.name = def.name; this.alive = false; this.state = 'dead'; this.camp = null; this.slot = null;
     this.position = new THREE.Vector3(); this.center = new THREE.Vector3(); this.velocity = new THREE.Vector3(); this.yaw = 0;

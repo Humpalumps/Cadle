@@ -17,8 +17,16 @@ const POOLS = [
   ['Aspen Medium', 'Ash Medium', 'Aspen Large'],
   ['Oak Medium', 'Oak Large'],
   ['Ash Large'],
+  ['Pine Medium', 'Pine Large'],      // 3: conifer — Frostveil Tundra, Dragon Peaks
+  ['Oak Large', 'Ash Large'],         // 4: dead — same skeleton, leaves stripped in SPECIES_TUNE
 ];
-const TARGET_H = { 0: 13, 1: 12, 2: 11 };   // metres; instance scale multiplies on top
+const TARGET_H = { 0: 13, 1: 12, 2: 11, 3: 16, 4: 10 };   // metres; instance scale multiplies on top
+// per-species option overrides applied after loadPreset (see makeVariant)
+const SPECIES_TUNE = {
+  4: (o) => { if (o.leaves) { o.leaves.count = Math.max(1, Math.round((o.leaves.count ?? 10) * 0.08)); o.leaves.size = (o.leaves.size ?? 2) * 0.65; } },
+};
+// per-species leaf/needle tint (multiplies the per-instance jitter). Dead trees keep a bark-brown husk.
+const LEAF_TINT = { 3: [0.60, 0.80, 0.68], 4: [0.52, 0.40, 0.30] };
 const NEAR = 190, FAR = 780;                // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
 const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
 const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
@@ -106,13 +114,14 @@ export function buildEZTrees(game, trees, vegetation) {
     return rt.texture;
   }
 
-  const makeVariant = (preset, seed) => {
-    const key = preset + seed;
+  const makeVariant = (preset, seed, species = 0) => {
+    const key = preset + seed + ':' + species;
     if (cache[key]) return cache[key];
     const t = new Tree();
     t.loadPreset(preset);
     t.options.seed = seed;
     tune(t.options);
+    SPECIES_TUNE[species]?.(t.options);
     t.generate();
     // measure from the BRANCH geometry only: the leaf buffer carries stray far-out vertices that
     // blew the measured height to ~186 m (instances shrank to 1 m, bake framed a transparent speck)
@@ -147,7 +156,7 @@ export function buildEZTrees(game, trees, vegetation) {
   for (const tr of trees) {
     const pool = POOLS[tr.species] ?? POOLS[0];
     const preset = pool[(Math.abs((tr.x * 7 + tr.z * 13) | 0)) % pool.length];
-    const v = makeVariant(preset, seedBase + (tr.species + 1) * 37);
+    const v = makeVariant(preset, seedBase + (tr.species + 1) * 37, tr.species);
     let b = buckets.get(v); if (!b) buckets.set(v, b = []);
     b.push(tr);
   }
@@ -180,7 +189,9 @@ export function buildEZTrees(game, trees, vegetation) {
         P.set(tr.x, tr.y - 0.15 * s, tr.z); S.setScalar(s); M.compose(P, Q, S);
         mats.set(M.elements, k * 16);
         const tint = 0.82 + ((tr.x * 13 + tr.z * 7) % 10) * 0.03;
-        C.setRGB(tint * 0.95, tint, tint * 0.9);
+        const lt = LEAF_TINT[tr.species];
+        if (lt) C.setRGB(tint * lt[0], tint * lt[1], tint * lt[2]);
+        else C.setRGB(tint * 0.95, tint, tint * 0.9);
         cols.set([C.r, C.g, C.b], k * 3);
         xz[k * 2] = tr.x; xz[k * 2 + 1] = tr.z;
       });
