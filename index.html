@@ -5,38 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cadle</title>
 <link rel="stylesheet" href="/src/ui/ui.css" />
+<!-- The loading screen's own assets. Preloaded from the HTML so the browser starts fetching them during
+     parse, in parallel with the JS, instead of only once the module graph has resolved. The loading
+     screen is the first thing on screen, so its assets are on the critical path and nothing else is. -->
+<link rel="preload" as="image" href="/assets/intro/wall_plaster.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/wood_floor.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/rug_indigo.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/hoodie_knit.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/chair_leather.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/poster_crystal.jpg" crossorigin />
+<link rel="preload" as="image" href="/assets/intro/poster_ruins.jpg" crossorigin />
+<script>
+/* The body model is the biggest thing on the loading screen's critical path and buildStage() does not
+   reach it for ~350 ms (intro textures, room and chair all build first), so the download starts here,
+   during HTML parse, and stage.js awaits the promise. This replaces a <link rel="preload" as="fetch">:
+   that preload never matched the loader's request ("credentials mode does not match") and the browser
+   downloaded all 443 KB twice on every cold load. One request, ~340 ms earlier, no matching rules. */
+window.__guyGlb = fetch('/assets/intro/guy.glb').then((r) => {
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.arrayBuffer();
+});
+window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an unhandledrejection
+</script>
 <style>
-/* Boot splash: inline in the HTML so it paints before any JS loads — never a black screen.
-   Removed by the HUD once the game is ready and has rendered its first frames. */
-#splash{position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px;
-  background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%);transition:opacity .8s ease;font-family:Georgia,'Palatino Linotype',serif}
-#splash.gone{opacity:0;pointer-events:none}
-#splash h1{margin:0;font-size:clamp(34px,6vw,64px);font-weight:400;letter-spacing:.42em;text-indent:.42em;color:#d3a548;
-  background:linear-gradient(100deg,#8a6119 20%,#d3a548 38%,#fdf3cd 50%,#d3a548 62%,#8a6119 80%);background-size:220% 100%;
-  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sheen 2.6s linear infinite}
-@keyframes sheen{from{background-position:200% 0}to{background-position:-20% 0}}
-#splash .gem{position:relative;width:74px;height:74px;animation:bob 2.4s ease-in-out infinite}
-#splash .gem i{position:absolute;inset:0;border:2px solid #7c5bd6;transform:rotate(45deg);border-radius:8px;
-  box-shadow:0 0 22px rgba(124,91,214,.55),inset 0 0 18px rgba(124,91,214,.35);animation:spin 3.2s linear infinite}
-#splash .gem i:nth-child(2){border-color:#d3a548;box-shadow:0 0 18px rgba(211,165,72,.4);animation:spin 3.2s linear infinite reverse;scale:.72}
-#splash .gem b{position:absolute;inset:26px;background:radial-gradient(circle,#cdb4ff 0%,#7c5bd6 60%,transparent 75%);
-  border-radius:50%;filter:blur(1px);animation:pulse 1.6s ease-in-out infinite}
-@keyframes spin{from{transform:rotate(45deg)}to{transform:rotate(405deg)}}
-@keyframes pulse{0%,100%{opacity:.55;scale:.85}50%{opacity:1;scale:1.12}}
-@keyframes bob{0%,100%{translate:0 -4px}50%{translate:0 5px}}
-#splash .bar{width:min(340px,60vw);height:3px;background:rgba(211,165,72,.16);border-radius:2px;overflow:hidden}
-#splash .bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#8a6119,#d3a548,#fdf3cd);border-radius:2px;transition:width .25s ease}
-#splash p{margin:0;font-size:12px;letter-spacing:.34em;text-indent:.34em;color:rgba(240,228,198,.5);animation:fadein 1.2s ease}
-@keyframes fadein{from{opacity:0}to{opacity:1}}
+/* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
+   white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first
+   frame; anything drawn here would be a second, competing loading screen for that half second. */
+#splash{position:fixed;inset:0;z-index:99;background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%)}
+#splash.gone{opacity:0;pointer-events:none;transition:opacity .3s ease}
 </style>
 </head>
 <body>
-<div id="splash">
-  <h1>CADLE</h1>
-  <div class="gem"><i></i><i></i><b></b></div>
-  <div class="bar"><i id="splashbar"></i></div>
-  <p id="splashmsg">GATHERING AETHER</p>
-</div>
+<div id="splash"></div>
 <canvas id="game"></canvas>
 <div id="ui"></div>
 <script type="module" src="/src/main.js"></script>

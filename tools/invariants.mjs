@@ -45,23 +45,37 @@ for (const f of srcFiles) {
   }
 }
 
-// ---------------------------------------------------------------- (a2) THE BAKE WORKERS ARE NOT A CLOSURE
-// The nine outer-biome height kernels (Terrain.BH[]) and heightAt() are stringified into the terrain bake
-// workers. Anything they reference must be injected into the worker preamble by _bakeAsync. A closure over
-// a module-scope helper compiles fine on the main thread and throws inside the worker, where the only
-// symptom is a silent fall back to a single-threaded bake — the world still loads, just slowly and later.
+// ---------------------------------------------------------------- (a2) THE BAKE WORKER IS A REAL MODULE
+// The terrain bake worker used to be built by stringifying Terrain.js's own functions into a Blob. That
+// compiles fine in dev and dies in EVERY minified build (`ReferenceError: noise2 is not defined`), where the
+// only symptom is a silent fall back to a single-threaded bake on the main thread — the world still loads,
+// just frozen for seconds (measured: 22 rendered frames in 17.6 s of boot, vs 507 with the workers).
+// So: the bake math lives in src/world/terrainKernel.js and terrainWorker.js imports it; the bundler resolves
+// the names. Nothing here may go back to string-building a worker, and the kernel must stay three-free
+// (importing three would drag the whole engine into the worker chunk).
 {
   const terr = read(join('src', 'world', 'Terrain.js'));
-  const bh = terr.match(/const BH = \[([\s\S]*?)\n\];/);
-  if (!bh) fail('src/world/Terrain.js: the BH[] outer-biome kernels are gone or reshaped — the bake worker injection in _bakeAsync assumes that array');
+  const kern = read(join('src', 'world', 'terrainKernel.js'));
+  const wrk = read(join('src', 'world', 'terrainWorker.js'));
+  if (/URL\.createObjectURL\s*\(\s*new Blob/.test(terr) || /\bnew Worker\(\s*url\b/.test(terr))
+    fail('src/world/Terrain.js is string-building its bake worker again — use `new Worker(new URL(\'./terrainWorker.js\', import.meta.url), { type: \'module\' })`; a stringified worker throws ReferenceError in every minified build and silently bakes on the main thread');
+  if (!/new Worker\(\s*new URL\(\s*'\.\/terrainWorker\.js'\s*,\s*import\.meta\.url\s*\)\s*,\s*\{\s*type:\s*'module'\s*\}\s*\)/.test(terr))
+    fail("src/world/Terrain.js: the bake worker must be created as `new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' })` so Vite bundles it");
+  if (/from '.*\bthree\b/.test(kern)) fail('src/world/terrainKernel.js imports three — the bake worker chunk must stay engine-free');
+  if (!/import \{ bakeKernel \} from '\.\/terrainKernel\.js'/.test(wrk)) fail('src/world/terrainWorker.js no longer imports bakeKernel from the kernel module');
+  if (!/import \{[^}]*\bheightAt\b[^}]*\} from '\.\/terrainKernel\.js'/.test(terr) || !/Terrain\.prototype\.heightAt = heightAt;/.test(terr))
+    fail('src/world/Terrain.js must import heightAt from terrainKernel.js and hang it on the prototype — one height field for the game AND the bake, or the mesh stops matching the colliders');
+  // the nine outer-biome kernels still have to be closure-free-ish: everything they call must exist in the kernel module
+  const bh = kern.match(/const BH = \[([\s\S]*?)\n\];/);
+  if (!bh) fail('src/world/terrainKernel.js: the BH[] outer-biome kernels are gone or reshaped — heightAt indexes that array by wedge k');
   else {
-    const injected = ['ss', 'mix', 'n2', 'fbm2', 'fbm3', 'fbm4', 'ridged3', 'ridged4', 'rmf', 'rg', 'Math', 'Number'];
+    const defined = ['ss', 'mix', 'n2', 'fbm2', 'fbm3', 'fbm4', 'ridged3', 'ridged4', 'rmf', 'rg', 'Math', 'Number'];
     const kw = ['function', 'if', 'for', 'while', 'return', 'switch', 'catch'];
     const body = bh[1].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // comments are prose, not calls
     const called = [...new Set([...body.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]))];
-    const bad = called.filter((id) => !injected.includes(id) && !kw.includes(id) && !id.startsWith('bh'));
-    if (bad.length) fail(`src/world/Terrain.js BH[] calls ${bad.join(', ')}, which the bake worker does not define — inject it in _bakeAsync (see the src[] array) or inline it, or the workers die and the bake silently falls back to the main thread`);
-    if (!/BH\.map\(\s*\(\s*f\s*\)\s*=>\s*f\.toString\(\)\s*\)/.test(terr)) fail('src/world/Terrain.js: _bakeAsync no longer stringifies BH[] into the worker — the outer biomes would bake flat');
+    const bad = called.filter((id) => !defined.includes(id) && !kw.includes(id) && !id.startsWith('bh'));
+    if (bad.length) fail(`src/world/terrainKernel.js BH[] calls ${bad.join(', ')} — add it to the kernel module (and to this invariant's \`defined\` list) or the outer biomes bake flat`);
+    for (const id of defined.slice(0, 10)) if (!new RegExp(`(?:const|,)\\s*${id}\\s*=`).test(kern)) fail(`src/world/terrainKernel.js no longer defines \`${id}\`, which BH[]/heightAt call`);
   }
 }
 

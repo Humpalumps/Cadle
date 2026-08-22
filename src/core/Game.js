@@ -24,7 +24,10 @@ import { RPG } from '../rpg/RPG.js';
  * PostFX.render(dt) draws the frame.
  */
 export class Game {
-  constructor(canvas) {
+  /** opts.renderer: an already-created WebGLRenderer to adopt. main.js builds the renderer up front so
+   *  the intro loading screen can paint with it before this module has even been downloaded — Game's
+   *  import graph is the whole game, and waiting for it is what used to leave the page dark for seconds. */
+  constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.params = new URLSearchParams(location.search);
     this.auto = this.params.get('auto') === '1';      // automation harness: no click-to-start, synthetic input allowed
@@ -35,7 +38,7 @@ export class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(95, 1, 0.05, 4000);
     this.camera.rotation.order = 'YXZ';
-    this.renderer = createRenderer(canvas, this.quality);
+    this.renderer = opts.renderer || createRenderer(canvas, this.quality);
     this.input = new Input(canvas);
     if (this.auto) this.input.synthetic = true;
     this.events = events;
@@ -71,7 +74,16 @@ export class Game {
   removeSystem(sys) { const i = this.systems.indexOf(sys); if (i >= 0) this.systems.splice(i, 1); sys.dispose?.(); }
 
   async _init() {
-    for (const s of this.systems) await s.init?.(this);
+    // yield a frame between systems: terrain/grass/vegetation builds are long synchronous blocks, and the
+    // intro loading screen (src/ui/Intro.js) is animating on the same thread. Costs ~1 frame per system.
+    for (let i = 0; i < this.systems.length; i++) {
+      const s = this.systems[i];
+      await s.init?.(this);
+      // loading screens need to know about the WORLD build, not just the asset download (which is the
+      // first system and only ~half the wall time). 'boot:progress' is what the intro's bar rides on.
+      this.events.emit('boot:progress', { done: i + 1, total: this.systems.length, system: s.constructor.name });
+      await new Promise((r) => requestAnimationFrame(r));
+    }
     this._onResize();
     window.addEventListener('resize', () => this._onResize());
     this.events.emit('ready', this);
@@ -91,6 +103,25 @@ export class Game {
     loop();
   }
   stop() { this._running = false; cancelAnimationFrame(this._raf); }
+
+  /** Advance the simulation one step and draw the world into `target` (no post-processing).
+   *  Used by the intro loading screen to put the LIVE game on the character's monitor before the game
+   *  itself owns the canvas. Not part of the normal loop. Pass `systems` to step only part of the world —
+   *  the intro leaves rpg/audio/hud/enemies/combat alone so the opening quest does not play to nobody.
+   *  Pass `camera` to draw the same world through a different lens — the intro uses a narrower one so the
+   *  monitor is not showing a 95-degree gameplay FOV squeezed into a small render target. */
+  stepInto(dt, target, systems = this.systems, camera = this.camera) {
+    this.time += dt;
+    for (const s of systems) s.update?.(dt, this.time);
+    this.input.endFrame();
+    const r = this.renderer, tm = r.toneMapping;
+    r.toneMapping = THREE.ACESFilmicToneMapping;      // the composer normally does this; here we draw direct
+    r.setRenderTarget(target);
+    r.clear();
+    r.render(this.scene, camera);
+    r.setRenderTarget(null);
+    r.toneMapping = tm;
+  }
 
   frame() {
     const raw = this.clock.getDelta();

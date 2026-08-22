@@ -6,6 +6,7 @@
 //   node tools/inspect.mjs --name x --steps '[{"wait":1},{"shot":"a"}]'
 //   node tools/inspect.mjs --name x --script tools/scripts/combat.json
 //   flags: --w 1920 --h 1080 --q high|medium|low --seed 1337 --headed --url http://127.0.0.1:5173/ --params "foo=1"
+//          --noready  (do not wait for the game loop to start before running steps; for the intro/loading screen)
 //          --nolock   (default: waits for an exclusive lock so perf numbers aren't skewed by parallel runs; use --nolock for quick screenshot-only iteration)
 //
 // Step types (JSON objects, run in order):
@@ -92,8 +93,10 @@ const url = `${base}${base.includes('?') ? '&' : '?'}auto=1&q=${q}&seed=${seed}$
 report.url = url;
 await page.goto(url, { waitUntil: 'load', timeout: 120000 }); // vite can take >30s to serve the module graph while parallel agent runs saturate it
 report.gpu = await page.evaluate(() => { const c = document.createElement('canvas'); const gl = c.getContext('webgl2'); const d = gl?.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; });
-try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), { timeout: 60000 }); }
-catch (e) { report.errors.push('TIMEOUT waiting for game to start: ' + e.message); }
+if (!args.noready) {   // --noready: the page never starts the game loop by itself (e.g. the intro held on screen)
+  try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), { timeout: 60000 }); }
+  catch (e) { report.errors.push('TIMEOUT waiting for game to start: ' + e.message); }
+}
 const t0 = Date.now();
 const now = () => +((Date.now() - t0) / 1000).toFixed(2);
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));

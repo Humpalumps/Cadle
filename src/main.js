@@ -1,4 +1,5 @@
-import { Game } from './core/Game.js';
+import { createRenderer } from './render/Renderer.js';
+import { Intro } from './ui/Intro.js';
 
 // ?fresh=1: clean slate for demo recording — new character, quest from the top
 if (new URLSearchParams(location.search).get('fresh')) {
@@ -6,11 +7,41 @@ if (new URLSearchParams(location.search).get('fresh')) {
 }
 
 const canvas = document.getElementById('game');
-const game = new Game(canvas);
+
+// LOAD ORDER IS THE WHOLE POINT HERE.
+// `Game.js` statically imports the entire game (~530 KB gzipped); importing it at the top of this file
+// meant nothing could paint until all of it had downloaded and parsed — on a real connection that is the
+// page sitting dark for seconds while the tab title counts to 40%. So: build the renderer here, put the
+// intro on screen with it, and only THEN dynamically import Game so its chunk downloads behind the
+// loading screen it is supposed to be loading behind.
+const PARAMS = new URLSearchParams(location.search);
+const USE_INTRO = PARAMS.get('auto') !== '1' || PARAMS.get('intro') === '1';
+const QUALITY = ['low', 'medium', 'high'].includes(PARAMS.get('q')) ? PARAMS.get('q') : 'high';
+
+window.__game = { errors: [] };          // exists from the first line so early failures are still reported
+window.addEventListener('error', (e) => window.__game.errors.push(String(e.error?.stack || e.message)));
+window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
+
+const renderer = createRenderer(canvas, QUALITY);
+const intro = USE_INTRO ? new Intro({
+  canvas, renderer, params: PARAMS,
+  seed: Number(PARAMS.get('seed') || 1337),
+  auto: PARAMS.get('auto') === '1',
+}) : null;
+
+if (intro) {
+  intro.init().catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); });
+  // 8 s cap so a broken intro can never hold the game hostage
+  await Promise.race([intro.firstFrame, new Promise((r) => setTimeout(r, 8000))]);
+}
+
+const { Game } = await import('./core/Game.js');
+const game = new Game(canvas, { renderer });
+intro?.attach(game);
 
 // Automation / debug API used by tools/inspect.mjs and critics. Keep stable.
 const P = () => game.player;
-window.__game = {
+Object.assign(window.__game, {
   game,
   ready: game.ready.then(() => true),
   stats: () => game.perf.stats(),
@@ -54,21 +85,37 @@ window.__game = {
   bypassPostfx: (v = true) => game.postfx.setBypass?.(v),
   skyMask: (v = true) => game.postfx.skyMask?.(v),          // gate: magenta = sky (tools/blobcheck.py ignores those pixels)
   audioSelfTest: () => game.audio.selfTest?.(),
-  errors: [],
-};
-window.addEventListener('error', (e) => window.__game.errors.push(String(e.message)));
-window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
+});
 
-// Boot splash (markup lives inline in index.html so it paints before any JS): feed it asset
-// progress, then fade it once the game is running and has actually put frames on screen.
-{
-  const bar = document.getElementById('splashbar'), msg = document.getElementById('splashmsg'), splash = document.getElementById('splash');
-  game.events.on('assets:progress', (e) => {
-    if (bar && e?.total) bar.style.width = Math.round((e.done ?? e.loaded ?? 0) / e.total * 100) + '%';
+// ---------------------------------------------------------------------------------------------
+// Boot. Two paths:
+//   players  -> the cinematic intro (src/ui/Intro.js): a guy at his computer, the game on his monitor
+//               with the load bar on it, and he gets pulled into the screen when you click.
+//   ?auto=1  -> no intro at all (the harness and critics must see exactly what they saw before).
+//               ?auto=1&intro=1 runs it anyway and auto-plays the transition 4 s after load, so the
+//               intro itself can be inspected; __game.intro.hold() freezes it for screenshots.
+window.__game.intro = intro;
+
+if (intro) {
+  // the bar: assets fill the first 55 %, the world build the rest. Labels name what is actually happening.
+  const BOOT_LABEL = {
+    Assets: 'GATHERING AETHER', Sky: 'HANGING THE SKY', Lighting: 'KINDLING THE SUN', Terrain: 'RAISING THE VALE',
+    World: 'SEEDING THE MEADOW', Player: 'FORGING YOUR ARMS', Combat: 'FORGING YOUR ARMS', Enemies: 'STIRRING THE WILDS',
+    VFX: 'BINDING THE AETHER', Audio: 'TUNING THE WINDS', RPG: 'WRITING YOUR TALE', HUD: 'WRITING YOUR TALE', PostFX: 'THE VALE AWAITS',
+  };
+  let boot = 0;
+  game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.55 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
+  game.events.on('boot:progress', (e) => {
+    boot = 0.55 + 0.45 * (e.done / e.total);
+    intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
+  game.ready.then(() => intro.arm()).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
+  // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
+  intro.finished.then(() => game.ready.then(() => game.start()));
+} else {
+  // No intro: the boot splash (fed above) stays up until the frame time settles, then fades.
+  const splash = document.getElementById('splash');
   game.ready.then(() => {
-    if (bar) bar.style.width = '100%';
-    if (msg) msg.textContent = 'ENTERING THE VALE';
     // hold the splash until the frame time actually STABILIZES: shader compiles, impostor bakes
     // and texture uploads all land under it instead of as jank in the player's first seconds.
     // (5 consecutive sub-25ms frames, or an 8 s cap so a contended GPU can't hold boot hostage.)
@@ -103,5 +150,9 @@ function spawnParam() {
   game.audio?.update?.(0.5, 0);                                          // settle the bed/theme on the first frame
 }
 
-game.ready.then(() => { game.start(); try { spawnParam(); } catch (e) { console.warn('[main] ?at failed', e); } })
+
+// Runs off `ready`, not off `start`: with the cinematic intro the game starts later (intro.finished), and a
+// ?at= link should already be standing in the right region by the time the monitor hands over.
+game.ready.then(() => { try { spawnParam(); } catch (e) { console.warn('[main] ?at failed', e); } })
   .catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
+if (!intro) game.ready.then(() => game.start());

@@ -443,15 +443,20 @@ and flagged here rather than tuned away. **A merge on a red gate is a decision, 
 made** — if the next wave wants a green gate, the honest lever is `tools/blobcheck.py`'s `MIN_AREA`/`LUM_BRIGHT`
 (orchestrator-owned), not more grade-flattening.
 
+> **SUPERSEDED 2026-08-22 (see §0).** The gate is green at both qualities now, and the lever turned out to be
+> neither the grade nor the brightness bar: the detector was missing the SHAPE and the CONTEXT of a blob. It now
+> gets a per-burst classification mask from the renderer (ground cover / geometry / atmosphere) and applies the
+> strict rule only to ground cover, plus two shape rules. `--selftest` proves it still catches painted blobs.
+> Chasing this also found two genuine bugs the old detector was drowning in its own noise: wisps reading as white
+> orbs, and every impact preset starting from a pure-white core.
+
 ### Known issues / next fixes (this wave)
 
-1. **`tools/gate.mjs` hardcodes `http://127.0.0.1:5173`.** A worktree cannot be gated without taking that port over from
-   the main dev server. Give it a `--url`/env override.
-2. **`tools/blobcheck.py`'s calibration note is stale and should be corrected** (tools/ is orchestrator-owned, so it
-   was not touched here): it says grass is capped at 0.60 linear "(~198 sRGB) so it can never reach" the 212 bar.
-   Measured through ACES + the FF14 grade, 0.60 arrives at ~220, which is why the meadow kept tripping its own
-   detector. The cap moved to 0.50; the note needs to say so, or the next person re-raises it. Also worth revisiting:
-   `MIN_AREA = 12` px is small enough that one sunlit blade edge counts as a blob.
+1. ~~**`tools/gate.mjs` hardcodes `http://127.0.0.1:5173`.**~~ DONE 2026-08-22: both `gate.mjs` and `inspect.mjs`
+   honour `CADLE_URL`, so a worktree can be gated on its own port.
+2. ~~**`tools/blobcheck.py`'s calibration note is stale**~~ DONE 2026-08-22: the note now says what was measured
+   (a sunlit blade edge arrives at 214-218, so the bar alone cannot separate it from a blob), and `MIN_THICK`
+   handles the "one sunlit blade edge counts as a blob" case by shape instead of by brightness.
 3. **The q=high gate harness run intermittently exceeds its 600 s timeout** on a contended box (it did on the baseline
    run twice). A timeout kills the run with no `report.json`, which reads as a gate failure rather than "not measured".
 4. **Perf A/B was inconclusive**, not negative. Alternating before/after tours on this box varied as much between two
@@ -490,12 +495,122 @@ made** — if the next wave wants a green gate, the honest lever is `tools/blobc
 - Game state at last verify: 0 errors, blob-free meadow at 15h/17.5h. p99 was 16.4 ms vs 14 budget; builders carry perf gates.
 - Not started (later waves): RPG stats/loot/inventory, quests + voiced NPCs (Magnific audio_tts can voice them now), world bosses, story mode.
 
+## 4b. The cinematic loading screen / landing page (2026-08-22)
+
+The front door of the site. A young man sits at his computer in a dark bedroom at night; **his monitor is
+showing the game's own start screen** (wordmark + subtitle + load bar, composited over the live game world
+as the menu backdrop, the way a real title screen is). When the world has finished building the prompt
+becomes "CLICK TO ENTER THE VALE"; the player clicks, **he is pulled head-first into the monitor**, the
+camera follows him through the glass, a violet flash covers the handover, and the game starts.
+
+| file | owner | what |
+|---|---|---|
+| `src/ui/Intro.js` | orchestrator | renderer/composer, the start-screen canvas, the DOM load bar, the transition, the handover |
+| `src/ui/intro/stage.js` | orchestrator | scene assembly, ALL lights, camera path, the suck-in transform, the intro texture loader |
+| `src/ui/intro/room.js` | intro-room builder | bedroom, desk, monitor hardware, props, posters, fairy lights |
+| `src/ui/intro/character.js` | intro-character builder | the seated guy + his gaming chair, idle animation, `setSuck(k)` acting |
+| `intro.html` | orchestrator | dev-only standalone preview of the stage (`?noroom=1 ?nochar=1 ?char=b ?seed=N`) |
+| `public/assets/intro/` | orchestrator | 1.6 MB: the texture set + `guy.glb`, the generated seated character (see ASSETS.md) |
+| `docs/intro-ref/` | orchestrator | the art references builders are judged against (not shipped) |
+
+**Things that are load-bearing — do not undo them:**
+- It shares the GAME's renderer and canvas. That is what lets the monitor show a real render of the world
+  (`Game.stepInto(dt, target, systems)` draws the world into a render target). Two consequences:
+  (1) `Lighting.js` sets `renderer.shadowMap.autoUpdate = false`, so the intro sets `shadowMap.needsUpdate = true`
+  every frame or its own shadow maps never render and **the whole room goes black**;
+  (2) the intro must restore `toneMapping` / `shadowMap.enabled` / `setRenderTarget(null)` on teardown.
+- The transition timeline runs on **wall clock**, not accumulated `dt`. Impostor baking can still be hogging
+  the thread when the player clicks; a dt-driven timeline turns the 2 s dive into 5 s of slow motion.
+- `#introui` is `pointer-events: none` with its click listener on `window`, so the canvas's own
+  `mousedown -> Input.lock` path still runs. A full-screen div that swallowed the click broke the gate's
+  "pointer lock re-acquires after exit" leg.
+- `Input.lock` now remembers a refused `unadjustedMovement` and asks plain from then on. The refusal is
+  asynchronous, so the fallback request landed outside the click's transient activation and Chrome answered
+  "a user gesture is required". That was the real cause of flaky re-lock.
+- `?auto=1` skips the intro entirely — the harness and every critic see exactly what they saw before.
+  `?auto=1&intro=1` runs it and auto-plays 4 s after arming; add `&introhold=1` to hold it for screenshots
+  (needs `node tools/inspect.mjs --noready`, since the game loop only starts after the transition).
+  `__game.intro.seek(t)` freezes the transition at an absolute time — that is how you review the dive.
+- The intro loads its own textures from `public/assets/intro/` (the ONE documented exception to
+  "everything through `game.assets`"): it is on screen while `game.assets` is still preloading 29 MB.
+- **LOAD ORDER: `main.js` does NOT statically import `Game.js`.** `Game`'s import graph is the whole game
+  (~239 KB gz on its own chunk); importing it at the top meant nothing could paint until all of it had
+  downloaded — in production that was the page sitting dark while the tab title counted to 40%. `main.js`
+  now builds the renderer itself (`createRenderer`), puts the intro on screen with it, and only then
+  `await import('./core/Game.js')`, passing the renderer in via `opts.renderer`. `Intro` therefore takes a
+  minimal `{ canvas, renderer, seed, auto, params }` host at construction and gets the real Game later via
+  `intro.attach(game)`; anything in `Intro` that runs before `arm()` must not assume `game.input` exists.
+  The intro's own assets are `<link rel="preload">`ed from index.html so they fetch in parallel with the JS.
+- **TIME TO FIRST FRAME is compile-bound, not download-bound.** Measured on a production build: assets are
+  all in by ~0.7 s, but the first `render()` used to take ~6.8 s because it compiled every material in the
+  room AND the whole post-processing chain in one blocking call. Two things keep it down and both must
+  stay: (a) the `EffectComposer` is built in `_buildComposer()` two frames AFTER the room is on screen —
+  the early frames render plain with renderer-side ACES; (b) `stage.setLightsFull(false)` paints the first
+  frame against a cheap rig (spot + warm rim + hemisphere) and the rect-area light, moon and prop points
+  switch on a frame later. Every material compiles against NUM_*_LIGHTS, so the full rig is a much bigger
+  permutation. Net: first frame 7.2 s -> 2.0 s. If you add lights or effects, re-measure — the marks are
+  logged as `[intro] boot ms:` from `Intro._boot`.
+- Preload hints only work if the credentials mode matches the eventual request. three's `TextureLoader`
+  sets `img.crossOrigin='anonymous'`, so the image preloads need `crossorigin`; `as="fetch"` is always
+  CORS-mode, so `guy.glb` is preloaded with `crossorigin` and fetched with `credentials: 'omit'`. Get this
+  wrong and the browser silently downloads every asset twice — check the console for "preload ... not
+  used because the request credentials mode does not match".
+- **The character is a generated GLB** (`public/assets/intro/guy.glb`), not the procedural body. The
+  procedural one in `character.js` is the fallback and still supplies the chair. The GLB is NOT awaited: it
+  streams in and fades up. Placement lives in `GUY_FIT` in `stage.js`; tune it live with
+  `__intro.stage.fitGuy({height, x, y, z, rotY})` on `intro.html` and paste the result back into the const.
+
+**Gate status at the time this landed (2026-08-22):** jitter PASS at q=high and q=low (≈0.05, effectively
+zero), pointer lock PASS (engage + re-acquire). `blobcheck` FAILS — **pre-existing on `main`, not from the
+intro**: two independent baseline runs of `tools/gate-steps.json` against the unmodified main checkout on
+:5173 produce the identical signature (8 findings on `burst-blob-dawn-*`, 4 on `burst-blob-pop13a-*`) — the
+dawn sun/sky seen through the tree canopy at the top of frame. That needs an owner (sky/vegetation/postfx),
+but it is not the loading screen. Reproduce with:
+`node tools/inspect.mjs --nolock --name basemain-low --q low --script tools/gate-steps.json --url http://127.0.0.1:5173/`
+then `python tools/blobcheck.py tools/out/basemain-low burst-blob-`.
+
+## 4c. The terrain bake worker (2026-08-22)
+
+`src/world/Terrain.js` used to build its bake worker by stringifying its own functions into a Blob. That
+works in dev and **dies in every minified build** — the minifier renames the bindings but the template
+strings still contain the literal identifiers, so the worker threw `ReferenceError: noise2 is not defined`,
+`_bakeAsync`'s `fallback` caught it, and the game silently baked the whole terrain **on the main thread**.
+Measured on a production build: **22 rendered frames in 17.6 s of boot before, 507 in 12.2 s after.**
+
+The bake math now lives in `src/world/terrainKernel.js` (no `three` import, so the worker chunk stays
+engine-free) and `src/world/terrainWorker.js` imports it; `Terrain.js` creates the workers with
+`new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' })` and hangs the kernel's
+`heightAt` on `Terrain.prototype` so there is still exactly ONE height field for the game and the bake.
+`tools/invariants.mjs` (a2) now fails if anyone string-builds a worker again, if the module-worker form is
+lost, if the kernel imports three, or if the `heightAt` wiring goes.
+
+**The general lesson, which applies beyond terrain:** anything that ships `Function.prototype.toString()`
+into a Blob worker is a landmine — it works in dev, degrades silently in production, and the only symptom
+is a `console.warn` nobody reads. Let the bundler resolve names; never hand-write identifiers into a
+worker source string.
+
+Regression guard: `terrain.heightAt` is ground truth for the whole game. Before touching the kernel, snapshot it:
+`node tools/inspect.mjs --nolock --name heightcheck --steps '[{"wait":20},{"eval":"(()=>{const t=window.__game.game.terrain;let s=0,n=0;for(let i=-1000;i<=1000;i+=37)for(let j=-1000;j<=1000;j+=41){s+=t.heightAt(i,j);n++;}return JSON.stringify({n,sum:+s.toFixed(6)});})()"}]'`
+Seed 1337 must give `{"n":2695,"sum":164490.108949}`.
+
 ## 5. Next actions (in order)
 
-1. Wait for `wf_e7ac807f-e3c` (journal: `.claude/projects/.../d286c103-.../subagents/workflows/wf_e7ac807f-e3c/journal.jsonl`). If it dies (usage limit ~4-hourly): collect verdicts from the journal, fold them into prevs, relaunch critic-first as wave 4 — never resume blindly.
-2. Asset batch 2 in flight (bark, leaf card ×alpha, rune glyphs ×2, aetheryte/column/handcannon concepts → models3d GLBs). Download results IMMEDIATELY (URL tokens expire), update ASSETS.md, generate remaining ASSET ASKs from builder reports.
-3. Between waves: update progress/state.json + shots, run check.mjs + full tour, coherence agent, then next wave.
-4. Only once graphics/perf/mechanics are all WIN: RPG systems → world bosses → quests/NPC voice (audio_tts) → story mode.
+**The live to-do is §0 "OUTSTANDING — start here".** Everything below §0 is a dated log of previous waves: read it
+for WHY something is the way it is, not for what to do next. (The old entries here — a wave-3 workflow id and an
+asset batch — completed long ago and were removed 2026-08-22 so nobody chases them.)
+
+1. Work §0's OUTSTANDING list, verification items first (nothing there has been confirmed on a headed browser).
+2. **IN FLIGHT ELSEWHERE — do not duplicate, and expect conflicts.** A parallel session is building the cinematic
+   loading screen / landing page (a bedroom scene whose monitor shows the real start screen, then the camera dives
+   through the glass into the game). As of 2026-08-22 it is **uncommitted** in the worktree
+   `.claude/worktrees/recursing-moser-26d7ce` — new `src/ui/Intro.js`, `src/ui/intro/*`, `intro.html`,
+   `public/assets/intro/`, plus edits to `src/core/Game.js`, `src/core/Input.js`, `src/main.js`, `tools/inspect.mjs`,
+   `tools/gate.mjs`, `vite.config.js`, `CLAUDE.md`, `ASSETS.md`. **Five of those files also changed in §0's commits**
+   (main.js, inspect.mjs, gate.mjs, vite.config.js, CLAUDE.md), so that branch needs a rebase onto `main` before it
+   can land, and its own HANDOVER section (§4b, written against the pre-§0 file) says blobcheck fails as a
+   pre-existing issue — that is no longer true, see §0.
+3. Between waves: update progress/state.json + shots, run check.mjs + the full tour, coherence agent, then next wave.
+4. Only once graphics/perf/mechanics are all WIN: world bosses → quests/NPC voice (audio_tts) → story mode.
 
 ## 5b. User decrees (2026-08-20, from watching the live game — enforce in every wave, tell every builder/critic)
 
