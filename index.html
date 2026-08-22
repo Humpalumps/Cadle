@@ -5,9 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cadle</title>
 <link rel="stylesheet" href="/src/ui/ui.css" />
-<!-- The loading screen's character. Preloaded here so the browser starts the fetch during HTML parse
-     instead of waiting for the module graph — he is the last thing to appear otherwise. -->
+<!-- The loading screen's own assets. Preloaded from the HTML so the browser starts fetching them during
+     parse, in parallel with the JS, instead of only once the module graph has resolved. The loading
+     screen is the first thing on screen, so its assets are on the critical path and nothing else is. -->
 <link rel="preload" as="fetch" type="model/gltf-binary" href="/assets/intro/guy.glb" />
+<link rel="preload" as="image" href="/assets/intro/wall_plaster.jpg" />
+<link rel="preload" as="image" href="/assets/intro/wood_floor.jpg" />
+<link rel="preload" as="image" href="/assets/intro/rug_indigo.jpg" />
+<link rel="preload" as="image" href="/assets/intro/hoodie_knit.jpg" />
+<link rel="preload" as="image" href="/assets/intro/chair_leather.jpg" />
+<link rel="preload" as="image" href="/assets/intro/poster_crystal.jpg" />
+<link rel="preload" as="image" href="/assets/intro/poster_ruins.jpg" />
 <style>
 /* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
    white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first

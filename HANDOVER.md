@@ -337,9 +337,14 @@ camera follows him through the glass, a violet flash covers the handover, and th
   `__game.intro.seek(t)` freezes the transition at an absolute time — that is how you review the dive.
 - The intro loads its own textures from `public/assets/intro/` (the ONE documented exception to
   "everything through `game.assets`"): it is on screen while `game.assets` is still preloading 29 MB.
-- **`Game` takes an `opts.gate` promise and `_init` awaits it.** `main.js` holds that gate until the intro
-  has drawn its first frame, so the room is up in ~0.4 s. Without it a system init that blocks the thread
-  for 800 ms runs first and the plain boot splash — not the room — is what the player stares at.
+- **LOAD ORDER: `main.js` does NOT statically import `Game.js`.** `Game`'s import graph is the whole game
+  (~239 KB gz on its own chunk); importing it at the top meant nothing could paint until all of it had
+  downloaded — in production that was the page sitting dark while the tab title counted to 40%. `main.js`
+  now builds the renderer itself (`createRenderer`), puts the intro on screen with it, and only then
+  `await import('./core/Game.js')`, passing the renderer in via `opts.renderer`. `Intro` therefore takes a
+  minimal `{ canvas, renderer, seed, auto, params }` host at construction and gets the real Game later via
+  `intro.attach(game)`; anything in `Intro` that runs before `arm()` must not assume `game.input` exists.
+  The intro's own assets are `<link rel="preload">`ed from index.html so they fetch in parallel with the JS.
 - **The character is a generated GLB** (`public/assets/intro/guy.glb`), not the procedural body. The
   procedural one in `character.js` is the fallback and still supplies the chair. The GLB is NOT awaited: it
   streams in and fades up. Placement lives in `GUY_FIT` in `stage.js`; tune it live with

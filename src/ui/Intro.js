@@ -89,8 +89,11 @@ const CSS = `
 #introflash.off{opacity:0;transition:opacity .7s cubic-bezier(.2,.7,.3,1)}`;
 
 export class Intro {
-  constructor(game) {
-    this.game = game;
+  /** `host` is a minimal boot context — { canvas, renderer, seed, auto, params } — NOT the Game. The
+   *  Game's module graph is the entire game; the intro must be able to render before it exists.
+   *  main.js calls attach(game) once it has been downloaded and constructed. */
+  constructor(host) {
+    this.game = host;
     this.active = false;
     this.done = false;
     this._t = 0;
@@ -103,6 +106,13 @@ export class Intro {
     this.finished = new Promise((r) => { this._resolve = r; });
     // resolves the moment the room is actually on screen — main.js gates the world build on this
     this.firstFrame = new Promise((r) => { this._resolveFirst = r; });
+  }
+
+  /** hand over the real Game once its chunk has loaded; everything after arm() needs it */
+  attach(game) {
+    this.game = game;
+    if (this._pendingReady) { this._pendingReady = false; }
+    return this;
   }
 
   // ---------------------------------------------------------------- boot
@@ -463,7 +473,9 @@ export class Intro {
     // ALWAYS take the lock on a click, in every state including mid-transition. Returning early here is
     // how "pointer lock does not re-acquire after exit" came back: the player pressed Esc during the
     // intro, clicked to resume, and nothing asked for the lock.
-    if (!g.auto && !document.pointerLockElement) g.input.constructor.lock(g.canvas);
+    // g.input only exists once the Game chunk has landed; before that the click just records intent and
+    // the canvas's own mousedown -> Input.lock picks up the next one.
+    if (!g.auto && !document.pointerLockElement && g.input) g.input.constructor.lock(g.canvas);
     if (this._trans) return;
     if (!this._armed) {                                 // clicked while the world is still building
       this._wantsPlay = true;

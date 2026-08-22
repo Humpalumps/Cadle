@@ -24,12 +24,11 @@ import { RPG } from '../rpg/RPG.js';
  * PostFX.render(dt) draws the frame.
  */
 export class Game {
-  /** opts.gate: a promise the world build waits on. The intro loading screen uses it to get its own
-   *  first frame on screen BEFORE the long synchronous system inits (sky bake, vegetation, impostors)
-   *  start hogging the main thread — otherwise the boot splash, not the room, is the loading screen. */
+  /** opts.renderer: an already-created WebGLRenderer to adopt. main.js builds the renderer up front so
+   *  the intro loading screen can paint with it before this module has even been downloaded — Game's
+   *  import graph is the whole game, and waiting for it is what used to leave the page dark for seconds. */
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
-    this._gate = opts.gate || null;
     this.params = new URLSearchParams(location.search);
     this.auto = this.params.get('auto') === '1';      // automation harness: no click-to-start, synthetic input allowed
     this.quality = ['low', 'medium', 'high'].includes(this.params.get('q')) ? this.params.get('q') : 'high';   // ultra removed (2026-08-21): high IS the top preset
@@ -39,7 +38,7 @@ export class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(95, 1, 0.05, 4000);
     this.camera.rotation.order = 'YXZ';
-    this.renderer = createRenderer(canvas, this.quality);
+    this.renderer = opts.renderer || createRenderer(canvas, this.quality);
     this.input = new Input(canvas);
     if (this.auto) this.input.synthetic = true;
     this.events = events;
@@ -75,7 +74,6 @@ export class Game {
   removeSystem(sys) { const i = this.systems.indexOf(sys); if (i >= 0) this.systems.splice(i, 1); sys.dispose?.(); }
 
   async _init() {
-    if (this._gate) { try { await this._gate; } catch {} }
     // yield a frame between systems: terrain/grass/vegetation builds are long synchronous blocks, and the
     // intro loading screen (src/ui/Intro.js) is animating on the same thread. Costs ~1 frame per system.
     for (let i = 0; i < this.systems.length; i++) {

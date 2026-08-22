@@ -1,4 +1,4 @@
-import { Game } from './core/Game.js';
+import { createRenderer } from './render/Renderer.js';
 import { Intro } from './ui/Intro.js';
 
 // ?fresh=1: clean slate for demo recording — new character, quest from the top
@@ -8,21 +8,40 @@ if (new URLSearchParams(location.search).get('fresh')) {
 
 const canvas = document.getElementById('game');
 
-// The cinematic intro IS the loading screen, so it has to be on screen before the world build begins —
-// its own setup (textures, room, character) is only ~350 ms, but a system init that blocks the thread for
-// 800 ms will happily run first and leave the plain boot splash up for the whole load. The gate below
-// holds Game._init until the intro has drawn a frame (or 3 s has passed, so a broken intro never blocks).
+// LOAD ORDER IS THE WHOLE POINT HERE.
+// `Game.js` statically imports the entire game (~530 KB gzipped); importing it at the top of this file
+// meant nothing could paint until all of it had downloaded and parsed — on a real connection that is the
+// page sitting dark for seconds while the tab title counts to 40%. So: build the renderer here, put the
+// intro on screen with it, and only THEN dynamically import Game so its chunk downloads behind the
+// loading screen it is supposed to be loading behind.
 const PARAMS = new URLSearchParams(location.search);
 const USE_INTRO = PARAMS.get('auto') !== '1' || PARAMS.get('intro') === '1';
-let releaseGate = () => {};
-const gate = USE_INTRO ? new Promise((r) => { releaseGate = r; }) : null;
-if (gate) setTimeout(releaseGate, 3000);
+const QUALITY = ['low', 'medium', 'high'].includes(PARAMS.get('q')) ? PARAMS.get('q') : 'high';
 
-const game = new Game(canvas, gate ? { gate } : {});
+window.__game = { errors: [] };          // exists from the first line so early failures are still reported
+window.addEventListener('error', (e) => window.__game.errors.push(String(e.error?.stack || e.message)));
+window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
+
+const renderer = createRenderer(canvas, QUALITY);
+const intro = USE_INTRO ? new Intro({
+  canvas, renderer, params: PARAMS,
+  seed: Number(PARAMS.get('seed') || 1337),
+  auto: PARAMS.get('auto') === '1',
+}) : null;
+
+if (intro) {
+  intro.init().catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); });
+  // 8 s cap so a broken intro can never hold the game hostage
+  await Promise.race([intro.firstFrame, new Promise((r) => setTimeout(r, 8000))]);
+}
+
+const { Game } = await import('./core/Game.js');
+const game = new Game(canvas, { renderer });
+intro?.attach(game);
 
 // Automation / debug API used by tools/inspect.mjs and critics. Keep stable.
 const P = () => game.player;
-window.__game = {
+Object.assign(window.__game, {
   game,
   ready: game.ready.then(() => true),
   stats: () => game.perf.stats(),
@@ -66,10 +85,7 @@ window.__game = {
   bypassPostfx: (v = true) => game.postfx.setBypass?.(v),
   skyMask: (v = true) => game.postfx.skyMask?.(v),          // gate: magenta = sky (tools/blobcheck.py ignores those pixels)
   audioSelfTest: () => game.audio.selfTest?.(),
-  errors: [],
-};
-window.addEventListener('error', (e) => window.__game.errors.push(String(e.error?.stack || e.message)));
-window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
+});
 
 // ---------------------------------------------------------------------------------------------
 // Boot. Two paths:
@@ -78,7 +94,6 @@ window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(S
 //   ?auto=1  -> no intro at all (the harness and critics must see exactly what they saw before).
 //               ?auto=1&intro=1 runs it anyway and auto-plays the transition 4 s after load, so the
 //               intro itself can be inspected; __game.intro.hold() freezes it for screenshots.
-const intro = USE_INTRO ? new Intro(game) : null;
 window.__game.intro = intro;
 
 if (intro) {
@@ -94,7 +109,6 @@ if (intro) {
     boot = 0.55 + 0.45 * (e.done / e.total);
     intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
-  intro.init().then(() => intro.firstFrame).then(releaseGate).catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); releaseGate(); });
   game.ready.then(() => intro.arm()).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
   // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
   intro.finished.then(() => game.ready.then(() => game.start()));

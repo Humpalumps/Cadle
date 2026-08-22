@@ -145,14 +145,13 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     try { character = (await load('character')).buildCharacter({ rng, tex }); scene.add(character.group); }
     catch (e) { console.warn('[intro] character module unavailable:', e?.message); }
   }
-  // The generated body is 468 KB and <link rel=preload>ed from index.html, so it is awaited — but with a
-  // deadline. Showing the procedural stand-in first and cross-fading read as two different characters
-  // popping between poses; whichever body wins this race is the only one the player ever sees.
-  let guy = null, guyHolder = null;
-  const guyReady = withCharacter
-    ? Promise.race([loadGuy(), new Promise((r) => setTimeout(() => r(null), 900))])
-    : Promise.resolve(null);
-  const guyEarly = await guyReady;
+  // NOT awaited. The room is the loading screen and has to paint as early as possible; the model is
+  // <link rel=preload>ed from index.html so it is normally already in cache by the time we get here, and
+  // when it is not, an empty chair for a moment beats a dark page. There is only ever ONE body — the
+  // procedural one in character.js is hidden up front and only comes back if this download fails — so
+  // this can fade in without the two-characters-popping problem the cross-fade used to have.
+  let guy = null, guyHolder = null, guyFade = -1;
+  const guyReady = withCharacter ? loadGuy() : Promise.resolve(null);
   if (!room) {                                            // stand-in so the shot still composes
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: 0x23242e, roughness: 0.9 });
@@ -319,10 +318,14 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     pivotBase = c.clone();
   }
   let guyBaseY = 0, chairHolder = null;
-  {
-    const g = guyEarly;
-    if (!g) { console.warn('[intro] generated body missed its deadline — using the procedural one'); }
-    else {
+  if (character?.body) character.body.visible = false;     // one body only; restored below if the load fails
+  guyReady.then((g) => {
+    if (!g) {
+      console.warn('[intro] generated body unavailable — falling back to the procedural one');
+      if (character?.body) character.body.visible = true;
+      bindSuck(character?.body || null);
+      return;
+    }
     guy = g;
     // the pivot overwrites its child's quaternion, so the model goes inside a holder and the HOLDER is
     // what gets re-parented — otherwise the fitted rotation/scale dies the moment the pivot binds
@@ -346,9 +349,11 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       holder.add(character.chair);
       chairHolder = holder;
     }
-    }
-  }
-  bindSuck(guyHolder || character?.body || null);
+    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = 0; } });
+    guyFade = 0;
+    bindSuck(guyHolder);
+    api.guy = guy;
+  });
   // (api.guy is assigned below once the object literal exists)
 
   // ---------------------------------------------------------------- state
@@ -397,6 +402,11 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     update(t, dt) {
       room?.update?.(t);
       character?.update?.(t);
+      if (guyFade >= 0 && guyFade < 1) {                  // he landed after the first frame; ease him in
+        guyFade = Math.min(1, guyFade + dt / 0.4);
+        const o = guyFade;
+        guy.traverse((n) => { const m = n.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.opacity = o; });
+      }
       if (guy && suck < 0.001) {                          // the generated body has no rig — breathe it
         guy.position.y = guyBaseY + Math.sin(t * 1.35) * 0.006;
         guy.rotation.z = GUY_FIT.rotZ + Math.sin(t * 0.41) * 0.004;
@@ -502,7 +512,6 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       scene.clear();
     },
   };
-  api.guy = guy;
   api.buildMs = performance.now() - t0;
   api.setSuck(0);
   return api;
