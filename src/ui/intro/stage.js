@@ -213,10 +213,10 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   const rect = new THREE.RectAreaLight(0x9b8bff, 11, SCREEN.w * 0.98, SCREEN.h * 0.98);
   rect.position.set(SCREEN.pos.x, SCREEN.pos.y, SCREEN.pos.z + 0.012);
   rect.lookAt(0, 1.02, 0.6);
-  scene.add(rect);
+  // EXPERIMENT: not added — the spot below carries the monitor wash instead
 
   // RectAreaLight cannot cast shadows — this spot rides along to throw his shadow back onto the chair/wall
-  const spot = new THREE.SpotLight(0x8f7bff, 7.0, 7, 1.0, 1.0, 1.6);
+  const spot = new THREE.SpotLight(0x9b8bff, 17.0, 7, 1.22, 1.0, 1.18);   // TUNE 2: flatter decay to kill the desk hotspot
   spot.position.set(0, 1.15, -0.86);
   spot.target.position.set(0, 0.92, 0.5);
   spot.castShadow = true;
@@ -546,7 +546,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       scene.clear();
     },
   };
-  api.setLightsFull(false);      // cheap rig for the first paint; Intro turns the rest on a frame later
+  api.setLightsFull(true);      // EXPERIMENT: full rig from frame one, now that the LTC path is gone
   api.buildMs = performance.now() - t0;
   api.setSuck(0);
   return api;
