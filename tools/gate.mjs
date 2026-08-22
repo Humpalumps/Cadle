@@ -38,7 +38,13 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   await page.goto(URL, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => !!window.__game || !!document.querySelector('canvas'), { timeout: 30000 });
-  await page.waitForTimeout(4000);
+  // The cinematic intro owns the screen (and the clicks) until it hands the canvas over, so clicking 4 s
+  // after load now lands on the intro, not the game — which is what "pointer lock did not engage" meant the
+  // first time this ran against it. Skip it and wait for the game to actually be running before testing the
+  // real click-to-lock path. Without this the check races the intro and fails intermittently.
+  await page.evaluate(() => window.__game?.intro?.skip?.());
+  await page.waitForFunction(() => window.__game?.game?.started === true || !!document.getElementById('start'), { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(2500);
   const click = () => page.mouse.click(640, 360);
   await click(); await page.waitForTimeout(500);
   let locked = await page.evaluate(() => !!document.pointerLockElement);

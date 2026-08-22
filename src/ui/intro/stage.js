@@ -362,8 +362,14 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       holder.add(character.chair);
       chairHolder = holder;
     }
-    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = 0; } });
-    guyFade = 0;
+    // The cross-fade is for a LATE body only. dt is clamped to 50 ms upstream (Intro._frame) so a 0.4 s
+    // fade costs 8 RENDERED frames — and during boot those frames are seconds apart (material compiles,
+    // then the world build on the same thread). He now parses at ~300 ms against a first paint at ~2 s,
+    // so fading him would show a semi-transparent body with the chair and desk visible through it for
+    // several seconds: the "silhouette in the chair" bug. Arrive before the first frame => arrive solid.
+    const late = painted;
+    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = late ? 0 : 1; } });
+    guyFade = late ? 0 : -1;
     bindSuck(guyHolder);
     api.guy = guy;
   });
@@ -371,6 +377,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
 
   // ---------------------------------------------------------------- state
   let suck = 0, screenBoost = 1, screenDim = 1, dolly = 0, camFree = false, clipOn = false, lightsFull = true;
+  let painted = false;                 // set by update(): has a frame been drawn yet?
   const _look = new THREE.Vector3();
   let orbitYaw = 0, orbitTarget = LOOK_B.clone();
 
@@ -413,6 +420,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     },
 
     update(t, dt) {
+      painted = true;
       room?.update?.(t);
       character?.update?.(t);
       if (guyFade >= 0 && guyFade < 1) {                  // he landed after the first frame; ease him in

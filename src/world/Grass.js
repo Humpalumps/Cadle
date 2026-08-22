@@ -224,16 +224,33 @@ vec3 transformed; vec3 objectNormal;
   {
     float tLum = max(1e-4, dot(tcol, vec3(0.2126, 0.7152, 0.0722)));
     vec3 tHue = (tcol / tLum) / vec3(0.575, 1.210, 0.171);   // measured mean hue of terrain.colorAt across the spawn meadow
-    tHue = clamp(tHue, vec3(0.45), vec3(1.45));
-    tHue.g = max(tHue.g, 0.80);                              // ground cover is never bleached white by a neutral floor
-    tipC *= mix(vec3(1.0), tHue, 0.62);
+    tHue = clamp(tHue, vec3(0.42), vec3(1.60));
+    tipC *= mix(vec3(1.0), tHue, 0.78);
   }
   {
-    // Ground cover is GREEN cover. A pale floor (celestial marble, the Lost Realm plain, snow) used to bleach
-    // the blades into bone-white spikes: force green dominance and cap the absolute value. In the Vale the
-    // blades are already well inside both limits, so the tuned meadow is bit-identical.
-    tipC.g = max(tipC.g, max(tipC.r, tipC.b) * 1.15);
-    tipC = min(tipC, vec3(0.42, 0.52, 0.30));
+    // A pale floor (celestial marble, the Lost Realm plain, snow) used to bleach the blades into bone-white
+    // spikes, and the fix for that was to force GREEN dominance — which then painted the same lawn green over
+    // marble, ash and voidstone in every region. Green was never the safety property: NOT BEING NEUTRAL is.
+    // A neutral blade is what tone-maps to a white spike; a saturated one reads as its own colour at any
+    // brightness. So the rule is now a saturation FLOOR (any hue, never grey) plus the same energy ceiling as
+    // before, applied to LUMINANCE instead of per channel so it cannot drag a violet or rust blade back
+    // toward green. 0.483 is exactly the luminance of the old vec3(0.42, 0.52, 0.30) clamp — no blade may be
+    // brighter than it could be before. The absolute backstop is still GRASS_LUM_CAP below.
+    float gMx = max(tipC.r, max(tipC.g, tipC.b)), gMn = min(tipC.r, min(tipC.g, tipC.b));
+    float gLum = max(dot(tipC, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    float gSat = (gMx - gMn) / max(gMx, 1e-4);
+    tipC = max(vec3(0.0), gLum + (tipC - gLum) * clamp(0.36 / max(gSat, 1e-3), 1.0, 2.4));
+    // A blade whose source is genuinely grey (marble, snow) cannot be saturated by scaling a zero difference,
+    // so it needs somewhere to fall: green, as before. Only near-neutral blades take this — a violet or rust
+    // region has real saturation and passes straight through.
+    tipC = mix(tipC, tipC * vec3(0.70, 1.14, 0.54), 1.0 - smoothstep(0.05, 0.34, gSat));
+    // Cap the MAX CHANNEL, not the luminance. Two colours of equal luminance are not equally close to white:
+    // a green at 0.483 luminance peaks around 0.6 in one channel, a cyan at the SAME luminance sits near 0.55
+    // in two of them and tone-maps to a white spike — which is exactly what a luminance cap shipped, and the
+    // gate caught it at both qualities (9-15 clusters up to 179 px on the far hillside). 0.52 is the green
+    // channel of the old per-channel clamp: no blade of any hue may exceed what the old rule allowed.
+    tipC *= min(1.0, 0.52 / max(max(tipC.r, max(tipC.g, tipC.b)), 1e-4));
+    tipC *= min(1.0, 0.483 / max(dot(tipC, vec3(0.2126, 0.7152, 0.0722)), 1e-4));   // ...and the old clamp's luminance too: a hue may not buy brightness by spreading it across channels
   }
   tipC *= mix(vec3(0.84, 1.02, 1.10), vec3(1.16, 1.00, 0.68), r8 * r8);   // per-blade cool<->warm green: kills the single-tone golf-course read
   vec3 rootC = mix(tipC * 0.62, tcol * 0.8, 0.35);                 // roots melt into the ground tone, never near-black

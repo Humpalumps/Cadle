@@ -5,11 +5,12 @@
  * pads through a breathing lowpass + soft sub root, and an FM-bell lead playing a recurring 2-bar MOTIF that cadences at phrase ends.
  * Everything is booked a few hundred ms ahead from schedule(now); nodes self-clean on `onended`. Tracks: 'field' | 'night' | 'combat' | null. `mode` = 'buffer'|'synth'.
  *
- * REGION COLOUR (`music.region`, set by Audio from BIOMES[id].music). One score holds the world together,
- * so a region does not get its own tune — it gets its own LIGHT on the same tune: playback rate (which
- * moves tempo and pitch together, the way a film score is re-cut for a scene), a tilt filter, and a reverb
- * send. The Void drags and darkens, the Isles lift and open, the Wastes are close and airless. Applied on
- * a slow ramp so a pass between regions is a modulation, not a cut.
+ * REGION THEMES (`music.region`, set by Audio from BIOMES[id].music). Every region has its OWN recorded
+ * piece — `<music>-theme` in the manifest — and crossing a border cross-fades to it over 2 s. That swap is
+ * the point: you should be able to tell which region you are in with your eyes shut. A region theme plays
+ * at every hour; only the home bowl still swaps day/night. The REGION table below is the fallback colouring
+ * (playback rate + tilt filter + reverb send) for a region whose buffer is missing or still decoding, and
+ * the reverb send is used in both cases — that one describes the space, not the tune.
  */
 import { mtof, rnd } from './synth.js';
 
@@ -55,7 +56,7 @@ export class Music {
   /** Book music until now + ahead. Buffer mode (AI themes decoded): looping theme with crossfades; else generative synth fallback. */
   schedule(now, ahead = 0.4) {
     if (!this.playing) return;
-    const key = (this.track === 'night' ? 'night' : 'field') + '-theme', buf = this.audio.buffers?.[key];   // 'combat' rides the current-day theme (bus duck + pulse layer)
+    const key = this._themeKey(), buf = this.audio.buffers?.[key];                                          // 'combat' rides the current theme (bus duck + pulse layer)
     if (buf) {
       this.mode = 'buffer'; this._buffer(now, key, buf);
       this.nextChord = this.nextArp = now + ahead;                                                          // keep the synth clock pinned so a fallback re-entry can't burst-schedule
@@ -79,6 +80,17 @@ export class Music {
     if (!c) this._cur = this._playBuf(key, buf, now + 0.03, XF);
     else if (now + 0.6 > c.xfadeAt) this._cur = this._playBuf(key, buf, c.xfadeAt, XF);                     // book the next pass; the old one fades itself out
   }
+  /**
+   * Which piece is playing. A region with its own theme plays it at every hour — that is the whole point
+   * of the border crossing: the music you hear IS the place. Only the home bowl still swaps day/night.
+   * Falls back to the Vale theme (and then to the synth) whenever a region's buffer has not decoded yet.
+   */
+  _themeKey() {
+    const r = this.region;
+    if (r && r !== 'field' && this.audio.buffers?.[`${r}-theme`]) return `${r}-theme`;
+    return (this.track === 'night' ? 'night' : 'field') + '-theme';
+  }
+
   /** Region tilt: one shared lowpass between the music and its bus, retuned on a slow ramp. */
   _regionNode() {
     if (!this._tilt) {
@@ -90,12 +102,16 @@ export class Music {
   }
   /** Called by Audio when the player's region changes. Ramps, never cuts. */
   setRegion(id) {
+    // A region with its own recorded theme is played STRAIGHT (rate 1, filter open): the tilt/tempo
+    // colouring below only ever existed to fake a different piece out of the Vale's. Its reverb send is
+    // kept either way — that one is about the space you are standing in, not about the tune.
+    const own = id && id !== 'field' && this.audio.buffers?.[`${id}-theme`];
     const R = REGION[id] ?? REGION.field;
-    this.region = id; this._rate = R[0]; this._revSend = R[2];
+    this.region = id; this._rate = own ? 1 : R[0]; this._revSend = R[2];
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    this._regionNode().frequency.setTargetAtTime(R[1], now, 1.2);
-    if (this._cur?.src) this._cur.src.playbackRate.setTargetAtTime(R[0], now, 2.0);   // tempo/pitch drift, not a jump
+    this._regionNode().frequency.setTargetAtTime(own ? 20000 : R[1], now, 1.2);
+    if (this._cur?.src) this._cur.src.playbackRate.setTargetAtTime(this._rate, now, 2.0);   // tempo/pitch drift, not a jump
   }
   _playBuf(key, buf, t, XF) {
     const ctx = this.ctx, src = ctx.createBufferSource(), g = ctx.createGain();

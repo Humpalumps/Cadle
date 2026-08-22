@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Settings } from './settings.js';
 import * as MAP from './mapscreen.js';
+import { BIOMES, regionAt } from '../world/Biomes.js';
 
 /**
  * HUD: DOM-based heads-up display (CSS transforms, no per-frame layout thrash). Visual language: FF14 ornate gold/aether-blue frames
@@ -188,9 +189,13 @@ export class HUD {
     t.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 180, easing: 'ease-out' });
     setTimeout(() => { t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 350 }).onfinish = () => t.remove(); }, ms);
   }
-  notify(title, subtitle = '') {
+  notify(title, subtitle = '', note = '') {
     const n = this.notifyEl;
     n.querySelector('h2').textContent = title; n.querySelector('p').textContent = subtitle;
+    // third line: the RULES of the place (low gravity, lava, swimming). Only regions that really change
+    // something set it — see BIOMES[].passive. textContent, never innerHTML: this string is content, not markup.
+    let e = n.querySelector('.rule'); if (!e) { e = document.createElement('p'); e.className = 'rule'; n.appendChild(e); }
+    e.textContent = note; e.style.display = note ? '' : 'none';
     n.getAnimations().forEach((a) => a.cancel());
     n.animate([{ opacity: 0, transform: 'scale(0.96)' }, { opacity: 1, transform: 'scale(1)', offset: 0.12 }, { opacity: 1, offset: 0.8 }, { opacity: 0, transform: 'scale(1.02)' }], { duration: 3600, easing: 'ease-out' });
   }
@@ -342,12 +347,25 @@ export class HUD {
     c.beginPath(); c.moveTo(0, -7.5); c.lineTo(5.2, 6); c.lineTo(0, 3); c.lineTo(-5.2, 6); c.closePath();
     c.fill(); c.stroke(); c.restore();
     c.restore();
-    // zone label = nearest landmark (1 Hz)
+    // zone label + border crossing (1 Hz). Outside the home bowl the label is the REGION you are standing
+    // in — crossing the seam between two regions renames the map and throws the name card, which is the
+    // whole point of a border. Inside the bowl the regions are one, so the nearest landmark is the useful
+    // label instead. Same `regionAt` the music and the ambient bed use, so all three land on one step.
     if (t - this._mmZoneT > 1) {
       this._mmZoneT = t;
-      let best = null, bd = 1e9;
-      for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
-      setT(this.mmZone, best ? best.name : '');
+      const rid = regionAt(p.x, p.z), B = BIOMES[rid];
+      if (rid !== 'meadow') setT(this.mmZone, B?.short ?? '');
+      else {
+        let best = null, bd = 1e9;
+        for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
+        setT(this.mmZone, best ? best.name : '');
+      }
+      if (this._region === undefined) this._region = rid;                      // first poll: you did not cross into where you spawned
+      else if (rid !== this._region) {
+        this._region = rid;
+        const lv = B?.level;
+        this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '', B?.passive ?? '');
+      }
     }
   }
 

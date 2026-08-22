@@ -25,16 +25,20 @@ import { BIOMES } from './Biomes.js';
 // One line per outer region: what grows there, what stone it is made of, what its spires look like.
 // `p` is the accept probability at the region's heart; it fades out with the biome weight.
 const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
+// [accept probability, species pool, LEAF TINT]. The tint is the one that was missing: every tree in the
+// world took the same yellow-green instance jitter, so a Frostveil pine, a Void husk and a Whisperwood oak
+// were the same tree wearing the same leaves. It multiplies the jitter (so the per-instance variation
+// survives) and fades in with the biome weight, exactly like the crystal spires' tint.
 const BTREE = {
-  forest:    { p: 0.52, sp: [0, 1] },      // Whisperwood Deep: closed canopy (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
-  tundra:    { p: 0.13, sp: [3] },         // sparse frozen conifers
-  celestial: { p: 0.05, sp: [0] },
-  dragon:    { p: 0.11, sp: [3] },         // pines on the lower ledges
-  infernal:  { p: 0.00, sp: [4] },         // nothing grows in the ash
-  lost:      { p: 0.04, sp: [1] },
-  shadowfen: { p: 0.32, sp: [4, 2] },      // drowned dead wood + willows
-  sunken:    { p: 0.00, sp: [2] },
-  void:      { p: 0.05, sp: [4] },
+  forest:    { p: 0.52, sp: [0, 1], col: [0.72, 1.12, 0.94], gv: 0.62 },   // Whisperwood Deep, Ashenvale-teal (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
+  tundra:    { p: 0.34, sp: [3],    col: [0.74, 0.88, 1.06], gv: 0.36 },   // Winterspring is a FOREST under snow, not an empty steppe: dense frosted conifers
+  celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
+  dragon:    { p: 0.10, sp: [3],    col: [0.70, 0.78, 0.68] },   // dark alpine pine, only on the lower ledges
+  infernal:  { p: 0.04, sp: [4],    col: [0.34, 0.24, 0.20] },   // charred husks, sparse — the wastes are mostly vents and ash
+  lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
+  shadowfen: { p: 0.32, sp: [4, 2], col: [0.62, 0.74, 0.42] },   // drowned dead wood + willows, sickly olive
+  sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
+  void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };
 // [accept probability, linear rock tint]
 const BROCK = {
@@ -51,17 +55,24 @@ const BROCK = {
 // biome spires reuse the crystal geometry: [p, linear instance tint, [minScale, maxScale]].
 // Colours stay SATURATED and the bright ones stay modest in value — an emissive spire that tone-maps
 // to white is the washed-white blob bug (CLAUDE.md architectural law).
+// ...plus `a` = [girth, height] aspect. Colour alone was not enough: nine regions all grew the SAME cluster
+// silhouette, so an ice shard, a coral fan and an obsidian stump only differed in hue. Aspect costs nothing
+// (it is the instance matrix) and is what makes them read apart at a distance.
 const BSPIRE = {
-  forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9] },   // fae light
-  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4] },   // ice shards
-  celestial: { p: 0.070, col: [1.05, 0.86, 0.42], s: [2.2, 4.2] },   // gold light-shards
-  dragon:    { p: 0.020, col: [0.86, 0.80, 0.74], s: [1.4, 2.8] },
-  infernal:  { p: 0.090, col: [0.30, 0.11, 0.08], s: [1.6, 3.6] },   // obsidian: dark, no glow
-  lost:      { p: 0.055, col: [0.78, 0.58, 1.10], s: [2.0, 3.8] },
-  shadowfen: { p: 0.045, col: [0.48, 1.00, 0.42], s: [0.8, 1.7] },   // witchlight
-  sunken:    { p: 0.100, col: [1.00, 0.46, 0.58], s: [1.2, 2.8] },   // coral fans
-  void:      { p: 0.120, col: [0.52, 0.22, 1.05], s: [2.0, 4.8] },   // void shards
+  forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9], a: [0.70, 1.05] },   // fae light: slim wisps
+  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4], a: [0.60, 1.60] },   // ice: tall thin fracture shards
+  celestial: { p: 0.000, col: [1.05, 0.86, 0.42], s: [2.2, 4.2], a: [0.74, 1.40] },   // marble + gold, no crystal
+  dragon:    { p: 0.000, col: [0.86, 0.80, 0.74], s: [1.4, 2.8], a: [1.10, 0.85] },   // bone and scorched rock
+  infernal:  { p: 0.000, col: [0.30, 0.11, 0.08], s: [1.6, 3.6], a: [1.30, 0.68] },   // basalt vents instead
+  lost:      { p: 0.055, col: [0.78, 0.58, 1.10], s: [2.0, 3.8], a: [0.85, 1.25] },   // arcane shards: this IS where magic collects
+  shadowfen: { p: 0.000, col: [0.48, 1.00, 0.42], s: [0.8, 1.7], a: [0.95, 0.90] },   // witchlight is the glowing fungus, not a crystal
+  sunken:    { p: 0.000, col: [1.00, 0.46, 0.58], s: [1.2, 2.8], a: [1.50, 0.55] },   // real coral instead
+  void:      { p: 0.120, col: [0.52, 0.22, 1.05], s: [2.0, 4.8], a: [0.78, 1.35] },   // void shards
 };
+// Crystal spires survive in FOUR regions only, and in each one a crystal is what the place is actually made
+// of: Whisperwood's fae lights, Frostveil's ice, the Lost Realm's arcane shards, the Void's splinters.
+// Everywhere else the region grows its own thing (Props._buildBiomeClutter) — the complaint that started
+// this was "trees and crystals in every biome", and re-tinting the same two props is not an answer to it.
 // grove noise for the outer regions (separate lattice from the home Whisperwood, so they clump differently)
 const grove2 = (x, z) => smoothstep(0.10, 0.52, fbm(x * 0.0075, z * 0.0075, { octaves: 3, seed: 41 }) * 0.5 + 0.5);
 
@@ -592,8 +603,12 @@ export class Vegetation {
   _buildCrystals(rng, aniso) {
     const U = this.uniforms;
     // FF14 daylight read: deep saturated body, per-facet albedo contrast, internal streaks, thin normalized
-    // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout)
-    const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.22, metalness: 0.0, flatShading: true, clearcoat: 0.85, clearcoatRoughness: 0.12, envMapIntensity: 1.6 }), {
+    // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout).
+    // Clearcoat 0.85 / roughness 0.12 / env 1.6 put a mirror on every facet, and a shard a few metres from the
+    // camera came back as a pale near-white slab whatever colour its body was — the same shape of bug as the
+    // glossy grass tips (CLAUDE.md: cap the VALUE, saturate the COLOUR). Toned so the facets still catch the
+    // sun without becoming the light source.
+    const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.30, metalness: 0.0, flatShading: true, clearcoat: 0.48, clearcoatRoughness: 0.30, envMapIntensity: 1.0 }), {
       key: 'crystal', uniforms: { uTime: U.uTime, uSunI: U.uSunI, uSunColor: U.uSunColor, uSunDirV: U.uSunDirV },
       vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN;', vBegin: `
         #ifdef USE_INSTANCING
@@ -603,13 +618,31 @@ export class Vegetation {
         #endif
         vLy = position.y; vFN = objectNormal;`,
       fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN;
-        float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`,
-      fMap: `{ float fh = facetHash(vFN);                                                  // stable per-facet value (flat normals)
+        float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        vec3 gTint = vec3(0.42, 0.30, 1.00);`,
+      fMap: `{
+        // Instance HUE, taken once for the whole fragment (map runs before emissive). Everything that
+        // used to be hardcoded aether violet reads off this, so an ice shard, a coral fan and a void
+        // splinter stop looking like the same meadow crystal. Normalising to the brightest channel takes
+        // the hue and leaves the value alone: saturate the colour, never raise it (CLAUDE.md law).
+        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+          gTint = vColor.rgb;
+          // SATURATE, then normalise. Normalising alone keeps the hue but NOT the chroma, and a pale
+          // instance colour — the meadow's own cyan-to-magenta jitter runs up to (0.9, 0.85, 1.0) — comes
+          // out near-white, so the glow tone-maps to a white ball instead of its colour. The gate caught
+          // exactly that at hour 17 in the spawn meadow, which is the decree's bug by name. Chroma is pushed
+          // away from grey first; the value is untouched (the ceiling below is unchanged).
+          float tL = dot(gTint, vec3(0.2126, 0.7152, 0.0722));
+          gTint = max(vec3(0.0), tL + (gTint - tL) * 2.2);
+          gTint /= max(max(gTint.r, max(gTint.g, gTint.b)), 1e-3);
+        #endif
+        float fh = facetHash(vFN);                                                       // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
         diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
         diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.88, 1.45), fh * 0.6 + tipT * 0.3); }`,
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (vec3(0.55) + gTint * 0.95), fh * 0.6 + tipT * 0.3); }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
+        vec3 tintC = gTint;
         float pulse = 0.78 + 0.22 * sin(uTime * 1.4 + vPh * 6.2832);
         vec3 Vd = normalize(vViewPosition);                                      // fragment -> camera
         vec3 Nn = normalize(normal);
@@ -620,11 +653,15 @@ export class Vegetation {
         float back = max(dot(-Vd, uSunDirV), 0.0);                               // sun behind the shard, shining through
         float glint = pow(max(dot(reflect(-uSunDirV, Nn), Vd), 0.0), 26.0);      // per-facet sun sparkle
         vec3 sunN = uSunColor / max(max(uSunColor.r, max(uSunColor.g, uSunColor.b)), 1e-3);
-        vec3 e = totalEmissiveRadiance * pulse * grad * streak * mix(1.0, 0.20, day)  // by day the inner glow yields to facet shading
-          + vec3(0.60, 0.44, 1.15) * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)  // violet rim, day and night
-          + sunN * fres * fres * 0.85 * day                                            // thin hot edge where the sun grazes
-          + vec3(0.55, 0.36, 1.25) * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1   // translucency through the body
-          + sunN * glint * (0.35 + 0.5 * fh) * day * 0.9;
+        float eL = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722));           // keep the body's brightness, take the instance's hue
+        vec3 e = eL * 2.0 * tintC * pulse * grad * streak * mix(1.0, 0.20, day)         // by day the inner glow yields to facet shading
+          + 0.78 * tintC * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)             // rim in the shard's own colour, day and night
+          + mix(sunN, tintC, 0.55) * fres * fres * 0.70 * day                           // thin hot edge where the sun grazes
+          + 0.82 * tintC * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1              // translucency through the body
+          + mix(sunN, tintC, 0.50) * glint * (0.35 + 0.5 * fh) * day * 0.75;            // ...and the facet sparkle
+        // Both sun terms are pulled toward the shard's own colour. Left as raw sun they are white-gold, and a
+        // white-gold facet glint a few metres from the camera in the meadow is the decree's blob by every
+        // measure the gate uses (it caught one at 252,228,181). A crystal sparkles in its own hue.
         totalEmissiveRadiance = min(e, vec3(2.1)); }`,                                 // hard cap: bloom must never wash a facet to flat white
     });
     this.crystalMat = mat;
@@ -652,7 +689,10 @@ export class Vegetation {
       const road = terrain.roadAt?.(x, z) ?? 0;                         // nothing grows in the pass roads
       if (road > 0.35) continue;
       const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
-      if (bTree) p = p * (1 - bt.w) + bTree.p * grove2(x, z) * bt.w;
+      // `gv` is the FLOOR under the grove noise. Without one, grove2 returns 0 across whole stretches and the
+      // region's heart is an open lawn with a treeline around it — which is a meadow, not a forest. A closed
+      // canopy needs trees between the groves too; the noise should vary density, not switch it off.
+      if (bTree) { const gv = bTree.gv ?? 0; p = p * (1 - bt.w) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bt.w; }
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
       const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
@@ -664,7 +704,11 @@ export class Vegetation {
       const sp = treeSpec[species] ?? treeSpec[species === 3 ? 0 : 1];
       const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 ? 0.7 + rng() * 0.6 : 0.8 + rng() * 0.4;
       E.set((rng() - 0.5) * 0.08, rng() * Math.PI * 2, (rng() - 0.5) * 0.08); Qt.setFromEuler(E); P.set(x, y - 0.25 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
-      const tint = 0.76 + rng() * 0.44; C.setRGB(tint * (0.86 + rng() * 0.3), tint, tint * (0.8 + rng() * 0.32)); // strong per-instance hue jitter (yellow-green .. teal-green)
+      // per-instance hue jitter, then pushed toward the REGION's foliage colour by the biome weight
+      const tj = 0.76 + rng() * 0.44;
+      let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
+      if (bTree?.col) { const k = bTree.col, w = bt.w; cr *= 1 + (k[0] - 1) * w; cg *= 1 + (k[1] - 1) * w; cb *= 1 + (k[2] - 1) * w; }
+      C.setRGB(cr, cg, cb);
       (this.treeSets[species] ?? this.treeSets[species === 3 ? 0 : 1]).lod.add(M, C);
       const r = Math.max(0.28, sp.colR * scale);
       this.trees.push({ x, y, z, species, scale, r });
@@ -691,9 +735,10 @@ export class Vegetation {
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, y - 0.3 * scale + 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
     // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
-    const addCrystal = (x, z, scale, variant, tint) => {
+    const addCrystal = (x, z, scale, variant, tint, aspect) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
-      P.set(x, y - 0.1 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
+      const ax = aspect ? aspect[0] : 1, ay = aspect ? aspect[1] : 1;
+      P.set(x, y - 0.1 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
       const hue = rng();
       if (tint) { const j = 0.88 + hue * 0.24; C.setRGB(tint[0] * j, tint[1] * j, tint[2] * j); }   // biome spire: ice / obsidian / coral / void shard
       else C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
@@ -714,7 +759,8 @@ export class Vegetation {
       if (rng() > p) continue;
       const scale = bSpire && bc.w > 0.4 ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
         : field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
-      addCrystal(x, z, scale, Math.floor(rng() * 3), bSpire && bc.w > 0.4 ? bSpire.col : null);
+      const own = bSpire && bc.w > 0.4;
+      addCrystal(x, z, scale, Math.floor(rng() * 3), own ? bSpire.col : null, own ? bSpire.a : null);
     }
     // hero formations: a handful of towering (8-13 m) clusters in the eastern fields — FF14 landmark scale
     // (home bowl only; each outer biome gets its own landmark from Props)

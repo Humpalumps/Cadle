@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp, lerp, smoothstep } from '../core/Noise.js';
 import { InstLOD, patchMaterial, triplanarPatch, fadePatch, mergePatch, noiseTexture, normalFromLuma, makeRockGeometry, tn, tfbm } from './Vegetation.js';
-import { OUTER } from './Biomes.js';
+import { OUTER, THETA0, STEP } from './Biomes.js';
 
 /**
  * Props: hand-placed landmarks (procedural geometry, seeded detail), all colliding:
@@ -171,6 +171,237 @@ export class Props {
     this._buildMushrooms(rng, h, veg, Q);
     this._buildBiomeLandmarks(rng, h, col);
     this._buildVillage(rng, h, col);
+    this._buildBorderStones(rng, h, col);
+    this._buildBiomeClutter(rng, h, col);
+  }
+
+
+  /**
+   * BIOME CLUTTER — what each region GROWS, as opposed to what it is tinted.
+   *
+   * The nine regions used to be furnished out of exactly two props: a tree and a crystal cluster, re-tinted.
+   * That is why the Isles, the Peaks, the Wastes and the Sunken Kingdom all read as the same field with a
+   * different filter on it. A place is its furniture: marble drums and gilded arch fragments say ruined
+   * temple, a ribcage in scorched rock says something enormous died here, a basalt vent breathing ash says
+   * volcano. So each region gets its OWN kit, and trees/crystals were pulled back to the four regions where
+   * they are the honest answer (Vegetation.BTREE / BSPIRE).
+   *
+   * Cost: everything is procedural boxes/cylinders/cones/rock-blobs merged into ONE mesh per region per
+   * material — 2 draw calls for a region's entire furniture, each with a tight bounding sphere so the other
+   * eight regions frustum-cull instead of riding along in every frame (which is what one world-spanning
+   * merged mesh would do). Colliders go on the things you could walk into, not on reeds and rubble.
+   */
+  _buildBiomeClutter(rng, h, col) {
+    const { scene } = this.game, terrain = this.game.terrain;
+    const WL = terrain.waterLevel ?? 4;
+    const cyl = (rt, rb, ht, seg = 7) => new THREE.CylinderGeometry(rt, rb, ht, seg);
+    const box = (w, ht, d) => new THREE.BoxGeometry(w, ht, d);
+    const cone = (r, ht, seg = 7) => new THREE.ConeGeometry(r, ht, seg);
+    const rock = (kind) => makeRockGeometry(kind, (rng() * 1e6) | 0);
+
+    // one recipe per region: { mat, n, tint, place(x, y, z, out) }. `out(geometry, tintOverride)` collects.
+    // `n` is how many ATTEMPTS are made across the region disc; terrain rejects thin that out.
+    const KIT = {
+      celestial: { mat: 'stone', n: 150, tint: [1.06, 1.00, 0.84], build: (x, y, z, P) => {
+        const k = rng();
+        if (k < 0.42) {                                                    // fallen column drums, half-buried
+          const drums = 1 + ((rng() * 3) | 0), a = rng() * Math.PI * 2;
+          for (let i = 0; i < drums; i++) P(cyl(0.62, 0.66, 1.5 + rng() * 0.7, 12).rotateZ(Math.PI / 2).rotateY(a + (rng() - 0.5) * 0.4)
+            .translate(x + Math.cos(a) * i * 1.7, y + 0.5, z + Math.sin(a) * i * 1.7));
+        } else if (k < 0.78) {                                             // a stub still standing on its plinth
+          const hh = 2.2 + rng() * 3.4;
+          P(box(2.0, 0.4, 2.0).translate(x, y + 0.2, z));
+          P(columnGeometry(hh, true, rng).translate(x, y + 0.4, z));
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh, z), r: 1.0 });
+        } else {                                                           // arch fragment: two jambs and a broken span
+          const w = 2.6 + rng() * 1.4, hh = 3.0 + rng() * 1.6, a = rng() * Math.PI;
+          const ca = Math.cos(a), sa = Math.sin(a);
+          for (const sd of [-1, 1]) P(box(0.7, hh, 0.7).translate(x + ca * sd * w * 0.5, y + hh / 2, z + sa * sd * w * 0.5));
+          P(box(w * 0.8, 0.6, 0.7).rotateY(-a).rotateZ(0.12).translate(x, y + hh + 0.2, z));
+        }
+      } },
+      dragon: { mat: 'basalt', n: 130, tint: [0.86, 0.84, 0.80], build: (x, y, z, P) => {
+        if (rng() < 0.34) {                                                // ribcage: a spine and its ribs, picked clean
+          const a = rng() * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ribs = 4 + ((rng() * 4) | 0);
+          P(cyl(0.16, 0.2, ribs * 1.25, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.35, z), [0.92, 0.90, 0.82]);
+          for (let i = 0; i < ribs; i++) {
+            const t = (i - ribs / 2) * 1.25, rh = 1.5 + Math.cos((i / ribs - 0.5) * 2.6) * 1.1;
+            for (const sd of [-1, 1]) P(cyl(0.09, 0.13, rh, 5).rotateZ(sd * 0.55).rotateY(a)
+              .translate(x + ca * t - sa * sd * rh * 0.26, y + 0.3 + rh * 0.44, z + sa * t + ca * sd * rh * 0.26), [0.94, 0.92, 0.84]);
+          }
+        } else {                                                            // scorched rock fangs off the ledges
+          const hh = 1.6 + rng() * 3.2, g = rock(3);
+          g.scale(0.5 + rng() * 0.4, hh * 0.5, 0.5 + rng() * 0.4); g.translate(x, y + hh * 0.35, z);
+          P(g, [0.62 + rng() * 0.2, 0.60, 0.60]);
+          col.add({ type: 'sphere', pos: V3(x, y + hh * 0.4, z), r: 1.1 });
+        }
+      } },
+      infernal: { mat: 'basalt', n: 230, tint: [0.26, 0.23, 0.23], build: (x, y, z, P) => {
+        const k = rng();
+        if (k < 0.45) {                                                     // vent: a cinder cone with a throat
+          const r = 1.4 + rng() * 1.8, hh = 1.1 + rng() * 1.7;
+          P(cone(r, hh, 9).translate(x, y + hh / 2, z), [0.26, 0.22, 0.22]);
+          P(cyl(r * 0.3, r * 0.34, 0.5, 8).translate(x, y + hh - 0.1, z), [0.60, 0.24, 0.10]);   // hot throat: hue, never a bloom-capable value
+          col.add({ type: 'sphere', pos: V3(x, y + hh * 0.5, z), r: r * 0.8 });
+        } else if (k < 0.8) {                                               // basalt columns, hexagonal, in clumps
+          const cnt = 2 + ((rng() * 4) | 0), a0 = rng() * Math.PI * 2;
+          for (let i = 0; i < cnt; i++) {
+            const a = a0 + i * 1.9, d = 0.7 + rng() * 1.5, hh = 1.4 + rng() * 3.4;
+            P(cyl(0.55, 0.62, hh, 6).rotateY(rng()).translate(x + Math.cos(a) * d, y + hh / 2 - 0.3, z + Math.sin(a) * d), [0.30, 0.27, 0.29]);
+          }
+          col.add({ type: 'sphere', pos: V3(x, y + 1.4, z), r: 2.4 });
+        } else {                                                            // ash drift
+          const g = rock(2); g.scale(2.2 + rng() * 2.2, 0.5 + rng() * 0.5, 2.0 + rng() * 2.0); g.translate(x, y + 0.1, z);
+          P(g, [0.24, 0.22, 0.23]);
+        }
+      } },
+      shadowfen: { mat: 'stone', n: 220, tint: [0.52, 0.60, 0.40], build: (x, y, z, P) => {
+        if (rng() < 0.62) {                                                 // reed clump — the fen's signature, and it hides things
+          const cnt = 7 + ((rng() * 9) | 0);
+          for (let i = 0; i < cnt; i++) {
+            const a = rng() * Math.PI * 2, d = rng() * 1.5, hh = 1.3 + rng() * 1.6;
+            P(cyl(0.015, 0.07, hh, 4).rotateZ((rng() - 0.5) * 0.45).rotateY(a)
+              .translate(x + Math.cos(a) * d, y + hh / 2, z + Math.sin(a) * d), [0.44 + rng() * 0.2, 0.58 + rng() * 0.2, 0.26]);
+          }
+        } else {                                                            // rotted stump, drowned to the ankle
+          const hh = 0.7 + rng() * 1.3, g = cyl(0.5 + rng() * 0.3, 0.8 + rng() * 0.4, hh, 8);
+          P(g.translate(x, y + hh / 2 - 0.15, z), [0.30, 0.28, 0.22]);
+          col.add({ type: 'sphere', pos: V3(x, y + hh * 0.5, z), r: 0.85 });
+        }
+      } },
+      sunken: { mat: 'stone', n: 200, tint: [0.62, 0.86, 0.84], build: (x, y, z, P) => {
+        const k = rng();
+        if (k < 0.55) {                                                     // coral: a stem that forks, and forks again
+          const hh = 0.9 + rng() * 1.6, tc = [0.9 + rng() * 0.5, 0.42 + rng() * 0.3, 0.52 + rng() * 0.3];
+          P(cyl(0.14, 0.22, hh, 6).translate(x, y + hh / 2, z), tc);
+          const arms = 2 + ((rng() * 3) | 0);
+          for (let i = 0; i < arms; i++) {
+            const a = rng() * Math.PI * 2, ah = hh * (0.5 + rng() * 0.5);
+            P(cyl(0.07, 0.12, ah, 5).rotateZ((rng() - 0.5) * 1.1).rotateY(a)
+              .translate(x + Math.cos(a) * 0.3, y + hh * 0.75 + ah * 0.35, z + Math.sin(a) * 0.3), tc);
+          }
+        } else if (k < 0.82) {                                              // anemone / kelp holdfast: a low fan
+          const cnt = 5 + ((rng() * 6) | 0), tc = [0.36, 0.78 + rng() * 0.2, 0.62];
+          for (let i = 0; i < cnt; i++) {
+            const a = (i / cnt) * Math.PI * 2, hh = 0.8 + rng() * 1.5;
+            P(box(0.1, hh, 0.34).rotateZ((rng() - 0.5) * 0.7).rotateY(a).translate(x + Math.cos(a) * 0.3, y + hh * 0.45, z + Math.sin(a) * 0.3), tc);
+          }
+        } else {                                                            // wreck: ribs of a hull coming out of the sand
+          const a = rng() * Math.PI, ca = Math.cos(a), sa = Math.sin(a), ribs = 3 + ((rng() * 4) | 0);
+          for (let i = 0; i < ribs; i++) {
+            const t = (i - ribs / 2) * 1.6, rh = 2.2 + rng() * 2.0;
+            P(box(0.3, rh, 0.7).rotateZ(0.35 - i * 0.06).rotateY(a).translate(x + ca * t, y + rh * 0.4, z + sa * t), [0.32, 0.26, 0.22]);
+          }
+          col.add({ type: 'sphere', pos: V3(x, y + 1.5, z), r: 2.2 });
+        }
+      } },
+      void: { mat: 'basalt', n: 190, tint: [0.42, 0.36, 0.56], build: (x, y, z, P) => {
+        if (rng() < 0.7) {                                                  // rubble that never landed
+          const cnt = 1 + ((rng() * 3) | 0);
+          for (let i = 0; i < cnt; i++) {
+            const sc = 0.4 + rng() * 1.3, g = rock(1);
+            g.scale(sc, sc * (0.5 + rng() * 0.7), sc);
+            g.rotateX(rng() * 3); g.rotateZ(rng() * 3);
+            g.translate(x + (rng() - 0.5) * 5, y + 1.2 + rng() * 5.5, z + (rng() - 0.5) * 5);
+            P(g, [0.36 + rng() * 0.2, 0.30, 0.52 + rng() * 0.2]);
+          }
+        } else {                                                            // a pillar of something older, snapped off
+          const hh = 2.0 + rng() * 4.0;
+          P(box(0.9, hh, 0.9).rotateY(rng()).rotateZ((rng() - 0.5) * 0.3).translate(x, y + hh / 2, z), [0.34, 0.28, 0.46]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 0.8 });
+        }
+      } },
+      tundra: { mat: 'ice', n: 130, tint: [0.92, 0.96, 1.04], build: (x, y, z, P) => {
+        if (rng() < 0.6) {                                                  // wind-carved drift
+          const g = rock(2); g.scale(2.4 + rng() * 3.0, 0.6 + rng() * 0.8, 1.8 + rng() * 2.4);
+          g.rotateY(rng() * 3.14); g.translate(x, y + 0.15, z);
+          P(g, [0.98, 1.00, 1.06]);
+        } else {                                                            // a boulder frozen into the shelf
+          const sc = 0.8 + rng() * 1.4, g = rock(0); g.scale(sc, sc * 0.8, sc); g.translate(x, y + sc * 0.3, z);
+          P(g, [0.80, 0.86, 0.96]);
+          col.add({ type: 'sphere', pos: V3(x, y + sc * 0.35, z), r: sc * 0.9 });
+        }
+      } },
+      forest: { mat: 'stone', n: 120, tint: [0.60, 0.56, 0.44], build: (x, y, z, P) => {
+        if (rng() < 0.5) {                                                  // fallen log, mossed on the up side
+          const len = 3.5 + rng() * 5.0, a = rng() * Math.PI * 2;
+          P(cyl(0.32, 0.42, len, 8).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.38, z), [0.46, 0.40, 0.30]);
+          col.add({ type: 'capsule', a: V3(x - Math.cos(a) * len * 0.5, y + 0.4, z - Math.sin(a) * len * 0.5),
+            b: V3(x + Math.cos(a) * len * 0.5, y + 0.4, z + Math.sin(a) * len * 0.5), r: 0.45 });
+        } else {                                                            // stump with its roots showing
+          const hh = 0.5 + rng() * 0.9;
+          P(cyl(0.55, 0.8, hh, 9).translate(x, y + hh / 2 - 0.1, z), [0.42, 0.36, 0.27]);
+          for (let i = 0; i < 4; i++) { const a = rng() * Math.PI * 2; P(cyl(0.1, 0.2, 1.1, 5).rotateZ(1.25).rotateY(a).translate(x + Math.cos(a) * 0.6, y + 0.12, z + Math.sin(a) * 0.6), [0.40, 0.34, 0.25]); }
+        }
+      } },
+      lost: { mat: 'stone', n: 110, tint: [0.80, 0.72, 0.98], build: (x, y, z, P) => {
+        const cnt = 2 + ((rng() * 4) | 0), r0 = 2.5 + rng() * 3.5, a0 = rng() * Math.PI * 2;
+        for (let i = 0; i < cnt; i++) {                                     // a ring of stones, half of them down
+          const a = a0 + (i / cnt) * Math.PI * 2, hh = 1.8 + rng() * 2.6;
+          const px = x + Math.cos(a) * r0, pz = z + Math.sin(a) * r0, py = h(px, pz);
+          if (Math.abs(py - y) > 3) continue;
+          P(menhirGeometry(hh, rng).rotateZ((rng() - 0.5) * (rng() < 0.3 ? 1.5 : 0.14)).rotateY(-a).translate(px, py, pz));
+          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + hh - 0.6, pz), r: 0.7 });
+        }
+      } },
+    };
+
+    const MATS = { stone: this.stoneMat, ice: this.iceMat, basalt: this.basaltMat };
+    let total = 0;
+    for (const B of OUTER) {
+      const K = KIT[B.id]; if (!K) continue;
+      const parts = [], tints = [];
+      const P = (g, t) => { parts.push(g); tints.push(t ?? K.tint); };
+      for (let i = 0; i < K.n; i++) {
+        const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * 250;          // sqrt: even area density, not a bullseye
+        const x = B.cx + Math.cos(a) * d, z = B.cz + Math.sin(a) * d;
+        const bb = terrain.biomeBlend?.(x, z, this._cb ??= {});
+        if (!bb || bb.id !== B.id || bb.w < 0.55) continue;                  // never leak a region's furniture over a border
+        if ((terrain.roadAt?.(x, z) ?? 0) > 0.3) continue;
+        const y = h(x, z);
+        if (y < WL + 0.35 || terrain.slopeAt(x, z) > 0.55) continue;         // not in the water, not on a cliff
+        if (Math.hypot(x - B.cx, z - B.cz) < 26) continue;                   // keep the landmark's own ground clear
+        K.build(x, y, z, P);
+      }
+      if (!parts.length) continue;
+      total += parts.length;
+      const m = new THREE.Mesh(mergeAll(parts, tints), MATS[K.mat] ?? this.stoneMat);
+      m.castShadow = m.receiveShadow = true; m.name = `clutter-${B.id}`;
+      m.geometry.computeBoundingSphere();                                    // tight bounds => the other eight regions cull
+      scene.add(m);
+    }
+    console.log(`[props] biome clutter: ${total} pieces across ${OUTER.length} regions`);
+  }
+
+  /**
+   * BORDER STONES. Nine seams, one gate each. `wedgeAt` hands one region to the next on the bisector between
+   * two centres, and the ground, haze, light and music all turn on that line — but an open line in a field is
+   * something you cross without noticing. Standing stones flanking it give the crossing a THRESHOLD: you see
+   * the gate from a long way off, you walk between the two stones, and the world on the far side is a
+   * different place. Three pairs per seam (r 700 / 762 / 824) so the gate reads from any approach across the
+   * belt, all merged into one mesh — 54 stones for one draw call.
+   */
+  _buildBorderStones(rng, h, col) {
+    const { scene } = this.game;
+    const parts = [], tints = [];
+    for (let k = 0; k < 9; k++) {
+      const a = THETA0 + (k + 0.5) * STEP;                       // the seam bearing
+      const ox = Math.cos(a), oz = Math.sin(a);                  // outward along it
+      const tx = -oz, tz = ox;                                   // across it: the gate opens this way
+      for (const [r, s] of [[700, 0.74], [762, 1.0], [824, 0.74]]) {
+        for (const side of [-1, 1]) {
+          const x = ox * r + tx * side * 9.5, z = oz * r + tz * side * 9.5, y = h(x, z);
+          if (y < 6) continue;                                   // never a stone standing in water
+          const hh = (7.4 + rng() * 2.6) * s;
+          parts.push(monolithGeometry(hh, rng).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5, z));
+          tints.push([0.60, 0.58, 0.66]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 });
+        }
+      }
+    }
+    if (!parts.length) return;
+    const m = new THREE.Mesh(mergeAll(parts, tints), this.stoneMat);
+    m.castShadow = m.receiveShadow = true; m.name = 'border-stones'; scene.add(m);
   }
 
   /**
@@ -398,6 +629,13 @@ export class Props {
         const g = makeRockGeometry(2, (rng() * 1e6) | 0);
         g.scale(R, R * 0.5, R * 0.92); g.translate(x, y, z);
         parts.push(g); tints.push([s.tint[0] * (0.86 + rng() * 0.28), s.tint[1] * (0.86 + rng() * 0.28), s.tint[2] * (0.86 + rng() * 0.28)]);
+        // KEEL. A flattened dome seen from underneath is a dark ellipse — the isles read as discs pasted on
+        // the sky, which is the one angle you always have on them while you are still on the ground below.
+        // Hanging a torn root off each one gives the underside a silhouette and something for the light to
+        // break on. Rock kind 3 is the pointed shard, flipped to hang.
+        const gk = makeRockGeometry(3, (rng() * 1e6) | 0);
+        gk.rotateX(Math.PI); gk.scale(R * 0.74, R * 1.05, R * 0.70); gk.translate(x, y + R * 0.10, z);
+        parts.push(gk); tints.push([s.tint[0] * 0.62, s.tint[1] * 0.62, s.tint[2] * 0.66]);
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
         isles.push({ x, y: y + R * 0.2, z, R });

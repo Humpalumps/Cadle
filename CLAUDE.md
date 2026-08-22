@@ -30,7 +30,9 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 - Dev server: **always already running at `http://127.0.0.1:5173/`** (started by the orchestrator: `npm run dev`). Do NOT start another one. If it's down (curl fails), start it: `npx vite --port 5173 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &` then wait 5s.
 - Vite hot-reloads; the harness always loads a fresh page anyway.
 - Inspect the running game: `node tools/inspect.mjs --name <label> [--steps '<json>' | --script file.json] [--w 1920 --h 1080] [--q high]` → `tools/out/<label>/{shot-*.png, report.json, console.log}`. See the header of `tools/inspect.mjs` for step types. Runs headless Chromium WITH the real GPU (RTX 3060). fps is **uncapped** (no vsync) so frame ms = real cost.
-- Game URL params: `?auto=1` (automation: no click-to-start, synthetic input), `&q=low|medium|high|ultra`, `&seed=N`, `&debug=1`.
+- Game URL params: `?auto=1` (automation: no click-to-start, synthetic input), `&q=low|medium|high|ultra`, `&seed=N`, `&debug=1`,
+  `&at=<biome id>` (spawn in that region instead of the Vale, facing its heart, music/bed already correct), `&back=N`
+  (metres short of that region's landmark, default 150), `&hour=H` (set + freeze the clock).
 - Python 3 + Pillow available for cropping/contact sheets: `python -c "from PIL import Image; ..."`.
 
 ## Architecture (one owner per file — NEVER edit files you don't own; report needed API changes instead)
@@ -76,7 +78,7 @@ Each file's header doc-comment is the **contract** (methods, fields, events). Im
 - **Asset perf budgets (prod-grade — AAA look AND AAA frame rate):** every asset is preloaded behind the start screen (HUD shows `assets:progress`), never streamed mid-game. GLB budgets: viewmodel ≤ 60k tris, hero landmark ≤ 40k, instanced prop ≤ 32k (instances share geometry — total tri budget in the frame still rules); textures inside GLBs ≤ 2k. Standalone textures ≤ 2k, JPG (PNG only when alpha needed), mipmaps + aniso 8 (the preloader sets this). Audio mp3. Total `public/assets/` payload target ≤ 40 MB. New generated assets must pass: tri/size budget, tiling check (textures), and an in-game screenshot before a builder ships them.
 - **Style coherence (all Magnific generations + all procedural art):** one look — painterly-realistic fantasy MMO, saturated-but-soft, warm golds / deep blue-violets, ornate gold filigree accents on dark materials, luminous blue-violet aether. Magnific prompts must carry the suffix "painterly-realistic fantasy MMO style, even diffuse lighting" (textures also: "seamless tileable, no shadows, no vignette"; never name trademarked games in audio prompts). Procedural materials must match the generated assets sitting next to them (sample their palette, don't fight it). The between-wave coherence agent judges style unity explicitly.
 - **Materials**: world surfaces use `MeshStandardMaterial`/`MeshPhysicalMaterial` + `onBeforeCompile` injections (so shadows, fog, sun, CSM, env all work). Raw `ShaderMaterial` only for sky/particles/water/grass-style things that handle fog+sun themselves. Custom materials must respect `scene.fog` (FogExp2) and `game.sky.sunDir/sunColor`.
-- **Performance budget @1080p `q=high` on RTX 3060 (uncapped harness)**: whole frame mean ≤ 7 ms (≈140 fps), p99 ≤ 14 ms, ≤ 350 draw calls, ≤ 3 M tris, no per-frame allocation in hot paths (pool everything), `memMB` stable over 30 s (no leak). Per-system GPU+CPU budget roughly: terrain 0.8, grass 1.0, water 0.8, vegetation 0.8, sky+clouds 0.4, shadows 0.8, postfx 1.3, enemies 0.6, vfx 0.4, rest 0.3. `q=low` must hit ≤ 4 ms. Scale with `game.renderer.qualityPreset` / `game.quality`.
+- **Performance budget @1080p `q=high` on RTX 3060 (uncapped harness)**: whole frame mean ≤ 7 ms (≈140 fps), p99 ≤ 14 ms, ≤ 350 draw calls, ≤ 4 M tris (raised from 3 M by the user 2026-08-22: the biomes need the geometry, optimisation comes from elsewhere), no per-frame allocation in hot paths (pool everything), `memMB` stable over 30 s (no leak). Per-system GPU+CPU budget roughly: terrain 0.8, grass 1.0, water 0.8, vegetation 0.8, sky+clouds 0.4, shadows 0.8, postfx 1.3, enemies 0.6, vfx 0.4, rest 0.3. `q=low` must hit ≤ 4 ms. Scale with `game.renderer.qualityPreset` / `game.quality`.
 - **Determinism**: all randomness via `mulberry32(game.seed + yourOffset)` / `hash2` from `core/Noise.js` (so critics see the same world). Runtime effects may use Math.random.
 - **Frame loop**: systems get `update(dt, t)`; dt is clamped to 50 ms. Don't add your own rAF loops. Heavy init work is fine in `async init()` (may await), but keep total startup < 4 s.
 - **Coordinates**: Y up, meters. Player spawn ≈ (0, h, 0). Terrain is `terrain.size` m square centered at origin; `terrain.heightAt(x,z)` is the ground truth for everything.
@@ -107,10 +109,18 @@ AND `terrain.dryAt(x,z)` is 0). Everything below is derived from `Biomes.js` —
 it comes back down past ~580 m, and it is **pierced by 9 passes**, one on each outer biome's bearing
 (`THETA0 + k*STEP`, k = 0..8). A pass bottoms out ~35 m above the meadow: a real climb, always walkable.
 
-**THE NINE OUTER REGIONS (r 550..970).** Circles of radius `RR` (210 m) centred at radius `RB` (760 m) on
-bearings 40° apart, starting due north. Adjacent regions are ~100 m apart, so the whole annulus is one
-continuous walkable belt — **every biome touches its two neighbours and has its own pass home. Nothing is
-teleport-only.** k / bearing / centre / level band:
+**THE NINE OUTER REGIONS (r 550..970).** Centred at radius `RB` (760 m) on bearings 40° apart, starting due
+north. TWO radii, and they are not the same thing: `RR` (210 m) is the LANDFORM reach — how far a region's own
+height kernel (`Terrain.BH[]`) shapes the ground — while `RL_CORE`/`RL_EDGE` (270/320 m) is the LOOK reach,
+what `weightAt` returns for ground splat, haze, key light, grass, music, bestiary and gravity. The look radii
+are set past the halfway point between two centres (260 m on the chord, ~264 m on the arc) **on purpose: the
+belt is a PARTITION.** Two neighbours read full strength right up to the bisector where `wedgeAt` hands over,
+so a border is a LINE you cross, not a corridor of un-owned ground. **Never "fix" a seam by shrinking the look
+radii back inside 260 m — that is the bug this replaced: ~100 m of nobody's-land between every pair, which
+made a crossing read as "the world went back to Vale green for half a minute".** `Biomes.regionAt` (weight >
+0.30) is the ONE answer to "which region am I in"; music, ambient bed, minimap label and the zone name card
+all read it so they change on the same step. **Every biome touches its two neighbours and has its own pass
+home. Nothing is teleport-only.** k / bearing / centre / level band:
 
 | k | bearing | biome | centre (x, z) | levels | the read |
 |---|---------|-------|---------------|--------|----------|
@@ -132,6 +142,9 @@ How each system reads the table (do NOT re-derive any of this):
 - ground: `FRAG_SPLAT` picks one of 12 layer textures per region (8 ash, 9 ice, 10 muck, 11 voidstone are new).
 - Grass density/tint, Vegetation scatter (`BTREE`/`BROCK`/`BSPIRE`), Props landmarks, Sky fog grade, Water look,
   Enemy camps and Ambient beds are all keyed off the biome id.
+- **music**: every region has its OWN recorded theme (`BIOMES[id].music` -> `<music>-theme` in the manifest),
+  cross-faded over 2 s on crossing. `audio/music.js`'s REGION rate/tilt table is only the fallback for a theme
+  that is missing or still decoding — do not "colour" a region by re-EQ'ing the Vale's tune again.
 - **Enemy camps stream by distance** (`STREAM` = 300 m in Enemies.js): the 40-alive cap follows the player around
   the map instead of being spent at spawn. Keep the spawn meadow peaceful (2 wisps).
 - Floating isles (celestial, void) are walkable box colliders; **updraft columns** at the landmark lift you up
