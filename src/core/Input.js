@@ -15,10 +15,15 @@ export class Input {
    *  within ~1.3 s of an exit, so retry once after the cooldown. Regression-gated by tools/gate.mjs. */
   static lock(c) {
     const plain = () => { try { c.requestPointerLock?.(); } catch {} };
+    // Once unadjustedMovement has been refused on this machine, never ask for it again: the refusal
+    // arrives asynchronously, by which time the click's transient activation is gone, so the fallback
+    // request is rejected with "a user gesture is required" and the mouse stays free. Asking plain the
+    // second time keeps the retry inside the gesture. (This is what made re-lock after Esc flaky.)
+    if (Input._noUnadjusted) { plain(); return; }
     try {
       const p = c.requestPointerLock?.({ unadjustedMovement: true });
-      p?.catch?.(() => { plain(); setTimeout(() => { if (!document.pointerLockElement) plain(); }, 1400); });
-    } catch { plain(); }
+      p?.catch?.(() => { Input._noUnadjusted = true; plain(); setTimeout(() => { if (!document.pointerLockElement) plain(); }, 1400); });
+    } catch { Input._noUnadjusted = true; plain(); }
   }
   _bind() {
     const c = this.canvas;

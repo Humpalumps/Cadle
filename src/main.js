@@ -1,4 +1,5 @@
 import { Game } from './core/Game.js';
+import { Intro } from './ui/Intro.js';
 
 // ?fresh=1: clean slate for demo recording — new character, quest from the top
 if (new URLSearchParams(location.search).get('fresh')) {
@@ -6,7 +7,18 @@ if (new URLSearchParams(location.search).get('fresh')) {
 }
 
 const canvas = document.getElementById('game');
-const game = new Game(canvas);
+
+// The cinematic intro IS the loading screen, so it has to be on screen before the world build begins —
+// its own setup (textures, room, character) is only ~350 ms, but a system init that blocks the thread for
+// 800 ms will happily run first and leave the plain boot splash up for the whole load. The gate below
+// holds Game._init until the intro has drawn a frame (or 3 s has passed, so a broken intro never blocks).
+const PARAMS = new URLSearchParams(location.search);
+const USE_INTRO = PARAMS.get('auto') !== '1' || PARAMS.get('intro') === '1';
+let releaseGate = () => {};
+const gate = USE_INTRO ? new Promise((r) => { releaseGate = r; }) : null;
+if (gate) setTimeout(releaseGate, 3000);
+
+const game = new Game(canvas, gate ? { gate } : {});
 
 // Automation / debug API used by tools/inspect.mjs and critics. Keep stable.
 const P = () => game.player;
@@ -52,19 +64,40 @@ window.__game = {
   audioSelfTest: () => game.audio.selfTest?.(),
   errors: [],
 };
-window.addEventListener('error', (e) => window.__game.errors.push(String(e.message)));
+window.addEventListener('error', (e) => window.__game.errors.push(String(e.error?.stack || e.message)));
 window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
 
-// Boot splash (markup lives inline in index.html so it paints before any JS): feed it asset
-// progress, then fade it once the game is running and has actually put frames on screen.
-{
-  const bar = document.getElementById('splashbar'), msg = document.getElementById('splashmsg'), splash = document.getElementById('splash');
-  game.events.on('assets:progress', (e) => {
-    if (bar && e?.total) bar.style.width = Math.round((e.done ?? e.loaded ?? 0) / e.total * 100) + '%';
+// ---------------------------------------------------------------------------------------------
+// Boot. Two paths:
+//   players  -> the cinematic intro (src/ui/Intro.js): a guy at his computer, the game on his monitor
+//               with the load bar on it, and he gets pulled into the screen when you click.
+//   ?auto=1  -> no intro at all (the harness and critics must see exactly what they saw before).
+//               ?auto=1&intro=1 runs it anyway and auto-plays the transition 4 s after load, so the
+//               intro itself can be inspected; __game.intro.hold() freezes it for screenshots.
+const intro = USE_INTRO ? new Intro(game) : null;
+window.__game.intro = intro;
+
+if (intro) {
+  // the bar: assets fill the first 55 %, the world build the rest. Labels name what is actually happening.
+  const BOOT_LABEL = {
+    Assets: 'GATHERING AETHER', Sky: 'HANGING THE SKY', Lighting: 'KINDLING THE SUN', Terrain: 'RAISING THE VALE',
+    World: 'SEEDING THE MEADOW', Player: 'FORGING YOUR ARMS', Combat: 'FORGING YOUR ARMS', Enemies: 'STIRRING THE WILDS',
+    VFX: 'BINDING THE AETHER', Audio: 'TUNING THE WINDS', RPG: 'WRITING YOUR TALE', HUD: 'WRITING YOUR TALE', PostFX: 'THE VALE AWAITS',
+  };
+  let boot = 0;
+  game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.55 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
+  game.events.on('boot:progress', (e) => {
+    boot = 0.55 + 0.45 * (e.done / e.total);
+    intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
+  intro.init().then(() => intro.firstFrame).then(releaseGate).catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); releaseGate(); });
+  game.ready.then(() => intro.arm()).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
+  // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
+  intro.finished.then(() => game.ready.then(() => game.start()));
+} else {
+  // No intro: the boot splash (fed above) stays up until the frame time settles, then fades.
+  const splash = document.getElementById('splash');
   game.ready.then(() => {
-    if (bar) bar.style.width = '100%';
-    if (msg) msg.textContent = 'ENTERING THE VALE';
     // hold the splash until the frame time actually STABILIZES: shader compiles, impostor bakes
     // and texture uploads all land under it instead of as jank in the player's first seconds.
     // (5 consecutive sub-25ms frames, or an 8 s cap so a contended GPU can't hold boot hostage.)
@@ -81,4 +114,5 @@ window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(S
   });
 }
 
-game.ready.then(() => game.start()).catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
+game.ready.catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
+if (!intro) game.ready.then(() => game.start());

@@ -205,6 +205,61 @@ made** — if the next wave wants a green gate, the honest lever is `tools/blobc
 - Game state at last verify: 0 errors, blob-free meadow at 15h/17.5h. p99 was 16.4 ms vs 14 budget; builders carry perf gates.
 - Not started (later waves): RPG stats/loot/inventory, quests + voiced NPCs (Magnific audio_tts can voice them now), world bosses, story mode.
 
+## 4b. The cinematic loading screen / landing page (2026-08-22)
+
+The front door of the site. A young man sits at his computer in a dark bedroom at night; **his monitor is
+showing the game's own start screen** (wordmark + subtitle + load bar, composited over the live game world
+as the menu backdrop, the way a real title screen is). When the world has finished building the prompt
+becomes "CLICK TO ENTER THE VALE"; the player clicks, **he is pulled head-first into the monitor**, the
+camera follows him through the glass, a violet flash covers the handover, and the game starts.
+
+| file | owner | what |
+|---|---|---|
+| `src/ui/Intro.js` | orchestrator | renderer/composer, the start-screen canvas, the DOM load bar, the transition, the handover |
+| `src/ui/intro/stage.js` | orchestrator | scene assembly, ALL lights, camera path, the suck-in transform, the intro texture loader |
+| `src/ui/intro/room.js` | intro-room builder | bedroom, desk, monitor hardware, props, posters, fairy lights |
+| `src/ui/intro/character.js` | intro-character builder | the seated guy + his gaming chair, idle animation, `setSuck(k)` acting |
+| `intro.html` | orchestrator | dev-only standalone preview of the stage (`?noroom=1 ?nochar=1 ?char=b ?seed=N`) |
+| `public/assets/intro/` | orchestrator | 1.6 MB: the texture set + `guy.glb`, the generated seated character (see ASSETS.md) |
+| `docs/intro-ref/` | orchestrator | the art references builders are judged against (not shipped) |
+
+**Things that are load-bearing — do not undo them:**
+- It shares the GAME's renderer and canvas. That is what lets the monitor show a real render of the world
+  (`Game.stepInto(dt, target, systems)` draws the world into a render target). Two consequences:
+  (1) `Lighting.js` sets `renderer.shadowMap.autoUpdate = false`, so the intro sets `shadowMap.needsUpdate = true`
+  every frame or its own shadow maps never render and **the whole room goes black**;
+  (2) the intro must restore `toneMapping` / `shadowMap.enabled` / `setRenderTarget(null)` on teardown.
+- The transition timeline runs on **wall clock**, not accumulated `dt`. Impostor baking can still be hogging
+  the thread when the player clicks; a dt-driven timeline turns the 2 s dive into 5 s of slow motion.
+- `#introui` is `pointer-events: none` with its click listener on `window`, so the canvas's own
+  `mousedown -> Input.lock` path still runs. A full-screen div that swallowed the click broke the gate's
+  "pointer lock re-acquires after exit" leg.
+- `Input.lock` now remembers a refused `unadjustedMovement` and asks plain from then on. The refusal is
+  asynchronous, so the fallback request landed outside the click's transient activation and Chrome answered
+  "a user gesture is required". That was the real cause of flaky re-lock.
+- `?auto=1` skips the intro entirely — the harness and every critic see exactly what they saw before.
+  `?auto=1&intro=1` runs it and auto-plays 4 s after arming; add `&introhold=1` to hold it for screenshots
+  (needs `node tools/inspect.mjs --noready`, since the game loop only starts after the transition).
+  `__game.intro.seek(t)` freezes the transition at an absolute time — that is how you review the dive.
+- The intro loads its own textures from `public/assets/intro/` (the ONE documented exception to
+  "everything through `game.assets`"): it is on screen while `game.assets` is still preloading 29 MB.
+- **`Game` takes an `opts.gate` promise and `_init` awaits it.** `main.js` holds that gate until the intro
+  has drawn its first frame, so the room is up in ~0.4 s. Without it a system init that blocks the thread
+  for 800 ms runs first and the plain boot splash — not the room — is what the player stares at.
+- **The character is a generated GLB** (`public/assets/intro/guy.glb`), not the procedural body. The
+  procedural one in `character.js` is the fallback and still supplies the chair. The GLB is NOT awaited: it
+  streams in and fades up. Placement lives in `GUY_FIT` in `stage.js`; tune it live with
+  `__intro.stage.fitGuy({height, x, y, z, rotY})` on `intro.html` and paste the result back into the const.
+
+**Gate status at the time this landed (2026-08-22):** jitter PASS at q=high and q=low (≈0.05, effectively
+zero), pointer lock PASS (engage + re-acquire). `blobcheck` FAILS — **pre-existing on `main`, not from the
+intro**: two independent baseline runs of `tools/gate-steps.json` against the unmodified main checkout on
+:5173 produce the identical signature (8 findings on `burst-blob-dawn-*`, 4 on `burst-blob-pop13a-*`) — the
+dawn sun/sky seen through the tree canopy at the top of frame. That needs an owner (sky/vegetation/postfx),
+but it is not the loading screen. Reproduce with:
+`node tools/inspect.mjs --nolock --name basemain-low --q low --script tools/gate-steps.json --url http://127.0.0.1:5173/`
+then `python tools/blobcheck.py tools/out/basemain-low burst-blob-`.
+
 ## 5. Next actions (in order)
 
 1. Wait for `wf_e7ac807f-e3c` (journal: `.claude/projects/.../d286c103-.../subagents/workflows/wf_e7ac807f-e3c/journal.jsonl`). If it dies (usage limit ~4-hourly): collect verdicts from the journal, fold them into prevs, relaunch critic-first as wave 4 — never resume blindly.

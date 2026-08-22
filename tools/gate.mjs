@@ -6,7 +6,10 @@
 import { spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const URL = 'http://127.0.0.1:5173/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
+// CADLE_URL lets the gate run against a worktree's own dev server (e.g. http://127.0.0.1:5174/) instead
+// of the main checkout on 5173 — otherwise a worktree's changes are never the thing being gated.
+const BASE = (process.env.CADLE_URL || 'http://127.0.0.1:5173/').replace(/\?.*$/, '');
+const URL = `${BASE}?q=low&seed=1337`;                // NO auto: test the real click-to-start + pointer lock path
 let failed = false;
 
 console.log('[gate] source invariants...');
@@ -22,7 +25,7 @@ for (const q of ['high', 'low']) {
   const dir = `gate-${q}`;
   // 600s: the suite gained the dawn burst, and the volumetric clouds actually render since the GLSL3
   // fix — a q=high run is legitimately ~8 min. A timeout kill leaves no report.json and fails the gate.
-  const r1 = spawnSync('node', ['tools/inspect.mjs', '--nolock', '--name', dir, '--q', q, '--script', 'tools/gate-steps.json'], { stdio: 'inherit', timeout: 600000 });
+  const r1 = spawnSync('node', ['tools/inspect.mjs', '--nolock', '--name', dir, '--q', q, '--script', 'tools/gate-steps.json', '--url', BASE], { stdio: 'inherit', timeout: 600000 });
   if (r1.status !== 0) { console.error(`[gate] harness run failed @ q=${q}`); failed = true; continue; }
   const r2 = spawnSync('python', ['tools/gate.py', `tools/out/${dir}`], { stdio: 'inherit' });          // jitter
   if (r2.status !== 0) failed = true;
