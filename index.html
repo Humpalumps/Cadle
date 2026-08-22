@@ -28,15 +28,33 @@ window.__guyGlb = fetch('/assets/intro/guy.glb').then((r) => {
 window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an unhandledrejection
 </script>
 <style>
-/* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
-   white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first
-   frame; anything drawn here would be a second, competing loading screen for that half second. */
-#splash{position:fixed;inset:0;z-index:99;background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%)}
+/* Boot splash. It used to be deliberately EMPTY, on the grounds that the cinematic intro is the real
+   loading screen and anything here would compete with it "for that half second". That was true when the
+   first frame landed in ~0.5 s. It does not any more: the room's materials compile on the first render,
+   so the canvas paints at ~2-3 s cold, and domInteractive is 30 ms — meaning the page sat parsed, alive
+   and completely blank for three seconds. Blank reads as broken; a wordmark and a bar read as loading.
+   Pure CSS with a system serif, so it paints on the first style pass with nothing to fetch.
+   The old ghosting bug (this wordmark crossfading over the monitor's) does not come back: Intro._frame
+   REMOVES this outright on its first painted frame rather than fading it. Keep it that way. */
+#splash{position:fixed;inset:0;z-index:99;background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.05rem}
+#splash .wm{font:400 clamp(30px,5.4vw,66px)/1 Georgia,'Times New Roman',serif;letter-spacing:.42em;text-indent:.42em;
+  color:#e8c98a;text-shadow:0 0 30px rgba(155,139,255,.40)}
+#splash .sub{font:400 clamp(9px,1.2vw,13px)/1 Georgia,serif;letter-spacing:.34em;text-indent:.34em;color:#8d86b8}
+#splash .bar{width:min(38vw,340px);height:2px;border-radius:2px;background:rgba(160,150,220,.16);overflow:hidden}
+#splash .bar i{display:block;height:100%;width:32%;border-radius:2px;
+  background:linear-gradient(90deg,transparent,#c9a86a,transparent);animation:splashsweep 1.15s ease-in-out infinite}
+@keyframes splashsweep{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
+@media (prefers-reduced-motion:reduce){#splash .bar i{animation:none;width:100%;opacity:.45}}
 #splash.gone{opacity:0;pointer-events:none;transition:opacity .3s ease}
 </style>
 </head>
 <body>
-<div id="splash"></div>
+<div id="splash">
+  <div class="wm">CADLE</div>
+  <div class="sub">THE SUNDERED VALE</div>
+  <div class="bar"><i></i></div>
+</div>
 <canvas id="game"></canvas>
 <div id="ui"></div>
 <script type="module" src="/src/main.js"></script>
