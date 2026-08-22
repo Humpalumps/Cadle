@@ -117,7 +117,7 @@ export const BIOMES = {
   },
   dragon: {
     name: 'Dragon Peaks', short: 'Dragon Peaks', zone: 'dragon', level: [24, 32],
-    fog: 0x9fa8b6, fogMul: 1.15, sun: 0xffe8c8, amb: 0.95,
+    fog: 0x9fa8b6, fogMul: 1.15, sun: 0xf0eeee, amb: 0.95,   // alpine, not desert: a warm key on warm strata is what made the Peaks read as a sandstone mesa
     ground: 'rock', grass: { d: 0.07, tint: 0xa8b090 }, music: 'drums',
     enemies: [['wyvern', 3, 30, 130], ['forgeknight', 3, 14, 100], ['golem', 2, 20, 110]],
     landmark: 'Kharaz-Dun Gate',

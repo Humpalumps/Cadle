@@ -621,7 +621,7 @@ export class Props {
         dais(13, 3, 0.6, [0.86, 0.83, 0.76]);
         gate(15, 17, 0.6, [0.9, 0.86, 0.78]);
         ring(6, 21, (a) => pillar(CX + Math.cos(a) * 21, CZ + Math.sin(a) * 21, 9 + rng() * 5, 0.9, 0.86, [0.88, 0.85, 0.78]));
-        isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.14, 1.10, 1.00], kind: 'celestial' });   // marble, not mud: at 0.86/0.84/0.78 on the tan stone map the isles read as brown pods hanging over a white plain
+        isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.42, 1.38, 1.26], kind: 'celestial' });   // marble, not mud: on the tan stone map anything at or below 1.0 hangs over the white plain as a brown pod
       } else if (B.id === 'dragon') {                                           // Kharaz-Dun Gate, cut into the mountain
         const GOLD = [1.25, 0.98, 0.52];
         slab(CX, CY + 12, CZ - 2.4, 44, 24, 7, 0.3, [0.60, 0.58, 0.56]);        // the wall, set BACK
@@ -727,9 +727,11 @@ export class Props {
         // the sky, which is the one angle you always have on them while you are still on the ground below.
         // Hanging a torn root off each one gives the underside a silhouette and something for the light to
         // break on. Rock kind 3 is the pointed shard, flipped to hang.
+        // ...but a keel as deep as the isle is WIDE turns the silhouette into a mushroom. Shallower and
+        // wider reads as an eroded underside; the tint stays close to the cap so it is the same rock in shade.
         const gk = makeRockGeometry(3, (rng() * 1e6) | 0);
-        gk.rotateX(Math.PI); gk.scale(R * 0.74, R * 1.05, R * 0.70); gk.translate(x, y + R * 0.10, z);
-        parts.push(gk); tints.push([s.tint[0] * 0.62, s.tint[1] * 0.62, s.tint[2] * 0.66]);
+        gk.rotateX(Math.PI); gk.scale(R * 0.86, R * 0.58, R * 0.82); gk.translate(x, y + R * 0.06, z);
+        parts.push(gk); tints.push([s.tint[0] * 0.80, s.tint[1] * 0.80, s.tint[2] * 0.86]);
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
         isles.push({ x, y: y + R * 0.2, z, R });
