@@ -44,6 +44,8 @@ src/render/Lighting.js      sun/shadows(CSM)/hemi/env                       (lig
 src/render/PostFX.js        composer pipeline, overlay pass, effects       (postfx builder)
 src/world/Biomes.js         THE 10-BIOME MAP: layout consts + per-biome data  (orchestrator; read-only for everyone else)
 src/world/Terrain.js        heightfield LOD + material + heightAt/normalAt (terrain builder)
+src/world/terrainKernel.js  pure bake math (heightAt/bakeKernel/layerTex), NO three   (terrain builder)
+src/world/terrainWorker.js  the bake worker entry — imports the kernel, nothing else  (terrain builder)
 src/world/Water.js          lakes/rivers: reflect/refract/foam/waves       (water builder)
 src/world/Grass.js          instanced grass, wind, interaction, LOD        (grass builder)
 src/world/Vegetation.js     trees/rocks/crystals instancing + colliders    (vegetation builder)

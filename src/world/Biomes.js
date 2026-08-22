@@ -11,9 +11,9 @@
  *     neighbours AND has its own pass back to the home meadow. Nothing is teleport-only.
  *   - EDGE (r > 960): impassable wall.
  *
- * This file is DATA + cheap queries only. The height field itself lives in Terrain.js (its kernel is
- * stringified into the bake workers, so it must stay closure-free); Terrain's `BH[]` array is indexed
- * by the same k as ORDER below — keep the two in sync.
+ * This file is DATA + cheap queries only. The height field itself lives in terrainKernel.js, which the
+ * bake worker imports directly (it used to be stringified into a Blob worker — that broke in every
+ * minified build); the kernel's `BH[]` array is indexed by the same k as ORDER below — keep them in sync.
  *
  * Consumers: Terrain (splat + biomeAt), Grass (density/tint), Vegetation + Props (placement), Water
  * (dry mask), Lava, Sky (fog grade), Enemies (camps/roster), Ambient (zone beds), RPG (map + landmarks).

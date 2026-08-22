@@ -373,6 +373,30 @@ but it is not the loading screen. Reproduce with:
 `node tools/inspect.mjs --nolock --name basemain-low --q low --script tools/gate-steps.json --url http://127.0.0.1:5173/`
 then `python tools/blobcheck.py tools/out/basemain-low burst-blob-`.
 
+## 4c. The terrain bake worker (2026-08-22)
+
+`src/world/Terrain.js` used to build its bake worker by stringifying its own functions into a Blob. That
+works in dev and **dies in every minified build** — the minifier renames the bindings but the template
+strings still contain the literal identifiers, so the worker threw `ReferenceError: noise2 is not defined`,
+`_bakeAsync`'s `fallback` caught it, and the game silently baked the whole terrain **on the main thread**.
+Measured on a production build: **22 rendered frames in 17.6 s of boot before, 507 in 12.2 s after.**
+
+The bake math now lives in `src/world/terrainKernel.js` (no `three` import, so the worker chunk stays
+engine-free) and `src/world/terrainWorker.js` imports it; `Terrain.js` creates the workers with
+`new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' })` and hangs the kernel's
+`heightAt` on `Terrain.prototype` so there is still exactly ONE height field for the game and the bake.
+`tools/invariants.mjs` (a2) now fails if anyone string-builds a worker again, if the module-worker form is
+lost, if the kernel imports three, or if the `heightAt` wiring goes.
+
+**The general lesson, which applies beyond terrain:** anything that ships `Function.prototype.toString()`
+into a Blob worker is a landmine — it works in dev, degrades silently in production, and the only symptom
+is a `console.warn` nobody reads. Let the bundler resolve names; never hand-write identifiers into a
+worker source string.
+
+Regression guard: `terrain.heightAt` is ground truth for the whole game. Before touching the kernel, snapshot it:
+`node tools/inspect.mjs --nolock --name heightcheck --steps '[{"wait":20},{"eval":"(()=>{const t=window.__game.game.terrain;let s=0,n=0;for(let i=-1000;i<=1000;i+=37)for(let j=-1000;j<=1000;j+=41){s+=t.heightAt(i,j);n++;}return JSON.stringify({n,sum:+s.toFixed(6)});})()"}]'`
+Seed 1337 must give `{"n":2695,"sum":164490.108949}`.
+
 ## 5. Next actions (in order)
 
 **The live to-do is §0 "OUTSTANDING — start here".** Everything below §0 is a dated log of previous waves: read it
