@@ -228,33 +228,35 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   // moonlight through the window on the left wall — the cool rim that separates him from the dark
   const moon = new THREE.DirectionalLight(0x7290da, 0.8);
   moon.position.set(-5.0, 3.4, 1.4); moon.target.position.set(0.25, 0.95, 0.1);
-  moon.castShadow = true;
+  // The spot already throws his shadow onto the chair and the wall, which is the shadow the shot needs.
+  // A second shadow-casting light adds a depth-program variant for every casting material.
+  moon.castShadow = false;
   moon.shadow.mapSize.set(1024, 1024);
   const sc = moon.shadow.camera; sc.left = -2.6; sc.right = 2.6; sc.top = 2.6; sc.bottom = -2.6; sc.near = 0.5; sc.far = 12;
   moon.shadow.bias = -0.0016; moon.shadow.normalBias = 0.03;
   scene.add(moon, moon.target);
 
-  // warm complement from the right (fairy lights / hallway) so he is not lit in one hue
-  const warm = new THREE.PointLight(0xffc98a, 2.4, 5.2, 2);   // tighter falloff: it was washing the upper corners   // two warm sources on his back turned a grey hoodie khaki
-  warm.position.set(1.55, 1.80, 0.50);
-  scene.add(warm);
+  // `warm` (a second warm point at 1.55,1.80,0.50) is GONE, folded into `rim` below. Point-light count is
+  // unrolled into every shader in the scene, so each one is paid for in compile time on the first frame,
+  // and two warm sources 1.4 m apart on the same side of the room were doing one job.
 
   // Warm spill from the doorway behind his right shoulder. This is the shot's rim light: the monitor
   // lights his FRONT, so without this he is a black silhouette on a violet wall. Warm against the cool
   // screen is also what separates him from the background.
   // desaturated on purpose: at 0xffb07a it was the ONLY light on his back, and it turned a cool-grey
   // hoodie khaki. Warm enough to separate him from the violet wall, neutral enough to keep the garment grey.
-  const rim = new THREE.PointLight(0xffe0cc, 2.4, 7.5, 2);
-  rim.position.set(1.55, 1.95, 1.85);
+  // carries `warm`'s job too now: pulled forward and up between the two old positions, and brighter to
+  // cover the fill it used to add.
+  const rim = new THREE.PointLight(0xffe0cc, 2.9, 8.0, 2);
+  rim.position.set(1.55, 1.90, 1.25);
   scene.add(rim);
 
-  // and a much dimmer cool one from the window side so his left edge is not pure black either
-  const rimCool = new THREE.PointLight(0xa8bce0, 2.4, 8.5, 2);
-  rimCool.position.set(-1.9, 1.75, 0.9);
-  scene.add(rimCool);
+  // `rimCool` (window-side cool point) is GONE: the moon is a directional from the same side and the
+  // hemisphere's sky colour is already cool, so his left edge still is not pure black.
 
-  // ambient: enough that shadow-side surfaces sit around sRGB 30-45, never at zero
-  scene.add(new THREE.HemisphereLight(0x525878, 0x483724, 3.9));   // 39% of the frame was pure black; the references have none   // near-neutral: only the monitor is violet
+  // ambient: enough that shadow-side surfaces sit around sRGB 30-45, never at zero. Sky tint pushed a
+  // touch cooler and brighter to replace rimCool's fill on the window side.
+  scene.add(new THREE.HemisphereLight(0x5a628a, 0x4d3b28, 4.6));   // 39% of the frame was pure black; the references have none   // near-neutral: only the monitor is violet
 
   // (No volumetric light cone. A BackSide cone big enough to read from 0.7 m away subtends ~50 deg of
   // the frame and silhouettes as a hard translucent wedge; the dust motes in the monitor's light and the
@@ -330,6 +332,39 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     scene.add(pivot);
     pivotBase = c.clone();
   }
+  // ---------------------------------------------------------------- first-frame cost control
+  // stage.js owns ALL lights (see the header), and room.js adds four of its own: a violet keyboard glow,
+  // a crystal glow, and two fairy-string lights. Every one of them is unrolled into every shader in the
+  // scene and paid for in compile time on the first painted frame. The bulbs and the crystal are emissive
+  // GEOMETRY, so they still glow with the lights gone — what is lost is the wash they threw, and one warm
+  // point below replaces the pair of fairy lights with a single source at their midpoint.
+  if (room?.group) {
+    const strays = [];
+    room.group.traverse((o) => { if (o.isLight) strays.push(o); });
+    for (const l of strays) l.parent?.remove(l);
+    if (strays.length) {
+      // TWO, not one. A single light cannot stand in for three sources spread across the ceiling: short
+      // range left the corners black (ceiling -22), and widening its reach to fix that lit the whole room
+      // instead (body +7, ceiling still -16). Two lights on the string, kept deliberately short-range so
+      // the wash stays in the top third of the frame and does not wander down onto the rug.
+      const fairyA = new THREE.PointLight(0xffa860, 3.1, 4.4, 2);
+      fairyA.position.set(-0.55, 2.16, 0.60);
+      const fairy = new THREE.PointLight(0xffa860, 3.1, 4.4, 2);
+      fairy.position.set(1.15, 2.16, 0.60);
+      scene.add(fairyA);
+      scene.add(fairy);
+    }
+  }
+
+  // Materials flagged transparent while fully opaque get their own shader program for no visual reason —
+  // and the transparent pass sorts them per frame forever after. Free to merge into the opaque bucket.
+  for (const grp of [room?.group, character?.group]) grp?.traverse?.((o) => {
+    if (!o.isMesh) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (m && m.transparent && m.opacity >= 1 && !m.alphaMap && !(m.alphaTest > 0)) { m.transparent = false; m.needsUpdate = true; }
+    }
+  });
+
   let guyBaseY = 0, chairHolder = null;
   if (character?.body) character.body.visible = false;     // one body only; restored below if the load fails
   guyReady.then((g) => {
@@ -509,8 +544,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
      *  there is already a picture on screen. `visible = false` is enough: three does not count hidden
      *  lights toward the shader permutation. */
     setLightsFull(on) {
-      rect.visible = on; moon.visible = on; rimCool.visible = on;
-      room?.group?.traverse?.((o) => { if (o.isLight) o.visible = on; });
+      rect.visible = on; moon.visible = on;   // rimCool is gone; room.js's own lights are pruned at build
       lightsFull = on;
     },
     get lightsFull() { return lightsFull; },
