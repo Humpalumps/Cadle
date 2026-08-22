@@ -41,7 +41,11 @@ LUM_BRIGHT = 212      # luminance 0..255 counted as "glowing". Calibrated agains
                       # every real glow bug (wisp trails, emissive sights, lantern flames) measured
                       # 230+ after ACES, while legitimate sunlit pale surfaces (distant canopy, rock,
                       # birch trunks) sit at ~202-208 and must not fail the gate. Grass itself is
-                      # luminance-capped at 0.60 linear (~198 sRGB) so it can never reach this.
+                      # luminance-capped in Grass.js, but do NOT read that as "grass can never reach this":
+                      # measured through ACES + the FF14 grade + exposure, a sunlit blade edge arrives at
+                      # 214-218 at some hours. That is why the shape rules (MIN_THICK, MAX_ASPECT) and the
+                      # ground-cover mask exist — the brightness bar alone cannot separate a lit blade from
+                      # a blob, and raising it would blind the detector to the actual bug.
 MIN_AREA   = 12       # px at 960-wide; smaller than this is a speck, not a blob
 MAX_ASPECT = 6        # bright bbox w:h beyond this is a strip (horizon/water), not a blob
 MIN_THICK  = 4        # px: a blob has THICKNESS. A 11x3 sliver is a lit blade edge, not a bloom ball —

@@ -247,15 +247,20 @@ and flagged here rather than tuned away. **A merge on a red gate is a decision, 
 made** — if the next wave wants a green gate, the honest lever is `tools/blobcheck.py`'s `MIN_AREA`/`LUM_BRIGHT`
 (orchestrator-owned), not more grade-flattening.
 
+> **SUPERSEDED 2026-08-22 (see §0).** The gate is green at both qualities now, and the lever turned out to be
+> neither the grade nor the brightness bar: the detector was missing the SHAPE and the CONTEXT of a blob. It now
+> gets a per-burst classification mask from the renderer (ground cover / geometry / atmosphere) and applies the
+> strict rule only to ground cover, plus two shape rules. `--selftest` proves it still catches painted blobs.
+> Chasing this also found two genuine bugs the old detector was drowning in its own noise: wisps reading as white
+> orbs, and every impact preset starting from a pure-white core.
+
 ### Known issues / next fixes (this wave)
 
-1. **`tools/gate.mjs` hardcodes `http://127.0.0.1:5173`.** A worktree cannot be gated without taking that port over from
-   the main dev server. Give it a `--url`/env override.
-2. **`tools/blobcheck.py`'s calibration note is stale and should be corrected** (tools/ is orchestrator-owned, so it
-   was not touched here): it says grass is capped at 0.60 linear "(~198 sRGB) so it can never reach" the 212 bar.
-   Measured through ACES + the FF14 grade, 0.60 arrives at ~220, which is why the meadow kept tripping its own
-   detector. The cap moved to 0.50; the note needs to say so, or the next person re-raises it. Also worth revisiting:
-   `MIN_AREA = 12` px is small enough that one sunlit blade edge counts as a blob.
+1. ~~**`tools/gate.mjs` hardcodes `http://127.0.0.1:5173`.**~~ DONE 2026-08-22: both `gate.mjs` and `inspect.mjs`
+   honour `CADLE_URL`, so a worktree can be gated on its own port.
+2. ~~**`tools/blobcheck.py`'s calibration note is stale**~~ DONE 2026-08-22: the note now says what was measured
+   (a sunlit blade edge arrives at 214-218, so the bar alone cannot separate it from a blob), and `MIN_THICK`
+   handles the "one sunlit blade edge counts as a blob" case by shape instead of by brightness.
 3. **The q=high gate harness run intermittently exceeds its 600 s timeout** on a contended box (it did on the baseline
    run twice). A timeout kills the run with no `report.json`, which reads as a gate failure rather than "not measured".
 4. **Perf A/B was inconclusive**, not negative. Alternating before/after tours on this box varied as much between two
@@ -296,10 +301,22 @@ made** — if the next wave wants a green gate, the honest lever is `tools/blobc
 
 ## 5. Next actions (in order)
 
-1. Wait for `wf_e7ac807f-e3c` (journal: `.claude/projects/.../d286c103-.../subagents/workflows/wf_e7ac807f-e3c/journal.jsonl`). If it dies (usage limit ~4-hourly): collect verdicts from the journal, fold them into prevs, relaunch critic-first as wave 4 — never resume blindly.
-2. Asset batch 2 in flight (bark, leaf card ×alpha, rune glyphs ×2, aetheryte/column/handcannon concepts → models3d GLBs). Download results IMMEDIATELY (URL tokens expire), update ASSETS.md, generate remaining ASSET ASKs from builder reports.
-3. Between waves: update progress/state.json + shots, run check.mjs + full tour, coherence agent, then next wave.
-4. Only once graphics/perf/mechanics are all WIN: RPG systems → world bosses → quests/NPC voice (audio_tts) → story mode.
+**The live to-do is §0 "OUTSTANDING — start here".** Everything below §0 is a dated log of previous waves: read it
+for WHY something is the way it is, not for what to do next. (The old entries here — a wave-3 workflow id and an
+asset batch — completed long ago and were removed 2026-08-22 so nobody chases them.)
+
+1. Work §0's OUTSTANDING list, verification items first (nothing there has been confirmed on a headed browser).
+2. **IN FLIGHT ELSEWHERE — do not duplicate, and expect conflicts.** A parallel session is building the cinematic
+   loading screen / landing page (a bedroom scene whose monitor shows the real start screen, then the camera dives
+   through the glass into the game). As of 2026-08-22 it is **uncommitted** in the worktree
+   `.claude/worktrees/recursing-moser-26d7ce` — new `src/ui/Intro.js`, `src/ui/intro/*`, `intro.html`,
+   `public/assets/intro/`, plus edits to `src/core/Game.js`, `src/core/Input.js`, `src/main.js`, `tools/inspect.mjs`,
+   `tools/gate.mjs`, `vite.config.js`, `CLAUDE.md`, `ASSETS.md`. **Five of those files also changed in §0's commits**
+   (main.js, inspect.mjs, gate.mjs, vite.config.js, CLAUDE.md), so that branch needs a rebase onto `main` before it
+   can land, and its own HANDOVER section (§4b, written against the pre-§0 file) says blobcheck fails as a
+   pre-existing issue — that is no longer true, see §0.
+3. Between waves: update progress/state.json + shots, run check.mjs + the full tour, coherence agent, then next wave.
+4. Only once graphics/perf/mechanics are all WIN: world bosses → quests/NPC voice (audio_tts) → story mode.
 
 ## 5b. User decrees (2026-08-20, from watching the live game — enforce in every wave, tell every builder/critic)
 
