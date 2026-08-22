@@ -29,6 +29,30 @@ const intro = USE_INTRO ? new Intro({
   auto: PARAMS.get('auto') === '1',
 }) : null;
 
+// Compile the world's shader programs a few objects at a time, with a frame between chunks.
+//
+// The first render of the game scene compiles EVERY program in one blocking call — measured on cadle.gg
+// at 16.0 s of frozen page, at the exact moment the bar reads 100%. renderer.compileAsync does not help
+// (it calls the synchronous compile() internally; measured 2x worse, see 43f2837). But compile() only
+// walks VISIBLE objects, so hiding all but a slice and calling it repeatedly does the same total work in
+// slices the loading screen can paint between. Visibility is restored exactly as found.
+async function warmScene(renderer, scene, camera, perChunk = 6) {
+  const objs = [];
+  scene.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) objs.push(o); });
+  if (!objs.length) return 0;
+  const was = objs.map((o) => o.visible);
+  try {
+    for (let i = 0; i < objs.length; i += perChunk) {
+      for (let k = 0; k < objs.length; k++) objs[k].visible = was[k] && k >= i && k < i + perChunk;
+      renderer.compile(scene, camera);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+  } finally {
+    for (let k = 0; k < objs.length; k++) objs[k].visible = was[k];   // never leave the scene half-hidden
+  }
+  return objs.length;
+}
+
 if (intro) {
   intro.init().catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); });
   // 8 s cap so a broken intro can never hold the game hostage
@@ -113,7 +137,13 @@ if (intro) {
   // SYNCHRONOUS compile() internally and only defers the link-completion poll, so it blocks for the whole
   // compile and the first render still compiles whatever it missed. On ?auto=1 q=low it took the boot from
   // 18 stalls / 13.1 s blocked to 26 stalls / 27.9 s, worst single stall 5.5 s -> 13.7 s. Do not re-add it.
-  game.ready.then(() => {
+  game.ready.then(async () => {
+    if (PARAMS.get('nowarm') !== '1') {
+      const t0 = performance.now();
+      try { const n = await warmScene(game.renderer, game.scene, game.camera);
+        if (game.debug) console.info(`[boot] warmScene ${n} objects in ${Math.round(performance.now() - t0)} ms`); }
+      catch (e) { console.warn('[boot] warmScene skipped:', e?.message); }
+    }
     intro.arm();
   }).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
   // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
@@ -121,7 +151,13 @@ if (intro) {
 } else {
   // No intro: the boot splash (fed above) stays up until the frame time settles, then fades.
   const splash = document.getElementById('splash');
-  game.ready.then(() => {
+  game.ready.then(async () => {
+    if (PARAMS.get('nowarm') !== '1') {
+      const t0 = performance.now();
+      try { const n = await warmScene(game.renderer, game.scene, game.camera);
+        if (game.debug) console.info(`[boot] warmScene ${n} objects in ${Math.round(performance.now() - t0)} ms`); }
+      catch (e) { console.warn('[boot] warmScene skipped:', e?.message); }
+    }
     // hold the splash until the frame time actually STABILIZES: shader compiles, impostor bakes
     // and texture uploads all land under it instead of as jank in the player's first seconds.
     // (5 consecutive sub-25ms frames, or an 8 s cap so a contended GPU can't hold boot hostage.)

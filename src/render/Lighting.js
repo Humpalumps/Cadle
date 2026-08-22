@@ -234,7 +234,7 @@ export class Lighting {
     this._c = new THREE.Vector3(); this._fwd = new THREE.Vector3(); this._up = new THREE.Vector3();
   }
 
-  init() {
+  async init() {
     const { scene, renderer } = this.game;
     renderer.shadowMap.type = THREE.PCFShadowMap;       // r185: PCFSoft is deprecated → PCF (hardware compare + vogel disk)
     renderer.shadowMap.autoUpdate = false;              // we flag needsUpdate once per frame; extra scene renders reuse the maps
@@ -256,6 +256,9 @@ export class Lighting {
       sh.map.depthTexture = dt;
       scene.add(l, l.target);
       this.cascades.push(l);
+      // A frame per cascade: each allocates a shadow render target plus a DepthTexture, and the set
+      // of them was ~2.5 s as one block — the biggest single stall in the middle of the load.
+      await new Promise((r) => requestAnimationFrame(r));
     }
     this.sun = this.cascades[0];
     this.hemi = new THREE.HemisphereLight(0x88aaff, 0x443322, this.hemiIntensity);

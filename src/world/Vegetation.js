@@ -469,9 +469,14 @@ export class Vegetation {
     const bk = game.assets?.tex?.('bark') ?? null;
     const barkAsset = bk ? { map: bk, normalMap: normalFromLuma(bk.image, 512, 4.5) } : null;
     if (!leafCard || !barkAsset) console.warn('[vegetation] painted assets missing, procedural fallback');
+    // A frame between each: these are four long synchronous builds and together they were one of the
+    // worst blocks on the loading screen (~1.8 s), which the intro cannot paint through.
     this._buildTrees(rng, aniso, Q, leafCard, barkAsset);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildRocks(rng, aniso, Q);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildCrystals(rng, aniso);
+    await new Promise((r) => requestAnimationFrame(r));
     this._place(mulberry32(game.seed + 777));
     // ez-tree trees are the DEFAULT (see EZTrees.js): generated variants through the same InstLOD
     // near/impostor contract. ?eztrees=0 restores the legacy card trees.

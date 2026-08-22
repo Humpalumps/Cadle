@@ -47,10 +47,16 @@ export class VFX {
     this.game = game; this.brush = new Brush(); this.emitters = []; this._dead = new WeakMap(); this.lights = []; this._lit = [1, 1, 1];
     this.mult = QMUL[game.quality] ?? 1; this.day = 1; // 0 night .. 1 full daylight; boosts gun-feedback HDR/size so it reads at noon
   }
-  init() {
+  async init() {
     const { scene, seed } = this.game;
+    // The three atlas bakes are canvas work and the pools below allocate big buffers; as one block this
+    // was ~1.7 s of frozen loading screen. Game._init awaits init(), so yielding here is free.
     const atlas = this.atlas = makeAtlas(seed);
-    this.decalAtlas = makeDecals(seed); this.sigilTex = makeSigil(seed);
+    await new Promise((r) => requestAnimationFrame(r));
+    this.decalAtlas = makeDecals(seed);
+    await new Promise((r) => requestAnimationFrame(r));
+    this.sigilTex = makeSigil(seed);
+    await new Promise((r) => requestAnimationFrame(r));
     const cap = Math.round(this.mult * 16384);
     this.add = new ParticlePool(scene, atlas, { capacity: cap, additive: true, renderOrder: 11 });
     this.alpha = new ParticlePool(scene, atlas, { capacity: Math.round(cap * 0.3), additive: false, renderOrder: 10 });
