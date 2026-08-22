@@ -56,6 +56,9 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .bar i { position: absolute; inset: 0; transform-origin: left; will-change: transform; border-radius: 1px; }
 #sbar { width: 240px; height: 7px; }
 #hbar { width: 240px; height: 10px; }
+#bbar { width: 240px; height: 5px; }
+#bbar .fill { background: linear-gradient(180deg, #cfeeff, #6fc8ee 55%, #2f86b4); }
+#bbar.low .fill { background: linear-gradient(180deg, #ffd0c0, #e2543c 60%, #a82f1c); box-shadow: 0 0 8px rgba(255,60,30,0.5); }
 #sbar .fill { background: linear-gradient(180deg, #c8ecff, #6fc4f2 60%, #4e9fd4); box-shadow: 0 0 10px var(--aether-glow); }
 #hbar .fill { background: linear-gradient(180deg, #fdf8ea, #e7dcc0 55%, #c9b98f); }
 #hbar.low .fill { background: linear-gradient(180deg, #ffb0a0, #e2543c 60%, #a82f1c); box-shadow: 0 0 10px rgba(255,60,30,0.5); }

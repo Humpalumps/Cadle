@@ -64,6 +64,11 @@ export function weightAt(x, z, k) {
 //   level [lo,hi]     enemy level band             (enemies/Enemies.js populate)
 //   enemies           camp roster [type, count, rMin, rMax]
 //   fog / fogMul      local aerial perspective     (render/Sky.js _gradeFog) — hue forced, luminance kept
+//   fogLum            optional haze BRIGHTNESS scale (Sky._gradeFog). Only for regions whose air is
+//                     genuinely darker than the sky above it — smoke, peat reek, void murk. Default 1.
+//   skyVeil           0..1: how much of that air reaches the SKY DOME itself (Sky's DOME_FRAG uVeil).
+//                     Use it where the region is under a ceiling of its own weather — ash, reek, murk —
+//                     and a clean blue noon sky would give the game away. Default 0.
 //   sun / amb         key light + ambient grade    (render/Lighting.js _gradeBiome) — what makes the
 //                     Wastes read as lit by fire and the Void as lit by almost nothing
 //   grass.d           ground-cover DENSITY          (world/Terrain.js grassAt -> world/Grass.js)
@@ -87,15 +92,15 @@ export const BIOMES = {
   },
   forest: {
     name: 'Whisperwood Deep', short: 'Enchanted Forest', zone: 'forest', level: [5, 11],
-    fog: 0x52806f, fogMul: 1.95, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, mist between the trunks
-    ground: 'forest', grass: { d: 0.85, tint: 0x9fd4a8 }, music: 'wood',
+    fog: 0x52806f, fogMul: 1.95, fogLum: 0.66, skyVeil: 0.34, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, mist between the trunks
+    ground: 'forest', grass: { d: 0.40, tint: 0x6f9c7a }, music: 'wood',   // 0.85 was a knee-high LAWN under the canopy; a forest floor is litter, moss and fern (Props KIT.forest), with grass only in the gaps
     enemies: [['sprite', 4, 8, 90], ['treant', 2, 20, 110], ['hound', 3, 12, 100]],
     landmark: 'The Elderheart',
     blurb: 'Ancient trees, fae lights and druid stones under a canopy the sun barely finds.',
   },
   tundra: {
     name: 'Frostveil Tundra', short: 'Frostveil', zone: 'tundra', level: [11, 17],
-    fog: 0xc8e4f4, fogMul: 1.5, sun: 0xdcecff, amb: 1.2,     // Winterspring: bright, snow-bounced, hazy with falling ice
+    fog: 0xc8e4f4, fogMul: 1.5, skyVeil: 0.24, sun: 0xdcecff, amb: 1.2,     // Winterspring: bright, snow-bounced, hazy with falling ice
     ground: 'snow', grass: { d: 0.03, tint: 0xa8c0d8 }, music: 'frost',
     enemies: [['frostwolf', 5, 12, 110], ['icegiant', 2, 30, 120], ['wisp', 3, 20, 110]],
     landmark: 'The Glacier Throne',
@@ -120,7 +125,11 @@ export const BIOMES = {
   },
   infernal: {
     name: 'Infernal Wastes', short: 'Infernal', zone: 'infernal', level: [18, 25],
-    fog: 0x4a1f11, fogMul: 1.85, sun: 0xff8a3c, amb: 0.52,    // Burning Steppes: black rock, red cracks, smoke you look through
+    fog: 0x4a1f11, fogMul: 1.85, fogLum: 0.26, skyVeil: 0.72, sun: 0xffd2b0, amb: 0.62,   // Burning Steppes: black rock, red cracks, smoke you look through
+    // The key was 0xff8a3c — linear (1.00, 0.25, 0.05), i.e. it multiplies almost all the green and blue out
+    // of whatever it touches, so charcoal ground rendered as saturated (80, 11, 17) RED and the region read
+    // as Mars, not Burning Steppes. Amber keeps the firelight and lets the rock stay rock; the RED belongs
+    // to the lava, the fissure glow and the vents, which have it in their own emissives.
     // NOT `dry`: the channels bhInfernal carves reach below terrain.waterLevel, so the ONE global water
     // surface fills them — that is where the lava rivers come from (see WATER_LOOK.infernal / uLava).
     ground: 'ash', grass: { d: 0, tint: 0x000000 }, lava: true, music: 'forge',
@@ -131,7 +140,7 @@ export const BIOMES = {
   },
   lost: {
     name: 'The Lost Realm', short: 'Lost Realm', zone: 'lost', level: [40, 50],
-    fog: 0xb4a0dc, fogMul: 0.95, sun: 0xffe0ff, amb: 1.2,
+    fog: 0xb4a0dc, fogMul: 0.95, skyVeil: 0.20, sun: 0xfff2f8, amb: 1.15,   // the key was 0xffe0ff: a pink light on pink ground under a pink haze, and the whole region read as candy. The violet belongs to the flagstone and the shards
     ground: 'stone', grass: { d: 0.05, tint: 0xc0b8d8 }, music: 'convergence',
     enemies: [['archon', 1, 0, 3], ['sentinel', 3, 24, 120], ['golem', 2, 30, 120], ['wraith', 3, 20, 110]],
     landmark: 'The Convergence',
@@ -139,8 +148,8 @@ export const BIOMES = {
   },
   shadowfen: {
     name: 'Shadowfen', short: 'Shadowfen', zone: 'shadowfen', level: [15, 22],
-    fog: 0x4e5c4a, fogMul: 2.4, sun: 0xa8c090, amb: 0.7,
-    ground: 'muck', grass: { d: 0.22, tint: 0x7a8a58 }, music: 'fen',
+    fog: 0x4e5c4a, fogMul: 2.4, fogLum: 0.42, skyVeil: 0.62, sun: 0x9ab488, amb: 0.50,
+    ground: 'muck', grass: { d: 0.12, tint: 0x5e6f3e }, music: 'fen',   // the fen's ground cover is REEDS (Props KIT.shadowfen), not lawn: at 0.22 a quarter of the blades still survive at full height and the region read as a green hillside
     enemies: [['wraith', 4, 14, 105], ['bogwitch', 2, 20, 110], ['hound', 3, 16, 110]],
     landmark: 'The Hagstone',
     passive: 'Peat to the knee: the fen drags at every step',
@@ -148,7 +157,7 @@ export const BIOMES = {
   },
   sunken: {
     name: 'The Sunken Kingdom', short: 'Sunken Kingdom', zone: 'sunken', level: [20, 28],
-    fog: 0x2e6472, fogMul: 1.7, sun: 0x9fdcf0, amb: 0.9,
+    fog: 0x2e6472, fogMul: 1.7, skyVeil: 0.22, sun: 0x9fdcf0, amb: 0.9,
     ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, sea: true, music: 'deep',
     enemies: [['drowned', 4, 14, 100], ['leviathan', 2, 40, 130], ['wisp', 3, 20, 110]],
     landmark: 'The Drowned Court',
@@ -157,7 +166,7 @@ export const BIOMES = {
   },
   void: {
     name: 'The Void', short: 'The Void', zone: 'void', level: [34, 44],
-    fog: 0x2c2040, fogMul: 1.15, sun: 0xd6c6f0, amb: 0.78,
+    fog: 0x2c2040, fogMul: 1.15, fogLum: 0.62, skyVeil: 0.55, sun: 0xd6c6f0, amb: 0.78,
     ground: 'voidstone', grass: { d: 0, tint: 0x000000 }, dry: true, float: true, gravity: 0.55, music: 'void',
     enemies: [['riftling', 5, 12, 110], ['voidhorror', 3, 24, 120], ['wraith', 2, 20, 110]],
     landmark: 'The Unmaking',

@@ -226,6 +226,13 @@ vec3 transformed; vec3 objectNormal;
     vec3 tHue = (tcol / tLum) / vec3(0.575, 1.210, 0.171);   // measured mean hue of terrain.colorAt across the spawn meadow
     tHue = clamp(tHue, vec3(0.42), vec3(1.60));
     tipC *= mix(vec3(1.0), tHue, 0.78);
+    // ...and the VALUE follows the floor too. Hue-only coupling gave every region the Vale's brightness, so
+    // the Whisperwood floor and the Shadowfen peat both came out as a mown lawn in full sun — the single
+    // loudest "these are all the same place with a filter on" cue in the world. 0.133 is the measured mean
+    // luminance of terrain.colorAt across the spawn meadow, so the Vale lands on exactly 1.0 and is untouched.
+    // Clamped both ways: a snowfield may not bleach the blades, and no floor may make them brighter than the
+    // Vale's by more than 15% (the caps below are still the absolute backstop).
+    tipC *= clamp(pow(tLum / 0.133, 1.15), 0.34, 1.12);
   }
   {
     // A pale floor (celestial marble, the Lost Realm plain, snow) used to bleach the blades into bone-white

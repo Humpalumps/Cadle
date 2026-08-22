@@ -42,7 +42,7 @@ const HALF = TEX / 2;
 const ss = smoothstep, mix = lerp;
 
 // mean LINEAR albedo of each biome's floor + how much of the ground it covers (mirrors FRAG_SPLAT's biome layer)
-const BALB = [[0.10, 0.135, 0.05], [0.55, 0.62, 0.72], [0.46, 0.39, 0.29], [0.21, 0.20, 0.18], [0.055, 0.042, 0.038], [0.30, 0.27, 0.36], [0.10, 0.11, 0.07], [0.30, 0.31, 0.28], [0.052, 0.044, 0.070]];
+const BALB = [[0.049, 0.074, 0.032], [0.55, 0.62, 0.72], [0.40, 0.43, 0.53], [0.185, 0.192, 0.196], [0.055, 0.042, 0.038], [0.21, 0.23, 0.51], [0.070, 0.095, 0.052], [0.30, 0.31, 0.28], [0.052, 0.044, 0.070]];
 const BCOV = [0.72, 1.0, 0.55, 0.6, 1.0, 0.6, 0.8, 0.9, 1.0];
 
 export class Terrain {
@@ -91,8 +91,12 @@ export class Terrain {
     const d0 = Math.sqrt(x * x + z * z);
     if (d0 < 240 || d0 > 760) return 0;
     const th = Math.atan2(z, x) - THETA0;
-    const da = Math.abs(th - Math.round(th / STEP) * STEP);
-    return ss(0.10, 0.022, da) * ss(250, 320, d0) * ss(760, 650, d0);
+    // Width in METRES off the centre line, not in radians. An angular road is a WEDGE: at 0.10 rad it was
+    // 24 m wide at the mountain feet and 61 m wide at a region's heart, so every outer region had a bald
+    // 100 m corridor driven through the middle of it — which is what made the Whisperwood read as a lawn
+    // with a treeline round it, and why nine `goto` screenshots all landed in the same empty clearing.
+    const arc = Math.abs(th - Math.round(th / STEP) * STEP) * d0;
+    return ss(13.0, 3.5, arc) * ss(250, 320, d0) * ss(760, 650, d0);
   }
 
   /** 0..1 ground-cover density. Grass.js prefers this over its own biome-name heuristics. */
@@ -501,13 +505,13 @@ vec4 lyrHex(vec2 uv, float i, float sharp) { return lyrHexG(uv, i, sharp, dFdx(u
 // sides of a border and cross-fade them (see FRAG_SPLAT's bMix).
 void biomeSet(float k, out float layer, out float scl, out float rough, out float cov, out float snow, out float rockCut, out vec3 tint) {
   layer = 1.0; scl = 3.6; rough = 0.90; cov = 0.72; snow = 0.0; rockCut = 0.0; tint = vec3(1.0);
-  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.72; tint = vec3(0.86, 1.10, 0.80); }                  // forest floor
+  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.92; tint = vec3(0.42, 0.60, 0.50); }                  // Whisperwood floor: moss + leaf litter in SHADE. It was 0.86/1.10/0.80 — a lit lawn with a treeline round it; Ashenvale's floor is the darkest ground in the world, not the brightest
   else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.45; snow = 1.0; rockCut = 0.55; }       // tundra glacier
-  else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.80; rough = 0.55; tint = vec3(1.14, 1.03, 0.80); }    // celestial: sun-warmed marble, never neutral white
-  else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.60; tint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
-  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.80; tint = vec3(0.86, 0.84, 0.90); }   // infernal ash: Burning Steppes is CHARCOAL with red cracks, not red rock
-  else if (k < 5.5) { layer = 6.0;  scl = 4.2; cov = 0.78; tint = vec3(0.80, 0.74, 1.02); }                  // lost realm: worn violet flagstone
-  else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.80; rough = 0.55; rockCut = 0.45; }                   // shadowfen muck
+  else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.86; rough = 0.55; tint = vec3(0.98, 1.14, 1.46); }    // celestial: celestial_marble.jpg is TAN (linear ratio 1 : 0.85 : 0.61) and the old warm tint pushed it further, which is why the Isles read as a sand desert. This inverts the asset's own hue to a warm WHITE marble
+  else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.88; rockCut = 0.55; tint = vec3(0.84, 0.88, 1.02); }   // dragon rock: rockCut 0 meant the CLIFFS were the generic warm-macro strata, so the Peaks read as a sandstone mesa no matter what the floor was tinted: cool granite, not desert mesa
+  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.80; tint = vec3(0.80, 0.82, 0.94); }   // infernal ash: Burning Steppes is CHARCOAL with red cracks, not red rock
+  else if (k < 5.5) { layer = 6.0;  scl = 4.2; cov = 0.86; tint = vec3(0.56, 0.62, 1.42); }                  // lost realm: worn VIOLET flagstone — same tan asset as the Isles, so it needs the same blue lift or it is just warm stone under a pink sky
+  else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.94; rough = 0.55; rockCut = 0.45; tint = vec3(0.70, 0.86, 0.74); }   // shadowfen: wet peat, olive-black. fen_muck.jpg is warm brown (1 : 0.78 : 0.46) and read as dry earth under bright grass
   else if (k < 7.5) { layer = 4.0;  scl = 3.0; cov = 0.90; rough = 0.70; tint = vec3(0.78, 0.95, 0.94); rockCut = 0.55; }   // sunken reef
   else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; tint = vec3(0.78, 0.74, 0.92); }   // voidstone
 }`;
@@ -694,6 +698,18 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // beyond the detail fade used to collapse to one flat green + one flat brown. Value AND hue swing, ~140 m and ~60 m scales.
   float veg = clamp((sG + sF + sD) / sum, 0.0, 1.0);
   alb = mix(alb, alb * mix(vec3(0.60, 0.70, 0.50), vec3(1.36, 1.24, 1.02), macroC * 0.62 + macro2C * 0.38), farC * veg * 0.9);
+  // Underwater CAUSTICS. The Sunken Kingdom's whole identity is being under the sea, and below the surface
+  // the only thing that changed was the fog colour. Two counter-drifting sine lattices sharpened with a
+  // power curve give the moving light net; it MULTIPLIES the albedo (never emissive), so it respects the
+  // sun, the shadows and the tone map, and it cannot bloom. Fades out with depth like the real thing.
+  float sub = smoothstep(0.0, -1.0, P.y - uWater);
+  if (sub > 0.002) {
+    vec2 cq = P.xz * 0.55;
+    float w1 = sin(cq.x + uTime * 0.75) * sin(cq.y * 1.07 - uTime * 0.62);
+    float w2 = sin((cq.x + cq.y) * 0.71 - uTime * 0.48) * sin((cq.x - cq.y) * 0.63 + uTime * 0.39);
+    float cst = pow(clamp(w1 * 0.5 + w2 * 0.5 + 0.5, 0.0, 1.0), 5.0);
+    alb *= 1.0 + cst * 1.5 * sub * (1.0 - smoothstep(0.0, 22.0, uWater - P.y));
+  }
   // shoreline wetness: wide gradient + saturated dark waterline band, like an FF14 shore
   float wet = lakeM * smoothstep(uWater + 6.5, uWater + 0.2, P.y + (det2.b - 0.5) * 0.7);
   alb *= mix(vec3(1.0), vec3(0.30, 0.35, 0.44), wet);
@@ -715,7 +731,11 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // blended across a seam as well, so the Wastes' fissures fade out into the next region instead of stopping dead
   float wLava = mix(step(3.5, bK) * step(bK, 4.5), step(3.5, bK2) * step(bK2, 4.5), bMix);
   float wVein = mix(step(7.5, bK), step(7.5, bK2), bMix);
-  tEmis += vec3(0.90, 0.155, 0.012) * wLava * bCov2 * smoothstep(0.075, 0.025, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
+  // MEASURED against ash.jpg's luma histogram (median 0.111): the 0.075..0.025 band caught ~10% of the floor,
+  // which at a 3.2 m tile is a glowing NET over every square metre — the Wastes read as red-hot ground with
+  // black bits, the exact inverse of Burning Steppes. 0.045..0.012 catches ~3% (the deepest cracks only), and
+  // the macro gate concentrates those into hot zones so the rest of the plain is honestly cold black rock.
+  tEmis += vec3(0.90, 0.155, 0.012) * wLava * bCov2 * smoothstep(0.045, 0.012, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.45 * (0.20 + 0.80 * macroC);
   tEmis += vec3(0.34, 0.10, 0.85) * wVein * bCov2 * smoothstep(0.085, 0.032, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
   tRough = rough;
   diffuseColor.rgb *= alb;
