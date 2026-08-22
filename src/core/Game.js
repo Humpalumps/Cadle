@@ -76,14 +76,18 @@ export class Game {
   async _init() {
     // yield a frame between systems: terrain/grass/vegetation builds are long synchronous blocks, and the
     // intro loading screen (src/ui/Intro.js) is animating on the same thread. Costs ~1 frame per system.
+    const bootT = [];                                  // ?debug=1 prints how long each system BLOCKED for
     for (let i = 0; i < this.systems.length; i++) {
       const s = this.systems[i];
+      const t0 = performance.now();
       await s.init?.(this);
+      bootT.push([s.constructor.name, Math.round(performance.now() - t0)]);
       // loading screens need to know about the WORLD build, not just the asset download (which is the
       // first system and only ~half the wall time). 'boot:progress' is what the intro's bar rides on.
       this.events.emit('boot:progress', { done: i + 1, total: this.systems.length, system: s.constructor.name });
       await new Promise((r) => requestAnimationFrame(r));
     }
+    if (this.debug) console.info('[boot] per-system ms:', JSON.stringify(Object.fromEntries(bootT)));
     this._onResize();
     window.addEventListener('resize', () => this._onResize());
     this.events.emit('ready', this);

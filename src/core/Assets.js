@@ -57,6 +57,8 @@ export class Assets {
 
   async init() {
     const t0 = performance.now();
+    // one rendered frame — the intro's loading screen is driving rAF, so this is what lets the bar move
+    const frame = () => new Promise((r) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
     const total = Object.keys(TEX).length + Object.keys(MODELS).length + Object.keys(AUDIO).length;
     let loaded = 0;
     const tick = (item) => { loaded++; this.progress = loaded / total; this.game.events.emit('assets:progress', { loaded, total, item }); };
@@ -70,19 +72,42 @@ export class Assets {
         if (cfg.repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
         this.textures[name] = t;
       }).catch((e) => console.warn('[assets] tex missing:', name, e?.message)).finally(() => tick(name)));
-    for (const [name, url] of Object.entries(MODELS)) jobs.push(
-      gltfLoader.loadAsync(url).then((g) => { this.models[name] = g; })
-        .catch((e) => console.warn('[assets] model missing:', name, e?.message)).finally(() => tick(name)));
+    // Models are DOWNLOADED in parallel but PARSED one at a time, with a frame between each.
+    // GLTFLoader.parse is synchronous and these are 2.1-2.6 MB apiece; when three of them finished
+    // downloading together their parses ran back to back with no frame in between, and the loading bar
+    // froze solid for the length of all three. Same total work, but the intro keeps painting through it.
+    const modelBytes = Object.entries(MODELS).map(([name, url]) =>
+      fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then((buf) => ({ name, buf }))
+        .catch((e) => { console.warn('[assets] model missing:', name, e?.message); return { name, buf: null }; }));
+    jobs.push((async () => {
+      for (const job of modelBytes) {
+        const { name, buf } = await job;
+        if (buf) {
+          await frame();                                  // let the bar move before the next stall
+          try { this.models[name] = await gltfLoader.parseAsync(buf, ''); }
+          catch (e) { console.warn('[assets] model parse failed:', name, e?.message); }
+        }
+        tick(name);
+      }
+    })());
     for (const [name, url] of Object.entries(AUDIO)) jobs.push(
       fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then((b) => { this.audio[name] = b; })
         .catch((e) => console.warn('[assets] audio missing:', name, e?.message)).finally(() => tick(name)));
     await Promise.all(jobs);
 
-    // GPU warmup: upload every texture (incl. GLB-embedded) now so first sight of an asset never hitches
+    // GPU warmup: upload every texture (incl. GLB-embedded) now so first sight of an asset never hitches.
+    // Batched with a frame between batches: this is ~11 MB of texture upload and as one unbroken loop it
+    // was a single visible freeze right at the end of the asset phase, which is where the bar appeared
+    // to hang. The awaits are all still inside init(), so nothing starts playing before the upload is done.
     const R = this.game.renderer;
-    for (const t of Object.values(this.textures)) R.initTexture(t);
-    for (const g of Object.values(this.models)) g.scene.traverse((o) => { const m = o.material; if (m?.map) R.initTexture(m.map); });
+    const warm = [...Object.values(this.textures)];
+    for (const g of Object.values(this.models)) g.scene.traverse((o) => { const m = o.material; if (m?.map) warm.push(m.map); });
+    for (let i = 0; i < warm.length; i += 4) {
+      for (let k = i; k < Math.min(i + 4, warm.length); k++) R.initTexture(warm[k]);
+      if (i + 4 < warm.length) await frame();
+    }
     this.loadMs = performance.now() - t0;
     if (this.game.debug) console.log(`[assets] ${loaded}/${total} preloaded in ${this.loadMs.toFixed(0)} ms`);
   }

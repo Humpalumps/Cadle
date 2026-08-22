@@ -19,7 +19,16 @@ export class World {
     this.props = new Props(game);
     this.parts = [this.colliders, this.water, this.grass, this.vegetation, this.props];
   }
-  async init() { for (const p of this.parts) await p.init?.(this.game); }
+  // A frame between parts. These five (colliders, water, grass, vegetation, props) are long synchronous
+  // builds and together they were one 3.9 s freeze on the loading screen — the single worst block of the
+  // world boot. Game._init already yields between SYSTEMS; this is the same trick one level down, and it
+  // costs ~4 frames of wall clock to stop the intro locking up.
+  async init() {
+    for (const p of this.parts) {
+      await p.init?.(this.game);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+  }
   update(dt, t) { for (const p of this.parts) p.update?.(dt, t); }
   resize(w, h) { for (const p of this.parts) p.resize?.(w, h); }
 }

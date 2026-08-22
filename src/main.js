@@ -109,7 +109,13 @@ if (intro) {
     boot = 0.55 + 0.45 * (e.done / e.total);
     intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
-  game.ready.then(() => intro.arm()).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
+  // NO compileAsync warmup here. It was tried and measured WORSE, twice: three's compileAsync calls the
+  // SYNCHRONOUS compile() internally and only defers the link-completion poll, so it blocks for the whole
+  // compile and the first render still compiles whatever it missed. On ?auto=1 q=low it took the boot from
+  // 18 stalls / 13.1 s blocked to 26 stalls / 27.9 s, worst single stall 5.5 s -> 13.7 s. Do not re-add it.
+  game.ready.then(() => {
+    intro.arm();
+  }).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
   // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
   intro.finished.then(() => game.ready.then(() => game.start()));
 } else {
