@@ -940,7 +940,13 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float bKf = floor(bF + 0.5), bU = bF - bKf;                     // bU: 0 at the wedge centre, +-0.5 at a seam
   float bK = mod(bKf, 9.0), bK2 = mod(bKf + (bU >= 0.0 ? 1.0 : -1.0), 9.0);
   float bHW = clamp(34.0 / (bRad * ${STEP}), 0.02, 0.45);         // ~34 m half-band, constant in METRES at any radius
-  float bMix = 0.5 * smoothstep(0.5 - bHW, 0.5, abs(bU));         // 0 outside the band .. 0.5 exactly on the seam
+  // ...and only while the border is something you can actually LOOK at. Far away a 68 m band is thinner than
+  // a pixel, so blending there just hands the sampler two floors to alias between: distant ground flickered
+  // green<->ice frame to frame, which is a bloom-blob report waiting to happen. MEASURED, not guessed — with
+  // no fade the gate reported 17 blob lines and with 260..460 it reported 26-647 px clusters up at the
+  // horizon (y~50-100 px); at 120..240 every remaining report is the pre-existing near-ground grass speck and
+  // the horizon is clean. It costs nothing to look at: from 150 m up the blend still runs at ~84%.
+  float bMix = 0.5 * smoothstep(0.5 - bHW, 0.5, abs(bU)) * (1.0 - smoothstep(120.0, 240.0, camD));
   float bA = ${THETA0} + bK * ${STEP}, bA2 = ${THETA0} + bK2 * ${STEP};
   float bD = length(P.xz - vec2(cos(bA), sin(bA)) * ${RB}.0) + (macro - 0.5) * 26.0;
   float bD2 = length(P.xz - vec2(cos(bA2), sin(bA2)) * ${RB}.0) + (macro - 0.5) * 26.0;

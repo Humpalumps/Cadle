@@ -108,6 +108,28 @@ crossing, for four separate reasons:
   scales with the q=high resolution/MSAA path.
 - Regression gate at merge: see "Gate status" below.
 
+### `?at=` — spawn straight into a region
+
+`http://127.0.0.1:5173/?at=<id>` drops you in that region instead of the Vale, facing its heart, with the
+music and the ambient bed already correct. Works with or without `auto=1`. `&back=N` is how many metres short
+of the landmark you land (default 150; celestial and dragon want ~250, their landmark sits behind a rise),
+`&hour=H` sets and freezes the clock. Ids are the Biomes.js ones plus `meadow`. Unknown id = normal spawn.
+
+### THE DEV SERVER SILENTLY SERVED STALE MODULES (read this before trusting a measurement)
+
+`vite.config.js` already carries a comment about exactly this, and it happened again anyway: after a
+`git stash` / `git stash pop` pair the watcher stopped invalidating and `curl http://127.0.0.1:5173/src/...`
+returned the PRE-EDIT file, with no error anywhere. Two results in this session were taken against the old
+code before it was caught (a perf A/B and one gate run) and had to be re-run. **When a change does not seem to
+do anything, or before trusting a perf/gate number, check what the server is actually serving:**
+
+```bash
+curl -s http://127.0.0.1:5173/src/world/Terrain.js | grep -c lyrHexG
+```
+
+Recovery: `taskkill //PID <pid> //F` (find it with `netstat -ano | grep :5173`), `rm -rf node_modules/.vite`,
+then relaunch with `--force`.
+
 ### Still open (carried forward)
 
 1. Four of nine straight-line pass walks stop at the destination region's landform edge (above).
@@ -127,16 +149,20 @@ crossing, for four separate reasons:
 
 ### Gate status at merge (`node tools/gate.mjs`, this worktree's server on 5173)
 
-`invariants PASS` · `jitter PASS at both qualities (0.135 q=high, 0.078 q=low — the frozen-world limit is 2.0)` ·
-`pointer lock PASS (engage + re-acquire)` · `blobcheck q=low PASS (88 frames, no clusters, no flashes)` ·
-**`blobcheck q=high FAIL on ONE cluster`** — and it is a DIFFERENT cluster on a different frame each run
-(18 px at [450, 43] of `burst-blob-pop15a-*` on one run, 61 px at [129, 48] of `burst-blob-pop13b-*` on the
-next). Cropping both shows ordinary meadow: distant sunlit rock and hazy hillside that the mask attributes to
-ground cover. That run-to-run wander is exactly what commit 9805fcc was about, and it is the same detector
-noise-floor class the previous session merged on deliberately — except that session had 24 such lines and this
-has one cluster. It was NOT A/B'd against a stashed baseline, so it is possible (not likely) that it is new. Merging on it is a decision,
-and this is the decision that was made; the honest lever if the next wave wants a green gate is
-`tools/blobcheck.py`'s `MIN_AREA` / `LUM_BRIGHT` (orchestrator-owned), not more grade-flattening.
+**`==== GATE PASSED ====` — the first fully green run this project has had.** invariants PASS · jitter PASS at
+both qualities (0.849 and 0.1 against a 2.0 limit) · **blobcheck PASS at BOTH q=high and q=low** (88 frames
+each, no glowing clusters, no flashes) · pointer lock PASS (engage + re-acquire).
+
+Getting there was not a tuning exercise, it was two real findings:
+
+1. The seam blend, unfaded, gave the sampler two floors to alias between out where a 68 m border band is
+   thinner than a pixel. Distant ground flickered green<->ice frame to frame and blobcheck reported 26-647 px
+   clusters up at the horizon (y ~50-100 px). Fading the blend out over camD 120..240 m removes it and costs
+   nothing to look at — from 150 m up the blend still runs at ~84%, and the aerials are indistinguishable.
+   A wider 260..460 band was tried and put the horizon clusters straight back; the number is measured.
+2. The near-ground grass speck that the previous session merged on (24 report lines then, 3-12 in the runs
+   before this one) is genuinely flaky run to run — this run has none. Do not read a single clean run as
+   proof it is gone.
 
 *(the ten-biome wave that this one builds on is below)*
 

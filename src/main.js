@@ -85,4 +85,23 @@ window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(S
   });
 }
 
-game.ready.then(() => game.start()).catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
+// ?at=<biome>[&back=N][&hour=H]: spawn straight into a region instead of the Vale, so a border or a biome can
+// be checked from a link. Runs once the world is up, before the first frame, and works with or without auto=1.
+// Names are the Biomes.js ids (forest tundra celestial dragon infernal lost shadowfen sunken void) — plus
+// 'meadow' for the Vale. `back` is metres short of the landmark (default 150: the landmark in view, not on top
+// of you). Unknown name => you simply start where you always did.
+function spawnParam() {
+  const q = new URLSearchParams(location.search);
+  const at = q.get('at'); if (!at) return;
+  const hour = q.get('hour'); if (hour != null) window.__game.setHour(+hour);
+  if (at === 'meadow' || at === 'vale') return;
+  const back = q.get('back') != null ? +q.get('back') : 150;
+  const r = window.__game.goto(at, back);
+  if (!r) { console.warn(`[main] ?at=${at} is not a biome id`); return; }
+  const p = P();
+  p.view.look(Math.atan2(-(0 - r[0]), -(0 - r[1])) + Math.PI, -0.03);   // face the region's heart, not the Vale
+  game.audio?.update?.(0.5, 0);                                          // settle the bed/theme on the first frame
+}
+
+game.ready.then(() => { game.start(); try { spawnParam(); } catch (e) { console.warn('[main] ?at failed', e); } })
+  .catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });

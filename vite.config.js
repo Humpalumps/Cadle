@@ -12,7 +12,12 @@ export default defineConfig({
     // tools/out is harness scratch: every inspect run rm -rf's and recreates its screenshot directories, and the
     // watcher races that (lstat UNKNOWN on a file deleted mid-walk) and takes the whole dev server down with it.
     // Nothing under these paths is imported by the app, so there is no reason to watch them.
-    watch: { ignored: [`${R}/tools/out/**`, `${R}/progress/**`, `${R}/.claude/worktrees/**`] },
+    // usePolling: native fs events do not reliably reach this checkout (it is a git worktree under
+    // .claude/worktrees, and Windows watch handles across that boundary have twice now gone quiet with no
+    // error at all — the server kept serving the FIRST transform of every module while curl and the game
+    // showed pre-edit code, so measurements silently described code that was no longer on disk). Polling a
+    // few hundred source files every 300 ms is nothing next to a wave of results that describe the wrong build.
+    watch: { ignored: [`${R}/tools/out/**`, `${R}/progress/**`, `${R}/.claude/worktrees/**`], usePolling: true, interval: 300 },
   },
   // progress.html is a dev-only page (pulls ~29 MB of progress/shots) — dev server still serves it, prod build skips it.
   build: { target: 'esnext' },
