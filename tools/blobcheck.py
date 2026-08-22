@@ -44,9 +44,11 @@ LUM_BRIGHT = 212      # luminance 0..255 counted as "glowing". Calibrated agains
                       # luminance-capped at 0.60 linear (~198 sRGB) so it can never reach this.
 MIN_AREA   = 12       # px at 960-wide; smaller than this is a speck, not a blob
 MAX_ASPECT = 6        # bright bbox w:h beyond this is a strip (horizon/water), not a blob
-MIN_THICK  = 3        # px: a blob has THICKNESS. A 11x2 sliver is a lit blade edge, not a bloom ball —
+MIN_THICK  = 4        # px: a blob has THICKNESS. A 11x3 sliver is a lit blade edge, not a bloom ball —
                       # bloom smears a sub-pixel emitter into something round and at least a few px across
                       # in both axes. This catches the slivers that squeak under MAX_ASPECT on area alone.
+                      # 4 not 3: at 3 the gate flickered run to run on sunlit blade edges that sit 2-5 above
+                      # LUM_BRIGHT. A round blob 4 px across is still MIN_AREA and still caught (selftest).
 MAX_AREA_FRAC = 0.012 # a bright region larger than 1.2% of the frame is a LIT SURFACE, not a blob. Every
                       # blob this gate has ever caught measured 15-500 px at 960-wide (bloom smears a
                       # sub-pixel emitter into a ball a few dozen px across); a sunlit snowfield, a dawn-lit
