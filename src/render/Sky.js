@@ -15,6 +15,8 @@ import { BIOMES } from '../world/Biomes.js';
  *   sky.cloudCover (null = automatic per time of day, or 0..1 override), sky.dome (the dome Mesh; on layers 0 and 1 -> a CubeCamera on layer 1 sees only sky+sun for env probes)
  *   sky.sunDiscColor (Color, linear HDR radiance of the visible sun disc, already extinction-tinted)
  *   sky.cloudScale (0.35..1 render scale of the cloud pass; set + call resize() to change), sky.windSpeed (m/s cloud drift)
+ *   sky.cloudOcclusionCull (bool, default true) skip marching cloud texels that last frame's depth says are fully
+ *     behind opaque geometry; set false to A/B it or if it is ever suspected of eating visible sky
  *
  * How it works:
  *  - a tiny sky-view LUT (256x128, half float) is ray-marched on the GPU (Rayleigh + Mie + ozone, planet shadow, fake multi-scatter, art-directed
@@ -212,8 +214,11 @@ uniform vec3 uSunDir, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot
 uniform float uCamY, uCloudCover, uCirrusCover, uBelt, uCloudH0, uCloudH1, uWindT, uTileM, uSunEl;
 uniform vec2 uTan, uWindV, uShearV;
 uniform vec3 uCamPos, uThr;   // x = clear-sky iso threshold, y = full-coverage threshold, z = soft width
-uniform mat3 uCamRot;
+uniform mat3 uCamRot, uPrevRotInv;
 uniform vec2 uSubJitter;      // this frame's 2x2 phase, in cloud-buffer UV: which full-res pixel this lo-res texel is
+uniform sampler2D uOcc;       // 1/8-res min(1 - depth) pyramid of LAST frame (0 = that tile still saw sky)
+uniform vec2 uOccTexel, uPrevTanS;   // uPrevTanS = last frame's REAL frustum tan (uTan is 8% wider than the frustum)
+uniform float uCullOn;
 varying vec2 vUv;
 ` + CLOUD_COMMON + /* glsl */`
 
@@ -269,9 +274,47 @@ float lightTau(vec3 p, vec2 wth, vec3 L) {
   return tau;
 }
 
+// True when every pixel this ray could land on was covered by opaque geometry LAST frame. Uses the same
+// rotation-delta reprojection the temporal resolve already trusts (clouds are kilometres away, so rotation
+// is the only term that matters), then reads the 1/8-res pyramid with a 3x3 neighbourhood -- ~8 full-res
+// pixels of slack in every direction, which covers a frame of camera turn on top of the cloud buffer
+// already being 8% wider than the frustum.
+bool occludedLastFrame(vec3 dir) {
+  if (uCullOn < 0.5) return false;
+  vec3 dv = uPrevRotInv * dir;
+  if (dv.z > -1e-4) return false;                                    // behind last frame's eye: unknown, so march
+  vec2 uvp = ((dv.xy / -dv.z) / uPrevTanS) * 0.5 + 0.5;
+  if (any(lessThan(uvp, vec2(0.0))) || any(greaterThan(uvp, vec2(1.0)))) return false;   // off-screen last frame: march
+  // 5x5, not 3x3. INVARIANT: the asserted margin (2 * uOccTexel = 20 screen px at 1080p) must stay far larger
+  // than everything that can read ACROSS a texel boundary -- the resolve's bilinear history fetch (~0.9 px) and
+  // the dome's 4-tap tent upsample (~0.5 px) -- because a culled texel holds deliberately stale content and
+  // bloom smears any leak into a soft blob. It is also what keeps the periodic full-march (see uCullOn) from
+  // showing up as frame-to-frame change on a static camera, i.e. gate rule 2. Re-derive it if cloudScale, the
+  // pyramid depth, or the tent offset changes; do not go back to 3x3. Measured at 3x3: horizon cloud edges
+  // differed by up to 46/255. At 5x5: zero differing pixels.
+  // textureLod, and NO early exit inside the loop. The pyramid has no mips, so a gradient-taking texture() buys
+  // nothing -- and returning out of a loop containing one is a gradient instruction under varying iteration
+  // (fxc X3595), undefined by spec. It cost a GPU process crash on this machine, not just a warning.
+  float m = 1.0, unknown = 0.0;
+  for (int j = -2; j <= 2; j++)
+    for (int i = -2; i <= 2; i++) {
+      vec2 t = uvp + vec2(float(i), float(j)) * uOccTexel;
+      // Outside the frame is UNKNOWN, not covered: the RT clamps to edge, so a tap past the border would
+      // re-read the edge texel and assert coverage nothing verified -- exactly where a turning ray is
+      // likeliest to be leaving the known region.
+      float outside = (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) ? 1.0 : 0.0;
+      unknown = max(unknown, outside);
+      m = min(m, mix(textureLod(uOcc, clamp(t, vec2(0.0), vec2(1.0)), 0.0).r, 1.0, outside));
+    }
+  return unknown < 0.5 && m > 1e-5;
+}
+
 void main() {
   vec2 cUv = vUv + uSubJitter;
   vec3 d = normalize(uCamRot * vec3((cUv * 2.0 - 1.0) * uTan, -1.0));
+  // Nothing this ray could reach is visible, so the march would be thrown away. Write the sentinel and let
+  // the resolve keep this texel's history: writing 0 instead would erase clouds that come back into view.
+  if (occludedLastFrame(d)) { oColor = vec4(0.0, 0.0, 0.0, -1.0); return; }
   vec3 acc = vec3(0.0); float T = 1.0;
   float lmu = dot(d, uCloudLightDir);
   // dual-lobe phase: broad back lobe + forward lobe (clamped — the raw HG spike near the sun would blow the body term out)
@@ -346,6 +389,31 @@ void main() {
   oColor = vec4(acc, 1.0 - T);
 }`;
 
+// ---------------- cloud occlusion pyramid ----------------
+// One 2x2 min-reduction step. The value stored is min(1 - depth) over the block: the sky is cleared to
+// depth 1.0 and the dome writes no depth (depthWrite:false), so a texel reads EXACTLY 0 if any pixel in
+// its block still sees sky, and > 0 only when every pixel is covered by opaque geometry. That makes the
+// "is this whole tile behind the world?" test conservative by construction rather than by tuning.
+// NearestFilter on the chain is load-bearing: bilinear would interpolate a 0 away and cull visible sky.
+const OCC_FRAG = /* glsl */`
+precision highp float;
+layout(location = 0) out highp vec4 oColor;
+uniform highp sampler2D uSrc;
+uniform vec2 uSrcTexel;
+uniform float uFromDepth;
+varying vec2 vUv;
+// Four explicit taps, NOT textureGather: gather is GLSL ES 3.1 and WebGL2 is ES 3.00. With NearestFilter on
+// the source these land exactly on the 2x2 block that feeds this texel, so the reduction stays exact.
+void main() {
+  vec4 g = vec4(
+    texture(uSrc, vUv + vec2(-0.5, -0.5) * uSrcTexel).r,
+    texture(uSrc, vUv + vec2( 0.5, -0.5) * uSrcTexel).r,
+    texture(uSrc, vUv + vec2(-0.5,  0.5) * uSrcTexel).r,
+    texture(uSrc, vUv + vec2( 0.5,  0.5) * uSrcTexel).r);
+  if (uFromDepth > 0.5) g = vec4(1.0) - g;              // depth -> coveredness (sky is exactly 0)
+  oColor = vec4(min(min(g.x, g.y), min(g.z, g.w)), 0.0, 0.0, 1.0);
+}`;
+
 // ---------------- temporal resolve: quarter-rate march -> full cloud buffer ----------------
 // Each frame marches one of the four 2x2 sub-pixels (into a half-linear-size target) and rebuilds the
 // full cloud buffer: fresh texels come straight from this frame's march, the other three quarters come
@@ -353,6 +421,10 @@ void main() {
 // rotation-only reprojection is exact to well under a pixel — no velocity buffer, no clamp, no ghosting
 // of moving objects (nothing but sky is in this buffer). A camera that does not rotate reprojects to
 // identity, so a static shot is bit-stable: this cannot feed the screen-jitter failure mode.
+// The cloud buffer covers 8% more than the frustum so a fast turn cannot run off its edge. The occlusion
+// reprojection has to divide that back out, because the depth buffer it reads spans the REAL frustum.
+const CLOUD_WIDEN = 1.08;
+
 const CLOUD_RESOLVE_FRAG = /* glsl */`
 precision highp float;
 layout(location = 0) out highp vec4 oColor;
@@ -365,7 +437,9 @@ varying vec2 vUv;
 void main() {
   ivec2 pix = ivec2(gl_FragCoord.xy);
   vec2 ph = vec2(pix & ivec2(1));
-  if (ph.x == uSubIdx.x && ph.y == uSubIdx.y) { oColor = texelFetch(uLo, pix >> 1, 0); return; }
+  // A sentinel alpha (< 0) means the march was culled as occluded, NOT that the sky is clear there: fall
+  // through to history so the texel keeps its last known cloud instead of being erased.
+  if (ph.x == uSubIdx.x && ph.y == uSubIdx.y) { vec4 lo = texelFetch(uLo, pix >> 1, 0); if (lo.a > -0.5) { oColor = lo; return; } }
   if (uHistValid > 0.5) {
     vec3 dv = uPrevRotInv * (uCamRot * vec3((vUv * 2.0 - 1.0) * uTan, -1.0));   // world ray -> last frame's view basis
     if (dv.z < -1e-4) {
@@ -373,7 +447,10 @@ void main() {
       if (all(greaterThan(uvp, vec2(0.0))) && all(lessThan(uvp, vec2(1.0)))) { oColor = texture(uHist, uvp); return; }
     }
   }
-  oColor = texture(uLo, vUv);   // turned off the edge of history (or first frames): this frame's march, bilinear
+  // turned off the edge of history (or first frames): this frame's march, bilinear. Clamp because a bilinear
+  // tap can straddle a culled texel's sentinel, and a negative alpha would reach the dome.
+  vec4 lo = texture(uLo, vUv);
+  oColor = vec4(max(lo.rgb, vec3(0.0)), max(lo.a, 0.0));
 }`;
 
 // ---------------- the dome ----------------
@@ -624,6 +701,7 @@ export class Sky {
       uSubJitter: { value: new THREE.Vector2() }, uSubIdx: { value: new THREE.Vector2() },
       uLo: { value: this.cloudLoRT.texture }, uHist: { value: this.cloudRTB.texture },
       uPrevRotInv: { value: new THREE.Matrix3() }, uPrevTan: { value: new THREE.Vector2(1, 1) }, uHistValid: { value: 0 },
+      uOcc: { value: null }, uOccTexel: { value: new THREE.Vector2() }, uPrevTanS: { value: new THREE.Vector2(1, 1) }, uCullOn: { value: 0 },
     };
 
     // --- cloud pass (quarter of the cloud buffer per frame) ---
@@ -632,6 +710,17 @@ export class Sky {
     this.cloudScene = bake(this.cloudMat);
     this.resolveMat = new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: CLOUD_RESOLVE_FRAG, uniforms: this.uniforms, glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false });
     this.resolveScene = bake(this.resolveMat);
+
+    // --- cloud occlusion pyramid: three 2x2 min-reductions of last frame's depth (full -> 1/2 -> 1/4 -> 1/8) ---
+    // Cheap (a 4-tap gather per texel, ~0.77 M taps total) next to what it saves: a fully-occluded cloud texel
+    // skips a 44-step march. NearestFilter, RedFormat, HalfFloat -- the decision boundary is at 0, where fp16
+    // has precision to spare, and the values never need to be interpolated.
+    const mkOcc = () => { const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, format: THREE.RedFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping, depthBuffer: false, stencilBuffer: false, generateMipmaps: false }); return rt; };
+    this.occRT = [mkOcc(), mkOcc(), mkOcc()];
+    this.occMat = new THREE.ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: OCC_FRAG, glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false,
+      uniforms: { uSrc: { value: null }, uSrcTexel: { value: new THREE.Vector2() }, uFromDepth: { value: 0 } } });
+    this.occScene = bake(this.occMat);
+    this.cloudOcclusionCull = true;   // kill switch + the A/B handle for verifying the cull is lossless
 
     // --- dome ---
     this.material = new THREE.ShaderMaterial({ vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false });
@@ -654,6 +743,17 @@ export class Sky {
   }
 
   _setCloudSize(w, h) {
+    // The occlusion chain follows the SCREEN (it reduces the scene depth texture), so it must be sized ABOVE the
+    // cloud-size early return: cw quantises to ~3.4 px of width while the chain quantises to 2, so a resize can
+    // leave cw unchanged while the chain is stale, and the four reduction taps then miss their 2x2 block.
+    if (this.occRT) {
+      let sw = w, sh = h;
+      for (let i = 0; i < 3; i++) { sw = Math.max(1, sw >> 1); sh = Math.max(1, sh >> 1); this.occRT[i].setSize(sw, sh); }
+      const last = this.occRT[2];
+      this.uniforms.uOccTexel.value.set(1 / last.width, 1 / last.height);
+      this.uniforms.uOcc.value = last.texture;
+      this._occSrc0 = new THREE.Vector2(1 / Math.max(1, w), 1 / Math.max(1, h));   // level 0 reads the depth texture itself
+    }
     // cloud buffer is even-sized: the 2x2 temporal phase needs whole blocks, and the marched target is exactly half of it
     const cw = Math.max(64, Math.round(w * this.cloudScale) & ~1), ch = Math.max(64, Math.round(h * this.cloudScale) & ~1);
     if (cw === this.cloudRT.width && ch === this.cloudRT.height) return;
@@ -705,7 +805,7 @@ export class Sky {
     u.uPixAng.value = (camera.fov * DEG) / (renderer.domElement.height || 1080);   // angular size of one pixel (star cores)
     // camera basis for the cloud pass; 8% wider than the real frustum so a fast turn can't run off the edge of the buffer
     u.uCamRot.value.setFromMatrix4(camera.matrixWorld);
-    const ty = Math.tan(camera.fov * DEG * 0.5) * 1.08;
+    const ty = Math.tan(camera.fov * DEG * 0.5) * CLOUD_WIDEN;
     u.uTan.value.set(ty * camera.aspect, ty);
     // celestial sphere rotation (stars) follows the clock
     this._q.setFromAxisAngle(this._starAxis, this.hour / 24 * PI * 2 + 0.7);
@@ -716,6 +816,31 @@ export class Sky {
     u.uSubIdx.value.set(ph[0], ph[1]);
     // a lo-res texel covers one 2x2 block; its four sub-positions sit a quarter of a lo-texel from the centre
     u.uSubJitter.value.set((ph[0] - 0.5) * 0.5 / this.cloudLoRT.width, (ph[1] - 0.5) * 0.5 / this.cloudLoRT.height);
+    // Reduce last frame's scene depth into the occlusion pyramid, then let the march skip tiles the world
+    // already covers. `depthTexture` is null before the first composed frame and whenever no depth-consuming
+    // effect is enabled (q=low), in which case uCullOn stays 0 and every ray marches as before.
+    const depthTex = this.game.postfx?.depthTexture ?? null;
+    if (depthTex && this.cloudOcclusionCull) {
+      const om = this.occMat.uniforms;
+      for (let i = 0; i < 3; i++) {
+        om.uSrc.value = i === 0 ? depthTex : this.occRT[i - 1].texture;
+        om.uFromDepth.value = i === 0 ? 1 : 0;
+        if (i === 0) om.uSrcTexel.value.copy(this._occSrc0);           // the depth texture's own texel, not a doubled level-0
+        else om.uSrcTexel.value.set(1 / this.occRT[i - 1].width, 1 / this.occRT[i - 1].height);
+        renderer.setRenderTarget(this.occRT[i]); renderer.render(this.occScene, this.lutCam);
+      }
+      // A culled texel keeps its history instead of refreshing, so its content can drift arbitrarily far from
+      // the truth while it stays hidden -- and the dome's 4-tap tent upsample can pull that stale value a
+      // pixel or two into visible sky at an occluder edge. Measured: with a history inherited from a moving
+      // camera, 3.1% of meadow pixels differed (max 51/255) until the buffer was fully re-marched.
+      // So bound the staleness: four consecutive frames out of every 32 march everything, which is exactly
+      // one full 2x2 sub-phase cycle, i.e. every texel is guaranteed fresh within ~0.3 s at 100 fps. Costs
+      // 12.5% of the saving and removes the failure mode entirely.
+      // Never cull while the history buffer is garbage (boot, and every resize clears _histValid): the resolve's
+      // last-resort branch clamps the sentinel to alpha 0 and stores THAT as history, i.e. "clear sky", and a
+      // texel that stays culled keeps it. Observed as a cloudless patch where an occluder used to be.
+      u.uCullOn.value = (this._histValid > 0.5 && (this._sub & 31) >= 4) ? 1 : 0;
+    } else u.uCullOn.value = 0;
     renderer.setRenderTarget(this.cloudLoRT); renderer.render(this.cloudScene, this.lutCam);
     const hist = this.cloudRTB, dst = this.cloudRT;                 // dst was last frame's history (they swap below)
     u.uLo.value = this.cloudLoRT.texture; u.uHist.value = hist.texture; u.uHistValid.value = this._histValid;
@@ -724,6 +849,7 @@ export class Sky {
     this.cloudRT = hist; this.cloudRTB = dst;                       // ping-pong: next frame reads what we just wrote
     u.uPrevRotInv.value.copy(u.uCamRot.value).transpose();          // rotation matrix: inverse == transpose
     u.uPrevTan.value.copy(u.uTan.value);
+    u.uPrevTanS.value.copy(u.uTan.value).multiplyScalar(1 / CLOUD_WIDEN);   // real frustum tan: what the depth buffer spans
     this._sub++; this._histValid = 1;
     // sun mesh follows the camera
     this.sunMesh.position.copy(camera.position).addScaledVector(this.sunDir, 1500);
@@ -765,8 +891,9 @@ export class Sky {
   }
 
   dispose() {
-    for (const rt of [this.noiseRT, this.lutRT, this.cloudRT, this.cloudRTB, this.cloudLoRT, this.shapeRT, this.detailRT]) rt?.dispose();
+    for (const rt of [this.noiseRT, this.lutRT, this.cloudRT, this.cloudRTB, this.cloudLoRT, this.shapeRT, this.detailRT, ...(this.occRT ?? [])]) rt?.dispose();
     this.material?.dispose(); this.cloudMat?.dispose(); this.lutMat?.dispose(); this.sunMat?.dispose();
+    this.resolveMat?.dispose(); this.occMat?.dispose();
   }
 
   // ---------------- CPU twin of the atmosphere (colors for the other systems) ----------------

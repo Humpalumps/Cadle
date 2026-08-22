@@ -283,6 +283,11 @@ counters (draw calls, tris, memMB) are the trustworthy signal. Budget: **≤ 4 M
 user — "we can work on optimizations elsewhere"), ≤ 350 draw calls, frame mean ≤ 7 ms, p99 ≤ 14 ms at 1080p
 q=high; `q=low` ≤ 4 ms.
 
+**`stats().gpuMs` now works and did not before 2026-08-22** — the timer-query queue deadlocked seconds after
+boot, so it read 0 for the whole history of the project and every number ever quoted here was CPU/rAF only.
+It is a whole-frame bracket (it includes CPU-side idle), so use it for "are we GPU-bound", and use A/B deltas
+inside one process for attribution. Orphaned `chrome-headless-shell` processes inflate it exactly like 4b.
+
 ### 4e. Anything stringified into a worker is a landmine
 
 `Terrain.js` used to build its bake worker by stringifying its own functions. That works in dev and **dies in
@@ -311,6 +316,36 @@ node tools/inspect.mjs --nolock --name heightcheck --steps '[{"wait":20},{"eval"
 - Never let two agents own the same file. Cross-system needs go in the report as an ask.
 
 ---
+
+## 4g. Perf wave 2026-08-22 — the cloud march is half the frame
+
+`Sky`'s volumetric march ran every frame with no idea whether any sky was visible: **4.75 ms inside a closed
+canopy showing zero sky pixels**. It now reduces last frame's depth into a 1/8-res `min(1 - depth)` pyramid and
+skips rays whose 5x5 neighbourhood is fully covered. **3.0-3.3 ms back in every region (31-39% of frame)**,
+image bit-identical (0.0000% of non-HUD pixels differ, incl. a 690 deg/s flick). Kill switch:
+`sky.cloudOcclusionCull = false`. Terrain also skips splat fetches whose blend weight is 0 (same shape as the
+existing `wRock`/`wB` guards).
+
+**Do not "simplify" these — each one is a bug that was caught, not a precaution:**
+- `postfx.depthTexture` is null until a composer frame exists. The intro drives Sky via `Game.stepInto`, which
+  never runs the composer; an unwritten depth samples 0, which reads as *fully covered*, so the cull would have
+  killed every cloud in the intro.
+- Cull is off while `_histValid` is 0 (boot, every resize), else the sentinel is stored as clear sky.
+- The occlusion chain resizes ABOVE `_setCloudSize`'s early return — it quantises differently, so a resize could
+  leave the pyramid stale and its taps off their 2x2 block.
+- The pyramid lookup uses `textureLod` and never returns from inside the loop: a gradient instruction under
+  varying iteration (fxc X3595) **crashed the GPU process**.
+- 5x5, not 3x3 — the margin must exceed the dome's tent radius plus the resolve's bilinear radius, or stale
+  cloud leaks at horizon silhouettes (measured up to 46/255 at 3x3).
+- Four frames in every 32 march everything, bounding staleness to ~0.3 s.
+
+Orchestrator edited four builder-owned files (`Sky.js`, `PostFX.js`, `Terrain.js`, `Perf.js`) — sky/postfx/
+terrain builders, the diffs in your files are this, not something you forgot.
+
+**The q=low blobcheck is flaky on unmodified code.** Controlled A/B, 4 runs each: cull ON → FAIL, FAIL, PASS,
+PASS; cull OFF → PASS, PASS, FAIL, FAIL. Same rate with the optimization disabled. Since a q=low blob failure
+is an automatic LOSE, the detector needs fixing before it can gate anything — see 4b, this may be the same
+root cause.
 
 ## 5. Everything else open
 

@@ -32,6 +32,8 @@ import {
  *                                             tools/blobcheck.py can tell "the sun through a gap in the trees"
  *                                             apart from "a glowing ball on the grass". Restores exactly on false.
  *   postfx.profile(frames) -> Promise<{on,off,cost}>  GPU ms of the whole post chain (timer queries, alternates bypass per frame)
+ *   postfx.depthTexture (get) -> DepthTexture|null    world depth of the last COMPOSED frame; null until one exists
+ *                                             (Sky's cloud-occlusion cull reads it; null = it marches everything)
  *   postfx.readLum() -> Promise<number>       adapted average scene luminance (pre-exposure; debug/calibration)
  *   postfx.godraysSource (Object3D|null)     override the god-rays light source (e.g. game.sky.sunMesh); null = internal disc
  * Quality: low = no AO / god rays / DoF, SMAA medium. Budget @1080p q=high on RTX 3060: <= 1.3 ms with sun on screen.
@@ -359,7 +361,16 @@ export class PostFX {
   }
   /** GPU cost of the post pipeline (EXT_disjoint_timer_query_webgl2): alternates bypass on/off per frame so both see the same scene.
    *  Resolves { on, off, cost } in ms (medians) or null if the extension is missing. Debug/perf only. */
-  profile(frames = 240) { return new Promise((resolve) => { this._prof = { frames, i: 0, on: [], off: [], pending: [], resolve }; }); }
+  //  Perf owns a per-frame TIME_ELAPSED query and WebGL2 allows exactly one per target. Without this handshake
+  //  our beginQuery fails with INVALID_OPERATION, our endQuery closes PERF's query instead, and the pending
+  //  list never drains -- the returned promise never settles and any harness awaiting it hangs with no timeout.
+  profile(frames = 240) {
+    const perf = this.game.perf;
+    return new Promise((resolve) => {
+      if (perf) perf.gpuPaused = true;
+      this._prof = { frames, i: 0, on: [], off: [], pending: [], resolve: (r) => { if (perf) perf.gpuPaused = false; resolve(r); } };
+    });
+  }
   _profRender(dt) {
     const gl = this.game.renderer.getContext(), pr = this._prof;
     const ext = this._gpuExt ??= gl.getExtension('EXT_disjoint_timer_query_webgl2');
@@ -440,8 +451,20 @@ export class PostFX {
     r.shadowMap.autoUpdate = smAuto; r.shadowMap.needsUpdate = true;   // next real frame re-renders them clean
   }
 
+  /** Scene depth for THIS composer's last completed frame, else null. Sky's cloud-occlusion pyramid reads it
+   *  from the system update loop, i.e. one frame behind, which is what its reprojection already assumes.
+   *  Read-only: never bind it as a render target while the composer owns it.
+   *  The `_composed` gate is load-bearing, not defensive noise. The texture object exists from init at EVERY
+   *  quality (an EffectPass declares needsDepthTexture from its DEPTH attribute whether or not it is enabled,
+   *  so q=low has one too), but it holds no world depth until a composer frame has blitted into it — and the
+   *  intro drives Sky through Game.stepInto, which renders direct and never runs the composer. An unwritten
+   *  depth samples as 0, which the pyramid reads as "fully covered", so the consumer would cull EVERYTHING.
+   *  Any future doubt about the depth being current must return null here: the reader fails open, not safe. */
+  get depthTexture() { return this._composed ? (this.ao?._depth ?? null) : null; }
+
   render(dt) {
     if (this._maskRaw) return this._renderSkyMask();
     if (this._prof && this._profRender(dt)) return; this._tick(dt); this.composer.render(dt);
+    this._composed = true;   // a real frame has been composed: the stable depth texture now holds world depth
   }
 }
