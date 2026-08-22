@@ -164,14 +164,24 @@ export class Props {
       mergePatch(triplanarPatch(0.4, 0.2), { key: 'monolith', uniforms: { uTime: this.U.uTime }, fHead: 'uniform float uTime;', fEmissive: 'totalEmissiveRadiance *= 0.72 + 0.28 * sin(uTime * 0.9 + vWPos.x * 0.35 + vWPos.z * 0.21);' }));
     this.glyphMat = (tex, color) => new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
 
+    // A frame between each landmark build. Nine of these ran back to back and the set was one of the
+    // longest blocks on the loading screen; the intro cannot paint through any of it.
     this._buildAetheryte(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildRuins(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildArena(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildMeadow(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildMushrooms(rng, h, veg, Q);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildBiomeLandmarks(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildVillage(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildBorderStones(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildBiomeClutter(rng, h, col);
   }
 

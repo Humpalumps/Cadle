@@ -327,11 +327,12 @@ export class Water {
   }
 
   // ---------------------------------------------------------------- init
-  init() {
+  async init() {
     const { game } = this;
     this.level = game.terrain.waterLevel ?? 0;
     this.qp = QP[game.quality] ?? QP.high;
     this._bakeHeight();
+    await new Promise((r) => requestAnimationFrame(r));   // two heavy bakes, one frame apart
     this._bakeNormal();
     const u = this.uniforms = {
       uTime: { value: 0 }, uSteep: { value: STEEP }, uFadeR: { value: this.qp.span * 0.4 }, uSumAmp: { value: SUM_AMP }, uLevel: { value: this.level },

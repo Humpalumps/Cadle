@@ -90,7 +90,7 @@ export class Weapons {
     this._flOpts = { color: 0xffffff, intensity: 3, distance: 7, duration: 0.06 }; this._sndOpts = { pitch: 1, vol: 1 };
   }
 
-  init() {
+  async init() {
     const { renderer, sky } = this.game;
     // overlay scene + camera (camera-local space: the rig is positioned relative to the eye)
     this.scene = new THREE.Scene();
@@ -99,8 +99,10 @@ export class Weapons {
     this.hemi = new THREE.HemisphereLight(sky.skyColor, sky.groundColor, 0.7); this.scene.add(this.hemi);
     this.fill = new THREE.DirectionalLight(0xbfd4ff, 0.35); this.fill.position.set(0.4, 0.8, 1); this.scene.add(this.fill, this.fill.target); // always-on screen light (night readability)
     this.flashLight = new THREE.PointLight(0xffffff, 0, 1.2, 2);
-    this.scene.environment = this._makeEnv(renderer);
+    this.scene.environment = this._makeEnv(renderer);   // PMREM bake
+    await new Promise((r) => requestAnimationFrame(r));
     this.mats = makeMaterials();
+    await new Promise((r) => requestAnimationFrame(r));
     this.rig = new THREE.Group(); this.scene.add(this.rig);
     this.flash = makeFlash(this.mats);
     // ejected brass casings (pooled, fly in camera space). Bright brass + emissive so they read against the world.
