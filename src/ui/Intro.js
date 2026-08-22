@@ -99,6 +99,7 @@ export class Intro {
     this._t = 0;
     this._last = 0;
     this._progress = 0;
+    this._pShown = 0;                    // eased follower — what the bar actually draws
     this._label = 'GATHERING AETHER';
     this._live = false;
     this._raf = 0;
@@ -321,7 +322,7 @@ export class Intro {
     x.letterSpacing = '0px';
 
     // load bar / ready prompt
-    const p = Math.max(0, Math.min(1, this._progress));
+    const p = Math.max(0, Math.min(1, this._pShown ?? this._progress));
     const bw = 820, bh = 17, bx = (W - bw) / 2, by = H * 0.715;
     if (!this._armed) {
       x.font = '400 29px Georgia, serif'; x.letterSpacing = '9px';
@@ -393,7 +394,7 @@ export class Intro {
   _arm() {
     const g = this.game;
     this._armed = true;
-    this._progress = 1; this._label = 'THE VALE AWAITS';
+    this._progress = 1; this._pShown = 1; this._label = 'THE VALE AWAITS';
     document.title = 'CADLE';
     this._drawScreen(this._t);
     try {
@@ -460,9 +461,17 @@ export class Intro {
     }
     // 8 fps for the title layer, and only when something actually changed: a full 1024x576 canvas repaint
     // plus a 2.4 MB texture upload is real money while the world is still building.
+    // Ease the DRAWN value toward the real one. Progress arrives in lumps — one asset finishing can jump
+    // the bar several percent — and a bar that teleports and then sits still reads as a stall even when
+    // nothing is wrong. Chasing it at ~6/s covers a lump in a few frames and keeps the line moving.
+    // Time-based, not per-frame, so a long stall is caught up in one step rather than crawling afterwards.
+    this._pShown = this._pShown ?? 0;
+    if (this._pShown < this._progress) this._pShown = Math.min(this._progress, this._pShown + Math.max(dt * 0.6, dt * (this._progress - this._pShown) * 6));
+    else this._pShown = this._progress;
+    const chasing = Math.abs(this._progress - this._pShown) > 0.0015;
     if (!this._trans && this._t - (this._lastDraw ?? -1) > 1 / 8
-        && (this._armed || Math.abs(this._progress - (this._drawnAt ?? -1)) > 0.004 || this._t - (this._lastDraw ?? -1) > 0.5)) {
-      this._lastDraw = this._t; this._drawnAt = this._progress;
+        && (this._armed || chasing || Math.abs(this._pShown - (this._drawnAt ?? -1)) > 0.004 || this._t - (this._lastDraw ?? -1) > 0.5)) {
+      this._lastDraw = this._t; this._drawnAt = this._pShown;
       this._drawScreen(this._t);
     }
 
