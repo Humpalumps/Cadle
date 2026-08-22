@@ -6,6 +6,51 @@ Read this first if you are picking this project up cold (new session, new agent,
 
 ---
 
+## 0. MERGED TO MAIN (2026-08-22) — read the gate note before you trust a red gate here
+
+The border-crossing + biome-identity work is **on `main` and pushed** (`0d73fb8`). It merged cleanly with the
+cinematic-intro branch; two conflicts, both because main had moved code this branch edited:
+
+- `Terrain.js` — main lifted heightAt/bakeKernel/layerTex into `terrainKernel.js` for a real module worker.
+  Took main's side; this branch's only edit in that region was a comment. Everything else (border partition,
+  seam blend, biomeSet/lyrHexG splat, the five ground albedos) merged clean.
+- `main.js` — main gated `game.start()` behind the intro. `spawnParam()` (the `?at=` link) now hangs off
+  `game.ready`, so a link is already standing in the right region when the intro hands over.
+
+### THE HARNESS CANNOT RUN BOTH GATE LEGS BACK TO BACK ON THIS BOX (2026-08-22)
+
+`node tools/gate.mjs` failed five times in a row with `JITTER: burst-jit frames missing — gate steps did not
+run` and warm 20 px "blobs" at the very top of frame. **None of those were real.** Two causes, both
+environmental, both worth knowing before someone "fixes" a shader that is not broken:
+
+1. **Orphaned browsers.** 14 stray `chrome-headless-shell` processes had accumulated from earlier runs. They
+   starve the GPU and the renderer dies mid-script. `Get-Process chrome-headless-shell | Stop-Process -Force`
+   before a gate run, and check afterwards.
+2. **A truncated run has no MASK frames**, so `blobcheck.py` loses the ground-cover scoping it depends on and
+   reports the sun through the treeline. A "blob" at y = 0..5 that is warm (234, 214, 170) is the sky.
+
+Run the legs **standalone** when the box is contended — that completes when the combined run will not:
+
+```bash
+node tools/inspect.mjs --nolock --name gate-high --q high --script tools/gate-steps.json --url http://127.0.0.1:5173/
+python tools/gate.py tools/out/gate-high && python tools/blobcheck.py tools/out/gate-high burst-blob-
+```
+
+**Green on the merged code, measured leg by leg:** invariants PASS · q=high jitter 0.075 + blobcheck PASS
+(88 frames, 107 files captured) · q=low jitter 0.137 + blobcheck PASS (88 frames) · pointer lock PASS (the
+gate leg plus six standalone runs). A single end-to-end `gate.mjs` run that captures everything is still owed
+once the machine is quiet.
+
+### Two real bugs the gate caught during the merge (both mine, both the decree's bug)
+
+- The crystal instance tint fed the emissive **normalised by its brightest channel** — that keeps the hue but
+  not the chroma, so the meadow's pale cyan-to-magenta jitter came out near-white. Saturate BEFORE you
+  normalise.
+- Grass: the first replacement for the green-dominance rule capped **luminance**. Equal luminance is not equal
+  closeness to white — a cyan blade sits near the cap in two channels at once. Cap the CHANNEL as well.
+
+---
+
 ## 0. Latest wave — BORDER CROSSINGS (2026-08-22)
 
 The user's bar for this wave, verbatim: *walking from one biome to another must be at the level of walking
