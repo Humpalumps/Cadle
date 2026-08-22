@@ -27,6 +27,7 @@
 //   KEEP-OUT (camera flight path): z > 0.85 && |x| < 1.5 && y < 1.95 — floor and rug only.
 
 import * as THREE from 'three';
+import { makeCanvas } from './env.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -46,8 +47,7 @@ export function buildRoom({ rng, tex = {} }) {
 
   /** Draw into a canvas -> CanvasTexture. Keep sizes small; this runs on the loading screen. */
   function canvasTex(w, h, draw, opts = {}) {
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
+    const c = makeCanvas(w, h);   // OffscreenCanvas in the intro worker, <canvas> on the main thread
     draw(c.getContext('2d'), w, h);
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = opts.clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;

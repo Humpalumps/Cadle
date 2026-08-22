@@ -3,6 +3,7 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mulberry32 } from '../../core/Noise.js';
+import { makeCanvas, loadTexture } from './env.js';
 
 /**
  * Intro stage: the scene, the lighting rig and the camera choreography for the "sucked into the
@@ -60,14 +61,11 @@ const TEX = {
 
 /** load the intro texture set; a missing file resolves to null so the module keeps its procedural look */
 async function loadIntroTextures() {
-  const loader = new THREE.TextureLoader();
+  // loadTexture, not THREE.TextureLoader: the latter builds an <img>, which does not exist in the worker.
   const out = {};
-  await Promise.all(Object.entries(TEX).map(([name, cfg]) => loader.loadAsync(cfg.url).then((t) => {
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
-    if (cfg.tile) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    out[name] = t;
-  }).catch((e) => { console.warn('[intro] texture missing:', name, e?.message); out[name] = null; })));
+  await Promise.all(Object.entries(TEX).map(([name, cfg]) => loadTexture(cfg.url, { tile: cfg.tile })
+    .then((t) => { out[name] = t; })
+    .catch((e) => { console.warn('[intro] texture missing:', name, e?.message); out[name] = null; })));
   return out;
 }
 
@@ -281,7 +279,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   }
   const streamGeo = new THREE.BufferGeometry();
   streamGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  const moteCv = document.createElement('canvas'); moteCv.width = moteCv.height = 32;
+  const moteCv = makeCanvas(32, 32);
   {
     const c = moteCv.getContext('2d');
     const g = c.createRadialGradient(16, 16, 0, 16, 16, 16);

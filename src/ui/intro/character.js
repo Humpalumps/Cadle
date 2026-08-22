@@ -51,6 +51,7 @@
 //   so an {eval} step can console.log a part's world bbox or its projected screen position.
 
 import * as THREE from 'three';
+import { makeCanvas } from './env.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -109,8 +110,7 @@ const prof = (table, u) => {
 
 // ---------------------------------------------------------------- procedural textures
 function fabricTex(rng) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 96;
+  const c = makeCanvas(96, 96);
   const g = c.getContext('2d');
   const img = g.createImageData(96, 96);
   const d = img.data;
