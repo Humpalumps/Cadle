@@ -104,8 +104,13 @@ export class Assets {
     const R = this.game.renderer;
     const warm = [...Object.values(this.textures)];
     for (const g of Object.values(this.models)) g.scene.traverse((o) => { const m = o.material; if (m?.map) warm.push(m.map); });
+    // Sub-progress too: assets:progress is already pegged at 100% by the time the uploads start, so the
+    // bar sat at exactly 55% through the whole warmup while hitching. Assets is the first system, so its
+    // slot on the bar is done 0 -> 1; reporting a fraction of that keeps the line moving.
+    const G = this.game, idx = G.systems ? G.systems.indexOf(this) : -1;
     for (let i = 0; i < warm.length; i += 4) {
       for (let k = i; k < Math.min(i + 4, warm.length); k++) R.initTexture(warm[k]);
+      if (idx >= 0) G.events.emit('boot:progress', { done: idx + Math.min(1, (i + 4) / warm.length), total: G.systems.length, system: 'Assets' });
       if (i + 4 < warm.length) await frame();
     }
     this.loadMs = performance.now() - t0;

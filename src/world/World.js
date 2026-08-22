@@ -24,8 +24,14 @@ export class World {
   // world boot. Game._init already yields between SYSTEMS; this is the same trick one level down, and it
   // costs ~4 frames of wall clock to stop the intro locking up.
   async init() {
-    for (const p of this.parts) {
-      await p.init?.(this.game);
+    // Sub-progress, not just a yield. Yielding alone gave the intro frames to paint, but it repainted an
+    // IDENTICAL bar: boot:progress fires once per SYSTEM, so the bar sat frozen at 68.8% for the whole
+    // ~6.4 s of this build while hitching a dozen times. A frozen bar reads as a hang no matter how short
+    // the individual blocks are. Reporting a fraction of this system's own slot keeps the line climbing.
+    const g = this.game, idx = g.systems ? g.systems.indexOf(this) : -1;
+    for (let k = 0; k < this.parts.length; k++) {
+      await this.parts[k].init?.(g);
+      if (idx >= 0) g.events.emit('boot:progress', { done: idx + (k + 1) / this.parts.length, total: g.systems.length, system: 'World' });
       await new Promise((r) => requestAnimationFrame(r));
     }
   }

@@ -41,8 +41,10 @@ export class Player {
   async init() {
     // A frame between parts, same as World.init: these build the viewmodels and ability rigs and ran as
     // one 3.4 s synchronous block, which the loading screen cannot paint through.
-    for (const p of this.parts) {
-      await p.init?.(this.game);
+    const g = this.game, idx = g.systems ? g.systems.indexOf(this) : -1;
+    for (let k = 0; k < this.parts.length; k++) {
+      await this.parts[k].init?.(g);
+      if (idx >= 0) g.events.emit('boot:progress', { done: idx + (k + 1) / this.parts.length, total: g.systems.length, system: 'Player' });
       await new Promise((r) => requestAnimationFrame(r));
     }
     this.game.combat.register(this.target);
