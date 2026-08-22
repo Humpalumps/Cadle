@@ -52,6 +52,7 @@ window.__game = {
   flash: (c = 0xffffff, s = 0.8, d = 0.3) => game.postfx.flash?.(c, s, d),
   kick: (s = 1) => game.postfx.kick?.(s),
   bypassPostfx: (v = true) => game.postfx.setBypass?.(v),
+  skyMask: (v = true) => game.postfx.skyMask?.(v),          // gate: magenta = sky (tools/blobcheck.py ignores those pixels)
   audioSelfTest: () => game.audio.selfTest?.(),
   errors: [],
 };

@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { TEX } from './Textures.js';
 
 const _c = new THREE.Color();
+const _c2 = new THREE.Color();
+// how far a pure-white hot core is pulled toward its element hue (see color()). 0 = white, 1 = fully tinted.
+const HOT_TINT = 0.55;
 const UP = { x: 0, y: 1, z: 0 };
 
 /**
@@ -31,8 +34,20 @@ export class Brush {
   speed(a, b = a) { this.s0 = a; this.s1 = b; return this; }
   life(a, b = a) { this.l0 = a; this.l1 = b; return this; }
   size(a, b = a, endMul = 1) { this.z0 = a; this.z1 = b; this.zEnd = endMul; return this; }
+  /**
+   * Start colour, end colour. Nearly every preset asks for a WHITE hot core fading to its element hue —
+   * but an additive white core at hdr 4-7 tone-maps to a white ball, which is the washed-white blob the
+   * project decree forbids ("saturate the COLOUR, cap the INTENSITY"). So a pure-white start is pulled
+   * HOT_TINT of the way toward the element hue: the core still reads as the hottest part of the effect
+   * (it keeps its full hdr multiplier) but it now reads as white-hot ARC or white-hot SOLAR rather than
+   * as an anonymous white blob. Presets that genuinely want neutral white pass a near-white like 0xfffefe.
+   */
   color(c0, c1 = c0) {
-    _c.set(c0); this.c0r = _c.r; this.c0g = _c.g; this.c0b = _c.b;
+    _c.set(c0);
+    if (c0 === 0xffffff && c1 !== 0xffffff) {
+      const t = _c2.set(c1);
+      this.c0r = 1 + (t.r - 1) * HOT_TINT; this.c0g = 1 + (t.g - 1) * HOT_TINT; this.c0b = 1 + (t.b - 1) * HOT_TINT;
+    } else { this.c0r = _c.r; this.c0g = _c.g; this.c0b = _c.b; }
     _c.set(c1); this.c1r = _c.r; this.c1g = _c.g; this.c1b = _c.b; return this;
   }
   hdr(h0, h1 = h0) { this.h0 = h0; this.h1 = h1; return this; }

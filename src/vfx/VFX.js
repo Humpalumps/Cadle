@@ -71,6 +71,41 @@ export class VFX {
   }
 
   // ------------------------------------------------------------------ frame
+  /**
+   * Regional weather. One emitter that follows the camera and spawns whatever falls (or rises) in the
+   * region the player is standing in — snow in Frostveil, ash over the Wastes, rain in the fen, motes in
+   * the Void and over the Isles. Particles are spawned in a box AROUND the camera and given the fall
+   * velocity directly, so there is no simulation to own and no cost anywhere the region is quiet.
+   * Budget: <= ~40 live particles, one burst every 1/RATE s, inside the existing pooled systems.
+   */
+  _weather(dt) {
+    const T = this.game.terrain, cam = this.game.camera;
+    const b = T?.biomeBlend?.(cam.position.x, cam.position.z, this._wb ??= {});
+    const W = b && b.w > 0.25 ? WEATHER[b.id] : null;
+    if (!W) { this._wT = 0; return; }
+    this._wT = (this._wT ?? 0) + dt * W.rate * b.w;
+    if (this._wT < 1) return;
+    const n = Math.min(6, Math.floor(this._wT)); this._wT -= n;
+    const p = this._wp ??= new THREE.Vector3();
+    p.copy(cam.position); p.y += W.up;
+    const B = this.brush;
+    B.reset(W.add ? this.add : this.alpha, p)
+      .jitter(0)
+      .axisUp().spread(0)
+      .speed(0, 0).life(W.life[0], W.life[1])
+      .size(W.size[0], W.size[1], W.grow ?? 1)
+      .tex(W.tex).color(W.c0, W.c1).hdr(W.hdr, W.hdr * 0.6).alpha(W.alpha)
+      .vel(W.vel[0], W.vel[1], W.vel[2]).drag(W.drag ?? 0.1).gravity(0)
+      .fade(0.12, 0.55).vary(0.35);
+    // spawn box around the camera: the emitter follows you, so a region always looks like itself
+    B.jitter(0); B.px = p.x; B.py = p.y; B.pz = p.z;
+    for (let i = 0; i < n; i++) {
+      B.px = p.x + (Math.random() - 0.5) * W.box; B.pz = p.z + (Math.random() - 0.5) * W.box;
+      B.py = p.y + (Math.random() - 0.5) * W.box * 0.35;
+      B.burst(1);
+    }
+  }
+
   update(dt, t) {
     const { camera, renderer, sky } = this.game;
     // min screen width for thin sparks/tracers (1.5 px), in world m per m depth
@@ -88,6 +123,7 @@ export class VFX {
       L[2] = Math.min(1.6, 0.18 + (ac ? ac.b * 0.35 : 0.25) + (sc ? sc.b : 1) * si * 0.85);
     }
     this._updateEmitters(dt);
+    this._weather(dt);
     this.add.update(dt); this.alpha.update(dt); this.tracers.update(dt); this.decals.update(dt); this.sigils.update(dt);
     this.filaments.update(dt, t);
     for (const f of this.lights) {
@@ -246,6 +282,22 @@ const SHOWCASE = ['muzzle', 'impact-terrain', 'impact-rock', 'impact-enemy', 'ex
 // PRESETS — art direction lives here. fn(vfx, p, opts, k=count mult, s=scale, c=element/override color)
 // ====================================================================================================================
 const BASE_COUNT = { muzzle: 8, 'impact-terrain': 10, 'impact-rock': 14, 'impact-enemy': 12, sparks: 14, dust: 6, explosion: 30, 'aether-burst': 40, death: 36, pickup: 10, jump: 14, land: 8, levelup: 40 };
+/**
+ * Per-region weather. `rate` = particles/second at full region weight; `vel` is the fall (or drift) vector;
+ * `up` lifts the spawn box above the camera so it falls INTO frame. Colours stay saturated and hdr stays
+ * low — a bright mote is the same washed-white blob risk as anything else (project decree).
+ */
+const WEATHER = {
+  tundra:    { rate: 48, box: 26, up: 9,  vel: [0.5, -1.5, 0.2], life: [5, 9],  size: [0.035, 0.075], tex: TEX.GLOW,  c0: 0xdfeeff, c1: 0xbcd8f0, hdr: 0.55, alpha: 0.75, add: false, drag: 0.5 },
+  infernal:  { rate: 30, box: 26, up: 11, vel: [0.9, -0.8, 0.4], life: [6, 11], size: [0.03, 0.07],   tex: TEX.GLOW,  c0: 0xff6a14, c1: 0x3a2018, hdr: 0.85, alpha: 0.7,  add: true,  drag: 0.35 },
+  shadowfen: { rate: 65, box: 22, up: 10, vel: [0.3, -7.5, 0.1], life: [1.4, 2.2], size: [0.012, 0.03], tex: TEX.SPARK, c0: 0x9fc8b0, c1: 0x6f9080, hdr: 0.5, alpha: 0.55, add: false, drag: 0.02 },
+  void:      { rate: 14, box: 30, up: 4,  vel: [0.2, 0.9, 0.1],  life: [7, 13], size: [0.04, 0.09],   tex: TEX.STAR,  c0: 0xb070ff, c1: 0x4a2a80, hdr: 0.9,  alpha: 0.7,  add: true,  drag: 0.4 },
+  celestial: { rate: 12, box: 30, up: 6,  vel: [0.3, 0.5, 0.2],  life: [8, 14], size: [0.035, 0.08],  tex: TEX.STAR,  c0: 0xffd27a, c1: 0xfff0c8, hdr: 0.8,  alpha: 0.6,  add: true,  drag: 0.4 },
+  forest:    { rate: 9,  box: 24, up: 8,  vel: [0.6, -0.9, 0.3], life: [6, 10], size: [0.03, 0.06],   tex: TEX.GLOW,  c0: 0x9fff9c, c1: 0x2f5a3a, hdr: 0.7,  alpha: 0.55, add: true,  drag: 0.4 },
+  dragon:    { rate: 24, box: 28, up: 10, vel: [1.6, -1.2, 0.6], life: [4, 8],  size: [0.03, 0.06],   tex: TEX.GLOW,  c0: 0xe8e4dc, c1: 0xb8b0a4, hdr: 0.5,  alpha: 0.6,  add: false, drag: 0.4 },
+  lost:      { rate: 10, box: 28, up: 7,  vel: [0.3, 0.6, 0.2],  life: [7, 12], size: [0.035, 0.075], tex: TEX.STAR,  c0: 0xd8a0ff, c1: 0x6a4aa0, hdr: 0.8,  alpha: 0.6,  add: true,  drag: 0.4 },
+};
+
 const PRESET_COLOR = { muzzle: 0xffe9c4, 'impact-enemy': 0xb070ff, 'aether-burst': AETHER, death: AETHER, ring: 0xffffff, sigil: GOLD, heal: 0x9fffc0, 'heal-motes': 0x9fffc0, levelup: GOLD, pickup: 0xfff0a0, jump: 0x9fd8ff, trail: 0xffe9c4, 'spark-trail': 0xffe9c4, aura: AETHER, charge: AETHER, blood: 0xb070ff, 'impact-water': 0xcfe9ff };
 const L = (v) => v._lit;
 const axisOf = (o, def) => o.normal ?? o.dir ?? def;

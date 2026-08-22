@@ -6,28 +6,92 @@ Read this first if you are picking this project up cold (new session, new agent,
 
 ---
 
-## 0. Latest wave — THE TEN BIOMES (2026-08-21)
+## 0. Latest wave — THE TEN BIOMES (2026-08-21/22)
 
-The world is now **2048 × 2048 m with ten biomes** (was 1024 m / one region). `src/world/Biomes.js` is the single
-source of truth for the layout and the per-region data; CLAUDE.md "World layout" has the full table and the rules.
+The world is **2048 × 2048 m with ten biomes** (was 1024 m / one region). `src/world/Biomes.js` is the single
+source of truth for the layout and the per-region data; CLAUDE.md "World layout" has the full table and rules.
 
-Shipped in this wave:
-- `Biomes.js` (new): geometry constants + a data row per biome (fog grade, ground layer, grass density, enemy
-  roster, level band, landmark, ambient zone, dry/lava/float/gravity flags).
-- `Terrain.js`: world 2048 m, 2048² bake (same cost — the bake is per-texel and the texel is still 1 m), a mountain
-  ring that is a BAND pierced by 9 passes, 9 outer height kernels (`BH[]`), 12 splat layers (+ash/ice/muck/voidstone),
-  `biomeBlend / grassAt / dryAt / gravityAt`.
-- `Grass.js`: blades take the ground's hue (biome-tinted `colorAt`) but are clamped green-dominant and value-capped,
-  so a pale floor can never bleach them into white spikes (that was a new instance of the meadow-blob failure mode).
-- `Vegetation.js` + `EZTrees.js`: per-biome scatter tables, conifer (species 3) and dead (species 4) trees.
-- `Props.js`: nine landmarks + floating isles + updraft columns. `Water.js`: dry mask, per-biome water look, lava skin.
-- `Sky.js`: local aerial-perspective grade per biome + real underwater fog.
-- `enemies/*`: 17 new types on 9 rigs (3 new: giant, wraith, serpent), camps streamed by distance.
-- `vite.config.js`: **bug fix** — `**/.claude/worktrees/**` in `watch.ignored` made a dev server running *inside* a
-  worktree ignore every source file, so edits silently did nothing. Patterns are root-anchored now.
+### What shipped
 
-Known gaps / next actions: Dragon Peaks reads bland grey (wants nests + ice/gold accents); the celestial/void isles
-have no bridges between them yet; no per-biome music cues; `q=low` not re-profiled since the world grew.
+**World** — home bowl unchanged (r < 330); the mountain ring is now a BAND that comes back down past ~580 m,
+pierced by nine passes; nine circular regions of radius 210 m centred at radius 760 m, 40° apart, so the outer
+annulus is one continuous walkable belt. Every biome touches its two neighbours AND has its own pass home.
+
+- `Biomes.js` (new): one data row per region. Every field is consumed — see the header comment for who reads what.
+- `Terrain.js`: 2048 m world, 2048² bake (unchanged cost — same 1 m texel, 4× as many), nine closure-free height
+  kernels in `BH[]` (stringified into the bake workers), 12 splat layers (+ash/ice/muck/voidstone),
+  `biomeBlend / grassAt / dryAt / gravityAt / roadAt`, a jagged world-edge range, and **PASS ROADS** (a smooth
+  radial ramp inside a narrow angular band — without it the belt's boulder noise leaves >50° micro-faces that
+  the controller treats as no-traction, and the walk out of the Vale jammed at r≈394 every time).
+- `Grass.js`: blades take the ground's hue from the biome-tinted `colorAt`, clamped green-dominant and
+  value-capped so a pale floor can never bleach them into white spikes. The Vale is bit-identical.
+- `Vegetation.js` + `EZTrees.js`: per-biome scatter tables, conifer + dead species, nothing grows in a road.
+- `Props.js`: nine landmarks (three stone materials), floating isles with **linked spans + updraft columns**,
+  Dragon Peaks gate + nests, and Hearthfall (the Vale hamlet, with windows that light after dusk).
+- `Water.js`: dry mask, per-biome water look, and a **molten skin** on the Infernal channels (which are carved
+  below `waterLevel` on purpose — the lava rivers are the world water surface, not a decal). Lava burns (26 dps).
+- `Sky.js` / `Lighting.js`: local aerial-perspective grade AND a per-biome key-light + ambient grade (hue only
+  for the key, so time of day still owns the brightness). Real underwater fog.
+- `enemies/*`: 17 new types on 9 rigs (giant, wraith, serpent are new), camps streamed by distance, and **six
+  signature moves** — frost breath + chill, ice-giant chill/frozen ground, magma burning ground, riftling blink,
+  void-horror pull, bog-witch mend. All verified functional in the harness.
+- `VFX.js`: per-region weather (snow, ash, rain, motes) on one camera-following emitter, ≤ ~40 live particles.
+- `music.js` / `Audio.js`: the one score is re-lit per region (playback rate, tilt filter, reverb send).
+
+### The gate was broken; it is fixed
+
+`tools/gate.mjs` blobcheck failed on **pristine f378c9e** too (verified against a clean worktree) — it was
+flagging the sun through a treeline, dawn haze on distant geometry, lantern flames and loot beacons. Fixed
+properly rather than by moving thresholds:
+
+- `PostFX._renderSkyMask()` renders an **atmosphere/ground-cover mask** per burst: geometry green, sky and fog
+  magenta, grass RED (the blades render in `uMaskMode`, since their geometry is built in their own vertex shader
+  and an overrideMaterial draws nothing). `tools/inspect.mjs` captures one `mask-*.png` per burst.
+- `tools/blobcheck.py` scopes BOTH tests to ground cover (the decree's actual rule), ignores anything the haze
+  owns, and drops lit surfaces (`MAX_AREA_FRAC`) and slivers (`MIN_THICK`). **`--selftest` paints synthetic
+  bloom-balls on the blades and asserts they are still caught** — run it after any threshold change.
+- Two real bugs it then found, both fixed: creature aether now has a hue-preserving luminance cap
+  (`materials.js`, wisps were reading as white orbs) and `Brush.color` tints white hot cores toward their
+  element hue (`HOT_TINT`) instead of starting from pure white. Both pinned by new invariants.
+- `tools/invariants.mjs` also now pins the bake-worker rule (BH[] may only call injected helpers) and
+  `FRAG_SHOULDER` (the terrain highlight roll-off that stops the ground going flat white at grazing sun).
+
+### Perf
+
+p50 3.6–4.3 ms at 1080p q=high on the RTX 3060 in every region, ≤ 3.0 M tris, ≤ 175 draw calls, memory flat.
+Bake unchanged at ~12.5 s (same as main). `CADLE_URL=http://127.0.0.1:<port>/` makes the harness and the gate
+target a worktree server on its own port.
+
+### OUTSTANDING — start here
+
+**Verification not done**
+1. `q=low` never re-profiled since the world grew 4×. Run `--q low` perf windows in three regions.
+2. Recurring ~250–300 ms frame spikes in the headless harness (p50 is fine). Survives postfx/water/shadow/grass/
+   enemy toggles with zero resource churn, so it looks like the headless compositor — **never confirmed against a
+   headed browser**. Do that before trusting it.
+3. Only one pass (north, to Whisperwood Deep) has been walked end to end. Walk the other eight.
+4. `vegetation.collisionSelfTest()` not run since the change; nothing verifies you cannot fall through a
+   floating isle or a bridge span.
+5. The long-walk probe logged radius only, so a tangential slide reads as "stuck". Re-run logging x/z.
+
+**Content gaps**
+6. Dragon Peaks still the weakest region — the gate and nests are in, but the rock reads flat grey; wants
+   ice/gold accents and a reason to climb.
+7. Isles have spans and updrafts but nothing ON them — no props, no encounter, no reward.
+8. Village is nine huts, a well and field walls. No interiors, no NPCs, no doors.
+9. Serpents are scaled up but still read thin from below; their hover band wants tuning against the dive AI.
+10. Underwater is fog only — no caustics from below, no muffled audio, no oxygen.
+11. Level bands are declared but never validated: nothing checks the XP/loot curve reaches 50, and a level-5
+    player wandering into the Lost Realm just dies with no signposting.
+12. `wilds` (the corridors between regions) has an ambient bed but no identity of its own.
+
+**Known rough edges**
+13. Submerged-in-lava has bright star flares (bloom on the hot cracks seen from inside). 4-second death state,
+    low priority, but it is a white-ish artefact.
+14. Void isle undersides are flat dark discs; bridge segments read as floating planks edge-on.
+15. `tools/blobcheck.py` BRIGHT no longer covers airborne blobs (intended emissives made it unworkable there).
+    Coverage for the rest of the world is `invariants.mjs` ceilings + the aether cap + HOT_TINT. If a glowing
+    ball ever shows up off the ground again, that is the gap.
 
 ---
 

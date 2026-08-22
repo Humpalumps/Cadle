@@ -134,6 +134,20 @@ export class Enemy {
       this._setState('stagger'); this.staggerT = this.def.staggerTime; this.lastStagger = t; this.telegraph = 0; this.attackKind = null;
       if (info.dir) this.velocity.addScaledVector(info.dir, this.def.flying ? 3 : 2.5); this.game.events.emit('enemy:stagger', { enemy: this });
     }
+    // blink (Riftling, Void Horror): a hit teleports it, so you cannot just hold the crosshair on one.
+    const sig = this.def.signature;
+    if (sig?.blink && this.alive && t - (this._blinkT ?? -99) > sig.blink.cd) {
+      this._blinkT = t;
+      const a = this.yaw + (this.sys.rnd() < 0.5 ? 1.9 : -1.9) + (this.sys.rnd() - 0.5);
+      const nx = this.position.x + Math.sin(a) * sig.blink.dist, nz = this.position.z + Math.cos(a) * sig.blink.dist;
+      const g2 = this.game;
+      g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 14, scale: 0.9 });
+      this.position.x = nx; this.position.z = nz;
+      if (!this.def.flying) this.position.y = this.sys.heightAt(nx, nz);
+      else this.position.y = this.sys.heightAt(nx, nz) + this.def.hover;
+      this.root.position.copy(this.position); this.wantPos.copy(this.position);
+      g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 14, scale: 0.9 });
+    }
     // wisps are cowards
     if (this.def.fleeAt && this.health < this.def.fleeAt * this.maxHealth && this.fleeCd <= 0 && this.state !== 'flee') { this._setState('flee'); this.fleeCd = this.def.fleeTime + 6; }
     // warden phases: at thresholds the shield refills and a shockwave pushes the player back
@@ -316,6 +330,22 @@ export class Enemy {
     this.wander.y = this.sys.heightAt(this.wander.x, this.wander.z);
   }
 
+  /** Signature: mend — heal every ally in range on a timer. Kill the healer first, or kill nothing. */
+  _mend(t) {
+    const m = this.def.signature.mend;
+    if (t - (this._mendT ?? -99) < m.cd) return;
+    this._mendT = t;
+    let any = false;
+    for (const e of this.sys.list) {
+      if (e === this || !e.alive || e.health >= e.maxHealth) continue;
+      if (e.position.distanceToSquared(this.position) > m.r * m.r) continue;
+      e.health = Math.min(e.maxHealth, e.health + e.maxHealth * m.frac); e.target.health = e.health;
+      e.flash = Math.max(e.flash, 0.35); any = true;
+      this.game.vfx?.emit?.('heal-motes', e.center, { count: 10, scale: 0.8 });
+    }
+    if (any) this.game.vfx?.emit?.('heal', this.center, { count: 16, scale: 1.2 });
+  }
+
   _attack(dt, t) {
     const def = this.def, g = this.game, pc = this.sys.playerPos, pf = g.player.position, kind = this.attackKind;
     const wind = def.attackWindup, total = wind + def.attackRecover;
@@ -330,18 +360,30 @@ export class Enemy {
     else if (kind === 'bite' && this.stateT < wind * 0.6) { this.lunged = false; }
     if (!this.struck && this.stateT >= wind) {
       this.struck = true; g.events.emit('enemy:attack', { enemy: this, kind });
+      const sig = def.signature;
+      if (sig?.pull) {                                  // the strike DRAGS you in: backing off is not free
+        const pcv = g.player.controller;
+        _v.subVectors(this.position, pf); _v.y = 0.25; _v.normalize();
+        pcv?.velocity?.addScaledVector?.(_v, sig.pull.force);
+        g.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 10, scale: 0.8 });
+      }
       if (kind === 'bite') {
         // the lunge is stopped at the standoff ring, so the strike reaches from there: range covers the whole dance
         // band, but only in a ~115 deg cone — you can't be bitten by a hound facing away, and sidestepping still works
         const dx = pf.x - this.position.x, dz = pf.z - this.position.z, dh = Math.hypot(dx, dz);
         const facing = Math.abs(wrapAngle(Math.atan2(dx, dz) - this.yaw)) < 1.0;
         this._muzzle(_w); g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 8, scale: 0.6 });
-        if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) this._hitPlayer(this.damage, 'kinetic');
+        if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) {
+        this._hitPlayer(this.damage, 'kinetic');
+        if (sig?.chill) g.player.controller?.chill?.(sig.chill.secs, sig.chill.mul);   // the bite is cold: you slow down
+      }
       } else if (kind === 'slam') {
         _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)); _w.copy(this.position).addScaledVector(_v, def.radius + 1.2); _w.y = this.sys.heightAt(_w.x, _w.z);
         g.combat.explode?.({ point: _w, radius: def.slamRadius, damage: this.damage, element: 'kinetic', owner: this, team: 'enemy', knockback: def.knockback, source: this.type + '-slam' });
         g.vfx?.shockwave?.(_w, { radius: def.slamRadius, color: this.glowColor.getHex(), duration: 0.5 });
         g.vfx?.emit?.('dust', _w, { count: 30, scale: 2 });
+        // burning/freezing ground: the slam leaves a patch, so the arena shrinks while you fight
+        if (def.signature?.ground) { const gr = def.signature.ground; this.sys.addHazard?.(_w, gr.r, gr.dps, gr.secs, gr.color, gr.element); }
         const dd = _w.distanceTo(pc); g.player.view?.shake?.(THREE.MathUtils.clamp(1.2 - dd / 14, 0, 0.9));
         g.audio?.play?.('explosion', { pos: _w, vol: 0.8 });
       } else if (kind === 'bolt') this._fireBolt(def.projectile, this.damage);
@@ -350,6 +392,7 @@ export class Enemy {
       else if (kind === 'dive') { this.volleyLeft = def.volley; this.volleyT = 0; }
     }
     if (def.breath) this._breathe(def, pc, this.stateT > wind * 0.4);
+    if (def.signature?.mend && this.alert) this._mend(t);
     if (this.volleyLeft > 0) { this.volleyT -= dt; if (this.volleyT <= 0) { this.volleyT = def.volleyGap; this.volleyLeft--; this._fireBolt(def.projectile, def.projectile.damage ?? this.damage, def.volleySpread ?? 0.06); } }
     if (this.stateT >= total) { this.attackCd = def.attackCooldown * (0.85 + this.sys.rnd() * 0.3); this.attackT = 0; this.telegraph = 0; this.attackKind = null; this._breathe(def, pc, false); this._setState('chase'); }
   }

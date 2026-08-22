@@ -4,6 +4,12 @@
  * Fallback (buffers not decoded yet / missing): generative FF14-style field music — slow chords in D dorian with a lydian colour chord, detuned-saw
  * pads through a breathing lowpass + soft sub root, and an FM-bell lead playing a recurring 2-bar MOTIF that cadences at phrase ends.
  * Everything is booked a few hundred ms ahead from schedule(now); nodes self-clean on `onended`. Tracks: 'field' | 'night' | 'combat' | null. `mode` = 'buffer'|'synth'.
+ *
+ * REGION COLOUR (`music.region`, set by Audio from BIOMES[id].music). One score holds the world together,
+ * so a region does not get its own tune — it gets its own LIGHT on the same tune: playback rate (which
+ * moves tempo and pitch together, the way a film score is re-cut for a scene), a tilt filter, and a reverb
+ * send. The Void drags and darkens, the Isles lift and open, the Wastes are close and airless. Applied on
+ * a slow ramp so a pass between regions is a modulation, not a cut.
  */
 import { mtof, rnd } from './synth.js';
 
@@ -19,8 +25,23 @@ const PHRASE = [0.7, 0.9, 1.15, 0.8];               // 4-chord intensity arc: ri
 const MOTIF = [0, 2, 3, 2, 1, 3, 2, 0, 0, 2, 3, 1, 2, 1, 0, 0];   // hummable 2-bar contour (chord-tone indices), ends home = cadence
 const pick = (a) => a[(Math.random() * a.length) | 0];
 
+// per-region: [playbackRate, tilt cutoff Hz, reverb send]. rate 1 / 20000 / 0.5 == the Vale, unchanged.
+const REGION = {
+  field:       [1.00, 20000, 0.50],
+  wood:        [0.97,  5200, 0.62],   // Whisperwood Deep: close, damp, everything under a canopy
+  frost:       [0.94,  9000, 0.78],   // Frostveil: thin and far, long tail off the ice
+  choir:       [1.05, 20000, 0.85],   // Celestial: lifted a semitone-ish, cathedral tail
+  drums:       [0.96,  6500, 0.55],   // Dragon Peaks: heavier, drier
+  forge:       [0.91,  3400, 0.35],   // Infernal: airless, muffled, hot
+  convergence: [1.02, 14000, 0.80],   // Lost Realm: wide and ceremonial
+  fen:         [0.90,  2600, 0.45],   // Shadowfen: sunk, choked
+  deep:        [0.86,  1900, 0.90],   // Sunken Kingdom: heard through water
+  void:        [0.80,  2200, 0.70],   // The Void: dragging, wrong
+};
+
 export class Music {
-  constructor(audio) { this.audio = audio; this.track = 'field'; this.playing = false; this.chord = 0; this.notes = CHORDS[0].n; this.nextChord = 0; this.nextArp = 0; this.arpNote = 2; this.step = 60 / 72 / 2; this.nextPulse = 0; this.live = 0; this.phraseI = 0; this.inten = 1; this.mode = 'synth'; this._cur = null; }
+  constructor(audio) { this.audio = audio; this.region = 'field'; this._rate = 1; this._tilt = null;
+    this.track = 'field'; this.playing = false; this.chord = 0; this.notes = CHORDS[0].n; this.nextChord = 0; this.nextArp = 0; this.arpNote = 2; this.step = 60 / 72 / 2; this.nextPulse = 0; this.live = 0; this.phraseI = 0; this.inten = 1; this.mode = 'synth'; this._cur = null; }
   start(ctx, bus, rev) {
     this.ctx = ctx; this.rev = rev; this.playing = true; this._cur = null;
     this.gain = ctx.createGain(); this.gain.gain.value = 1; this.gain.connect(bus);
@@ -58,14 +79,34 @@ export class Music {
     if (!c) this._cur = this._playBuf(key, buf, now + 0.03, XF);
     else if (now + 0.6 > c.xfadeAt) this._cur = this._playBuf(key, buf, c.xfadeAt, XF);                     // book the next pass; the old one fades itself out
   }
+  /** Region tilt: one shared lowpass between the music and its bus, retuned on a slow ramp. */
+  _regionNode() {
+    if (!this._tilt) {
+      this._tilt = this.ctx.createBiquadFilter();
+      this._tilt.type = 'lowpass'; this._tilt.frequency.value = 20000; this._tilt.Q.value = 0.4;
+      this._tilt.connect(this.gain);
+    }
+    return this._tilt;
+  }
+  /** Called by Audio when the player's region changes. Ramps, never cuts. */
+  setRegion(id) {
+    const R = REGION[id] ?? REGION.field;
+    this.region = id; this._rate = R[0]; this._revSend = R[2];
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this._regionNode().frequency.setTargetAtTime(R[1], now, 1.2);
+    if (this._cur?.src) this._cur.src.playbackRate.setTargetAtTime(R[0], now, 2.0);   // tempo/pitch drift, not a jump
+  }
   _playBuf(key, buf, t, XF) {
-    const ctx = this.ctx, src = ctx.createBufferSource(), g = ctx.createGain(), end = t + buf.duration;
-    src.buffer = buf;
+    const ctx = this.ctx, src = ctx.createBufferSource(), g = ctx.createGain();
+    const rate = this._rate || 1, end = t + buf.duration / rate;
+    src.buffer = buf; src.playbackRate.value = rate;
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(1, t + XF);
     g.gain.setValueAtTime(1, end - XF); g.gain.linearRampToValueAtTime(0.0001, end);
-    src.connect(g); g.connect(this.gain);
+    src.connect(g); g.connect(this._regionNode());
+    if (this.rev && this._revSend) { const s = ctx.createGain(); s.gain.value = this._revSend * 0.5; g.connect(s); s.connect(this.rev); src.onended = () => s.disconnect(); }
     src.start(t); src.stop(end + 0.05);
-    src.onended = () => { src.disconnect(); g.disconnect(); };
+    src.addEventListener?.('ended', () => { src.disconnect(); g.disconnect(); });
     return { src, g, key, xfadeAt: end - XF };
   }
   _pan(t) {   // stereo panner helper (offline ctx has it too; guard anyway)

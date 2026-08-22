@@ -46,7 +46,7 @@ export class Audio {
     this.voices = []; this._last = new Map(); this._perFrame = 0; this._gen = 0;
     this._vo = null; this._voGen = 0; this._voQueue = [];   // dialogue is a SINGLE channel, and lines QUEUE rather than cut each other off
     this.debugLastPlayed = []; this.debugCounts = {};
-    this.musicTrack = 'field'; this.ambientZone = null; this.zone = 'meadow';
+    this.musicTrack = 'field'; this.ambientZone = null; this.zone = 'meadow'; this.musicRegion = 'field';
     this.buffers = {};                                      // decoded AI takes (shot-*-1..4, explosion-1..4, field/night-theme); recipes read them via S.bufs
     this._musicAuto = true; this._musicDuck = 1; this._voiceDuck = 1; this._inCombat = false; this._combatT = -1e9; this._musicT = 0;
     this.ambientSys = new Ambient(this); this.musicSys = new Music(this);
@@ -323,7 +323,12 @@ export class Audio {
     if (this._lastPX !== null && Math.abs(pp.x - this._lastPX) + Math.abs(pp.z - this._lastPZ) > 25) { this._zoneT = 9; this._zoneFast = true; }   // teleport: re-poll now, settle the beds fast
     this._lastPX = pp.x; this._lastPZ = pp.z;
     this._zoneT += dt;
-    if (this._zoneT > 0.5) { this._zoneT = 0; this.zone = this.ambientZone ?? this._zoneAt(pp.x, pp.z); this.ambientSys.setZone(this.zone, this._zoneFast ? 0.4 : 1.5); this._zoneFast = false; }
+    if (this._zoneT > 0.5) {
+      this._zoneT = 0; this.zone = this.ambientZone ?? this._zoneAt(pp.x, pp.z);
+      this.ambientSys.setZone(this.zone, this._zoneFast ? 0.4 : 1.5); this._zoneFast = false;
+      const reg = this._regionAt(pp.x, pp.z);
+      if (reg !== this.musicRegion) { this.musicRegion = reg; this.musicSys.setRegion?.(reg); }
+    }
     const hour = this.game.sky?.hour ?? 12;
     this.ambientSys.update(now, p.x, p.y, p.z, hour);
     if (this.musicSys.playing) this.musicSys.schedule(now);
@@ -339,6 +344,12 @@ export class Audio {
     if (inCombat === this._inCombat) return;
     this._inCombat = inCombat; this._musicDuck = inCombat ? 0.35 : 1;
     this._applyMusicGain(inCombat ? 0.5 : 2.2);
+  }
+  /** Which region's LIGHT the score is played in (BIOMES[id].music). Same blend the ambient bed uses. */
+  _regionAt(x, z) {
+    if (Math.hypot(x, z) < 330) return 'field';
+    const b = this.game.terrain?.biomeBlend?.(x, z, this._mb ??= {});
+    return b && b.w > 0.35 ? (BIOMES[b.id]?.music ?? 'field') : 'field';
   }
   _zoneAt(x, z) {
     const r = Math.hypot(x, z);

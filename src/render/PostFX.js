@@ -27,6 +27,10 @@ import {
  *   postfx.setDof({ focus, range, strength, enabled })  used when ADS with sniper etc (optional, cheap half-res blur by CoC, ~0.2 ms)
  *   postfx.exposure (number, base; time-of-day + bounded scene-luminance adaptation on top), .bloom, .vignette, .ao, .godrays, .grade, .tone handles
  *   postfx.setBypass(bool)                    world+overlay only (perf A/B), postfx.setQuality('low'|'medium'|'high')
+ *   postfx.skyMask(bool)                      DEBUG/GATE ONLY: paint every sky pixel pure magenta (dome, sun and
+ *                                             clouds hidden, clear colour showing, post chain bypassed) so
+ *                                             tools/blobcheck.py can tell "the sun through a gap in the trees"
+ *                                             apart from "a glowing ball on the grass". Restores exactly on false.
  *   postfx.profile(frames) -> Promise<{on,off,cost}>  GPU ms of the whole post chain (timer queries, alternates bypass per frame)
  *   postfx.readLum() -> Promise<number>       adapted average scene luminance (pre-exposure; debug/calibration)
  *   postfx.godraysSource (Object3D|null)     override the god-rays light source (e.g. game.sky.sunMesh); null = internal disc
@@ -286,6 +290,10 @@ export class PostFX {
     this.dof?.params.set(d.focus, d.range, d.strength);
   }
   setBypass(b) { this.bypass = !!b; }
+  /** Gate support: render frames where sky == magenta and everything else is itself. See blobcheck.py.
+   *  Sky re-asserts scene.background / scene.fog / dome visibility every frame, so the swap has to happen
+   *  INSIDE the render call, not once at toggle time. */
+  skyMask(on) { this._maskRaw = !!on; }
   setQuality(name) {
     this.q = QUALITY[name] ?? QUALITY.high;
     if (this.q.aoSamples) this.ao.samples = this.q.aoSamples;
@@ -365,5 +373,75 @@ export class PostFX {
     }
     return true;
   }
-  render(dt) { if (this._prof && this._profRender(dt)) return; this._tick(dt); this.composer.render(dt); }
+  /**
+   * ATMOSPHERE MASK for the gate. One flat pass where every pixel says how much of it is ATMOSPHERE
+   * rather than surface: geometry is painted pure green, the sky and the fog colour are pure magenta.
+   * So a near wall comes out green, open sky comes out magenta, and distant terrain drowned in aerial
+   * haze comes out somewhere in between — and that gradient is the answer blobcheck actually needs.
+   * (A plain "hide the dome" mask is not enough: the bright cream band above a treeline is usually not
+   * sky at all, it is a mountain 800 m away that the haze has washed out, and its brightness belongs to
+   * the atmosphere, not to anything that could be a blob.)
+   * No tone map and no post, so the colours survive exactly.
+   */
+  _renderSkyMask() {
+    const g = this.game, r = g.renderer, sc = g.scene, sky = g.sky;
+    const bg = sc.background, tone = r.toneMapping, expo = r.toneMappingExposure, ovr = sc.overrideMaterial;
+    const clear = r.getClearColor(this._maskClear ??= new THREE.Color()).clone(), alpha = r.getClearAlpha();
+    const dome = sky?.dome?.visible, sun = sky?.sunMesh?.visible;
+    const fogCol = sc.fog ? sc.fog.color.clone() : null;
+    // The mask pass must not disturb the real frames that follow it. Two things it would otherwise eat:
+    //  - the shadow-map update (shadowMap.autoUpdate is off; Lighting arms needsUpdate once a frame). An
+    //    extra render consumes it, and it would rasterise the cascades through the flat override material,
+    //    so the NEXT composed frame is lit by garbage shadows — the meadow renders unshadowed and blows out.
+    //  - the water's planar reflection, whose onBeforeRender would capture the green/magenta world.
+    const smAuto = r.shadowMap.autoUpdate;
+    r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
+    const water = g.world?.water, refl = water?.reflectionEnabled;
+    if (water) water.reflectionEnabled = false;
+    sc.background = null;
+    if (sc.fog) sc.fog.color.setHex(0xff00ff);                 // haze reads as atmosphere
+    sc.overrideMaterial = this._maskMat ??= new THREE.MeshBasicMaterial({ color: 0x00ff00, fog: true });
+    r.toneMapping = THREE.NoToneMapping; r.toneMappingExposure = 1;
+    r.setClearColor(0xff00ff, 1);
+    if (sky?.dome) sky.dome.visible = false;
+    if (sky?.sunMesh) sky.sunMesh.visible = false;
+    // GROUND COVER gets its own colour (red). The decree the gate exists for is specifically about the
+    // grass — an intended emissive (a loot beacon, a lantern flame, an aether crystal) is a bright compact
+    // cluster too, and no pixel rule can tell it from a bug. Marking the blades lets blobcheck apply the
+    // strict BRIGHT test exactly where the rule applies, and keep the FLASH test everywhere else.
+    // The blades cannot use overrideMaterial: their geometry is built in their own vertex shader, so a
+    // replacement material draws nothing. Instead they render with their real shader in uMaskMode (flat
+    // red), on their own layer, in a second pass over the same depth buffer.
+    const grass = g.world?.grass, rings = grass?.rings ?? [];
+    const layers = rings.map((x) => x.mesh.layers.mask);
+    for (const x of rings) x.mesh.layers.set(7);
+    const camLayers = g.camera.layers.mask;
+    g.camera.layers.set(0);
+    r.setRenderTarget(null); r.clear(); r.render(sc, g.camera);          // everything except the blades
+    if (rings.length && grass.uniforms?.uMaskMode) {
+      sc.overrideMaterial = null;
+      grass.uniforms.uMaskMode.value = 1;
+      g.camera.layers.set(7);
+      const ac = r.autoClear; r.autoClear = false;
+      r.render(sc, g.camera);                                            // the blades, over the same depth
+      r.autoClear = ac;
+      grass.uniforms.uMaskMode.value = 0;
+    }
+    g.camera.layers.mask = camLayers;
+    rings.forEach((x, i) => { x.mesh.layers.mask = layers[i]; });
+    sc.overrideMaterial = null;
+    if (this.overlay) { r.clearDepth(); r.render(this.overlay.scene, this.overlay.camera); }   // the viewmodel is geometry too
+    sc.background = bg; sc.overrideMaterial = ovr;
+    if (sc.fog && fogCol) sc.fog.color.copy(fogCol);
+    r.toneMapping = tone; r.toneMappingExposure = expo; r.setClearColor(clear, alpha);
+    if (sky?.dome) sky.dome.visible = dome;
+    if (sky?.sunMesh) sky.sunMesh.visible = sun;
+    if (water) water.reflectionEnabled = refl;
+    r.shadowMap.autoUpdate = smAuto; r.shadowMap.needsUpdate = true;   // next real frame re-renders them clean
+  }
+
+  render(dt) {
+    if (this._maskRaw) return this._renderSkyMask();
+    if (this._prof && this._profRender(dt)) return; this._tick(dt); this.composer.render(dt);
+  }
 }

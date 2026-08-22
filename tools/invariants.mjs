@@ -45,6 +45,26 @@ for (const f of srcFiles) {
   }
 }
 
+// ---------------------------------------------------------------- (a2) THE BAKE WORKERS ARE NOT A CLOSURE
+// The nine outer-biome height kernels (Terrain.BH[]) and heightAt() are stringified into the terrain bake
+// workers. Anything they reference must be injected into the worker preamble by _bakeAsync. A closure over
+// a module-scope helper compiles fine on the main thread and throws inside the worker, where the only
+// symptom is a silent fall back to a single-threaded bake — the world still loads, just slowly and later.
+{
+  const terr = read(join('src', 'world', 'Terrain.js'));
+  const bh = terr.match(/const BH = \[([\s\S]*?)\n\];/);
+  if (!bh) fail('src/world/Terrain.js: the BH[] outer-biome kernels are gone or reshaped — the bake worker injection in _bakeAsync assumes that array');
+  else {
+    const injected = ['ss', 'mix', 'n2', 'fbm2', 'fbm3', 'fbm4', 'ridged3', 'ridged4', 'rmf', 'rg', 'Math', 'Number'];
+    const kw = ['function', 'if', 'for', 'while', 'return', 'switch', 'catch'];
+    const body = bh[1].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // comments are prose, not calls
+    const called = [...new Set([...body.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]))];
+    const bad = called.filter((id) => !injected.includes(id) && !kw.includes(id) && !id.startsWith('bh'));
+    if (bad.length) fail(`src/world/Terrain.js BH[] calls ${bad.join(', ')}, which the bake worker does not define — inject it in _bakeAsync (see the src[] array) or inline it, or the workers die and the bake silently falls back to the main thread`);
+    if (!/BH\.map\(\s*\(\s*f\s*\)\s*=>\s*f\.toString\(\)\s*\)/.test(terr)) fail('src/world/Terrain.js: _bakeAsync no longer stringifies BH[] into the worker — the outer biomes would bake flat');
+  }
+}
+
 // ---------------------------------------------------------------- (b) GROUND COVER NEVER GLOWS
 // The flashing white/blue blob bug (shipped 5x, 5 different causes). Grass.js must keep BOTH the
 // emissive ceiling AND the final outgoing-luminance cap (the cap closes every term at once:
@@ -139,6 +159,26 @@ const props = read(join('src', 'world', 'Props.js'));
 if (props) {
   const fm = props.match(/color:\s*0xffd090,\s*emissive:\s*0xff9a40,\s*emissiveIntensity:\s*([0-9.]+)/);
   if (fm && parseFloat(fm[1]) > 1.6) fail(`lantern flame emissiveIntensity ${fm[1]} > 1.6 — 0.1 m flickering octahedra 6-17 m from spawn; hotter = sub-pixel warm blobs (shipped before at 4.0)`);
+}
+
+// ---------------------------------------------------------------- (h) HOT CORES KEEP THEIR HUE
+// Same decree as the grass cap, one level up: any small additive/emissive element that tone-maps to white
+// stops reading as magic and starts reading as a blob. Two structural guards, both added after the gate
+// caught live examples (a wisp reading as a white orb, and every impact preset starting from pure white).
+{
+  const mat = read(join('src', 'enemies', 'materials.js'));
+  if (!/aetherCap/.test(mat) || !/gl_FragColor\.rgb \*= aetherCap \/ aetherLum/.test(mat)) {
+    fail('src/enemies/materials.js lost the hue-preserving aether luminance cap (aetherCap) — creature crystals/eyes/cores blow out to white balls again');
+  } else {
+    const m = mat.match(/mix\(\s*6\.0\s*,\s*([0-9.]+)\s*,\s*vGlow\s*\)/);
+    if (!m || Number(m[1]) > 0.75) fail(`src/enemies/materials.js: the aether cap for full-glow parts is ${m ? m[1] : '?'} — must stay <= 0.75 linear or it clears the bloom threshold`);
+  }
+  const brush = read(join('src', 'vfx', 'Brush.js'));
+  const t = brush.match(/const HOT_TINT = ([0-9.]+)/);
+  if (!t) fail('src/vfx/Brush.js lost HOT_TINT — every impact/burst preset starts from pure white again, and an additive white core at hdr 4-7 is a white ball');
+  else if (Number(t[1]) < 0.4) fail(`src/vfx/Brush.js HOT_TINT is ${t[1]} — below 0.4 the hot core is white again; saturate the COLOUR, cap the INTENSITY`);
+  const terr2 = read(join('src', 'world', 'Terrain.js'));
+  if (!/FRAG_SHOULDER/.test(terr2)) fail('src/world/Terrain.js lost FRAG_SHOULDER — the ground goes flat white where a low sun rakes across it');
 }
 
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');

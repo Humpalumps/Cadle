@@ -78,20 +78,34 @@ const BH = [
   function bhCelestial(x, z, h, s, w, cx, cz) {                                // Celestial Isles: shattered high plateau, chasms below the floating isles
     const pl = 62 + fbm3(x * 0.007 + 9, z * 0.007 - 4, s + 221) * 9;
     const cut = ss(0.34, 0.15, ridged3(x * 0.0065, z * 0.0065, s + 222));      // narrow gulfs between the shelves
-    return mix(h, mix(pl, pl - 48, cut), w);
+    // chasm WALLS get their own crag detail: without it the drop reads as one smooth grey dome
+    const crag = rmf(x * 0.021, z * 0.021, s + 223, 4) * 9 * cut * (1 - cut) * 4;
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
+    let t = mix(pl, pl - 48 + crag, cut);
+    t = mix(t, pl, ss(115, 58, d));                                            // the Empyrean Gate stands on solid shelf, not over a gulf
+    return mix(h, t, w);
   },
   function bhDragon(x, z, h, s, w, cx, cz) {                                   // Dragon Peaks: the biggest rock in the world
     const wx = x + n2(x * 0.008, z * 0.008, s + 231) * 42, wz = z + n2(x * 0.008 + 5, z * 0.008 - 3, s + 232) * 42;
     const m = rmf(wx * 0.0058, wz * 0.0058, s + 233, 3), c = rmf(wx * 0.016, wz * 0.016, s + 234, 4);
     const ledge = 9.0 * Math.sin(m * 142 * 0.21 + (x - z) * 0.008);            // nest ledges cut across the faces
-    return mix(h, 18 + m * 142 + c * c * 55 - ledge * ss(0.26, 0.62, m), w);
+    let t = 18 + m * 142 + c * c * 55 - ledge * ss(0.26, 0.62, m);
+    // Three nest BENCHES: wide flat shoulders you can actually stand and fight on, at three altitudes.
+    // Without them the region is one unbroken climb and the "dragon nests on the ledges" is a texture.
+    const bench = ss(0.30, 0.44, m) * (1 - ss(0.52, 0.64, m));
+    if (bench > 0.01) t = mix(t, Math.round(t / 26) * 26 + 4, bench * 0.72);
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
+    t = mix(t, 44, ss(105, 55, d));                                            // the gate needs a forecourt
+    return mix(h, t, w);
   },
   function bhInfernal(x, z, h, s, w, cx, cz) {                                 // Infernal Wastes: caldera cone, ash plains, channelled flows
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.01, z * 0.01, s + 241) * 16;
-    let t = 13 + fbm3(x * 0.008 + 5, z * 0.008, s + 242) * 7 + rmf(x * 0.02, z * 0.02, s + 243, 3) * 5;
+    let t = 12 + fbm3(x * 0.008 + 5, z * 0.008, s + 242) * 6 + rmf(x * 0.02, z * 0.02, s + 243, 3) * 4.5;
     t += ss(152, 42, d) * 98;                                                  // cone
     t -= ss(48, 22, d) * 62;                                                   // crater
-    t -= ss(0.58, 0.88, ridged3(x * 0.0095 + 3, z * 0.0095 - 2, s + 244)) * 9; // lava channels
+    // Channels are cut BELOW terrain.waterLevel on purpose: the world water surface fills them and wears the
+    // molten skin (Water uLava), so the lava rivers are real geometry you can fall into, not a decal.
+    t -= ss(0.52, 0.90, ridged3(x * 0.0095 + 3, z * 0.0095 - 2, s + 244)) * 15;
     return mix(h, t, w);
   },
   function bhLost(x, z, h, s, w, cx, cz) {                                     // The Lost Realm: ceremonial plain inside a ruined rampart ring
@@ -116,13 +130,16 @@ const BH = [
   function bhVoid(x, z, h, s, w, cx, cz) {                                     // The Void: shelves of broken reality over an abyss
     const r1 = ridged3(x * 0.0055 + 5, z * 0.0055 - 9, s + 281);
     const plat = 46 + fbm3(x * 0.009, z * 0.009, s + 282) * 7;                 // shelves are FLAT: you fight on them
-    return mix(h, mix(plat, -40, ss(0.34, 0.155, r1)), w);
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
+    let t = mix(plat, -40, ss(0.34, 0.155, r1));
+    t = mix(t, plat, ss(120, 62, d));                                          // The Unmaking needs ground under it
+    return mix(h, t, w);
   },
 ];
 // biome centres, [cx, cz] per k — literal so the worker gets them without importing Biomes.js
 const BC = ORDER.map((_, k) => { const c = centerOf(k); return [c.x, c.z]; });
 // mean LINEAR albedo of each biome's floor + how much of the ground it covers (mirrors FRAG_SPLAT's biome layer)
-const BALB = [[0.10, 0.135, 0.05], [0.55, 0.62, 0.72], [0.46, 0.39, 0.29], [0.21, 0.20, 0.18], [0.055, 0.042, 0.038], [0.34, 0.31, 0.38], [0.10, 0.11, 0.07], [0.30, 0.31, 0.28], [0.075, 0.062, 0.10]];
+const BALB = [[0.10, 0.135, 0.05], [0.55, 0.62, 0.72], [0.46, 0.39, 0.29], [0.21, 0.20, 0.18], [0.055, 0.042, 0.038], [0.30, 0.27, 0.36], [0.10, 0.11, 0.07], [0.30, 0.31, 0.28], [0.052, 0.044, 0.070]];
 const BCOV = [0.72, 1.0, 0.55, 0.6, 1.0, 0.6, 0.8, 0.9, 1.0];
 
 export class Terrain {
@@ -224,15 +241,39 @@ export class Terrain {
         h += m * env;
       }
     }
+    // PASS ROADS. A notch in the ring is not enough: the approach belt's boulder-scale noise (+-8 m over
+    // ~16 m) leaves micro-faces past 50 degrees, and a kinematic controller treats those as no-traction and
+    // slides you back down — measured, the walk out of the Vale jammed at r=394 every time. So inside a
+    // narrow angular band the height is blended toward a smooth radial ramp: a road over the saddle that
+    // rises ~24 m over 175 m (about 8 degrees). The mountains either side keep all their roughness.
+    if (d0 > 240 && d0 < 760) {
+      const th2 = Math.atan2(z, x) - THETA0;
+      const da2 = Math.abs(th2 - Math.round(th2 / STEP) * STEP);
+      const road = ss(0.10, 0.022, da2) * ss(250, 320, d0) * ss(760, 650, d0);
+      if (road > 0.01) {
+        const u = (d0 - 285) / 400;                                      // 0 at the meadow foot, 1 at the belt
+        const ramp = 11 + 25 * Math.sin(Math.PI * (u < 0 ? 0 : u > 1 ? 1 : u)) + n2(x * 0.02, z * 0.02, s + 44) * 0.8;
+        h = mix(h, ramp, road * 0.92);
+      }
+    }
     if (d0 > 470) {                                                      // one of the 9 outer biomes (Biomes.js layout)
       let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
       const c = BC[k], bx = x - c[0], bz = z - c[1];
       const w = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz));
       if (w > 0.001) h = BH[k](x, z, h, s, w, c[0], c[1]);
     }
-    if (d0 > EDGE) {                                                     // world edge: impassable crag wall
-      const e = ss(EDGE, EDGE + 100, d0);
-      h += e * (150 + ridged3(x * 0.009, z * 0.009, s + 291) * 90) + ss(EDGE + 80, EDGE + 200, d0) * 120;
+    if (d0 > EDGE - 20) {
+      // World edge. This is the backdrop of EVERY view in the outer belt, so it cannot be a smooth ramp —
+      // an unbroken curtain around the horizon is the single most artificial thing a bounded world can do.
+      // Same two-stage domain warp + creased RMF the home ring uses, so it reads as a far range with peaks
+      // and saddles that the aerial haze can bite into.
+      const wx = x + n2(x * 0.0062, z * 0.0062, s + 292) * 52 + n2(x * 0.021, z * 0.021, s + 296) * 9;
+      const wz = z + n2(x * 0.0062 + 8.1, z * 0.0062 - 3.3, s + 293) * 52 + n2(x * 0.021 + 4.2, z * 0.021 + 6.6, s + 297) * 9;
+      const massif = rmf(wx * 0.0058, wz * 0.0058, s + 294, 3);
+      const crag = rmf(wx * 0.0165, wz * 0.0165, s + 295, 4);
+      const summit = 0.35 + 0.9 * ss(0.24, 0.84, fbm2(x * 0.0036 + 5.2, z * 0.0036 - 6.4, s + 298) * 0.5 + 0.5);
+      const e = ss(EDGE - 20, EDGE + 78, d0);
+      h += e * ((26 + 132 * massif) * summit + 78 * crag * crag) + ss(EDGE + 60, EDGE + 190, d0) * 110;
     }
     return h;
   }
@@ -257,6 +298,18 @@ export class Terrain {
     if (z < -180 && Math.abs(x) < 260) return 'forest';
     if (x > 220) return 'crystal';
     return 'meadow';
+  }
+
+  /**
+   * 0..1 "this is one of the nine pass roads". Same band heightAt flattens, exposed so nothing gets PLACED
+   * in it — a road with trees growing across it is not a road, and a wedged player never reaches the region.
+   */
+  roadAt(x, z) {
+    const d0 = Math.sqrt(x * x + z * z);
+    if (d0 < 240 || d0 > 760) return 0;
+    const th = Math.atan2(z, x) - THETA0;
+    const da = Math.abs(th - Math.round(th / STEP) * STEP);
+    return ss(0.10, 0.022, da) * ss(250, 320, d0) * ss(760, 650, d0);
   }
 
   /** 0..1 ground-cover density. Grass.js prefers this over its own biome-name heuristics. */
@@ -854,13 +907,13 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float bLayer = 1.0, bScl = 3.6, bRough = 0.90, bCov = 0.72, bSnow = 0.0, bRockCut = 0.0; vec3 bTint = vec3(1.0);
   if (bK < 0.5)      { bLayer = 1.0;  bScl = 3.4; bCov = 0.72; bTint = vec3(0.86, 1.10, 0.80); }                  // forest floor
   else if (bK < 1.5) { bLayer = 9.0;  bScl = 6.5; bCov = 1.00; bRough = 0.45; bSnow = 1.0; bRockCut = 0.55; }     // tundra glacier
-  else if (bK < 2.5) { bLayer = 6.0;  bScl = 4.6; bCov = 0.62; bRough = 0.62; bTint = vec3(1.16, 1.00, 0.72); }   // celestial: sun-warmed marble, never neutral white
+  else if (bK < 2.5) { bLayer = 6.0;  bScl = 4.6; bCov = 0.80; bRough = 0.55; bTint = vec3(1.14, 1.03, 0.80); }   // celestial: sun-warmed marble, never neutral white
   else if (bK < 3.5) { bLayer = 3.0;  bScl = 6.0; bCov = 0.60; bTint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
   else if (bK < 4.5) { bLayer = 8.0;  bScl = 3.2; bCov = 1.00; bRough = 0.92; bRockCut = 0.80; }                  // infernal ash
-  else if (bK < 5.5) { bLayer = 6.0;  bScl = 4.2; bCov = 0.60; bTint = vec3(0.92, 0.86, 1.14); }                  // lost realm
+  else if (bK < 5.5) { bLayer = 6.0;  bScl = 4.2; bCov = 0.78; bTint = vec3(0.80, 0.74, 1.02); }                  // lost realm: worn violet flagstone
   else if (bK < 6.5) { bLayer = 10.0; bScl = 3.0; bCov = 0.80; bRough = 0.55; bRockCut = 0.45; }                  // shadowfen muck
   else if (bK < 7.5) { bLayer = 4.0;  bScl = 3.0; bCov = 0.90; bRough = 0.70; bTint = vec3(0.78, 0.95, 0.94); bRockCut = 0.55; }   // sunken reef
-  else               { bLayer = 11.0; bScl = 4.0; bCov = 1.00; bRough = 0.68; bRockCut = 0.88; }                  // voidstone
+  else               { bLayer = 11.0; bScl = 4.0; bCov = 1.00; bRough = 0.68; bRockCut = 0.88; bTint = vec3(0.78, 0.74, 0.92); }   // voidstone
   float wB = bW * bCov;
   float alt = smoothstep(26.0, 58.0, P.y);           // mountain altitude: rock takes over sooner, dirt turns to scree
   // --- layer weights ("over" compositing, then height-sharpened) ---
@@ -983,8 +1036,26 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   diffuseColor.rgb *= alb;
 }`;
 
+// Hue-preserving highlight shoulder on the ground's outgoing colour. Grass has a hard luminance CAP
+// (GRASS_LUM_CAP) because a sub-pixel blade that reaches the bloom threshold becomes a floating ball.
+// Terrain is a large continuous surface, so a hard cap would flatten a legitimately bright snowfield —
+// what it needs is a soft shoulder: below KNEE nothing changes at all, above it the excess is compressed
+// asymptotically toward CEIL. This is what stops the meadow floor going flat white when a low sun rakes
+// across it (which the 10-biome ring rework let happen by opening the eastern horizon).
+const FRAG_SHOULDER = /* glsl */`
+#include <opaque_fragment>
+{
+  const float KNEE = 0.55, CEIL = 0.86;
+  float L = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+  if (L > KNEE) {
+    float Lc = KNEE + (CEIL - KNEE) * (1.0 - exp(-(L - KNEE) / (CEIL - KNEE)));
+    gl_FragColor.rgb *= Lc / L;
+  }
+}`;
+
 function patchFragment(shader) {
   shader.fragmentShader = shader.fragmentShader
+    .replace('#include <opaque_fragment>', FRAG_SHOULDER)
     .replace('#include <common>', '#include <common>\n' + FRAG_PARS)
     .replace('#include <map_fragment>', FRAG_SPLAT)
     .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')

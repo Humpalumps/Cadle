@@ -87,6 +87,14 @@ export const DEFS = {
  * Colours obey the architectural law: saturate the HUE, cap the VALUE (glow stays in the 0.8-2.5 band the
  * existing bestiary uses, and no palette entry is a white that ACES will clip into a blob).
  */
+// SIGNATURE MOVES. A re-skin with different numbers is still the same fight; one move that changes what
+// YOU have to do is what makes a region's bestiary its own. Each is a small hook in Enemy.js, not a new AI:
+//   breath   {..}  a held ribbon jet during the wind-up (already supported; frost is the drake's fire, cold)
+//   blink    {cd, dist}       teleports sideways when hurt — you cannot just hold the crosshair on it
+//   pull     {force}          its strike drags you IN, so backing off is not free
+//   chill    {secs, mul}      its hit slows you, which is what makes an ice region feel like one
+//   ground   {r, dps, secs, colour}  leaves a burning patch where it slams — the arena shrinks as you fight
+//   mend     {cd, r, frac}    heals its neighbours on a timer — kill the healer first or kill nothing
 const BIOME_DEFS = {
   // -------------------------------------------------- Whisperwood Deep (forest)
   sprite: {
@@ -117,6 +125,9 @@ const BIOME_DEFS = {
     stagger: 0.16, staggerTime: 0.45, pack: true,
     radius: 0.58, height: 1.3, center: 1.12, weakPoints: [{ bone: 'head', radius: 0.28, mult: 2.0, off: [0, 0.02, 0.1] }],
     palette: [[0x9fd8ff, 0xffffff], [0xcfe6ff, 0xeef6ff], [0x7fbfff, 0xdfeaff]], glow: 1.7, rim: 0.7, bump: 0.05,
+    // deep saturated ice-blue, value well under 1: a white jet would be the washed-white blob bug
+    breath: { color: 0x2f9dff, width: 0.30, spread: 0.16, strands: 3, length: 4.4, standoff: 2.6, alpha: 0.7, near: 2, far: 9 },
+    signature: { chill: { secs: 2.2, mul: 0.55 } },
     deathTime: 1.4, xp: 34,
   },
   icegiant: {
@@ -127,6 +138,7 @@ const BIOME_DEFS = {
     stagger: 0.36, staggerTime: 0.6, shieldRadius: 1.9,
     radius: 1.05, height: 4.6, center: 2.5, weakPoints: [{ bone: 'head', radius: 0.42, mult: 2.2, off: [0, 0.1, 0.1] }],
     palette: [[0x9fd8ff, 0xffffff], [0xbfe4ff, 0xeaf4ff]], glow: 1.8, rim: 0.6, bump: 0.07,
+    signature: { chill: { secs: 3.0, mul: 0.45 }, ground: { r: 5.5, dps: 7, secs: 6, color: 0x6fc8ff, element: 'stasis' } },
     deathTime: 2.3, xp: 190,
   },
   // -------------------------------------------------- Celestial Isles
@@ -141,7 +153,7 @@ const BIOME_DEFS = {
     deathTime: 1.7, xp: 260,
   },
   skyserpent: {
-    name: 'Sky Serpent', body: 'serpent', element: 'arc', role: 'dive', flying: true, hover: 13,
+    name: 'Sky Serpent', body: 'serpent', element: 'arc', role: 'dive', flying: true, hover: 9, scale: 1.75,
     health: 620, shield: 140, shieldElement: 'arc', damage: 13, speed: 15, turn: 2.6, accel: 10,
     perception: 74, fov: 6.3, attackRange: 42, orbit: 18, attackWindup: 0.45, attackCooldown: 3.6, attackRecover: 0.7, volley: 3, volleyGap: 0.12, standoff: 3.0,
     projectile: { speed: 36, radius: 0.24, element: 'arc', life: 3.5, explodeRadius: 1.5 },
@@ -192,6 +204,7 @@ const BIOME_DEFS = {
     stagger: 0.32, staggerTime: 0.6,
     radius: 0.98, height: 3.4, center: 1.85, weakPoints: [{ bone: 'core', radius: 0.36, mult: 3.0, off: [0, 0, 0.07] }],
     palette: [[0x3a2018, 0xff6a14], [0x2e1a12, 0xff8a2a]], glow: 2.3, rim: 0.45, bump: 0.08,
+    signature: { ground: { r: 6.0, dps: 12, secs: 8, color: 0xff5c10, element: 'solar' } },
     deathTime: 2.0, xp: 160,
   },
   // -------------------------------------------------- Shadowfen
@@ -213,6 +226,7 @@ const BIOME_DEFS = {
     strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.05,
     radius: 0.54, height: 2.6, center: 1.68, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
     palette: [[0x7cff9c, 0x1f3324], [0xa8ff6a, 0x263320]], glow: 1.7, rim: 0.6, bump: 0.05,
+    signature: { mend: { cd: 7.0, r: 22, frac: 0.11 } },
     deathTime: 1.6, xp: 95,
   },
   // -------------------------------------------------- The Sunken Kingdom
@@ -227,13 +241,14 @@ const BIOME_DEFS = {
     deathTime: 1.7, xp: 130,
   },
   leviathan: {
-    name: 'Court Leviathan', body: 'serpent', element: 'arc', role: 'dive', flying: true, hover: 9, scale: 1.5,
+    name: 'Court Leviathan', body: 'serpent', element: 'arc', role: 'dive', flying: true, hover: 6, scale: 2.3,
     health: 900, shield: 200, shieldElement: 'arc', damage: 16, speed: 12, turn: 2.2, accel: 8,
     perception: 70, fov: 6.3, attackRange: 40, orbit: 17, attackWindup: 0.55, attackCooldown: 3.8, attackRecover: 0.8, volley: 3, volleyGap: 0.13, standoff: 3.4,
     projectile: { speed: 32, radius: 0.28, element: 'arc', life: 3.5, explodeRadius: 1.8 },
     stagger: 0.3, staggerTime: 0.55,
     radius: 0.85, height: 1.4, center: 0, weakPoints: [{ bone: 'head', radius: 0.34, mult: 2.0, off: [0, 0.02, 0.85] }],
     palette: [[0x2f8a9c, 0xd8fff6], [0x3f9fb0, 0xe8fffa]], glow: 1.9, rim: 0.6, bump: 0.045,
+    signature: { pull: { force: 16 } },
     deathTime: 2.0, xp: 240,
   },
   // -------------------------------------------------- The Void
@@ -245,6 +260,7 @@ const BIOME_DEFS = {
     fleeAt: 0.18, fleeTime: 1.8, strafe: 1, stagger: 0.26, staggerTime: 0.32,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
     palette: [[0xb070ff, 0x1a1030], [0x8a3dff, 0x140c28], [0xd070ff, 0x1e1034]], glow: 1.05, rim: 0.7, bump: 0,
+    signature: { blink: { cd: 3.2, dist: 9 } },
     deathTime: 1.1, xp: 90,
   },
   voidhorror: {
@@ -255,6 +271,7 @@ const BIOME_DEFS = {
     strafe: 1, stagger: 0.3, staggerTime: 0.5, shieldRadius: 1.5,
     radius: 0.72, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.34, mult: 2.2, off: [0, 0.55, 0.05] }],
     palette: [[0x8a3dff, 0xd8b0ff], [0x6a2ce0, 0xc8a0ff]], glow: 1.7, rim: 0.75, bump: 0.04,
+    signature: { pull: { force: 13 }, blink: { cd: 6.0, dist: 7 } },
     deathTime: 1.9, xp: 280,
   },
   // -------------------------------------------------- The Lost Realm (endgame)

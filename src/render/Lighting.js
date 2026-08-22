@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BIOMES } from '../world/Biomes.js';
 
 /**
  * Lighting: key light (sun by day / cool moon by night) with cascaded shadow maps, hemisphere fill, procedural env map (IBL).
@@ -11,6 +12,9 @@ import * as THREE from 'three';
  *   lighting.hemi           HemisphereLight (sky.ambientColor / sky.groundColor)
  *   lighting.env            WebGLRenderTarget (PMREM) currently on scene.environment; rebuilt from sky colors when they change (~every 0.25 h)
  *   lighting.sunPeak / moonPeak / hemiIntensity / envIntensity / shadowDistance   tunables
+ *   Per-biome grade: the key light and the hemisphere are tinted toward BIOMES[id].sun / scaled by .amb as
+ *   the player crosses into a region (see _gradeBiome). Hue only — the time of day still owns the brightness,
+ *   so the Wastes read as lit by their own fire and the Void as lit by almost nothing, at every hour.
  *   lighting.bakeEnv()      force env rebuild.   lighting.showCascades(bool)  debug tint (red/green/blue = cascade 0/1/2);
  *                           allow ~1-2 s after toggling: every lit material recompiles before the tint shows.
  *   lighting.freezeShadows  (bool) stop re-rendering/refitting the shadow maps (perf A/B, inspecting cascades)
@@ -310,11 +314,39 @@ export class Lighting {
       this.hemi.groundColor.lerp(this.keyColor, gold * 0.35);
       this.hemi.intensity *= 1 + gold * 1.3;
     }
+    this._gradeBiome();
     // env: rebake when the sky changed enough (colors or ~0.25 h), at most every 0.5 s; in between scale brightness continuously
     const t = this.game.time;
     if (t - this._envT > 0.5 && (Math.abs(sky.hour - this._envHour) > 0.25 || this._skyDelta() > 0.04)) this.bakeEnv();
-    scene.environmentIntensity = this.envIntensity * (this._skyLum() / this._envLum) * (1 + gold * 0.6);
+    scene.environmentIntensity = this.envIntensity * (this._skyLum() / this._envLum) * (1 + gold * 0.6) * (this._biomeAmb ?? 1);
     renderer.shadowMap.needsUpdate = !this.freezeShadows;
+  }
+
+  /**
+   * Grade the key light and the fill toward the region the player is standing in (BIOMES[id].sun / .amb).
+   * HUE ONLY for the key: its luminance is preserved, so this can never brighten or darken the world by
+   * time of day — it changes what colour the light IS. The ambient scale is allowed to move, because "how
+   * much light bounces around here" genuinely differs between a snowfield and a void.
+   * Eased over ~1.5 s so walking through a pass is a transition, not a switch.
+   */
+  _gradeBiome() {
+    const b = this.game.terrain?.biomeBlend?.(this.game.camera.position.x, this.game.camera.position.z, this._bb ??= {});
+    const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
+    const want = B ? b.w : 0;
+    this._biomeW = this._biomeW == null ? want : this._biomeW + (want - this._biomeW) * 0.03;
+    if (this._biomeW < 0.002 || !B) { this._biomeId = B?.id ?? null; return; }
+    if (this._biomeId !== B.id) { this._biomeId = B.id; this._biomeSun = new THREE.Color(B.sun ?? 0xffffff).convertSRGBToLinear(); }
+    const w = this._biomeW, tint = this._biomeSun;
+    const L = (c) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
+    const k = L(this.keyColor) / Math.max(1e-4, L(tint));
+    this.keyColor.setRGB(this.keyColor.r + (tint.r * k - this.keyColor.r) * w,
+                         this.keyColor.g + (tint.g * k - this.keyColor.g) * w,
+                         this.keyColor.b + (tint.b * k - this.keyColor.b) * w);
+    for (const l of this.cascades) l.color.copy(this.keyColor);
+    const amb = 1 + ((B.amb ?? 1) - 1) * w;
+    this.hemi.color.lerp(tint, w * 0.45);
+    this.hemi.intensity *= amb;
+    this._biomeAmb = amb;
   }
 
   _updateKey() {

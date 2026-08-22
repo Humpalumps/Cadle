@@ -6,6 +6,15 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 
 > **SOURCE INVARIANTS (run first, takes one second): `node tools/invariants.mjs`.** It greps the source for the rules that encode bugs which have shipped repeatedly — the single pointer-lock path (`Input.lock`, plus the HUD hookup and the `synthetic`-only-under-`auto` guard), the grass emissive ceiling AND final-luminance cap, the grass roughness floor, vfx/enemy/viewmodel/prop intensity ceilings, and the bloom/exposure calibration pins. Run it before you start and again before you report; it needs no dev server, so it works even when the harness is contended. It is also enforced automatically: CI (`.github/workflows/checks.yml`) runs it on every push/PR, and the repo's `.claude/settings.json` Stop hook runs it at the end of every agent turn and blocks on failure. These rules exist because prose in this file kept being followed *literally* while a new code path reintroduced the same bug — do not edit `tools/` to satisfy them, fix the code, or say in your report that the rule is wrong.
 >
+> **The gate needs a MASK to be honest (2026-08-22).** `tools/inspect.mjs` captures one `mask-*.png` per burst
+> from `PostFX._renderSkyMask()`: geometry green, sky and fog magenta, **ground cover RED**. `tools/blobcheck.py`
+> scopes both of its tests to the red — that is what the decree is actually about — and ignores whatever the haze
+> owns. Without this it fails on the sun through a treeline, on lantern flames and on loot beacons, and a gate
+> that cries wolf is a gate nobody reads. **After ANY change to blobcheck.py run `python tools/blobcheck.py
+> --selftest <a burst frame>`**: it paints synthetic bloom-balls onto the blades and asserts they are still caught.
+> Coverage for emissives OFF the ground is `tools/invariants.mjs` (intensity ceilings), the hue-preserving aether
+> cap in `src/enemies/materials.js`, and `HOT_TINT` in `src/vfx/Brush.js`.
+>
 > **REGRESSION GATE (mandatory): `node tools/gate.mjs` must exit 0 before any builder reports done; critics run it and ANY failure = automatic LOSE.** It mechanically enforces three decrees that have each regressed multiple times: (1) no washed-white blobs in the meadow, (2) no screen jitter (static camera must produce near-identical consecutive frames), (3) pointer lock engages on click and RE-acquires after exit (the mouse must never escape the window mid-play). If your change can affect any of these (grass/vfx/postfx/enemies materials; TAA/camera; input/HUD start-pause), run the gate FIRST, not last. Do not weaken gate thresholds — thresholds are orchestrator-owned.
 >
 > **ARCHITECTURAL LAW — GROUND COVER IS NEVER EMISSIVE, AND NEVER GLOWS AT ALL (this bug has shipped five times; each time a different system caused it).**

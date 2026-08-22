@@ -300,6 +300,13 @@ diffuseColor.rgb = vGrassColor;`;
 // dawn. 0.50 puts the ceiling back under the bar (measured: 203 over-threshold pixels -> 6) and costs
 // nothing visible: it only clamps the top 0.04% of pixels, and frame mean/p99 luminance are unchanged
 // (114.6 -> 114.5, 177.6 -> 177.1).
+// Gate support (tools/blobcheck.py): flat red for the blades. The <fog_fragment> chunk still runs after
+// this, and PostFX paints the fog magenta during a mask frame, so distant blades correctly fade toward
+// "atmosphere" exactly like every other surface. Zero cost when uMaskMode is 0.
+const GRASS_MASK = /* glsl */`
+	if (uMaskMode > 0.5) gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+`;
+
 const GRASS_LUM_CAP = /* glsl */`
 	float grassLum = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
 	outgoingLight *= 0.50 / max(grassLum, 0.50);
@@ -387,6 +394,7 @@ export class Grass {
       uBlade: { value: new THREE.Vector4(0.7, 0.034, 0, (g.seed | 0) & 0xffff) },
       uTrail: { value: trail },
       uNight: { value: 0 },
+      uMaskMode: { value: 0 },   // gate only: 1 = draw the blades flat red so blobcheck knows which pixels are ground cover (see PostFX._renderSkyMask)
       uSun: { value: new THREE.Vector4(0.3, 0.7, 0.4, 0) },
       uSunCol: { value: new THREE.Vector4(1, 0.9, 0.7, 0) },
     };
@@ -467,7 +475,8 @@ export class Grass {
         .replace('#include <normal_fragment_begin>', NORMAL_BEGIN_GRASS)
         .replace('#include <lights_fragment_maps>', LIGHTS_MAPS_GRASS)
         .replace('#include <lights_physical_pars_fragment>', lightsPhysicalGrass())
-        .replace('#include <opaque_fragment>', GRASS_LUM_CAP + '#include <opaque_fragment>');
+        .replace('#include <opaque_fragment>', `${GRASS_LUM_CAP}#include <opaque_fragment>${GRASS_MASK}`)
+        .replace('#include <common>', '#include <common>\nuniform float uMaskMode;');
     };
     // Keep our injection even if someone (e.g. CSM.setupMaterial) assigns onBeforeCompile later: chain, don't replace.
     let outer = null;

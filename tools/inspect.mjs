@@ -107,7 +107,18 @@ for (const step of steps) {
   try {
     if (k === 'wait') await sleep(v);
     else if (k === 'shot') await shot(v);
-    else if (k === 'burst') { for (let i = 0; i < (v.n ?? 5); i++) { await page.screenshot({ path: path.join(outDir, `burst-${v.name}-${i}.png`) }); await sleep(v.interval ?? 0.1); } report.shots.push({ file: `burst-${v.name}-*.png`, t: now(), state: await state() }); }
+    else if (k === 'burst') {
+      for (let i = 0; i < (v.n ?? 5); i++) { await page.screenshot({ path: path.join(outDir, `burst-${v.name}-${i}.png`) }); await sleep(v.interval ?? 0.1); }
+      // One SKY MASK per burst (the camera is static through a burst): magenta = sky. tools/blobcheck.py
+      // uses it to ignore the sun and the sky seen through gaps in the trees, which are not blobs.
+      try {
+        if (process.env.CADLE_NOMASK) throw new Error("skip");
+        await page.evaluate(() => window.__game?.skyMask?.(true));
+        await sleep(0.25);
+        await page.screenshot({ path: path.join(outDir, `mask-${v.name}.png`) });
+      } catch (e) { if (!process.env.CADLE_NOMASK) throw e; } finally { await page.evaluate(() => window.__game?.skyMask?.(false)); await sleep(0.15); }
+      report.shots.push({ file: `burst-${v.name}-*.png`, t: now(), state: await state() });
+    }
     else if (k === 'key') await ev(([c, d]) => d ? window.__game.input.press(c) : window.__game.input.release(c), [v, step.down !== false]);
     else if (k === 'hold') { await ev((c) => window.__game.input.press(c), v); await sleep(step.secs ?? 1); await ev((c) => window.__game.input.release(c), v); }
     else if (k === 'look') await ev(([y, p]) => window.__game.look(y, p), v);

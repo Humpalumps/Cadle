@@ -3,6 +3,7 @@ import { PlayerController } from './PlayerController.js';
 import { PlayerCamera } from './PlayerCamera.js';
 import { Weapons } from './Weapons.js';
 import { Abilities } from './Abilities.js';
+import { BIOMES } from '../world/Biomes.js';
 
 /**
  * Player: container for the first-person player. Sub-systems (each its own file/owner):
@@ -46,6 +47,23 @@ export class Player {
     for (const p of this.parts) p.update?.(dt, t);
     const pos = this.controller.position;
     this.target.position.set(pos.x, pos.y + 0.9, pos.z); this.target.alive = this.alive;
+    // Lava burns. The Infernal channels are the world's water surface wearing a molten skin, so "am I in
+    // lava" is "am I in water, in a region flagged lava" — one biome lookup, no second physics volume.
+    if (this.alive) {
+      const c = this.controller, T = this.game.terrain, W = this.game.world?.water;
+      if (W && c.position.y < W.level + 0.6 && (c.wading || c.swimming)) {
+        const b = T?.biomeBlend?.(c.position.x, c.position.z, this._lb ??= {});
+        if (b && b.w > 0.3 && BIOMES[b.id]?.lava) {
+          this.damage(dt * 26, null, { element: 'solar', source: 'lava' });
+          if (t - (this._lavaFx ?? 0) > 0.45) {
+            this._lavaFx = t;
+            this.game.postfx?.flash?.(0xff4a10, 0.35, 0.35);
+            this.game.vfx?.emit?.('aether-burst', c.position, { color: 0xff5c10, count: 8, scale: 0.7 });
+            this.game.audio?.play?.('explosion', { pos: c.position, vol: 0.25 });
+          }
+        }
+      }
+    }
     // WoW-style recovery: ~1%/s trickle in combat, ~9%/s once out of combat for 6 s
     // (taking OR dealing damage counts as combat — weapons/abilities stamp lastCombat too)
     if (this.alive && this.health < this.maxHealth) {

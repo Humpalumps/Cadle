@@ -29,6 +29,7 @@ import { OUTER } from '../world/Biomes.js';
  *   'enemy:phase' {enemy, phase}
  */
 const MAX_ALIVE = 40;
+const r6 = (r) => Math.min(2.2, r * 0.32);   // hazard puff scale
 const STREAM = 300;      // m: camps outside this radius are not populated (and get recycled when the cap is tight)
 const _v = new THREE.Vector3(), _c = new THREE.Vector3();
 
@@ -41,6 +42,7 @@ export class Enemies {
     this.heightAt = (x, z) => this.game.terrain.heightAt(x, z);
     this.animCtx = { eye: new THREE.Vector3(), heightAt: this.heightAt };
     this._tmp = new THREE.Vector3(); this._lodD = 0;
+    this.hazards = [];      // lingering ground patches left by signature slams (see addHazard)
   }
   init() {
     const t0 = performance.now();
@@ -158,6 +160,30 @@ export class Enemies {
     if (e) s.enemy = e; return e;
   }
 
+  /**
+   * A lingering damage patch on the ground. Cheap by construction: a handful of records, a distance check
+   * per frame, one decal + one emitter each. Capped at 8 so a long fight cannot carpet the arena.
+   */
+  addHazard(pos, r, dps, secs, color, element = 'solar') {
+    if (this.hazards.length >= 8) this.hazards.shift();
+    this.hazards.push({ x: pos.x, y: pos.y, z: pos.z, r, dps, until: this.game.time + secs, color, element, next: 0 });
+    this.game.vfx?.emit?.('scorch', new THREE.Vector3(pos.x, pos.y + 0.02, pos.z), { size: r * 1.7, life: secs + 4 });
+  }
+  _updateHazards(dt, t) {
+    const P = this.game.player;
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const h = this.hazards[i];
+      if (t > h.until) { this.hazards.splice(i, 1); continue; }
+      if (t > h.next) {   // a puff every 0.4 s: the patch has to be visible or it is an unfair invisible trap
+        h.next = t + 0.4;
+        _v.set(h.x, h.y + 0.1, h.z);
+        this.game.vfx?.emit?.('aether-burst', _v, { color: h.color, count: 5, scale: r6(h.r) });
+      }
+      const dx = P.position.x - h.x, dz = P.position.z - h.z;
+      if (dx * dx + dz * dz < h.r * h.r && Math.abs(P.position.y - h.y) < 3) P.damage?.(h.dps * dt, null, { element: h.element, source: 'hazard' });
+    }
+  }
+
   // ------------------------------------------------------------------ frame
   update(dt, t) {
     const t0 = performance.now();
@@ -183,6 +209,7 @@ export class Enemies {
       if (this.passive && e.alive) { e.alert = false; e.seen = false; }
       e.update(dt, t, lod, frame, d2);
     }
+    if (this.hazards.length) this._updateHazards(dt, t);
     // respawns (cheap scan, 4x a second)
     this._respT = (this._respT ?? 0) + dt;
     if (this._respT > 0.25) {

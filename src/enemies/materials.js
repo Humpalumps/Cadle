@@ -59,7 +59,17 @@ function creatureOnBeforeCompile(shader) {
       float rim = pow(1.0 - saturate(dot(normal, geometryViewDir)), 3.0);
       rim *= smoothstep(1.8, 8.0, length(vViewPosition));   // fade the aether rim out at point-blank: creature reads as a body, not blue glass
       reflectedLight.indirectDiffuse += ecol * rim * uRim * (0.6 + 0.4 * pulse);`)
-    .replace('#include <opaque_fragment>', `#include <opaque_fragment>\ngl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.6, 1.5, 1.35), uFlash);`);
+    .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.6, 1.5, 1.35), uFlash);
+      // HUE-PRESERVING CEILING on the aether parts — same principle as GRASS_LUM_CAP, same user decree.
+      // A crystal / core / eye is a handful of pixels at combat range: once its outgoing luminance clears
+      // the bloom threshold it stops reading as "an arc-blue mote" and becomes an anonymous white ball,
+      // which is exactly the washed-white blob the project forbids. Cap the VALUE, keep the HUE — scaling
+      // by a ratio leaves the colour untouched and only pulls the brightness back under the threshold.
+      // Body parts (vGlow 0) get a ceiling far above anything they reach, so they are unaffected.
+      float aetherLum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      float aetherCap = mix(6.0, 0.62, vGlow);
+      if (aetherLum > aetherCap) gl_FragColor.rgb *= aetherCap / aetherLum;`);
 }
 
 export function createCreatureMaterial({ tint = 0xffffff, emissive = 0x66ccff, roughness = 0.85, metalness = 0.05 } = {}) {

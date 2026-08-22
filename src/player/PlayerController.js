@@ -53,8 +53,10 @@ export class PlayerController {
   }
   init() { this.position.y = this.game.terrain.heightAt(this.position.x, this.position.z) + 0.1; }
   teleport(pos) { this.position.copy(pos); this.velocity.set(0, 0, 0); this.grounded = false; this.sliding = false; this._float = 0; this._jumpBuf = 0; this._landSlow = 0; this._wadeMul = 1; }
+  /** Slow the player for `secs` to `mul` of normal speed (Frostveil bites, ice-giant slams). Refreshes, never stacks. */
+  chill(secs = 2, mul = 0.55) { this._chillT = Math.max(this._chillT ?? 0, secs); this._chillMul = Math.min(this._chillMul ?? 1, mul); }
   pressJump() { this._jumpBuf = this.jumpBufferTime; }   // programmatic jump press — same path as Space (verifies coyote/buffer/ledge forgiveness live)
-  debugTimers() { return { coyote: this._coyote, jumpBuf: this._jumpBuf, jumpsLeft: this.jumpsLeft, airTime: this.airTime, float: this._float, landSlow: this._landSlow, wadeMul: this._wadeMul }; }
+  debugTimers() { return { coyote: this._coyote, jumpBuf: this._jumpBuf, jumpsLeft: this.jumpsLeft, airTime: this.airTime, float: this._float, landSlow: this._landSlow, wadeMul: this._wadeMul, chill: this._chillT ?? 0, gravityScale: +this.gravityScale.toFixed(2), updraft: this.updraft ?? 0 }; }
   get currentHeight() { return this.crouched || this.sliding || this.swimming ? this.crouchHeight : this.height; }
 
   update(dt) {
@@ -95,6 +97,9 @@ export class PlayerController {
     const weapon = this.player.weapons?.current;
     const blocked = this.sprintBlocked || !!weapon?.firing || (weapon?.ads ?? 0) > 0.3 || (input.active && (input.mouseDown(0) || input.mouseDown(2)));
     this._sprintBlockT = blocked ? this.sprintResume : Math.max(0, this._sprintBlockT - dt);
+    // chill (Frostveil): a cold hit drags on you and then lets go — the region's identity in one number
+    if (this._chillT > 0) { this._chillT -= dt; if (this._chillT <= 0) this._chillMul = 1; }
+    const chill = this._chillT > 0 ? (this._chillMul ?? 1) : 1;
     const sprinting = wantSprint && moving && fz < -0.45 && this._sprintBlockT <= 0 && !this.swimming && depth < 0.9;
 
     // ---------------- timers ----------------
@@ -130,6 +135,7 @@ export class PlayerController {
     const wadeT = (this.wading && !this.swimming) ? lerp(1, 0.45, clamp((depth - this.wadeDepth) / 1.0, 0, 1)) : 1;
     this._wadeMul = lerp(this._wadeMul, wadeT, approach(2.5, dt));
     if (!this.swimming) cap *= this._wadeMul;
+    cap *= chill;                                        // Frostveil: a cold hit drags on you for a couple of seconds
     if (this._landSlow > 0) cap *= lerp(1, this._landStr, this._landSlow / this._landSlowDur);
     // hard-turn scrub: carving your momentum heading > ~50°/s can't hold sprint speed (kills the frictionless 180° skate)
     const carve = clamp((this._turnRate - 0.9) / 2.0, 0, 1);

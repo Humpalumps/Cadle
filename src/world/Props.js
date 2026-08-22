@@ -66,15 +66,15 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 // per-landmark sigil colour (linear HDR: additive rings must read at noon without tone-mapping to white,
 // so the HUE is saturated and only one channel goes above 1)
 const LANDMARK_STONE = {
-  forest:    { glyph: [0.35, 1.9, 0.75] },
-  tundra:    { glyph: [0.62, 1.35, 2.3] },
-  celestial: { glyph: [2.3, 1.55, 0.55] },
-  dragon:    { glyph: [2.1, 1.0, 0.35] },
-  infernal:  { glyph: [2.4, 0.55, 0.12] },
-  lost:      { glyph: [1.35, 0.75, 2.4] },
-  shadowfen: { glyph: [0.55, 1.9, 0.5] },
-  sunken:    { glyph: [0.45, 1.5, 1.9] },
-  void:      { glyph: [1.1, 0.4, 2.4] },
+  forest:    { glyph: [0.35, 1.9, 0.75], mat: 'stone' },
+  tundra:    { glyph: [0.62, 1.35, 2.3], mat: 'ice' },
+  celestial: { glyph: [2.3, 1.55, 0.55], mat: 'stone' },
+  dragon:    { glyph: [2.1, 1.0, 0.35],  mat: 'stone' },
+  infernal:  { glyph: [2.4, 0.55, 0.12], mat: 'basalt' },
+  lost:      { glyph: [1.35, 0.75, 2.4], mat: 'stone' },
+  shadowfen: { glyph: [0.55, 1.9, 0.5],  mat: 'basalt' },
+  sunken:    { glyph: [0.45, 1.5, 1.9],  mat: 'stone' },
+  void:      { glyph: [1.1, 0.4, 2.4],   mat: 'basalt' },
 };
 const flat = (g) => { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }; // faceted stone
 /** Merge parts to one non-indexed geometry. tints: per-part [r,g,b] array (or one tint for all) -> vertex colors
@@ -153,6 +153,11 @@ export class Props {
     if (!ruinsTex) console.warn('[props] ruins_stone missing, procedural fallback');
     const sand = ruinsTex ?? stoneTexture(aniso, [0.58, 0.52, 0.42], [0.82, 0.77, 0.66]), basalt = stoneTexture(aniso, [0.26, 0.25, 0.3], [0.5, 0.48, 0.55]);
     this.stoneMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: 0.9, metalness: 0.02, color: 0xf2ece0 }), mergePatch(triplanarPatch(ruinsTex ? 0.34 : 0.45, 0.55), { key: 'stone' }));
+    // Landmark stone. Nine hero props sharing ONE sandstone material read as nine sandstone props with
+    // different tints — the Glacier Throne was blue sandstone. Three materials is enough to cover the
+    // range that matters (warm stone, ice, basalt) and costs two extra draw calls for the whole world.
+    this.iceMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: 0.34, metalness: 0.0, color: 0xdfeeff }), mergePatch(triplanarPatch(0.5, 0.35), { key: 'ice-stone' }));
+    this.basaltMat = patchMaterial(new THREE.MeshStandardMaterial({ map: basalt, vertexColors: true, roughness: 0.95, metalness: 0.02, color: 0x8e8a96 }), mergePatch(triplanarPatch(0.42, 0.5), { key: 'basalt-stone' }));
     this.plinthMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, roughness: 0.7, metalness: 0.08, color: 0xe8e4f0 }), mergePatch(triplanarPatch(0.5, 0.0), { key: 'plinth' }));
     const runeTex = runeColumnTexture(rng);
     this.monoMat = patchMaterial(new THREE.MeshStandardMaterial({ map: basalt, roughness: 0.8, metalness: 0.05, color: 0xffffff, emissiveMap: runeTex, emissive: 0x6a3cff, emissiveIntensity: 2.8 }),
@@ -180,8 +185,10 @@ export class Props {
     const W = (g, t) => { walls.push(g); wallT.push(t); };
     const R = (g, t) => { roofs.push(g); roofT.push(t); };
 
+    this._cottages = [];
     const cottage = (x, z, ry, w, d, wh) => {
       const y = h(x, z) - 0.15;
+      this._cottages.push({ x, y, z, ry, d, wh });
       const body = new THREE.BoxGeometry(w, wh, d).rotateY(ry).translate(x, y + wh / 2, z);
       W(body, [0.86, 0.82, 0.72]);
       // plinth course: a stone footing stops the walls looking like they were dropped on the grass
@@ -218,6 +225,22 @@ export class Props {
       W(new THREE.BoxGeometry(7 + rng() * 5, 0.9, 0.6).rotateY(a + Math.PI / 2).translate(x, y + 0.35, z), [0.58, 0.56, 0.5]);
     }
 
+    // warm windows: additive quads that only light up as the sun goes down (same trick the mushrooms use).
+    // No point lights — nine cottages would be nine shadow-casting lights for one visual beat.
+    const winGeo = [], WIN = new THREE.PlaneGeometry(0.85, 0.7);
+    for (const c of this._cottages ?? []) {
+      for (const s of [1, -1]) {
+        const g = WIN.clone().rotateY(c.ry + (s > 0 ? 0 : Math.PI));
+        g.translate(c.x + Math.sin(c.ry + Math.PI / 2) * s * (c.d / 2 + 0.06), c.y + c.wh * 0.55, c.z + Math.cos(c.ry + Math.PI / 2) * s * (c.d / 2 + 0.06));
+        winGeo.push(g);
+      }
+    }
+    if (winGeo.length) {
+      const wmat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.95, 0.45), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, side: THREE.DoubleSide });
+      const wmesh = new THREE.Mesh(mergeGeometries(winGeo), wmat);
+      wmesh.name = 'village-windows'; wmesh.renderOrder = 1; scene.add(wmesh);
+      this.villageWindows = wmesh;
+    }
     const wm = new THREE.Mesh(flat(mergeAll(walls, wallT)), this.stoneMat);
     wm.castShadow = wm.receiveShadow = true; wm.name = 'village-walls'; scene.add(wm);
     const rm = new THREE.Mesh(flat(mergeAll(roofs, roofT)), this.stoneMat);
@@ -284,12 +307,33 @@ export class Props {
         dais(13, 3, 0.6, [0.86, 0.83, 0.76]);
         gate(15, 17, 0.6, [0.9, 0.86, 0.78]);
         ring(6, 21, (a) => pillar(CX + Math.cos(a) * 21, CZ + Math.sin(a) * 21, 9 + rng() * 5, 0.9, 0.86, [0.88, 0.85, 0.78]));
-        isles.push({ x: CX, z: CZ, y0: CY + 52, n: 7, spread: 90, tint: [0.86, 0.84, 0.78] });
+        isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [0.86, 0.84, 0.78] });
       } else if (B.id === 'dragon') {                                           // Kharaz-Dun Gate, cut into the mountain
-        slab(CX, CY + 11, CZ, 40, 22, 6, 0.3, [0.62, 0.6, 0.58]);               // the wall
-        slab(CX, CY + 6.5, CZ + 2.6, 13, 13, 4, 0.3, [0.2, 0.18, 0.17]);        // the dark doorway
-        pillar(CX - 11, CZ - 2, 20, 2.4, 0.8, [0.72, 0.66, 0.5]); pillar(CX + 11, CZ + 2, 20, 2.4, 0.8, [0.72, 0.66, 0.5]);
-        ring(2, 17, (a, i) => pillar(CX + Math.cos(a + 1.2) * 17, CZ + Math.sin(a + 1.2) * 17, 15 + i * 4, 3.0, 0.7, [0.66, 0.62, 0.56]));
+        const GOLD = [1.25, 0.98, 0.52];
+        slab(CX, CY + 12, CZ - 2.4, 44, 24, 7, 0.3, [0.60, 0.58, 0.56]);        // the wall, set BACK
+        // a real recess: two jambs and a lintel standing proud of the wall, with the dark doorway behind
+        slab(CX - 7.5, CY + 9, CZ + 1.2, 4, 18, 5, 0.3, [0.70, 0.66, 0.58]);
+        slab(CX + 7.5, CY + 9, CZ + 1.2, 4, 18, 5, 0.3, [0.70, 0.66, 0.58]);
+        slab(CX, CY + 19, CZ + 1.2, 21, 3.2, 5.4, 0.3, GOLD);                   // gilded lintel
+        slab(CX, CY + 21.4, CZ + 0.9, 15, 1.6, 4.2, 0.3, GOLD);
+        slab(CX, CY + 8, CZ - 0.6, 11, 17, 2.5, 0.3, [0.10, 0.09, 0.09]);       // the dark inside
+        for (let i = 0; i < 4; i++) slab(CX, CY + 0.5 + i * 0.5, CZ + 5.5 - i * 1.1, 20 - i * 2, 0.6, 2.2, 0.3, [0.66, 0.62, 0.54]);   // steps up to it
+        ring(2, 19, (a, i) => pillar(CX + Math.cos(a + 1.2) * 19, CZ + Math.sin(a + 1.2) * 19, 15 + i * 4, 3.0, 0.7, [0.66, 0.62, 0.56]));
+        // dragon nests on the benches: a boulder ring with eggs, on the flats bhDragon carves
+        for (let n = 0; n < 5; n++) {
+          const a = 0.7 + n * 1.21, rr = 60 + rng() * 70;
+          const nx = CX + Math.cos(a) * rr, nz = CZ + Math.sin(a) * rr, ny = h(nx, nz);
+          if (Math.abs(h(nx + 5, nz) - ny) > 4 || Math.abs(h(nx, nz + 5) - ny) > 4) continue;   // benches only
+          ring(9, 0, (aa) => {
+            const bx = nx + Math.cos(aa) * (6 + rng()), bz = nz + Math.sin(aa) * (6 + rng());
+            P(makeRockGeometry(1, (rng() * 1e6) | 0).scale(1.5 + rng(), 1.0, 1.4 + rng()).translate(bx, h(bx, bz) + 0.2, bz), [0.52, 0.48, 0.44]);
+          });
+          for (let e = 0; e < 3; e++) {
+            const ex = nx + (rng() - 0.5) * 5, ez = nz + (rng() - 0.5) * 5;
+            P(new THREE.SphereGeometry(1.0, 10, 8).scale(0.72, 1.0, 0.72).translate(ex, h(ex, ez) + 0.8, ez), [0.95, 0.88, 0.72]);
+          }
+          col.add({ type: 'sphere', pos: V3(nx, ny + 1, nz), r: 7.5 });
+        }
       } else if (B.id === 'infernal') {                                         // The Cinder Maw: obsidian teeth round the crater
         ring(9, 26, (a, i) => { const x = CX + Math.cos(a) * 26, z = CZ + Math.sin(a) * 26, y = h(x, z), hh = 9 + (i % 3) * 5 + rng() * 4;
           P(monolithGeometry(hh, rng).rotateX(0.3 * Math.cos(a)).rotateZ(0.3 * Math.sin(a)).rotateY(-a).translate(x, y, z), [0.20, 0.16, 0.15]);
@@ -315,11 +359,13 @@ export class Props {
         ring(10, 24, (a, i) => { const x = CX + Math.cos(a) * 24, z = CZ + Math.sin(a) * 24, y = h(x, z) + 6 + (i % 4) * 5, hh = 8 + rng() * 6;
           P(monolithGeometry(hh, rng).rotateX(0.5 * Math.cos(a * 2)).rotateZ(0.5 * Math.sin(a * 3)).rotateY(-a).translate(x, y, z), [0.30, 0.26, 0.40]);
           col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + hh, z), r: 1.5 }); });
-        isles.push({ x: CX, z: CZ, y0: CY + 46, n: 8, spread: 100, tint: [0.32, 0.27, 0.42] });
+        isles.push({ x: CX + 60, z: CZ + 62, y0: CY + 52, n: 8, spread: 105, tint: [0.32, 0.27, 0.42] });
       }
 
       if (parts.length) {
-        const m = new THREE.Mesh(flat(mergeAll(parts, tints)), this.stoneMat);
+        const mat = LANDMARK_STONE[B.id].mat === 'ice' ? this.iceMat
+          : LANDMARK_STONE[B.id].mat === 'basalt' ? this.basaltMat : this.stoneMat;
+        const m = new THREE.Mesh(flat(mergeAll(parts, tints)), mat);
         m.castShadow = m.receiveShadow = true; m.name = 'landmark-' + B.id; scene.add(m);
       }
       // floor sigil: additive, HDR colour so it reads at noon; hue is the region's, VALUE stays modest
@@ -332,24 +378,51 @@ export class Props {
     if (isles.length) this._buildIsles(isles, rng, h, col);
   }
 
-  /** Floating isles: flattened rock domes with a flat walkable cap, plus an updraft column at the centre. */
+  /**
+   * Floating isles: flattened rock domes with a flat walkable cap. An archipelago is only a place if you
+   * can move around it, so the isles are LINKED — each one is joined to the previous by a ruined span you
+   * can walk, and every third isle carries its own updraft column so a fall is a detour, not a death.
+   * Spans are deliberately narrow (2.6 m) and railless: crossing one should cost a held breath.
+   */
   _buildIsles(specs, rng, h, col) {
     const { scene } = this.game;
     const parts = [], tints = [];
     this.updrafts = this.updrafts ?? [];
     for (const s of specs) {
+      const isles = [];
       for (let i = 0; i < s.n; i++) {
-        const a = rng() * Math.PI * 2, r = i === 0 ? 0 : 20 + rng() * s.spread;
+        const a = i === 0 ? 0 : (i / s.n) * Math.PI * 2 + rng() * 0.7, r = i === 0 ? 0 : 26 + (i / s.n) * s.spread + rng() * 22;
         const x = s.x + Math.cos(a) * r, z = s.z + Math.sin(a) * r;
-        const y = s.y0 + (i === 0 ? 0 : (rng() - 0.5) * 46);
+        const y = s.y0 + (i === 0 ? 0 : (rng() - 0.5) * 34);
         const R = i === 0 ? 26 : 11 + rng() * 15;
         const g = makeRockGeometry(2, (rng() * 1e6) | 0);
         g.scale(R, R * 0.5, R * 0.92); g.translate(x, y, z);
         parts.push(g); tints.push([s.tint[0] * (0.86 + rng() * 0.28), s.tint[1] * (0.86 + rng() * 0.28), s.tint[2] * (0.86 + rng() * 0.28)]);
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
+        isles.push({ x, y: y + R * 0.2, z, R });
+        if (i % 3 === 0) this.updrafts.push({ x, z, r: i === 0 ? 13 : 8, top: y + 26 });   // a way back up from most of the ring
       }
-      this.updrafts.push({ x: s.x, z: s.z, r: 13, top: s.y0 + 30 });
+      // spans: isle i to isle i-1, plus one back to the hub, laid as a few short segments so a long
+      // bridge follows the height difference in steps instead of hovering as one impossible plank
+      const spans = isles.slice(1).map((b, i) => [isles[i], b]).concat(isles.length > 2 ? [[isles[isles.length - 1], isles[0]]] : []);
+      for (const [a, b] of spans) {
+        const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+        if (len > 150) continue;                                     // too far to bridge; the updraft is the way
+        const ux = dx / len, uz = dz / len, ry = Math.atan2(dx, dz);
+        const t0 = a.R * 0.55, t1 = len - b.R * 0.55, span = t1 - t0;
+        if (span < 6) continue;
+        const SEG = Math.max(2, Math.round(span / 16));
+        for (let k = 0; k < SEG; k++) {
+          const f0 = t0 + (span * k) / SEG, f1 = t0 + (span * (k + 1)) / SEG, fm = (f0 + f1) / 2;
+          const px = a.x + ux * fm, pz = a.z + uz * fm;
+          const py = a.y + (b.y - a.y) * (fm / len) - 0.5 - Math.sin((fm - t0) / span * Math.PI) * 1.6;   // sags in the middle
+          const L = f1 - f0 + 0.6;
+          const g = new THREE.BoxGeometry(2.6, 0.55, L).rotateY(ry).translate(px, py, pz);
+          parts.push(g); tints.push([s.tint[0] * 0.92, s.tint[1] * 0.92, s.tint[2] * 0.92]);
+          col.add({ type: 'box', box: new THREE.Box3(V3(px - 1.6, py - 0.3, pz - 1.6), V3(px + 1.6, py + 0.28, pz + 1.6)), walkable: true });
+        }
+      }
     }
     const m = new THREE.Mesh(mergeAll(parts, tints), this.stoneMat);
     m.castShadow = m.receiveShadow = true; m.name = 'floating-isles'; scene.add(m);
@@ -575,6 +648,7 @@ export class Props {
     const dcam = this.game.camera.position.distanceTo(A.group.position);
     A.light.intensity = (55 + 12 * Math.sin(t * 1.1)) * clamp(1 - (dcam - 55) / 25, 0, 1); // distance-fade the only point light (radius 48; keeps the shader program stable)
     if (this.mushGlow) this.mushGlow.material.opacity = clamp(1.15 - (this.game.sky?.sunIntensity ?? 1), 0.06, 0.85); // glow pools live at night, near-off at noon
+    if (this.villageWindows) this.villageWindows.material.opacity = clamp(1.05 - (this.game.sky?.sunIntensity ?? 1) * 1.6, 0, 0.9);   // hearths lit after dusk
     if (!this.game.world.vegetation?.lods && this._ownLods) { const p = this.game.camera.position; for (const l of this._ownLods) l.refresh(p.x, p.z); }
     if (!this.game.world.vegetation) this.U.uTime.value = t;
   }

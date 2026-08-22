@@ -649,6 +649,8 @@ export class Vegetation {
       let p = forest * 0.62 + (1 - forest) * (grove * 0.22 + 0.012);
       if (r0 < 95) p *= 0.2; if (x > 220) p *= 0.3; if (ruinD(x, z) < 80) p *= 0.25;
       if (r0 > 300) p *= smoothstep(430, 320, r0);                      // home-bowl groves stop at the mountain feet
+      const road = terrain.roadAt?.(x, z) ?? 0;                         // nothing grows in the pass roads
+      if (road > 0.35) continue;
       const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
       if (bTree) p = p * (1 - bt.w) + bTree.p * grove2(x, z) * bt.w;
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
@@ -675,6 +677,7 @@ export class Vegetation {
       const y = terrain.heightAt(x, z); if (y < wl - 1) continue; const slope = terrain.slopeAt(x, z); if (slope > 0.75) continue;
       const rd = ruinD(x, z); let p = 0.04 + smoothstep(20, 60, y) * 0.03 + smoothstep(0.15, 0.45, slope) * 0.05; if (y > 50) p *= 0.4;
       if (rd < 45) p = rd < 12 ? 0 : 0.35; if (x > 220 && r0 < 400) p += 0.1; if (r0 < 60) p *= 0.5; if (lakeD(x, z) < 110 && y < wl + 3) p += 0.12;
+      if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
       const br = B(x, z), bRock = br.w > 0.02 ? BROCK[br.id] : null;
       if (bRock) p = p * (1 - br.w) + bRock.p * br.w;
       if (rng() > p) continue;
@@ -705,6 +708,7 @@ export class Vegetation {
       const field = smoothstep(215, 250, x) * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.02, z * 0.02, { octaves: 3, seed: 19 })) * home;
       const forest = smoothstep(-180, -220, z) * smoothstep(270, 240, Math.abs(x)) * home;
       let p = field * 0.38 * smoothstep(80, 45, y) + forest * 0.025;   // fields stay off the snowy slopes
+      if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
       const bc = B(x, z), bSpire = bc.w > 0.02 ? BSPIRE[bc.id] : null;
       if (bSpire) p = p * (1 - bc.w) + bSpire.p * bc.w * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.016, z * 0.016, { octaves: 3, seed: 23 }));
       if (rng() > p) continue;
