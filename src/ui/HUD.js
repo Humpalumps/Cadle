@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Settings } from './settings.js';
 import * as MAP from './mapscreen.js';
+import { BIOMES, regionAt } from '../world/Biomes.js';
 
 /**
  * HUD: DOM-based heads-up display (CSS transforms, no per-frame layout thrash). Visual language: FF14 ornate gold/aether-blue frames
@@ -342,12 +343,25 @@ export class HUD {
     c.beginPath(); c.moveTo(0, -7.5); c.lineTo(5.2, 6); c.lineTo(0, 3); c.lineTo(-5.2, 6); c.closePath();
     c.fill(); c.stroke(); c.restore();
     c.restore();
-    // zone label = nearest landmark (1 Hz)
+    // zone label + border crossing (1 Hz). Outside the home bowl the label is the REGION you are standing
+    // in — crossing the seam between two regions renames the map and throws the name card, which is the
+    // whole point of a border. Inside the bowl the regions are one, so the nearest landmark is the useful
+    // label instead. Same `regionAt` the music and the ambient bed use, so all three land on one step.
     if (t - this._mmZoneT > 1) {
       this._mmZoneT = t;
-      let best = null, bd = 1e9;
-      for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
-      setT(this.mmZone, best ? best.name : '');
+      const rid = regionAt(p.x, p.z), B = BIOMES[rid];
+      if (rid !== 'meadow') setT(this.mmZone, B?.short ?? '');
+      else {
+        let best = null, bd = 1e9;
+        for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
+        setT(this.mmZone, best ? best.name : '');
+      }
+      if (this._region === undefined) this._region = rid;                      // first poll: you did not cross into where you spawned
+      else if (rid !== this._region) {
+        this._region = rid;
+        const lv = B?.level;
+        this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '');
+      }
     }
   }
 

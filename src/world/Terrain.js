@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32, hash2, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
-import { ORDER, RB, RR, RING_IN, RING_OUT, EDGE, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
+import { ORDER, RB, RR, RL_CORE, RL_EDGE, RING_IN, RING_OUT, EDGE, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
 
 /**
  * Terrain: heightfield mesh + height/normal queries used by everything else (player, grass, water, props, AI).
@@ -259,8 +259,9 @@ export class Terrain {
     if (d0 > 470) {                                                      // one of the 9 outer biomes (Biomes.js layout)
       let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
       const c = BC[k], bx = x - c[0], bz = z - c[1];
-      const w = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz));
-      if (w > 0.001) h = BH[k](x, z, h, s, w, c[0], c[1]);
+      const w = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz));   // LANDFORM mask stays at RR — the look reaches
+      if (w > 0.001) h = BH[k](x, z, h, s, w, c[0], c[1]);          // past a region's mountains, the mountains do not
+
     }
     if (d0 > EDGE - 20) {
       // World edge. This is the backdrop of EVERY view in the outer belt, so it cannot be a smooth ramp —
@@ -422,7 +423,7 @@ export class Terrain {
     if (d0c > 470) {                                   // outer biome floor: same layer choice as the shader, one mean colour
       let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
       const c = BC[k], bx = x - c[0], bz = z - c[1];
-      const bw = ss(RR, RR * 0.62, Math.sqrt(bx * bx + bz * bz)) * BCOV[k];
+      const bw = ss(RL_EDGE, RL_CORE, Math.sqrt(bx * bx + bz * bz)) * BCOV[k];   // same partition the splat uses
       if (bw > 0.002) { const a = BALB[k]; r = mix(r, a[0], bw); g = mix(g, a[1], bw); b = mix(b, a[2], bw); }
     }
     const wet = lakeM * ss(WL + 6.5, WL + 0.2, h);
@@ -569,7 +570,10 @@ export class Terrain {
     console.log(`[terrain] preview ready in ${(t1 - t0).toFixed(0)} ms, ${L} levels x ${n} cells`);
     // real asset albedos (ASSETS.md): fetched + resized in parallel with the worker bake, merged over the procedural
     // layers when both land (procedural stays the fallback + its height supplies the macro shading / blend alpha source)
-    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.84]];  // [layer, file, sRGB gain]
+    // [layer, file, sRGB gain]. 6/8/9/10/11 are the outer regions' floors — they were procedural noise, which
+    // is why the Isles read as flat tan with a visible lattice and the Void and the fen read as coloured mud.
+    const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.84],
+      [6, 'celestial_marble', 0.88], [8, 'ash', 1.00], [9, 'glacier_ice', 0.90], [10, 'fen_muck', 1.02], [11, 'voidstone', 1.05]];
     const imgP = Promise.all(ASSET_LAYERS.map(([l, nm, mul]) =>
       fetch(`/assets/tex/${nm}.jpg`).then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then((bl) => createImageBitmap(bl, { resizeWidth: R, resizeHeight: R, resizeQuality: 'high' }))
@@ -903,7 +907,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float bK = mod(floor((bAng - ${THETA0}) / ${STEP} + 0.5), 9.0);
   float bA = ${THETA0} + bK * ${STEP};
   float bD = length(P.xz - vec2(cos(bA), sin(bA)) * ${RB}.0) + (macro - 0.5) * 26.0;
-  float bW = 1.0 - smoothstep(${RR * 0.62}, ${RR}.0, bD);
+  float bW = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD);   // Biomes.RL_*: regions abut, seam at 260 m
   float bLayer = 1.0, bScl = 3.6, bRough = 0.90, bCov = 0.72, bSnow = 0.0, bRockCut = 0.0; vec3 bTint = vec3(1.0);
   if (bK < 0.5)      { bLayer = 1.0;  bScl = 3.4; bCov = 0.72; bTint = vec3(0.86, 1.10, 0.80); }                  // forest floor
   else if (bK < 1.5) { bLayer = 9.0;  bScl = 6.5; bCov = 1.00; bRough = 0.45; bSnow = 1.0; bRockCut = 0.55; }     // tundra glacier
@@ -1030,8 +1034,12 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // Biome ground glow. ARCHITECTURAL LAW: saturate the HUE, cap the VALUE - a ground emissive that can reach the
   // bloom threshold turns into drifting white balls. Deep orange fissures / violet void veins, both well under 1.
   float bCov2 = sB / sum;
-  if (bK > 3.5 && bK < 4.5) tEmis += vec3(0.90, 0.155, 0.012) * bCov2 * smoothstep(0.30, 0.06, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
-  if (bK > 7.5)             tEmis += vec3(0.34, 0.10, 0.85) * bCov2 * smoothstep(0.30, 0.05, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
+  // Thresholds are calibrated to the LUMA OF THE FLOOR TEXTURE (cB.a is its luma): ash and voidstone sit at
+  // median 0.11, so the old 0.30..0.06 ramp lit the entire floor and the Wastes and the Void rendered as one
+  // flat sheet of orange / violet emissive with no ground under it. These bands catch the darkest ~10-12% —
+  // the cracks between the plates, which is what a fissure is. Re-measure if either texture is replaced.
+  if (bK > 3.5 && bK < 4.5) tEmis += vec3(0.90, 0.155, 0.012) * bCov2 * smoothstep(0.075, 0.025, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
+  if (bK > 7.5)             tEmis += vec3(0.34, 0.10, 0.85) * bCov2 * smoothstep(0.085, 0.032, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
   tRough = rough;
   diffuseColor.rgb *= alb;
 }`;

@@ -334,8 +334,22 @@ export class Lighting {
     const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
     const want = B ? b.w : 0;
     this._biomeW = this._biomeW == null ? want : this._biomeW + (want - this._biomeW) * 0.03;
-    if (this._biomeW < 0.002 || !B) { this._biomeId = B?.id ?? null; return; }
-    if (this._biomeId !== B.id) { this._biomeId = B.id; this._biomeSun = new THREE.Color(B.sun ?? 0xffffff).convertSRGBToLinear(); }
+    // Cache the tint on EVERY id change, including the one that happens while the eased weight is still
+    // under the early-out bar — otherwise walking into a region sets _biomeId first and _biomeSun never,
+    // and the next frame reads an undefined tint (the whole lighting update then throws, every frame).
+    const id = B?.id ?? null;
+    if (this._biomeId !== id) {
+      this._biomeId = id;
+      (this._biomeSunT ??= new THREE.Color()).set(BIOMES[id]?.sun ?? 0xffffff).convertSRGBToLinear();
+      this._biomeAmbT = BIOMES[id]?.amb ?? 1;
+      this._biomeSun ??= this._biomeSunT.clone(); this._biomeAmbE ??= this._biomeAmbT;
+    }
+    // Two neighbouring regions meet at a line (Biomes.RL_*), so at the seam the id flips while the weight
+    // is still ~0.5 — grade straight off B and the key light changes colour in one frame. Ease the target
+    // instead: ~1 s of crossfade on top of the 50 m spatial band, which is the border crossing itself.
+    this._biomeSun.lerp(this._biomeSunT, 0.03);
+    this._biomeAmbE += (this._biomeAmbT - this._biomeAmbE) * 0.03;
+    if (this._biomeW < 0.002 || !B) return;
     const w = this._biomeW, tint = this._biomeSun;
     const L = (c) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
     const k = L(this.keyColor) / Math.max(1e-4, L(tint));
@@ -343,7 +357,7 @@ export class Lighting {
                          this.keyColor.g + (tint.g * k - this.keyColor.g) * w,
                          this.keyColor.b + (tint.b * k - this.keyColor.b) * w);
     for (const l of this.cascades) l.color.copy(this.keyColor);
-    const amb = 1 + ((B.amb ?? 1) - 1) * w;
+    const amb = 1 + (this._biomeAmbE - 1) * w;
     this.hemi.color.lerp(tint, w * 0.45);
     this.hemi.intensity *= amb;
     this._biomeAmb = amb;

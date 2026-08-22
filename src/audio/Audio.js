@@ -30,7 +30,7 @@ import { makeNoise, makeImpulse, EPS } from './synth.js';
 import { SFX, SFX_NAMES } from './sfx.js';
 import { Ambient } from './ambient.js';
 import { Music } from './music.js';
-import { BIOMES } from '../world/Biomes.js';
+import { BIOMES, regionAt } from '../world/Biomes.js';
 
 const NOOP = Object.freeze({ stop() {}, setPos() {} });
 const EMPTY = Object.freeze({});
@@ -93,7 +93,7 @@ export class Audio {
   async _decodeAssets() {
     const A = this.game.assets; if (!A?.audioBuffer) return;
     const dctx = this.ctx ?? new OfflineAudioContext(1, 1, 48000);
-    const names = ['field-theme', 'night-theme'];
+    const names = ['field-theme', 'night-theme', 'wood-theme', 'frost-theme', 'choir-theme', 'drums-theme', 'forge-theme', 'convergence-theme', 'fen-theme', 'deep-theme', 'void-theme'];   // every region theme is decoded up front: a first-play decode of a 60 s mp3 hitches exactly when you cross a border
     for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) names.push(`shot-${a}-${i}`);
     for (let i = 1; i <= 4; i++) names.push(`explosion-${i}`);
     await Promise.all(names.map(async (n) => {
@@ -305,6 +305,7 @@ export class Audio {
   update(dt, t) {
     this._perFrame = 0;
     this._trackTick(dt);                                       // music track auto-select + combat duck: state is tracked even without a live ctx (auto mode)
+    this._zoneTick(dt);                                        // which region am I in: tracked without a ctx too, so the harness can verify a border crossing
     const ctx = this.ctx; if (!ctx) return;
     if (!this.unlocked) { if (ctx.state === 'running') this._onRunning(); else return; }
     const now = ctx.currentTime, cam = this.game.camera;
@@ -318,21 +319,23 @@ export class Audio {
       if (v.loop) { const { rec, o } = v.loop; v.S.t = v.end - 0.06; v.S.nodes.length = 0; const d = rec.f(v.S, o); v.end = v.S.t + d + 0.06; }   // ponytail: loop = retrigger; fine for sustained whines/beds
       else this._release(v);
     }
-    // zone (every 0.5 s; immediately on fast travel) + ambient creatures + music
-    const pp = this.game.player?.position ?? p;
-    if (this._lastPX !== null && Math.abs(pp.x - this._lastPX) + Math.abs(pp.z - this._lastPZ) > 25) { this._zoneT = 9; this._zoneFast = true; }   // teleport: re-poll now, settle the beds fast
-    this._lastPX = pp.x; this._lastPZ = pp.z;
-    this._zoneT += dt;
-    if (this._zoneT > 0.5) {
-      this._zoneT = 0; this.zone = this.ambientZone ?? this._zoneAt(pp.x, pp.z);
-      this.ambientSys.setZone(this.zone, this._zoneFast ? 0.4 : 1.5); this._zoneFast = false;
-      const reg = this._regionAt(pp.x, pp.z);
-      if (reg !== this.musicRegion) { this.musicRegion = reg; this.musicSys.setRegion?.(reg); }
-    }
     const hour = this.game.sky?.hour ?? 12;
     this.ambientSys.update(now, p.x, p.y, p.z, hour);
     if (this.musicSys.playing) this.musicSys.schedule(now);
   }
+  /** Every 0.5 s (immediately on fast travel): which region the player stands in -> ambient bed + music theme. */
+  _zoneTick(dt) {
+    const pp = this.game.player?.position ?? this.game.camera.position;
+    if (this._lastPX !== null && Math.abs(pp.x - this._lastPX) + Math.abs(pp.z - this._lastPZ) > 25) { this._zoneT = 9; this._zoneFast = true; }   // teleport: re-poll now, settle the beds fast
+    this._lastPX = pp.x; this._lastPZ = pp.z;
+    this._zoneT += dt;
+    if (this._zoneT <= 0.5) return;
+    this._zoneT = 0; this.zone = this.ambientZone ?? this._zoneAt(pp.x, pp.z);
+    this.ambientSys.setZone(this.zone, this._zoneFast ? 0.4 : 1.5); this._zoneFast = false;
+    const reg = this._regionAt(pp.x, pp.z);
+    if (reg !== this.musicRegion) { this.musicRegion = reg; this.musicSys.setRegion?.(reg); }
+  }
+
   /** Every 0.5 s: hour drives field/night (unless a track was pinned via music()); recent combat events duck the music bus Destiny-style. */
   _trackTick(dt) {
     this._musicT += dt; if (this._musicT < 0.5) return; this._musicT = 0;
@@ -347,15 +350,13 @@ export class Audio {
   }
   /** Which region's LIGHT the score is played in (BIOMES[id].music). Same blend the ambient bed uses. */
   _regionAt(x, z) {
-    if (Math.hypot(x, z) < 330) return 'field';
-    const b = this.game.terrain?.biomeBlend?.(x, z, this._mb ??= {});
-    return b && b.w > 0.35 ? (BIOMES[b.id]?.music ?? 'field') : 'field';
+    return BIOMES[regionAt(x, z)]?.music ?? 'field';   // Biomes.regionAt: the seam between two regions IS the crossing point
   }
   _zoneAt(x, z) {
     const r = Math.hypot(x, z);
     if (r > 330) {                                    // outside the home bowl: the region's own bed
-      const b = this.game.terrain?.biomeBlend?.(x, z, this._zb ??= {});
-      if (b && b.w > 0.25) return BIOMES[b.id]?.zone ?? 'wilds';
+      const r = regionAt(x, z);
+      if (r !== 'meadow') return BIOMES[r]?.zone ?? 'wilds';
       return r > 600 ? 'wilds' : 'mountain';
     }
     if (r > 380) return 'mountain';

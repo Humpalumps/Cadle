@@ -751,12 +751,17 @@ export class Sky {
     const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
-    let c = cache.get(b.id);
-    if (!c) { c = new THREE.Color(B.fog).convertSRGBToLinear(); cache.set(b.id, c); }
+    let t = cache.get(b.id);
+    if (!t) { t = new THREE.Color(B.fog).convertSRGBToLinear(); cache.set(b.id, t); }
+    // Regions abut (Biomes.RL_*), so crossing a seam flips b.id in one frame at weight ~0.5. Chase the
+    // target hue/density instead of taking them straight, so the haze turns over ~1 s of walking.
+    const c = this._fogBiome ??= t.clone();
+    c.lerp(t, 0.03);
+    this._fogMulE = this._fogMulE == null ? (B.fogMul ?? 1) : this._fogMulE + ((B.fogMul ?? 1) - this._fogMulE) * 0.03;
     const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
     const k = L(out) / Math.max(1e-4, L(c)), w = b.w * 0.85;
     out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
-    this._fogD = this.fogDensity * (1 + ((B.fogMul ?? 1) - 1) * b.w);
+    this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
   }
 
   dispose() {

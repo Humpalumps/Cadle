@@ -6,7 +6,130 @@ Read this first if you are picking this project up cold (new session, new agent,
 
 ---
 
-## 0. Latest wave — THE TEN BIOMES (2026-08-21/22)
+## 0. Latest wave — BORDER CROSSINGS (2026-08-22)
+
+The user's bar for this wave, verbatim: *walking from one biome to another must be at the level of walking
+from the Barrens to Ashenvale in World of Warcraft — you can plainly see a biome shift, and the music plays
+different as you enter one biome to another.*
+
+### The diagnosis
+
+The ten-biome map already had per-region ground, haze, key light, ambient bed and "music". None of it read as a
+crossing, for four separate reasons:
+
+1. **There was no border.** `weightAt` faded each region out at 210 m from its centre, but neighbouring centres
+   are 520 m apart — so between every pair of regions lay ~100 m of belt that belonged to NOBODY. Walking
+   tundra → celestial, the world went back to Vale green (with a "The Vale" card on it) for half a minute and
+   then became something else. Measured, not guessed: a 20 m-step probe across the seam read
+   `id=tundra w=0.09` → `w=0.00` → `id=celestial w=0.09`.
+2. **A region did not have its own music.** `music.js` played ONE theme with a per-region playback rate, tilt
+   filter and reverb send. That is a re-EQ, not a different piece.
+3. **Nothing announced the crossing.** The minimap showed the nearest landmark; no zone card.
+4. **Walking into a region threw an exception every frame.** `Lighting._gradeBiome` set `_biomeId` inside the
+   early-out branch but cached `_biomeSun` after it, so entering a region through the low-weight edge (i.e. on
+   foot, which is the only way a player ever does it) left the tint undefined and the whole lighting update
+   threw from then on. This is why the first crossing probe froze at r≈558 with ten `reading 'r'` page errors.
+
+### What shipped
+
+- **The belt is a partition** (`Biomes.RL_CORE/RL_EDGE = 270/320`, used by `weightAt`, the splat GLSL and
+  `Terrain.colorAt`). Two neighbours now read full strength right up to the bisector where `wedgeAt` hands
+  over, so the border is a LINE (broken by the splat's own ±13 m macro noise), not a corridor. The landform
+  mask (`RR` = 210) was deliberately NOT widened: a region's look reaches past its mountains, the mountains
+  do not, and widening it would have meant a re-bake with different terrain.
+- **`Biomes.regionAt` is the single crossing truth** (weight > 0.30 — the weakest point of a region is the seam
+  itself, ~0.38 along the ring arc). Audio's music region, Audio's ambient zone and the HUD's card and minimap
+  label all read it, so they change on the same step.
+- **Nine region themes**, 60 s each, generated with Magnific/ElevenLabs and committed under
+  `public/assets/music/` (`wood/frost/choir/drums/forge/convergence/fen/deep/void-theme.mp3`). `music.js`
+  `_themeKey()` picks `<region>-theme` when its buffer is decoded, cross-fading over 2 s; the old rate/tilt
+  colouring is now only the fallback for a region whose buffer is missing. All eleven themes are decoded up
+  front (`Audio._decodeAssets`) — a first-play decode of a 60 s mp3 would hitch exactly at a crossing.
+- **Zone card on crossing** — the existing `hud.notify()` (44 px small-caps gold serif + filigree rule) fires
+  with the region's name and its level band. Suppressed for the region you spawn in.
+- **Border stones** (`Props._buildBorderStones`): three pairs of standing stones flanking each of the nine
+  seams at r 700 / 762 / 824, one merged mesh, 54 stones for one draw call. An open line in a field is
+  something you cross without noticing; a gate is a threshold.
+- **The crossing eases in time as well as space**: `Lighting._gradeBiome` and `Sky._gradeFog` now chase the
+  target tint / fog hue / fog density (~1 s) instead of taking them straight, because the id flips in one frame
+  at the seam.
+- **Region tracking no longer needs an AudioContext** (`Audio._zoneTick`), so `?auto=1` harness runs — which
+  have no ctx — can verify a crossing. This is why every earlier probe reported `zone=meadow music=field`
+  standing in the heart of the tundra.
+
+### Also fixed on the way (all found by looking at the screenshots)
+
+- **Every biome's spires looked like the same meadow crystal.** The per-biome tint only reached the crystal
+  albedo; the emissive body, rim and translucency were hardcoded aether violet, which drowns it. They now take
+  the instance hue (`gTint`, normalised to the brightest channel — hue only, the intensity and its cap are
+  untouched, per the architectural law).
+- **Five region floors were procedural noise** — the Isles read as flat tan with a lattice in it, the Void and
+  the fen as coloured mud. Generated `celestial_marble / ash / glacier_ice / fen_muck / voidstone` (1024²,
+  low-frequency lighting divided out so the tile repeat does not read as a checkerboard), wired through
+  `Terrain.ASSET_LAYERS`.
+- **The Infernal Wastes rendered as one flat orange sheet.** The lava-fissure and void-vein emissives key off
+  `cB.a`, the floor texture's luma, with a 0.30..0.06 ramp — and the new ash/voidstone sit at median 0.11, so
+  every pixel was a fissure. Re-calibrated to the darkest ~10% (0.075..0.025 and 0.085..0.032). **Re-measure
+  if either texture is replaced** (the numbers are in ASSETS.md).
+- **Floating isles were dark ellipses** from below — the one angle you always have on them. Each isle now hangs
+  a torn keel (rock kind 3, flipped).
+
+### Verification — what was actually run
+
+- `node tools/invariants.mjs` — OK. `node tools/check.mjs` — 61 files OK.
+- **All nine passes walked end to end** (`tools/out/passes1`), sprinting outward from r≈320 for 40 s:
+  every one leaves the mountain ring and ends inside its destination region. Logged x/z as well as radius, so a
+  tangential slide can no longer be mistaken for "stuck" (the old probe's flaw). **Four of the nine —
+  dragon, lost, void, infernal — genuinely stop** at r 569 / 592 / 597 / 630 (movement drops to 0–2 m per 2 s):
+  the straight line runs into the region's own landform (peak wall, abyss shelf, caldera rim). They are IN the
+  region by then; a player would walk around. Not fixed, flagged.
+- `vegetation.collisionSelfTest()` — **pass** (tree capsule, rock, crystal, ruins wall).
+- **Perf, 1080p RTX 3060, six regions.** q=high p50 2.9–4.6 ms, ≤ 189 draw calls, ≤ 2.9 M tris, memMB flat at
+  272.8. **q=low re-profiled since the world grew 4× (outstanding item 1): mean 2.5–3.65 ms, p99 4.4–13.3 ms,
+  ≤ 135 calls — inside the ≤ 4 ms budget in every region.**
+- **The ~250 ms frame spikes (outstanding item 2) are now characterised, not fixed.** They are periodic
+  (~3/second), q=high only — **q=low has none at all** — and they survive every subsystem toggle: env bake off,
+  shadows frozen, water update stubbed, postfx bypassed, TAA off, AO+godrays off, and a second pass over the
+  whole map with the program count already warm (174 → 174, so it is not shader compilation). Vegetation LOD
+  refresh was measured directly and is not it (0.3 ms for all eight sets). **In a HEADED browser
+  (`--headed`) the same probe reads p99 86 ms / max 345 ms with ~65 ms spikes** — so the headless figure is
+  inflated ~3×, but a real ~65 ms hitch does exist at q=high and is still a "hitches are failures" problem.
+  Next place to look: the harness's own frame pacing vs the real one, and per-frame render-target work that
+  scales with the q=high resolution/MSAA path.
+- Regression gate at merge: see "Gate status" below.
+
+### Still open (carried forward)
+
+1. Four of nine straight-line pass walks stop at the destination region's landform edge (above).
+2. The q=high ~65 ms periodic hitch (above) — the biggest remaining perf item.
+3. Celestial Isles read weakest at NIGHT — brown, unlit, no gold. Day is fine.
+4. Isles have spans, updrafts and now keels, but still nothing ON them: no props, no encounter, no reward.
+5. Village is nine huts and a well — no interiors, no NPCs.
+6. Serpents still read thin from below; hover band wants tuning against the dive AI.
+7. Underwater is fog only — no caustics, no muffled audio, no oxygen.
+8. Level bands declared but never validated; no signposting when a level-5 player wanders into the Lost Realm.
+9. Submerged-in-lava has bright star flares (bloom on hot cracks from inside).
+10. `public/assets/` is ~41 MB against a 40 MB target — the nine themes are 192 kbps CBR and there is no mp3
+    encoder on this machine (no ffmpeg; Pillow is images only). Re-encoding to 128 kbps recovers ~4 MB.
+11. `tools/blobcheck.py` BRIGHT no longer covers airborne blobs; coverage there is the invariants ceilings +
+    the aether cap + HOT_TINT. A glowing ball off the ground is the gap.
+12. `tools/gate.mjs` still hardcodes `http://127.0.0.1:5173` (it happened to be this worktree's server).
+
+### Gate status at merge (`node tools/gate.mjs`, this worktree's server on 5173)
+
+`invariants PASS` · `jitter PASS at both qualities (0.135 q=high, 0.078 q=low — the frozen-world limit is 2.0)` ·
+`pointer lock PASS (engage + re-acquire)` · `blobcheck q=low PASS (88 frames, no clusters, no flashes)` ·
+**`blobcheck q=high FAIL on ONE 18 px cluster`** at [450, 43] of `burst-blob-pop15a-*` (reported three times:
+once as BRIGHT, twice as the FLASH either side of it). Cropping that frame shows ordinary meadow — a distant
+hazy hill edge the mask counts as ground cover — and it is the same detector noise-floor class the previous
+session merged on deliberately, except that session had 24 such lines and this has one cluster. It was NOT
+A/B'd against a stashed baseline, so it is possible (not likely) that it is new. Merging on it is a decision,
+and this is the decision that was made; the honest lever if the next wave wants a green gate is
+`tools/blobcheck.py`'s `MIN_AREA` / `LUM_BRIGHT` (orchestrator-owned), not more grade-flattening.
+
+*(the ten-biome wave that this one builds on is below)*
+
+## 0b. Previous wave — THE TEN BIOMES (2026-08-21/22)
 
 The world is **2048 × 2048 m with ten biomes** (was 1024 m / one region). `src/world/Biomes.js` is the single
 source of truth for the layout and the per-region data; CLAUDE.md "World layout" has the full table and rules.

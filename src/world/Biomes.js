@@ -22,7 +22,18 @@ import { smoothstep } from '../core/Noise.js';
 
 // ---------------------------------------------------------------- geometry
 export const RB = 760;                       // outer biome centres sit on this radius
-export const RR = 210;                       // biome mask reaches 0 at this distance from its centre
+export const RR = 210;                       // LANDFORM radius: how far a region's own height kernel reaches (Terrain.BH[])
+// LOOK radius. The belt is a PARTITION, not nine islands in a neutral sea. Two neighbouring centres are
+// 2*RB*sin(STEP/2) = 520 m apart along the chord and ~528 m along the ring arc, so the farthest a seam
+// point ever sits from either centre is ~264 m. RL_CORE is set PAST that: both neighbours read full
+// strength right up to the line where `wedgeAt` hands over, so the border is a line (broken up by the
+// splat's own +-13 m macro noise), not a 100 m corridor where the world fades back to Vale green with a
+// "The Vale" card on it. That corridor is what made a crossing read as "the world went neutral for half
+// a minute" instead of "I have arrived somewhere else".
+// Radially this reaches r 440..1030, i.e. a region's ground, haze, light, music and bestiary start up in
+// its mountain pass. The LANDFORM mask (RR) is deliberately NOT widened — a region's look reaches past
+// its own mountains and lakes; the mountains themselves do not.
+export const RL_CORE = 270, RL_EDGE = 320;
 export const RING_IN = 330, RING_OUT = 600;  // home mountain ring band
 export const EDGE = 960;                     // world-edge wall starts here
 export const THETA0 = -95 * Math.PI / 180;   // bearing of k=0 (due north: -Z)
@@ -38,10 +49,10 @@ export function wedgeAt(x, z) {
   let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9;
   return k < 0 ? k + 9 : k;
 }
-/** 0..1 membership of (x,z) in outer biome k (1 at the centre, 0 at RR). */
+/** 0..1 membership of (x,z) in outer biome k: 1 out to RL_CORE, 0.5 on the seam with its neighbour, 0 past RL_EDGE. */
 export function weightAt(x, z, k) {
   const c = centerOf(k);
-  return smoothstep(RR, RR * 0.62, Math.hypot(x - c.x, z - c.z));
+  return smoothstep(RL_EDGE, RL_CORE, Math.hypot(x - c.x, z - c.z));
 }
 
 // ---------------------------------------------------------------- per-biome data
@@ -149,11 +160,18 @@ export const BIOMES = {
 export const OUTER = ORDER.map((id, k) => { const c = centerOf(k); Object.assign(BIOMES[id], { id, k, cx: c.x, cz: c.z, bearing: c.a }); return BIOMES[id]; });
 Object.assign(BIOMES.meadow, { id: 'meadow', cx: 0, cz: 0 });
 
-/** id of the region containing (x,z) — 'meadow' for the whole home bowl and its sub-zones. */
+/**
+ * id of the region containing (x,z) — 'meadow' for the whole home bowl and its sub-zones. This is the
+ * ONE definition of "which region am I standing in": `wedgeAt` flips exactly on the bisector between two
+ * neighbours, so the music, the ambient bed and the name card all change on the same step. The threshold
+ * only has to clear the WEAKEST point of a region, which is that seam: two centres are 520 m apart along
+ * the chord but 528 m along the ring arc, so a seam weight bottoms out near 0.38 — 0.30 owns every seam
+ * and still hands the belt back to the Vale on the mountain side, about 490 m out, i.e. up in the pass.
+ */
 export function regionAt(x, z) {
   if (x * x + z * z < RING_IN * RING_IN) return 'meadow';
   const k = wedgeAt(x, z);
-  return weightAt(x, z, k) > 0.02 ? ORDER[k] : 'meadow';
+  return weightAt(x, z, k) > 0.30 ? ORDER[k] : 'meadow';
 }
 /** { id, w } — nearest outer biome and its 0..1 weight (w = 0 anywhere in the home bowl / ring). */
 export function blendAt(x, z, out = { id: 'meadow', w: 0, k: -1 }) {

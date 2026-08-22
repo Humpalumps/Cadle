@@ -37,7 +37,47 @@ Usage (Audio.js): `await game.assets.audioBuffer(ctx, 'shot-handcannon-1')` (dec
 | `night-theme.mp3` (~2 min) | night ambience music (fade in at night hours) |
 | `field-theme.mp3` (~2.5 min) | day exploration theme (regenerating — check file exists) |
 
+### Region themes (batch 3, 2026-08-22) — one per outer biome, 60 s, ElevenLabs music v2
+
+Named after `BIOMES[id].music`, which is what `audio/music.js` `_themeKey()` looks up (`<music>-theme`). A region
+plays its own piece at every hour; only the home bowl still swaps day/night. Crossing a border cross-fades over 2 s.
+
+| file | region | the read |
+|---|---|---|
+| `wood-theme.mp3` | Whisperwood Deep | celtic harp, low flute, wordless voice, 6/8 |
+| `frost-theme.mp3` | Frostveil Tundra | glass bells, sparse piano, cold strings, long tail |
+| `choir-theme.mp3` | Celestial Isles | cathedral choir, harp, glass harmonica, majestic |
+| `drums-theme.mp3` | Dragon Peaks | taiko, low brass, heroic horn, dry and heavy |
+| `forge-theme.mp3` | Infernal Wastes | low toms, struck anvil, brooding brass, airless |
+| `convergence-theme.mp3` | The Lost Realm | ceremonial strings, choir, bells, organ pedal |
+| `fen-theme.mp3` | Shadowfen | bass clarinet, detuned strings, prepared piano |
+| `deep-theme.mp3` | The Sunken Kingdom | muffled strings, harp, soprano, heard through water |
+| `void-theme.mp3` | The Void | detuned cello drone, reversed harp, no pulse |
+
+All 192 kbps CBR, 1.44 MB each (~13 MB total). **They put `public/assets/` at ~41 MB, just over the 40 MB
+target** — re-encoding to 128 kbps would recover ~4 MB but there is no mp3 encoder on this machine (no ffmpeg;
+Pillow only does images). Flagged rather than hidden.
+
 Loop with a short crossfade; duck under combat.
+
+## Batch 3 ground albedos (2026-08-22) — the five procedural floors
+
+`Terrain.ASSET_LAYERS` maps these onto the splat layers that used to be procedural noise, which is why the Isles
+read as flat tan with a lattice in it and the Void and the fen read as coloured mud. 1024², JPG q88, and each one
+had its low-frequency lighting divided out (Pillow) so the tile repeat does not read as a checkerboard of light.
+
+| file | layer | region |
+|---|---|---|
+| `tex/celestial_marble.jpg` | 6 stone | Celestial Isles (also the Lost Realm's flagstone, tinted violet) |
+| `tex/ash.jpg` | 8 ash | Infernal Wastes |
+| `tex/glacier_ice.jpg` | 9 ice | Frostveil Tundra |
+| `tex/fen_muck.jpg` | 10 muck | Shadowfen |
+| `tex/voidstone.jpg` | 11 voidstone | The Void |
+
+**Calibration note:** the ground-glow masks in `Terrain.js` (`tEmis`, lava fissures / void veins) key off `cB.a`,
+the FLOOR TEXTURE'S LUMA. Ash and voidstone sit at median 0.11, so the old 0.30..0.06 ramp lit every pixel and the
+Wastes rendered as one flat orange sheet. The bands are now 0.075..0.025 and 0.085..0.032 (the darkest ~10%, i.e.
+the cracks between plates). **Re-measure if either texture is replaced.**
 
 ## Batch 2 — vegetation / glyphs / concepts
 

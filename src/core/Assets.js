@@ -16,7 +16,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  * Texture keys: grass_albedo cliff_strata forest_soil beach_sand snow ruins_stone bark leaf_card glyph1 glyph2
  * Model keys: aetheryte column handcannon
  * SFX keys: shot-handcannon-1..4 shot-autorifle-1..4 shot-sniper-1..4 shot-shotgun-1..4 shot-pulse-1..4 shot-fusion-1..4 explosion-1..4
- * Music keys: field-theme night-theme
+ * Music keys: field-theme night-theme + one per region: wood frost choir drums forge convergence fen deep void
  */
 
 const TEX = {
@@ -44,6 +44,9 @@ for (let i = 1; i <= 4; i++) AUDIO[`voice-vale-0${i}`] = `/assets/voice/vale-0${
 AUDIO['voice-vale-01b'] = '/assets/voice/vale-01b.mp3';   // the marching order that follows the wake line
 AUDIO['field-theme'] = '/assets/music/field-theme.mp3';
 AUDIO['night-theme'] = '/assets/music/night-theme.mp3';
+// One theme per region (BIOMES[id].music -> `<music>-theme`). A region does not get the Vale's tune
+// re-EQ'd any more — crossing a border swaps the piece, WoW-style. See audio/music.js _themeKey.
+for (const m of ['wood', 'frost', 'choir', 'drums', 'forge', 'convergence', 'fen', 'deep', 'void']) AUDIO[`${m}-theme`] = `/assets/music/${m}-theme.mp3`;
 
 export class Assets {
   constructor(game) {

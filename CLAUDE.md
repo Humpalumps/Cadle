@@ -100,10 +100,18 @@ AND `terrain.dryAt(x,z)` is 0). Everything below is derived from `Biomes.js` —
 it comes back down past ~580 m, and it is **pierced by 9 passes**, one on each outer biome's bearing
 (`THETA0 + k*STEP`, k = 0..8). A pass bottoms out ~35 m above the meadow: a real climb, always walkable.
 
-**THE NINE OUTER REGIONS (r 550..970).** Circles of radius `RR` (210 m) centred at radius `RB` (760 m) on
-bearings 40° apart, starting due north. Adjacent regions are ~100 m apart, so the whole annulus is one
-continuous walkable belt — **every biome touches its two neighbours and has its own pass home. Nothing is
-teleport-only.** k / bearing / centre / level band:
+**THE NINE OUTER REGIONS (r 550..970).** Centred at radius `RB` (760 m) on bearings 40° apart, starting due
+north. TWO radii, and they are not the same thing: `RR` (210 m) is the LANDFORM reach — how far a region's own
+height kernel (`Terrain.BH[]`) shapes the ground — while `RL_CORE`/`RL_EDGE` (270/320 m) is the LOOK reach,
+what `weightAt` returns for ground splat, haze, key light, grass, music, bestiary and gravity. The look radii
+are set past the halfway point between two centres (260 m on the chord, ~264 m on the arc) **on purpose: the
+belt is a PARTITION.** Two neighbours read full strength right up to the bisector where `wedgeAt` hands over,
+so a border is a LINE you cross, not a corridor of un-owned ground. **Never "fix" a seam by shrinking the look
+radii back inside 260 m — that is the bug this replaced: ~100 m of nobody's-land between every pair, which
+made a crossing read as "the world went back to Vale green for half a minute".** `Biomes.regionAt` (weight >
+0.30) is the ONE answer to "which region am I in"; music, ambient bed, minimap label and the zone name card
+all read it so they change on the same step. **Every biome touches its two neighbours and has its own pass
+home. Nothing is teleport-only.** k / bearing / centre / level band:
 
 | k | bearing | biome | centre (x, z) | levels | the read |
 |---|---------|-------|---------------|--------|----------|
@@ -125,6 +133,9 @@ How each system reads the table (do NOT re-derive any of this):
 - ground: `FRAG_SPLAT` picks one of 12 layer textures per region (8 ash, 9 ice, 10 muck, 11 voidstone are new).
 - Grass density/tint, Vegetation scatter (`BTREE`/`BROCK`/`BSPIRE`), Props landmarks, Sky fog grade, Water look,
   Enemy camps and Ambient beds are all keyed off the biome id.
+- **music**: every region has its OWN recorded theme (`BIOMES[id].music` -> `<music>-theme` in the manifest),
+  cross-faded over 2 s on crossing. `audio/music.js`'s REGION rate/tilt table is only the fallback for a theme
+  that is missing or still decoding — do not "colour" a region by re-EQ'ing the Vale's tune again.
 - **Enemy camps stream by distance** (`STREAM` = 300 m in Enemies.js): the 40-alive cap follows the player around
   the map instead of being spent at spawn. Keep the spawn meadow peaceful (2 wisps).
 - Floating isles (celestial, void) are walkable box colliders; **updraft columns** at the landmark lift you up

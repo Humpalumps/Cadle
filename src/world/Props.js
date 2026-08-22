@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp, lerp, smoothstep } from '../core/Noise.js';
 import { InstLOD, patchMaterial, triplanarPatch, fadePatch, mergePatch, noiseTexture, normalFromLuma, makeRockGeometry, tn, tfbm } from './Vegetation.js';
-import { OUTER } from './Biomes.js';
+import { OUTER, THETA0, STEP } from './Biomes.js';
 
 /**
  * Props: hand-placed landmarks (procedural geometry, seeded detail), all colliding:
@@ -171,6 +171,39 @@ export class Props {
     this._buildMushrooms(rng, h, veg, Q);
     this._buildBiomeLandmarks(rng, h, col);
     this._buildVillage(rng, h, col);
+    this._buildBorderStones(rng, h, col);
+  }
+
+
+  /**
+   * BORDER STONES. Nine seams, one gate each. `wedgeAt` hands one region to the next on the bisector between
+   * two centres, and the ground, haze, light and music all turn on that line — but an open line in a field is
+   * something you cross without noticing. Standing stones flanking it give the crossing a THRESHOLD: you see
+   * the gate from a long way off, you walk between the two stones, and the world on the far side is a
+   * different place. Three pairs per seam (r 700 / 762 / 824) so the gate reads from any approach across the
+   * belt, all merged into one mesh — 54 stones for one draw call.
+   */
+  _buildBorderStones(rng, h, col) {
+    const { scene } = this.game;
+    const parts = [], tints = [];
+    for (let k = 0; k < 9; k++) {
+      const a = THETA0 + (k + 0.5) * STEP;                       // the seam bearing
+      const ox = Math.cos(a), oz = Math.sin(a);                  // outward along it
+      const tx = -oz, tz = ox;                                   // across it: the gate opens this way
+      for (const [r, s] of [[700, 0.74], [762, 1.0], [824, 0.74]]) {
+        for (const side of [-1, 1]) {
+          const x = ox * r + tx * side * 9.5, z = oz * r + tz * side * 9.5, y = h(x, z);
+          if (y < 6) continue;                                   // never a stone standing in water
+          const hh = (7.4 + rng() * 2.6) * s;
+          parts.push(monolithGeometry(hh, rng).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5, z));
+          tints.push([0.60, 0.58, 0.66]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 });
+        }
+      }
+    }
+    if (!parts.length) return;
+    const m = new THREE.Mesh(mergeAll(parts, tints), this.stoneMat);
+    m.castShadow = m.receiveShadow = true; m.name = 'border-stones'; scene.add(m);
   }
 
   /**
@@ -398,6 +431,13 @@ export class Props {
         const g = makeRockGeometry(2, (rng() * 1e6) | 0);
         g.scale(R, R * 0.5, R * 0.92); g.translate(x, y, z);
         parts.push(g); tints.push([s.tint[0] * (0.86 + rng() * 0.28), s.tint[1] * (0.86 + rng() * 0.28), s.tint[2] * (0.86 + rng() * 0.28)]);
+        // KEEL. A flattened dome seen from underneath is a dark ellipse — the isles read as discs pasted on
+        // the sky, which is the one angle you always have on them while you are still on the ground below.
+        // Hanging a torn root off each one gives the underside a silhouette and something for the light to
+        // break on. Rock kind 3 is the pointed shard, flipped to hang.
+        const gk = makeRockGeometry(3, (rng() * 1e6) | 0);
+        gk.rotateX(Math.PI); gk.scale(R * 0.74, R * 1.05, R * 0.70); gk.translate(x, y + R * 0.10, z);
+        parts.push(gk); tints.push([s.tint[0] * 0.62, s.tint[1] * 0.62, s.tint[2] * 0.66]);
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
         isles.push({ x, y: y + R * 0.2, z, R });

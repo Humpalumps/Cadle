@@ -603,13 +603,23 @@ export class Vegetation {
         #endif
         vLy = position.y; vFN = objectNormal;`,
       fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN;
-        float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`,
-      fMap: `{ float fh = facetHash(vFN);                                                  // stable per-facet value (flat normals)
+        float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        vec3 gTint = vec3(0.42, 0.30, 1.00);`,
+      fMap: `{
+        // Instance HUE, taken once for the whole fragment (map runs before emissive). Everything that
+        // used to be hardcoded aether violet reads off this, so an ice shard, a coral fan and a void
+        // splinter stop looking like the same meadow crystal. Normalising to the brightest channel takes
+        // the hue and leaves the value alone: saturate the colour, never raise it (CLAUDE.md law).
+        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+          gTint = vColor.rgb / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
+        #endif
+        float fh = facetHash(vFN);                                                       // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
         diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
         diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.88, 1.45), fh * 0.6 + tipT * 0.3); }`,
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (vec3(0.55) + gTint * 0.95), fh * 0.6 + tipT * 0.3); }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
+        vec3 tintC = gTint;
         float pulse = 0.78 + 0.22 * sin(uTime * 1.4 + vPh * 6.2832);
         vec3 Vd = normalize(vViewPosition);                                      // fragment -> camera
         vec3 Nn = normalize(normal);
@@ -620,10 +630,11 @@ export class Vegetation {
         float back = max(dot(-Vd, uSunDirV), 0.0);                               // sun behind the shard, shining through
         float glint = pow(max(dot(reflect(-uSunDirV, Nn), Vd), 0.0), 26.0);      // per-facet sun sparkle
         vec3 sunN = uSunColor / max(max(uSunColor.r, max(uSunColor.g, uSunColor.b)), 1e-3);
-        vec3 e = totalEmissiveRadiance * pulse * grad * streak * mix(1.0, 0.20, day)  // by day the inner glow yields to facet shading
-          + vec3(0.60, 0.44, 1.15) * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)  // violet rim, day and night
-          + sunN * fres * fres * 0.85 * day                                            // thin hot edge where the sun grazes
-          + vec3(0.55, 0.36, 1.25) * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1   // translucency through the body
+        float eL = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722));           // keep the body's brightness, take the instance's hue
+        vec3 e = eL * 2.0 * tintC * pulse * grad * streak * mix(1.0, 0.20, day)         // by day the inner glow yields to facet shading
+          + 0.78 * tintC * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)             // rim in the shard's own colour, day and night
+          + sunN * fres * fres * 0.85 * day                                             // thin hot edge where the sun grazes
+          + 0.82 * tintC * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1              // translucency through the body
           + sunN * glint * (0.35 + 0.5 * fh) * day * 0.9;
         totalEmissiveRadiance = min(e, vec3(2.1)); }`,                                 // hard cap: bloom must never wash a facet to flat white
     });
