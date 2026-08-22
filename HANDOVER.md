@@ -345,6 +345,20 @@ camera follows him through the glass, a violet flash covers the handover, and th
   minimal `{ canvas, renderer, seed, auto, params }` host at construction and gets the real Game later via
   `intro.attach(game)`; anything in `Intro` that runs before `arm()` must not assume `game.input` exists.
   The intro's own assets are `<link rel="preload">`ed from index.html so they fetch in parallel with the JS.
+- **TIME TO FIRST FRAME is compile-bound, not download-bound.** Measured on a production build: assets are
+  all in by ~0.7 s, but the first `render()` used to take ~6.8 s because it compiled every material in the
+  room AND the whole post-processing chain in one blocking call. Two things keep it down and both must
+  stay: (a) the `EffectComposer` is built in `_buildComposer()` two frames AFTER the room is on screen —
+  the early frames render plain with renderer-side ACES; (b) `stage.setLightsFull(false)` paints the first
+  frame against a cheap rig (spot + warm rim + hemisphere) and the rect-area light, moon and prop points
+  switch on a frame later. Every material compiles against NUM_*_LIGHTS, so the full rig is a much bigger
+  permutation. Net: first frame 7.2 s -> 2.0 s. If you add lights or effects, re-measure — the marks are
+  logged as `[intro] boot ms:` from `Intro._boot`.
+- Preload hints only work if the credentials mode matches the eventual request. three's `TextureLoader`
+  sets `img.crossOrigin='anonymous'`, so the image preloads need `crossorigin`; `as="fetch"` is always
+  CORS-mode, so `guy.glb` is preloaded with `crossorigin` and fetched with `credentials: 'omit'`. Get this
+  wrong and the browser silently downloads every asset twice — check the console for "preload ... not
+  used because the request credentials mode does not match".
 - **The character is a generated GLB** (`public/assets/intro/guy.glb`), not the procedural body. The
   procedural one in `character.js` is the fallback and still supplies the chair. The GLB is NOT awaited: it
   streams in and fades up. Placement lives in `GUY_FIT` in `stage.js`; tune it live with

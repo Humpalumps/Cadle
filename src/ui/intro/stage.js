@@ -85,9 +85,18 @@ async function loadGuy() {
     // meshopt-compressed (4.5 MB -> 1.3 MB); the decoder is a ~30 KB module bundled with the app, no
     // side files to host. Compressed offline with: npx @gltf-transform/cli optimize in.glb out.glb
     //   --compress meshopt --simplify true --simplify-error 0.002 --texture-compress false
+    // fetch() + parse(), NOT loader.load(): the <link rel="preload" as="fetch"> in index.html only gets
+    // reused by a matching request, and three's FileLoader uses XHR — the browser reported "preload found
+    // but not used because the request credentials mode does not match" and downloaded all 443 KB twice.
+    // credentials 'omit' + crossorigin on the <link>: as="fetch" preloads are always CORS-mode, and a
+    // default fetch (credentials 'same-origin') does not match one, so the browser discards the
+    // preloaded response and downloads the model a second time.
+    const res = await fetch(GUY_URL, { credentials: 'omit' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const buf = await res.arrayBuffer();
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.loadAsync(GUY_URL);
+    const gltf = await loader.parseAsync(buf, '');
     return gltf.scene;
   } catch (e) { console.warn('[intro] generated body unavailable:', e?.message); return null; }
 }
@@ -357,7 +366,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   // (api.guy is assigned below once the object literal exists)
 
   // ---------------------------------------------------------------- state
-  let suck = 0, screenBoost = 1, screenDim = 1, dolly = 0, camFree = false, clipOn = false;
+  let suck = 0, screenBoost = 1, screenDim = 1, dolly = 0, camFree = false, clipOn = false, lightsFull = true;
   const _look = new THREE.Vector3();
   let orbitYaw = 0, orbitTarget = LOOK_B.clone();
 
@@ -481,6 +490,19 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       return { pos, look: SCREEN.pos.clone() };
     },
 
+    /** Progressive lighting. Every material compiles against NUM_POINT_LIGHTS / NUM_SPOT_LIGHTS /
+     *  NUM_RECT_AREA_LIGHTS etc, so the full rig makes the first render one long compile stall on a blank
+     *  page. The room paints against a cheap rig (spot + warm rim + hemisphere) and the rest — the
+     *  monitor's rect-area light, the moon, and the props' point lights — switch on a frame later, once
+     *  there is already a picture on screen. `visible = false` is enough: three does not count hidden
+     *  lights toward the shader permutation. */
+    setLightsFull(on) {
+      rect.visible = on; moon.visible = on; rimCool.visible = on;
+      room?.group?.traverse?.((o) => { if (o.isLight) o.visible = on; });
+      lightsFull = on;
+    },
+    get lightsFull() { return lightsFull; },
+
     setCameraFree(v) { camFree = v; },
     /** harness: move the chair under him (character.js measured it against the procedural body) */
     setChair(x, y, z) {
@@ -512,6 +534,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       scene.clear();
     },
   };
+  api.setLightsFull(false);      // cheap rig for the first paint; Intro turns the rest on a frame later
   api.buildMs = performance.now() - t0;
   api.setSuck(0);
   return api;

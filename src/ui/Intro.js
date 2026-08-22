@@ -117,6 +117,8 @@ export class Intro {
 
   // ---------------------------------------------------------------- boot
   async init() {
+    const T0 = performance.now(); this._boot = []; const mark = (k) => this._boot.push([k, Math.round(performance.now() - T0)]);
+    this._mark = mark;
     const g = this.game;
     const style = document.createElement('style'); style.id = 'introcss'; style.textContent = CSS;
     document.head.appendChild(style); this._style = style;
@@ -126,7 +128,9 @@ export class Intro {
     if (this._ui) this._ui.style.display = 'none';
 
     this._buildDom();                                  // BEFORE the awaits below: the bar has to exist at t=0
+    mark('dom');
     this.stage = await buildStage({ seed: g.seed });
+    mark('stage');
     this._makeScreenCanvas();
     this.stage.setScreenTexture(this.screenTex);
     this.stage.setScreenUITexture(this.uiTex);
@@ -144,19 +148,6 @@ export class Intro {
     r.toneMapping = THREE.NoToneMapping;
 
     this.warp = new WarpEffect();
-    const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: true });
-    grain.blendMode.opacity.value = 0.045;                                        // film grain, barely there
-    this.composer = new EffectComposer(r, { frameBufferType: THREE.HalfFloatType });
-    this.composer.autoRenderToScreen = true;
-    this.composer.addPass(new RenderPass(this.stage.scene, this.stage.camera));
-    this.composer.addPass(new EffectPass(this.stage.camera,
-      new BloomEffect({ luminanceThreshold: 0.68, luminanceSmoothing: 0.32, intensity: 1.25, mipmapBlur: true, radius: 0.75 }),
-      this.warp,
-      new VignetteEffect({ offset: 0.58, darkness: 0.16 }),
-      new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC }),
-      grain,
-      new SMAAEffect(),
-    ));
 
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
@@ -167,6 +158,39 @@ export class Intro {
     const loop = () => { this._raf = requestAnimationFrame(loop); this._frame(); };
     loop();
     return this;
+  }
+
+  /** Build the effect chain AFTER the room is already on screen.
+   *  Bloom (mipmap blur), SMAA, tone mapping, grain and the warp are a dozen shader programs, and
+   *  compiling them in the same frame as the room's own materials made the first frame a ~6.8 s stall —
+   *  a blank page while the browser had every asset it needed. The first frames render plain (ACES on
+   *  the renderer, no bloom/AA); the composer takes over as soon as it is ready, a beat later. */
+  _buildComposer() {
+    if (this.composer || !this.active || !this.stage) return;
+    const r = this.game.renderer;
+    const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: true });
+    grain.blendMode.opacity.value = 0.045;                                        // film grain, barely there
+    const composer = new EffectComposer(r, { frameBufferType: THREE.HalfFloatType });
+    composer.autoRenderToScreen = true;
+    composer.addPass(new RenderPass(this.stage.scene, this.stage.camera));
+    composer.addPass(new EffectPass(this.stage.camera,
+      new BloomEffect({ luminanceThreshold: 0.68, luminanceSmoothing: 0.32, intensity: 1.25, mipmapBlur: true, radius: 0.75 }),
+      this.warp,
+      new VignetteEffect({ offset: 0.58, darkness: 0.16 }),
+      new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC }),
+      grain,
+      new SMAAEffect(),
+    ));
+    composer.setSize(innerWidth, innerHeight);
+    this.composer = composer;
+    r.toneMapping = THREE.NoToneMapping;              // the composer tone-maps from here on
+    this._mark?.('composer');
+    // and only now the full light rig — a third separate compile, with the room already on screen
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      this.stage?.setLightsFull(true);
+      this._mark?.('lights');
+      if (this._boot) console.log('[intro] boot ms:', JSON.stringify(Object.fromEntries(this._boot)));
+    }));
   }
 
   /** the click layer + the screen-space load bar. Built first, before any await. */
@@ -453,7 +477,14 @@ export class Intro {
     // Every 4th frame is plenty: nothing in this room moves but a 6 mm breathe. Always during the dive,
     // where the body is travelling. (Lighting.update sets its own needsUpdate for the game's CSM.)
     if (this._trans || (this._n & 3) === 0) this.game.renderer.shadowMap.needsUpdate = true;
-    this.composer.render(dt);
+    if (this.composer) {
+      this.composer.render(dt);
+    } else {
+      // pre-composer frames: plain render, renderer-side ACES so the grade is roughly right
+      const r = this.game.renderer;
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      r.render(this.stage.scene, this.stage.camera);
+    }
 
     if (!this._firstFrame) {                            // the boot splash can go: we have a picture
       this._firstFrame = true;
@@ -463,7 +494,10 @@ export class Intro {
       // remove it outright rather than fading: for the whole fade the splash's own CADLE lettering sat
       // ghosted over the monitor's, which reads as a rendering bug
       if (sp) sp.remove();
+      this._mark?.('firstFrame');
       this._resolveFirst?.();
+      // two frames later, so this paint is on screen before the compile stall
+      requestAnimationFrame(() => requestAnimationFrame(() => this._buildComposer()));
     }
   }
 
