@@ -420,11 +420,20 @@ export class Terrain {
     // the shader ramps this macro contrast in with camera distance; Grass mostly uses colorAt for FAR blades, so carry ~60% of it
     const vg = (1 - neut) * 0.55, mC = macroC * 0.62 + macro2C * 0.38;
     r *= mix(1, mix(0.60, 1.36, mC), vg); g *= mix(1, mix(0.70, 1.24, mC), vg); b *= mix(1, mix(0.50, 1.02, mC), vg);
-    if (d0c > 470) {                                   // outer biome floor: same layer choice as the shader, one mean colour
-      let k = Math.round((Math.atan2(z, x) - THETA0) / STEP) % 9; if (k < 0) k += 9;
-      const c = BC[k], bx = x - c[0], bz = z - c[1];
-      const bw = ss(RL_EDGE, RL_CORE, Math.sqrt(bx * bx + bz * bz)) * BCOV[k];   // same partition the splat uses
-      if (bw > 0.002) { const a = BALB[k]; r = mix(r, a[0], bw); g = mix(g, a[1], bw); b = mix(b, a[2], bw); }
+    if (d0c > 470) {   // outer biome floor: same wedge choice, same meandering seam and same cross-fade as the splat
+      const rr = Math.max(d0c, 1);
+      const f = (Math.atan2(z, x) - THETA0) / STEP
+        + ((macro - 0.5) * 52 + (macro2 - 0.5) * 19) / (rr * STEP);
+      const kf = Math.floor(f + 0.5), u = f - kf;
+      const wrap = (n) => ((n % 9) + 9) % 9;
+      const k = wrap(kf), k2 = wrap(kf + (u >= 0 ? 1 : -1));
+      const hw = clamp(34 / (rr * STEP), 0.02, 0.45), bm = 0.5 * ss(0.5 - hw, 0.5, Math.abs(u));
+      const bwOf = (i) => { const c = BC[i]; return ss(RL_EDGE, RL_CORE, Math.hypot(x - c[0], z - c[1])) * BCOV[i]; };
+      const bw = mix(bwOf(k), bwOf(k2), bm);
+      if (bw > 0.002) {
+        const a = BALB[k], a2 = BALB[k2];
+        r = mix(r, mix(a[0], a2[0], bm), bw); g = mix(g, mix(a[1], a2[1], bm), bw); b = mix(b, mix(a[2], a2[2], bm), bw);
+      }
     }
     const wet = lakeM * ss(WL + 6.5, WL + 0.2, h);
     r *= mix(1, 0.30, wet); g *= mix(1, 0.35, wet); b *= mix(1, 0.44, wet);
@@ -850,17 +859,33 @@ varying vec3 vWPos;
 vec4 lyr(vec2 uv, float i) { return texture(uLayers, vec3(uv, i)); }
 // hex-tile stochastic sampling (technique: three-hex-tiling / Mikkelsen hextile, MIT) — random per-hex offsets kill visible repeats
 vec2 hexH(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
-vec4 lyrHex(vec2 uv, float i, float sharp) {
+// Derivatives passed in, not taken inside: the seam blend samples a second layer behind a branch, and
+// dFdx/dFdy in non-uniform control flow is undefined. lyrHex() keeps the old signature for every other caller.
+vec4 lyrHexG(vec2 uv, float i, float sharp, vec2 dx, vec2 dy) {
   const mat2 sk = mat2(1.0, 0.0, -0.57735027, 1.15470054);
   vec2 t = sk * (uv * 0.35); vec2 b = floor(t); vec3 w = vec3(fract(t), 0.0); w.z = 1.0 - w.x - w.y;
   vec2 v1, v2, v3;
   if (w.z > 0.0) { w = vec3(w.z, w.y, w.x); v1 = b; v2 = b + vec2(0.0, 1.0); v3 = b + vec2(1.0, 0.0); }
   else { w = vec3(-w.z, 1.0 - w.y, 1.0 - w.x); v1 = b + 1.0; v2 = b + vec2(1.0, 0.0); v3 = b + vec2(0.0, 1.0); }
   w = pow(w, vec3(sharp)); w /= (w.x + w.y + w.z);
-  vec2 dx = dFdx(uv), dy = dFdy(uv);
   return textureGrad(uLayers, vec3(uv + hexH(v1), i), dx, dy) * w.x
        + textureGrad(uLayers, vec3(uv + hexH(v2), i), dx, dy) * w.y
        + textureGrad(uLayers, vec3(uv + hexH(v3), i), dx, dy) * w.z;
+}
+vec4 lyrHex(vec2 uv, float i, float sharp) { return lyrHexG(uv, i, sharp, dFdx(uv), dFdy(uv)); }
+// One outer region's floor recipe, by wedge index. Pulled out of the splat so the seam can evaluate BOTH
+// sides of a border and cross-fade them (see FRAG_SPLAT's bMix).
+void biomeSet(float k, out float layer, out float scl, out float rough, out float cov, out float snow, out float rockCut, out vec3 tint) {
+  layer = 1.0; scl = 3.6; rough = 0.90; cov = 0.72; snow = 0.0; rockCut = 0.0; tint = vec3(1.0);
+  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.72; tint = vec3(0.86, 1.10, 0.80); }                  // forest floor
+  else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.45; snow = 1.0; rockCut = 0.55; }       // tundra glacier
+  else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.80; rough = 0.55; tint = vec3(1.14, 1.03, 0.80); }    // celestial: sun-warmed marble, never neutral white
+  else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.60; tint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
+  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.80; }                   // infernal ash
+  else if (k < 5.5) { layer = 6.0;  scl = 4.2; cov = 0.78; tint = vec3(0.80, 0.74, 1.02); }                  // lost realm: worn violet flagstone
+  else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.80; rough = 0.55; rockCut = 0.45; }                   // shadowfen muck
+  else if (k < 7.5) { layer = 4.0;  scl = 3.0; cov = 0.90; rough = 0.70; tint = vec3(0.78, 0.95, 0.94); rockCut = 0.55; }   // sunken reef
+  else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; tint = vec3(0.78, 0.74, 0.92); }   // voidstone
 }`;
 
 // splat: computed where <map_fragment> would sample the albedo; leaves tN (world normal), tRough, tAO, tEmis for later chunks
@@ -902,23 +927,33 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   forestM *= home;
   float mtn = max(smoothstep(26.0, 40.0, P.y + (macro - 0.5) * 10.0), smoothstep(340.0, 400.0, rad + (macro - 0.5) * 70.0) * (1.0 - smoothstep(500.0, 580.0, rad)));
   float crystalM = smoothstep(195.0, 260.0, P.x + (macro - 0.5) * 40.0) * (1.0 - mtn) * home;
-  // --- outer biome (Biomes.js: 9 circles of radius RR centred on a ring of radius RB) ---
+  // --- outer biome (Biomes.js: 9 wedges, centres on a ring of radius RB) ---
+  // The border between two regions is the bisector wedgeAt hands over on. Picking ONE wedge per pixel drew
+  // that bisector as a dead-straight radial line — snow ending mid-stride against marble. So: the wedge
+  // coordinate is pushed around by the macro noise (a boundary that MEANDERS, in metres, not degrees), and
+  // within a band either side of it BOTH neighbours are sampled and cross-faded. Together they read as one
+  // region's ground breaking up into the next, which is what a border looks like from the ground.
   float bAng = atan(P.z, P.x);
-  float bK = mod(floor((bAng - ${THETA0}) / ${STEP} + 0.5), 9.0);
-  float bA = ${THETA0} + bK * ${STEP};
+  float bRad = max(rad, 1.0);
+  float bJit = ((macro - 0.5) * 52.0 + (macro2 - 0.5) * 19.0 + (det2.b - 0.5) * 6.0) / (bRad * ${STEP});
+  float bF = (bAng - ${THETA0}) / ${STEP} + bJit;
+  float bKf = floor(bF + 0.5), bU = bF - bKf;                     // bU: 0 at the wedge centre, +-0.5 at a seam
+  float bK = mod(bKf, 9.0), bK2 = mod(bKf + (bU >= 0.0 ? 1.0 : -1.0), 9.0);
+  float bHW = clamp(34.0 / (bRad * ${STEP}), 0.02, 0.45);         // ~34 m half-band, constant in METRES at any radius
+  float bMix = 0.5 * smoothstep(0.5 - bHW, 0.5, abs(bU));         // 0 outside the band .. 0.5 exactly on the seam
+  float bA = ${THETA0} + bK * ${STEP}, bA2 = ${THETA0} + bK2 * ${STEP};
   float bD = length(P.xz - vec2(cos(bA), sin(bA)) * ${RB}.0) + (macro - 0.5) * 26.0;
-  float bW = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD);   // Biomes.RL_*: regions abut, seam at 260 m
-  float bLayer = 1.0, bScl = 3.6, bRough = 0.90, bCov = 0.72, bSnow = 0.0, bRockCut = 0.0; vec3 bTint = vec3(1.0);
-  if (bK < 0.5)      { bLayer = 1.0;  bScl = 3.4; bCov = 0.72; bTint = vec3(0.86, 1.10, 0.80); }                  // forest floor
-  else if (bK < 1.5) { bLayer = 9.0;  bScl = 6.5; bCov = 1.00; bRough = 0.45; bSnow = 1.0; bRockCut = 0.55; }     // tundra glacier
-  else if (bK < 2.5) { bLayer = 6.0;  bScl = 4.6; bCov = 0.80; bRough = 0.55; bTint = vec3(1.14, 1.03, 0.80); }   // celestial: sun-warmed marble, never neutral white
-  else if (bK < 3.5) { bLayer = 3.0;  bScl = 6.0; bCov = 0.60; bTint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
-  else if (bK < 4.5) { bLayer = 8.0;  bScl = 3.2; bCov = 1.00; bRough = 0.92; bRockCut = 0.80; }                  // infernal ash
-  else if (bK < 5.5) { bLayer = 6.0;  bScl = 4.2; bCov = 0.78; bTint = vec3(0.80, 0.74, 1.02); }                  // lost realm: worn violet flagstone
-  else if (bK < 6.5) { bLayer = 10.0; bScl = 3.0; bCov = 0.80; bRough = 0.55; bRockCut = 0.45; }                  // shadowfen muck
-  else if (bK < 7.5) { bLayer = 4.0;  bScl = 3.0; bCov = 0.90; bRough = 0.70; bTint = vec3(0.78, 0.95, 0.94); bRockCut = 0.55; }   // sunken reef
-  else               { bLayer = 11.0; bScl = 4.0; bCov = 1.00; bRough = 0.68; bRockCut = 0.88; bTint = vec3(0.78, 0.74, 0.92); }   // voidstone
-  float wB = bW * bCov;
+  float bD2 = length(P.xz - vec2(cos(bA2), sin(bA2)) * ${RB}.0) + (macro - 0.5) * 26.0;
+  float bLayer, bScl, bRough, bCov, bSnow, bRockCut; vec3 bTint;
+  float bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2; vec3 bTint2;
+  biomeSet(bK, bLayer, bScl, bRough, bCov, bSnow, bRockCut, bTint);
+  biomeSet(bK2, bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2, bTint2);
+  float bW = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD);    // Biomes.RL_*: regions abut, seam at ~260 m
+  float bW2 = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD2);
+  float wB = mix(bW * bCov, bW2 * bCovN, bMix);
+  bRough = mix(bRough, bRough2, bMix);
+  bSnow = mix(bSnow, bSnow2, bMix); bRockCut = mix(bRockCut, bRockCut2, bMix);
+  bW = mix(bW, bW2, bMix);                                        // used below for the snow / cliff overrides
   float alt = smoothstep(26.0, 58.0, P.y);           // mountain altitude: rock takes over sooner, dirt turns to scree
   // --- layer weights ("over" compositing, then height-sharpened) ---
   float snowN = lyr(P.xz * (1.0 / 23.0) + 0.77, 7.0).a;                 // mid-scale breakup: no polygon-edged snow sheets
@@ -997,10 +1032,19 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     vec3 bX = vec3(0.0, dX.g * 2.0 - 1.0, dX.r * 2.0 - 1.0) * bw.x, bZ = vec3(dZ.r * 2.0 - 1.0, dZ.g * 2.0 - 1.0, 0.0) * bw.z;
     bump = mix(bump, (bX + bZ) * 0.7 * detFade + bump * bw.y, wRock);
   }
-  // biome floor: ONE array fetch, layer index chosen above. Sampled outside every branch so the
-  // hex-tile derivatives stay in uniform control flow.
+  // biome floor. Derivatives are taken here, in uniform control flow, and handed to the sampler, so the
+  // second (neighbour) fetch can sit behind a branch and cost nothing outside a border band.
   vec4 cB = vec4(0.0);
-  if (wB > 0.002) { cB = lyrHex(P.xz / bScl, bLayer, 3.0); cB.rgb *= bTint * mix(0.78, 1.24, macro2C); }
+  vec2 pdx = dFdx(P.xz), pdy = dFdy(P.xz);
+  if (wB > 0.002) {
+    cB = lyrHexG(P.xz / bScl, bLayer, 3.0, pdx / bScl, pdy / bScl);
+    cB.rgb *= bTint * mix(0.78, 1.24, macro2C);
+    if (bMix > 0.004) {                                           // inside a border band: fade the neighbour's floor in
+      vec4 cN = lyrHexG(P.xz / bScl2, bLayer2, 3.0, pdx / bScl2, pdy / bScl2);
+      cN.rgb *= bTint2 * mix(0.78, 1.24, macro2C);
+      cB = mix(cB, cN, bMix);
+    }
+  }
   // height-sharpened blend
   float e = 0.35;
   float sG = wGrass * (e + cG.a), sF = wForest * (e + cF.a), sD = wDirt * (e + cD.a), sS = wSand * (e + cS.a), sW = wSnow * (e + cW.a), sT = wStone * (e + cT.a), sR = wRock * (e + cR.a), sB = wB * (e + cB.a);
@@ -1038,8 +1082,11 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // median 0.11, so the old 0.30..0.06 ramp lit the entire floor and the Wastes and the Void rendered as one
   // flat sheet of orange / violet emissive with no ground under it. These bands catch the darkest ~10-12% —
   // the cracks between the plates, which is what a fissure is. Re-measure if either texture is replaced.
-  if (bK > 3.5 && bK < 4.5) tEmis += vec3(0.90, 0.155, 0.012) * bCov2 * smoothstep(0.075, 0.025, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
-  if (bK > 7.5)             tEmis += vec3(0.34, 0.10, 0.85) * bCov2 * smoothstep(0.085, 0.032, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
+  // blended across a seam as well, so the Wastes' fissures fade out into the next region instead of stopping dead
+  float wLava = mix(step(3.5, bK) * step(bK, 4.5), step(3.5, bK2) * step(bK2, 4.5), bMix);
+  float wVein = mix(step(7.5, bK), step(7.5, bK2), bMix);
+  tEmis += vec3(0.90, 0.155, 0.012) * wLava * bCov2 * smoothstep(0.075, 0.025, cB.a) * (0.62 + 0.38 * sin(uTime * 0.7 + det2.b * 9.0)) * 0.55;
+  tEmis += vec3(0.34, 0.10, 0.85) * wVein * bCov2 * smoothstep(0.085, 0.032, cB.a) * (0.55 + 0.45 * sin(uTime * 1.1 + det.b * 14.0)) * 0.34;
   tRough = rough;
   diffuseColor.rgb *= alb;
 }`;

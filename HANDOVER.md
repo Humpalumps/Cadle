@@ -50,6 +50,16 @@ crossing, for four separate reasons:
 - **Border stones** (`Props._buildBorderStones`): three pairs of standing stones flanking each of the nine
   seams at r 700 / 762 / 824, one merged mesh, 54 stones for one draw call. An open line in a field is
   something you cross without noticing; a gate is a threshold.
+- **The border itself is blended, not a line.** Picking one wedge per pixel drew the bisector as a
+  dead-straight radial edge — snow ending mid-stride against marble (the user's screenshot). The wedge
+  coordinate is now pushed around by the macro noise, so the boundary MEANDERS in metres rather than degrees,
+  and inside a ~34 m half-band either side BOTH neighbours are sampled and cross-faded (`bMix`, capped at 0.5
+  so the seam is an even mix). `lyrHexG` takes explicit derivatives, so the second fetch sits behind a branch
+  and costs nothing outside a border band — measured in one process, standing ON a seam is not slower than
+  standing inside a region. `Terrain.colorAt` does the same arithmetic so the grass tint follows the same
+  ragged edge, and the lava/void ground glow is blended too so it fades out instead of stopping dead.
+  The LOGICAL boundary (`Biomes.regionAt`, i.e. music / name card / bed) stays on the analytic bisector — it
+  can sit up to ~40 m from the art boundary, which is how an MMO does it anyway.
 - **The crossing eases in time as well as space**: `Lighting._gradeBiome` and `Sky._gradeFog` now chase the
   target tint / fog hue / fog density (~1 s) instead of taking them straight, because the id flips in one frame
   at the seam.
@@ -119,11 +129,12 @@ crossing, for four separate reasons:
 
 `invariants PASS` · `jitter PASS at both qualities (0.135 q=high, 0.078 q=low — the frozen-world limit is 2.0)` ·
 `pointer lock PASS (engage + re-acquire)` · `blobcheck q=low PASS (88 frames, no clusters, no flashes)` ·
-**`blobcheck q=high FAIL on ONE 18 px cluster`** at [450, 43] of `burst-blob-pop15a-*` (reported three times:
-once as BRIGHT, twice as the FLASH either side of it). Cropping that frame shows ordinary meadow — a distant
-hazy hill edge the mask counts as ground cover — and it is the same detector noise-floor class the previous
-session merged on deliberately, except that session had 24 such lines and this has one cluster. It was NOT
-A/B'd against a stashed baseline, so it is possible (not likely) that it is new. Merging on it is a decision,
+**`blobcheck q=high FAIL on ONE cluster`** — and it is a DIFFERENT cluster on a different frame each run
+(18 px at [450, 43] of `burst-blob-pop15a-*` on one run, 61 px at [129, 48] of `burst-blob-pop13b-*` on the
+next). Cropping both shows ordinary meadow: distant sunlit rock and hazy hillside that the mask attributes to
+ground cover. That run-to-run wander is exactly what commit 9805fcc was about, and it is the same detector
+noise-floor class the previous session merged on deliberately — except that session had 24 such lines and this
+has one cluster. It was NOT A/B'd against a stashed baseline, so it is possible (not likely) that it is new. Merging on it is a decision,
 and this is the decision that was made; the honest lever if the next wave wants a green gate is
 `tools/blobcheck.py`'s `MIN_AREA` / `LUM_BRIGHT` (orchestrator-owned), not more grade-flattening.
 
