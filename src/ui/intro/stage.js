@@ -85,18 +85,20 @@ async function loadGuy() {
     // meshopt-compressed (4.5 MB -> 1.3 MB); the decoder is a ~30 KB module bundled with the app, no
     // side files to host. Compressed offline with: npx @gltf-transform/cli optimize in.glb out.glb
     //   --compress meshopt --simplify true --simplify-error 0.002 --texture-compress false
-    // fetch() + parse(), NOT loader.load(): the <link rel="preload" as="fetch"> in index.html only gets
-    // reused by a matching request, and three's FileLoader uses XHR — the browser reported "preload found
-    // but not used because the request credentials mode does not match" and downloaded all 443 KB twice.
-    // credentials 'omit' + crossorigin on the <link>: as="fetch" preloads are always CORS-mode, and a
-    // default fetch (credentials 'same-origin') does not match one, so the browser discards the
-    // preloaded response and downloads the model a second time.
-    const res = await fetch(GUY_URL, { credentials: 'omit' });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const buf = await res.arrayBuffer();
+    // The BYTES come from the inline <script> in index.html, which kicks the fetch off during HTML parse
+    // (~5 ms) instead of here (~350 ms, behind the intro textures and the room/chair build). It used to be
+    // a <link rel="preload" as="fetch"> reused by a fetch() here, but the preload never matched — Chrome
+    // logged "credentials mode does not match" and downloaded all 443 KB a second time, every cold load.
+    // The fallback keeps intro.html (which has no such script) working.
+    const buf = await (globalThis.__guyGlb ?? fetch(GUY_URL).then((r) => {
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      return r.arrayBuffer();
+    }));
+    const tB = performance.now();
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
     const gltf = await loader.parseAsync(buf, '');
+    console.info(`[intro] body: bytes at ${Math.round(tB)} ms, parsed at ${Math.round(performance.now())} ms`);
     return gltf.scene;
   } catch (e) { console.warn('[intro] generated body unavailable:', e?.message); return null; }
 }
@@ -140,6 +142,9 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
 
   // ---------------------------------------------------------------- modules (never fatal)
   const rng = mulberry32(seed);
+  // Kicked off BEFORE the awaits below: meshopt decode and the two embedded WebP images (createImageBitmap,
+  // off-thread) then overlap the texture load and the room/chair build instead of queueing behind them.
+  const guyReady = withCharacter ? loadGuy() : Promise.resolve(null);
   const tex = await loadIntroTextures();
   // import.meta.glob rather than a static import: the room/character modules are optional by design, and
   // a bare `import './room.js'` makes their absence a build error instead of a missing prop.
@@ -154,13 +159,12 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     try { character = (await load('character')).buildCharacter({ rng, tex }); scene.add(character.group); }
     catch (e) { console.warn('[intro] character module unavailable:', e?.message); }
   }
-  // NOT awaited. The room is the loading screen and has to paint as early as possible; the model is
-  // <link rel=preload>ed from index.html so it is normally already in cache by the time we get here, and
-  // when it is not, an empty chair for a moment beats a dark page. There is only ever ONE body — the
-  // procedural one in character.js is hidden up front and only comes back if this download fails — so
+  // NOT awaited. The room is the loading screen and has to paint as early as possible; the model's bytes
+  // were already in flight before this function ran (see loadGuy), and when it still is not ready, an
+  // empty chair for a moment beats a dark page. There is only ever ONE body — the procedural one in
+  // character.js is hidden up front and only comes back if this download fails — so
   // this can fade in without the two-characters-popping problem the cross-fade used to have.
   let guy = null, guyHolder = null, guyFade = -1;
-  const guyReady = withCharacter ? loadGuy() : Promise.resolve(null);
   if (!room) {                                            // stand-in so the shot still composes
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: 0x23242e, roughness: 0.9 });

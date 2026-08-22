@@ -8,7 +8,6 @@
 <!-- The loading screen's own assets. Preloaded from the HTML so the browser starts fetching them during
      parse, in parallel with the JS, instead of only once the module graph has resolved. The loading
      screen is the first thing on screen, so its assets are on the critical path and nothing else is. -->
-<link rel="preload" as="fetch" type="model/gltf-binary" href="/assets/intro/guy.glb" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/wall_plaster.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/wood_floor.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/rug_indigo.jpg" crossorigin />
@@ -16,6 +15,18 @@
 <link rel="preload" as="image" href="/assets/intro/chair_leather.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/poster_crystal.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/poster_ruins.jpg" crossorigin />
+<script>
+/* The body model is the biggest thing on the loading screen's critical path and buildStage() does not
+   reach it for ~350 ms (intro textures, room and chair all build first), so the download starts here,
+   during HTML parse, and stage.js awaits the promise. This replaces a <link rel="preload" as="fetch">:
+   that preload never matched the loader's request ("credentials mode does not match") and the browser
+   downloaded all 443 KB twice on every cold load. One request, ~340 ms earlier, no matching rules. */
+window.__guyGlb = fetch('/assets/intro/guy.glb').then((r) => {
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.arrayBuffer();
+});
+window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an unhandledrejection
+</script>
 <style>
 /* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
    white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first
