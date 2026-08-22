@@ -333,7 +333,18 @@ ground-cover rule — pass or fail depending on where the walk landed.
 `inspect.mjs` now writes `mask-<burst>-<i>.png` per frame, freezing the world for each colour+mask pair so the
 two are the same instant; `blobcheck.py` prefers the per-frame mask and falls back to the old per-burst one, so
 older captures still evaluate identically. **The jitter burst is deliberately NOT frozen** — pausing there
-would let temporal accumulation settle and hand gate rule 2 a free pass.
+would let temporal accumulation settle and hand gate rule 2 a free pass. Keep that exemption permanently: with
+one mask per frame, every burst frame is now preceded by a forced shadow-map re-render (`_renderSkyMask` arms
+`needsUpdate` on exit), which is harmless for blobcheck but is exactly the sort of thing rule 2 exists to catch.
+
+**The RATE is not yet proven, and the original evidence was weaker than it looked.** The 4-runs-each-way result
+was *time-ordered* — FAIL, FAIL, PASS, PASS in one arm and PASS, PASS, FAIL, FAIL in the other — which is the
+signature of the box drifting through the session, not of a coin flip. So misalignment and machine contention
+may BOTH have been contributing and only one is fixed. To settle it, on a quiet box with the reaper working:
+restore the single-late-mask behaviour temporarily and run **8x each arm** (not 4 — at a 25% flake rate, 4 runs
+has a ~32% chance of showing zero failures by luck, which is how this got declared fixed the first time), and
+discard any run whose startup orphan warning was non-zero rather than averaging it in. If the old form passes
+8/8 on a quiet box, the flake was contention all along and this fixed a real but different bug.
 
 ## 4g. Perf wave 2026-08-22 — the cloud march is half the frame
 
@@ -384,9 +395,24 @@ root cause.
    throughput on a healthy one, buying a stall that does not otherwise exist.
    Use `tools/hitchprobe.mjs --vsync` (and `--trace`, read with `tools/hitchparse.mjs`) to tell a real hitch
    from this artifact before chasing one again.
+   **REOPEN CONDITION — do not wave a stall away just because this entry says "closed".** The artifact needs
+   the GPU at ~100% occupancy, whose tell is `gpuMs` mean ≈ `frameMs` mean. If you see periodic stalls while
+   `gpuMs` mean sits *well below* `frameMs` mean, on a quiet box with no orphaned `chrome-headless-shell`
+   processes, that is NOT this — it is a real hitch and this item is reopened. Equally: if the ratio is ~1.0,
+   check the orphan warning `inspect.mjs` prints at startup before believing anything else you measured.
    **The honest item underneath: q=high spends ~6.9 ms of GPU against a ≤7 ms whole-frame budget — no
    headroom.** Lower that and the backpressure cannot build regardless of pacing.
-2. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
+
+2. **What a PLAYER actually gets, q=high, vsync ON: frameMs p99 18.5 ms, cpuMs p99 10.9 ms.** Every other
+   number in this file comes from the uncapped harness and is therefore a *stress* figure, not an experience
+   figure — the project had never recorded the second kind. Re-measure with `node tools/hitchprobe.mjs --vsync`
+   after anything that moves the frame, and keep this line honest: it is the only number here a person feels.
+3. **Boot to `_running` is ~30 s headless against a stated < 4 s budget** (terrain full bake 9.2 s, impostor
+   bakes 5.1 s, vegetation 1.5 s; chunking has since taken the worst mid-load stall to ~1.2 s). The harness
+   boot wait was raised 60 s -> 150 s to stop runs dying with TIMEOUT, which also removed the last thing that
+   was passively noticing this — hence the number is written here instead. A two-minute wait is not normal and
+   should not become the next agent's baseline assumption.
+4. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
 
 **World / content**
 3. Four of nine straight-line pass walks (dragon, lost, void, infernal) stop at the destination region's own
