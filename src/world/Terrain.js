@@ -686,10 +686,10 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     vec3 bX = vec3(0.0, dX.g * 2.0 - 1.0, dX.r * 2.0 - 1.0) * bw.x, bZ = vec3(dZ.r * 2.0 - 1.0, dZ.g * 2.0 - 1.0, 0.0) * bw.z;
     bump = mix(bump, (bX + bZ) * 0.7 * detFade + bump * bw.y, wRock);
   }
-  // biome floor. Derivatives are taken here, in uniform control flow, and handed to the sampler, so the
-  // second (neighbour) fetch can sit behind a branch and cost nothing outside a border band.
+  // biome floor. Derivatives are taken in uniform control flow (pdx/pdy, hoisted above with the guarded splat
+  // fetches) and handed to the sampler, so the second (neighbour) fetch can sit behind a branch and cost
+  // nothing outside a border band.
   vec4 cB = vec4(0.0);
-  vec2 pdx = dFdx(P.xz), pdy = dFdy(P.xz);
   if (wB > 0.002) {
     cB = lyrHexG(P.xz / bScl, bLayer, 3.0, pdx / bScl, pdy / bScl);
     cB.rgb *= bTint * mix(0.78, 1.24, macro2C);
