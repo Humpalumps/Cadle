@@ -16,6 +16,38 @@ Policy: see CLAUDE.md "Non-negotiable conventions". Need something? Put `ASSET A
 
 **Usage: `game.assets.tex('<key>')`** (keys = filename without extension; glyphs = `glyph1`/`glyph2`). Preloaded + GPU-uploaded before any system init — never load asset files yourself. sRGB, repeat-wrap, aniso 8 already set (leaf_card/glyphs are clamped). Derive normal/roughness procedurally (height-from-luma or noise) — only albedo is generated. Blend with your procedural detail/macro variation; do not drop macro variation.
 
+## Intro loading screen — `public/assets/intro/` (790 KB total: 7 x 512 px JPG + one model)
+
+The ONE set that does **not** go through `game.assets`: the intro (`src/ui/Intro.js` / `src/ui/intro/stage.js`) is
+on screen *while* `game.assets` is still preloading the 29 MB main set, so it loads these itself, in
+`stage.js` `loadIntroTextures()`, and hands them to `room.js` / `character.js` as `tex`. Keep the set tiny —
+every kilobyte here is dead time before the loading screen can appear — and keep every material's procedural
+fallback working, because `tex.<name>` is `null` when a file is missing.
+
+| file | `tex` key | for |
+|---|---|---|
+| `hoodie_knit.jpg` | `hoodie` | the character's hoodie (map + low-scale bumpMap); charcoal brushed fleece, seamless |
+| `chair_leather.jpg` | `leather` | gaming chair upholstery; black quilted leather, violet stitching, seamless |
+| `wall_plaster.jpg` | `plaster` | bedroom walls/ceiling; dark grey-violet painted plaster, seamless |
+| `wood_floor.jpg` | `wood` | floor planks and the desk top; dark walnut, seamless |
+| `rug_indigo.jpg` | `rug` | the rug; deep indigo wool with a gold geometric motif, seamless |
+| `poster_crystal.jpg` | `posterCrystal` | portrait wall print (352×528) — aether crystal on a plinth, gold filigree border |
+| `poster_ruins.jpg` | `posterRuins` | landscape wall print (528×352) — ruins under an aurora |
+| `guy.glb` | — | **the seated character himself** (495 KB, 21k tris). Generated: Magnific `images_generate` (isolated back view, seated, arms forward) -> `models3d_generate` **trellis-2 at resolution 1536** (tripo auto-rigs people into a T-pose and loses the seated pose — trellis keeps it). Then, offline: textures downscaled 2048 -> 896 WebP q78 with `scratchpad/shrink_glb.py` (gltf-transform's own image pipeline is broken on this machine — vips 'colourspace: parameter space not set'), then `npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt --simplify true --simplify-error 0.003 --texture-compress false`. 4.53 MB -> 495 KB. Loaded in `stage.js` with `GLTFLoader` + `MeshoptDecoder` (a ~30 KB module bundled from `three/addons`, no side files to host), and `<link rel="preload">`ed from index.html so the fetch starts during HTML parse. |
+
+Tiling textures arrive with `RepeatWrapping`, sRGB and aniso 8 set. They are **shared between modules** —
+`clone()` before touching `.repeat`, and dispose your clones.
+
+`guy.glb` IS awaited before the first frame, but with a 900 ms deadline (`Promise.race`): at 495 KB and
+preloaded he lands in well under that, and whichever body wins the race is the only one the player ever
+sees. Showing the procedural stand-in first and cross-fading read as two different characters popping
+between poses. If he misses the deadline the procedural body in `character.js` is used instead. Placement is
+`GUY_FIT` in `stage.js` (height/x/y/z/rotY), live-tunable from the harness with `__intro.stage.fitGuy({...})`.
+`character.js` still owns the **chair**, the idle timing and the `setSuck` pose hooks.
+
+Art reference (not shipped, dev only): `docs/intro-ref/hoodie-back-ref.jpg` (the character, clean back view),
+`docs/intro-ref/desk-back-{1,2}.jpg` (the full shot). Builders judge their work against these.
+
 ## SFX — `public/assets/sfx/` (mp3, 4 distinct takes each — round-robin them per shot for natural variation)
 
 | files | event |
