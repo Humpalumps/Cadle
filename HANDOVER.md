@@ -191,6 +191,12 @@ A border to walk: `?at=tundra&back=-260` (the tundra/celestial seam, gate stones
 | Contact sheet | `tools/sheet.py` | `python tools/sheet.py tools/out/<dir> 3 640` → `sheet.png` to Read |
 | Progress page | `progress/state.json` + `tools/progress.mjs` | → `progress.html` |
 
+**Where you work.** `main` is checked out at `C:/Users/ianca/Desktop/fps4`; the biome work was done in the
+worktree `.claude/worktrees/graphics-ff14-quality-audit-7eb837` and is fully merged, so **start from the main
+checkout** and make a fresh branch. The dev server on 5173 was last started from that worktree — if you edit
+the main checkout and nothing changes in the browser, that is why: kill it and restart from where you are
+(see 4c).
+
 **Dev server** — always at `http://127.0.0.1:5173/`. Check with
 `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/`. Restart:
 `npx vite --port 5173 --strictPort --host 127.0.0.1 --force > tools/out/vite.log 2>&1 &`
