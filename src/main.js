@@ -106,10 +106,30 @@ if (intro) {
   let boot = 0;
   game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.55 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
   game.events.on('boot:progress', (e) => {
-    boot = 0.55 + 0.45 * (e.done / e.total);
+    boot = 0.55 + 0.37 * (e.done / e.total);          // world build stops at 92%: the shader warmup owns the rest
     intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
-  game.ready.then(() => intro.arm()).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
+  // SHADER WARMUP — the last 8% of the bar, and the reason the loading screen no longer locks up at 100%.
+  // intro._arm() renders the whole game world into the monitor target for the first time, which compiles
+  // every terrain / grass / vegetation / water / sky program in ONE blocking call: measured at 10.0 s of
+  // frozen page on cadle.gg, right when the bar looked finished. compileAsync does the same work through
+  // KHR_parallel_shader_compile — the driver compiles in parallel and the promise yields between polls, so
+  // the intro keeps animating throughout. It does not make the work shorter; it stops it blocking.
+  game.ready.then(async () => {
+    intro.setProgress(0.92, 'THE VALE AWAITS');
+    // Raced against a 15 s cap and wrapped in try/catch: this sits on the boot path, so the worst case has
+    // to be "fall through to the old blocking compile in arm()", never "the loading screen never finishes".
+    // ?nowarm=1 disables it outright if it ever needs to be ruled out in the field.
+    try {
+      if (PARAMS.get('nowarm') !== '1') {
+        await Promise.race([
+          game.renderer.compileAsync(game.scene, game.camera),
+          new Promise((r) => setTimeout(r, 15000)),
+        ]);
+      }
+    } catch (e) { console.warn('[boot] shader warmup skipped:', e?.message); }
+    intro.arm();
+  }).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
   // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
   intro.finished.then(() => game.ready.then(() => game.start()));
 } else {
