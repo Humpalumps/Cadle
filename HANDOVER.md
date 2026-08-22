@@ -37,20 +37,116 @@ The user's own standard, in their words: *"I need all these areas to be differen
 kind of area and surroundings you'd expect to see in them."* They named three WoW zones as the bar —
 **Burning Steppes → Infernal Wastes, Winterspring → Frostveil Tundra, Ashenvale → Whisperwood Deep.**
 
-### Per-region punch list (what a region has, and what it still needs)
+### What each region IS — the target, not just the gap
 
-| region | has now | still wrong / missing |
-|---|---|---|
-| 🌲 **Whisperwood Deep** | closed canopy with a grove floor, teal foliage, canopy shade (amb 0.68), mist (fogMul 1.95), fallen logs + root stumps, fae-light spires | floor is still a bright LAWN, not forest floor — wants ferns/undergrowth and darker ground cover. No shafts of light. Ashenvale's overgrown ruins have no equivalent |
-| ❄️ **Frostveil Tundra** | dense frosted conifers (Winterspring pass), ice shards, wind drifts, frozen boulders, aurora at night | no frozen LAKES (Winterspring's signature), no icicles, no snowfall in-region. Least tri headroom of any region (~3.9 M of the 4 M budget) — check it first after any tree change |
-| ✨ **Celestial Isles** | marble+gold ground, colonnade / column drums / arch fragments, floating isles with keels, updrafts | reads WEAK at night — brown, unlit, no gold. Nothing ON the isles: no props, no encounter, no reward. Bridge spans still read as planks edge-on |
-| 🏔️ **Dragon Peaks** | 200 m peaks, gate + nest ledges, alpine pines, ribcages and scorched fangs | still the flattest-reading region. Rock is grey-brown with no gold/ice accent, and there is no reason to climb |
-| 🔥 **Infernal Wastes** | charcoal splat tint, ember key light (amb 0.52), lava channels that burn, vents with hot throats, basalt clumps, ash drifts, charred husks | **the heart is a lava caldera, so from the middle it reads as a red desert, not Burning Steppes.** The charcoal-with-red-cracks floor only shows on the ash plains off-centre. Fixing that read properly is a TERRAIN-SHAPE change (less lava surface, more black rock). Also: submerged-in-lava has bright star flares (bloom on hot cracks seen from inside) |
-| 🏰 **The Lost Realm** | violet flagstone, 16 monoliths, rings of standing stones, arcane shards | endgame zone with no endgame content. Level band 40-50 declared but nothing validates the curve |
-| 🌑 **Shadowfen** | peat murk, dead wood + willows, reed clumps, rotted stumps, wading that slows you | grass dropped 0.55 → 0.22 but can still read too green/bright in daylight. No hanging moss, no witchlight fungus clusters |
-| 🌊 **The Sunken Kingdom** | real sea basin you swim, coral, anemone fans, wreck ribs | **underwater is fog only** — no caustics, no muffled audio, no oxygen meter, nothing to find down there |
-| 🕳️ **The Void** | voidstone, hanging rubble, snapped pillars, 0.55 gravity, floating isles, void shards | isle undersides are better (keels) but the spans still read as planks. Nothing on the isles |
-| 🌾 **The Vale** (home) | unchanged, tuned, blob-free | fine — do not "improve" it casually, it is the calibration reference for the blob gate |
+Each block is the SPEC: what grows there, what the ground and rock are, what the light and the liquid do, and
+what must never appear. `have:` is what is already built (so you extend it), `gap:` is what is missing. Values
+in brackets are the live ones in `Biomes.js` / `Vegetation.js`, so you can see what a change is moving.
+
+**🌲 Whisperwood Deep — the enchanted forest.** Reference: **Ashenvale**. Old-growth wood you are *inside*:
+trunks in every direction, a canopy that closes over you, shafts of light coming through it, deep teal-green
+moss and fern undergrowth, streams, and elven ruins going under the moss. Fae lights drift between the trunks
+after dark.
+- trees: **YES, the densest in the world** — broadleaf (aspen/oak), full green-teal canopy [p 0.52, gv 0.62,
+  tint 0.72/1.12/0.94]. The light is shade, not sun [amb 0.68, fog 0x52806f x 1.95].
+- ground: forest soil, leaf litter, moss. Crystals: only tiny **fae wisps** [BSPIRE 0.030], never big shards.
+- have: closed canopy, teal foliage, mist between trunks, fallen logs and root-stumps.
+- gap: the floor is a bright LAWN — it wants ferns and undergrowth and a darker ground cover. No light shafts.
+  No overgrown ruins. **Never:** meadow grass at 0.85 pretending to be forest floor.
+
+**❄️ Frostveil Tundra — the frozen forest.** Reference: **Winterspring**. Not an empty steppe: it is a CONIFER
+FOREST buried in snow. Blue-white everything, pines with snow on the boughs, frozen lakes with cracked ice you
+can walk out onto, ice formations, icicles, a permanent aurora at night.
+- trees: **YES — frosted pines**, dense [p 0.34, gv 0.36, needles tinted 0.74/0.88/1.06, never summer green].
+- ground: glacier ice and packed snow [layer 9], almost no grass [0.03]. Ice shards are the crystal here —
+  tall and thin [BSPIRE 0.100, aspect 0.60/1.60], pale blue, NOT the meadow's violet aether.
+- rock: frost-bleached boulders, wind-carved drifts.
+- have: dense frosted conifers, ice shards, drifts, frozen boulders, aurora, bright snow-bounce [amb 1.2].
+- gap: **no frozen lakes** — Winterspring's signature. No icicles, no falling snow in-region. Tightest tri
+  budget in the world (~3.9 M of 4 M): check Frostveil first after ANY tree change.
+
+**🔥 Infernal Wastes — the volcanic waste.** Reference: **Burning Steppes**. Black cracked basalt and grey ash
+lit from BELOW by the red in its own cracks. Lava rivers and pools, vents breathing smoke, cinder cones,
+scorched skeletal trees, bones, an orange-brown smoke haze you look through. The sky is dim; the ground glows.
+- trees: **almost none, and only charred husks** — bare black skeletons, no leaves [p 0.04, species 4, tint
+  0.34/0.24/0.20]. **Never** a living tree, never green.
+- ground: black ash and cracked basalt [layer 8, charcoal tint]. **Zero grass [0].** Crystals: **none** —
+  obsidian belongs here, not aether. The red comes from lava and crack-glow, never from a crystal.
+- liquid: **lava** [`lava: true`] — the channels are the world's water surface wearing a molten skin, and it
+  burns (26 dps). Light: ember key, dim ambient, thick smoke [sun 0xff8a3c, amb 0.52, fog 0x4a1f11 x 1.85].
+- have: charcoal splat tint, ember light, burning lava channels, vents with hot throats, hexagonal basalt
+  clumps, ash drifts, charred husks.
+- gap: **the heart of the region is a lava caldera, so from the middle it reads as a red desert, not black
+  rock.** The charcoal floor only shows on the ash plains off-centre. The honest fix is TERRAIN SHAPE — less
+  lava surface, more black rock — not another tint. Also: submerged-in-lava throws bright star flares.
+
+**✨ Celestial Isles — the divine high plateau.** Sun-warmed white marble and gold, ruined colonnades and
+arches, islands floating in gold light with updrafts between them, wordless-choir calm. Everything here is
+stone and light; nothing here is woodland.
+- trees: **NONE** [p 0]. What replaces them: **broken architecture** — fallen column drums, stubs on plinths,
+  arch fragments. Crystals: **none** — the glow here is gilded stone and light, not aether shards.
+- ground: veined marble flagstone [layer 6], a trace of pale grass in the cracks [0.05]. The brightest light
+  in the world [amb 1.45] through the thinnest haze [fogMul 0.60].
+- have: marble and gold ground, the colonnade kit, floating isles with hanging keels, updraft columns.
+- gap: reads WEAK at night — brown and unlit, no gold. **Nothing is ON the isles**: no props, no encounter, no
+  reward. Bridge spans still read as planks edge-on.
+
+**🏔️ Dragon Peaks — the high mountain.** 200 m fangs of rock, ledges with dragon nests, a dwarven gate cut
+into the mountain, the bones of whatever the dragons ate, wind and drums. Alpine, not forested.
+- trees: **a few dark alpine pines on the LOWER ledges only** [p 0.10, tint 0.70/0.78/0.68].
+- ground: bare strata rock [layer 3], almost no grass [0.07]. Crystals: **none** — broken mountain quartz at
+  most. This is not an aether region.
+- have: the peaks, the gate, nest ledges, ribcages, scorched rock fangs.
+- gap: still the flattest-reading region. The rock is grey-brown with no gold or ice accent to catch the eye,
+  and there is no reason to climb — no reward, no nest encounter.
+
+**🏰 The Lost Realm — where every magic meets.** Endgame. A violet flagstone plain, a rampart ring, sixteen
+monoliths, standing-stone circles, arcane shards, ceremonial light. Ruined and deliberate, not natural.
+- trees: **NONE** [p 0] — standing stones instead. Crystals: **YES, arcane shards** [BSPIRE 0.055]. One of the
+  only four regions where a crystal is the honest answer, because this is where magic collects.
+- ground: worn violet flagstone [layer 6, tinted], trace grass [0.05], a wide pale-violet haze.
+- have: the flagstone, 16 monoliths, stone rings, arcane shards.
+- gap: an endgame zone with no endgame content, and the level band 40-50 is declared but never validated.
+
+**🌑 Shadowfen — the cursed swamp.** Knee-deep peat water you wade through, dead drowned wood, reeds taller
+than you, hanging moss, witchlight in the dark, and things that used to be people. Choked, sunk, green-black.
+- trees: **YES but all DEAD or drowned** — bare wood and willows, sickly olive [p 0.32, tint 0.62/0.74/0.42].
+- ground: wet peat muck [layer 10]. The ground cover is reeds, not lawn [0.22, cut from 0.55]. Crystals:
+  **none** — the witchlight here should be glowing FUNGUS, not a shard.
+- liquid: standing water everywhere, and wading slows you (the region's passive). The thickest haze in the
+  world [fogMul 2.4] under a dim sickly key [sun 0xa8c090, amb 0.7].
+- have: peat murk, dead wood and willows, reed clumps, rotted stumps, wading.
+- gap: can still read too green and too bright in daylight. No hanging moss, no witchlight fungus clusters.
+
+**🌊 The Sunken Kingdom — the drowned city.** A real sea you swim in and a civilisation under it: coral over
+the throne room, kelp, anemones, the ribs of wrecks in the sand, whale-song and muffled everything.
+- trees: **NONE** [p 0] — coral and kelp are the flora. Crystals: **none** — real branching coral instead.
+- ground: reef sand [layer 4, tinted]. Sea [`sea: true`]: past the shelf the water is over your head and you
+  swim (the region's passive).
+- have: the sea basin, swimming, coral, anemone fans, wreck ribs.
+- gap: **underwater is fog only** — no caustics, no muffled audio, no oxygen meter, and nothing down there to
+  find. The best region in the world for a reward you have to hold your breath to reach.
+
+**🕳️ The Void — reality gave up.** Shelves of dark violet stone over an abyss, islands hanging with nothing
+holding them up, rubble that never landed, snapped pillars of something older, 0.55 gravity, no horizon.
+- trees: **NONE** [p 0] — nothing grows. Crystals: **YES, void shards** [BSPIRE 0.120] — jagged and violet,
+  the densest spires in the world.
+- ground: voidstone with amethyst veins [layer 11], **no grass [0]**, `dry: true` so water never fills it.
+- have: voidstone, hanging rubble, snapped pillars, low gravity, floating isles with keels, updrafts.
+- gap: bridge spans read as planks edge-on, and nothing is on the isles.
+
+**🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Aetheryte, Mirrormere,
+the Sundered Spire, the hamlet. Full grass [1.0], neutral light. **Do not "improve" it casually** — it is what
+the blob gate is calibrated against, and it is the one region the user has signed off.
+
+### The rule the whole thing turns on
+
+**Trees and crystals were deliberately pulled back to the regions where they are the honest answer.** Trees:
+Whisperwood, Frostveil, Dragon ledges, Shadowfen (dead), Infernal (charred). Crystal spires: Whisperwood (fae
+lights), Frostveil (ice), Lost Realm (arcane), the Void. **Everywhere else gets its own kit instead** — that
+is what `Props._buildBiomeClutter` is for. The complaint that started this was *"the trees are the same
+everywhere and kind of the same with the crystals"*, and re-tinting the same two props is not an answer to it.
+If a region needs more life, give it a NEW thing that belongs there.
 
 ### How the machinery works, so you extend it instead of fighting it
 
