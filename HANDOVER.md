@@ -250,7 +250,10 @@ pins the ceilings — **fix the code, never the rule.**
 run` and warm ~20 px "blobs" at the very top of frame. **None were real.**
 
 1. **Orphaned browsers.** Stray `chrome-headless-shell` processes accumulate from earlier runs (14 of them
-   once) and starve the GPU until the renderer dies mid-script.
+   once) and starve the GPU until the renderer dies mid-script. They also **manufacture the fake ~65 ms
+   periodic hitch** at q=high (see 5.1) — the leak was producing the bug it made unfindable. `inspect.mjs`
+   now reaps its browser on exit, on signals and on uncaught errors, and warns at startup if any are already
+   running; a hard `taskkill /F` of the harness still cannot be caught, so check the warning line.
    `Get-Process chrome-headless-shell | Stop-Process -Force` before a run, and check afterwards.
 2. **A truncated run has no MASK frames**, so `blobcheck.py` loses the ground-cover scoping it depends on and
    dutifully reports the sun through the treeline. **A warm (234, 214, 170) "blob" at y = 0..5 is the sky.**
@@ -317,6 +320,21 @@ node tools/inspect.mjs --nolock --name heightcheck --steps '[{"wait":20},{"eval"
 
 ---
 
+## 4h. The blob gate's own flake — fixed 2026-08-22
+
+`tools/gate.mjs` failed the q=low blobcheck about half the time **on unmodified code** (4 runs each way with
+an unrelated optimisation on and off: on → FAIL, FAIL, PASS, PASS; off → PASS, PASS, FAIL, FAIL). Cause: the
+harness captured ONE ground-cover mask per burst, *after* the burst finished, on the stated assumption that
+"the camera is static through a burst". `gate-steps.json` holds `KeyW` down across the `blob-walk` burst, so
+the camera travels through all 8 frames and then ~1 s more before the mask. blobcheck therefore scoped frame 0
+with geometry from a metre or more down the meadow, and hazy distant canopy got judged under the strict
+ground-cover rule — pass or fail depending on where the walk landed.
+
+`inspect.mjs` now writes `mask-<burst>-<i>.png` per frame, freezing the world for each colour+mask pair so the
+two are the same instant; `blobcheck.py` prefers the per-frame mask and falls back to the old per-burst one, so
+older captures still evaluate identically. **The jitter burst is deliberately NOT frozen** — pausing there
+would let temporal accumulation settle and hand gate rule 2 a free pass.
+
 ## 4g. Perf wave 2026-08-22 — the cloud march is half the frame
 
 `Sky`'s volumetric march ran every frame with no idea whether any sky was visible: **4.75 ms inside a closed
@@ -350,11 +368,24 @@ root cause.
 ## 5. Everything else open
 
 **Performance**
-1. A **~65 ms periodic hitch at q=high** (~3/second). Characterised, not fixed: q=low has none, and it
-   survives env-bake off, shadows frozen, water stubbed, full postfx bypass, TAA off, AO+godrays off, and a
-   second pass with the program count already warm (174 → 174, so not shader compilation). Vegetation LOD
-   refresh was measured directly and is not it (0.3 ms for all eight sets). Headless inflates it ~3×; in a
-   headed browser it reads p99 86 ms / max 345 ms. **Biggest remaining perf item.**
+1. ~~A **~65 ms periodic hitch at q=high**~~ — **CLOSED 2026-08-22: it is a harness artifact, not a game bug.**
+   `tools/inspect.mjs` launches with `--disable-gpu-vsync --disable-frame-rate-limit`, so the client renders
+   flat out; once the GPU is ~100% occupied (q=high sits at ~6.9 ms GPU against a ~6.8 ms frame) the command
+   buffer fills and the renderer blocks in `CommandBufferProxyImpl::WaitForGetOffset`. Evidence: on hitch
+   frames **the GPU is idle** (frameMs max 92 ms while gpuMs never exceeded 11.6 ms in the same window); the
+   whole stall sits inside one arbitrary cheap GL call, a different one each time, with a normal GL call
+   count; a CDP trace shows 3446 ms of 8000 ms in `WaitForGetOffset` against 18 `PutChanged` tasks in the GPU
+   process; ANGLE worker overlap is 15%, so not shader compilation (matches the 174 → 174 program count).
+   Restore vsync and p99 becomes **18.5 ms — exactly one vsync interval**. q=low never hits it because it has
+   GPU slack (gpuMs p50 2.25 vs frameMs p50 4.9). **It does not reproduce on an uncontended box at all.**
+   The old "confirmed in a headed browser" claim was wrong: `--headed` only flips `headless`, it still passes
+   both frame-rate switches, so that reading was taken under the very condition that causes the artifact.
+   A frames-in-flight cap was implemented and **reverted** — it cures a contended box but costs 29% of
+   throughput on a healthy one, buying a stall that does not otherwise exist.
+   Use `tools/hitchprobe.mjs --vsync` (and `--trace`, read with `tools/hitchparse.mjs`) to tell a real hitch
+   from this artifact before chasing one again.
+   **The honest item underneath: q=high spends ~6.9 ms of GPU against a ≤7 ms whole-frame budget — no
+   headroom.** Lower that and the backpressure cannot build regardless of pacing.
 2. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
 
 **World / content**

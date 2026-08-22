@@ -13,6 +13,7 @@
 //   {wait: secs}                         sleep
 //   {shot: name}                         screenshot -> shot-<name>.png (+ game state recorded)
 //   {burst: {name, n, interval}}         n screenshots, interval secs apart -> burst-<name>-<i>.png (judge motion/animation)
+//                                        plus mask-<name>-<i>.png per frame (frozen for the pair, so mask and colour agree)
 //   {key: code, down: bool}              synthetic key (KeyboardEvent.code, e.g. KeyW, Space, ShiftLeft)
 //   {hold: code, secs}                   press, wait, release
 //   {look: [yaw, pitch]}                 set view angles (radians)
@@ -79,10 +80,34 @@ if (!args.nolock) {
   const rel = () => { try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch {} };
   process.on('exit', rel); process.on('SIGINT', () => { rel(); process.exit(1); }); process.on('uncaughtException', (e) => { console.error(e); rel(); process.exit(1); });
 }
+// Read-only orphan check. NOT a kill: --nolock runs are legitimately parallel, and reaping a sibling's
+// browser mid-run would corrupt their capture instead of ours.
+try {
+  const { execSync } = await import('node:child_process');
+  const out = execSync(process.platform === 'win32' ? 'tasklist /FI "IMAGENAME eq chrome-headless-shell.exe" /NH' : 'pgrep -fc chrome-headless-shell || true', { encoding: 'utf8' });
+  const n = process.platform === 'win32' ? (out.match(/chrome-headless-shell\.exe/g) || []).length : (+out.trim() || 0);
+  if (n > 0) console.warn(`[inspect] WARNING: ${n} chrome-headless-shell process(es) already running. If they are not a parallel harness run they are orphans, and every timing number from this run is inflated (see HANDOVER 4b/4d).`);
+} catch {}
+
 const browser = await chromium.launch({
   headless: !args.headed,
   args: ['--use-angle=d3d11', '--ignore-gpu-blocklist', '--enable-gpu', '--enable-webgl', '--disable-frame-rate-limit', '--disable-gpu-vsync', '--autoplay-policy=no-user-gesture-required', `--window-size=${W},${H}`],
 });
+// ALWAYS reap the browser. A run that threw, or was killed, used to leave ~4 chrome-headless-shell processes
+// alive, and they keep contending for the GPU: every later run reads worse, gate.mjs starts failing on
+// scenes it just passed (HANDOVER 4b), and at q=high they manufacture the "periodic 65 ms hitch" outright
+// (the renderer blocks in WaitForGetOffset once the GPU is oversubscribed). The leak was manufacturing the
+// bug it made unfindable. Note a hard kill (taskkill /F) still cannot be caught -- hence the orphan warning
+// below, which tells you the numbers are already contaminated before you trust them.
+let reaped = false;
+const reap = async () => {
+  if (reaped) return; reaped = true;
+  try { await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 5000))]); } catch {}
+};
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { reap().finally(() => process.exit(130)); });
+process.on('uncaughtException', (e) => { console.error('[inspect] uncaught:', e?.message || e); reap().finally(() => process.exit(1)); });
+process.on('unhandledRejection', (e) => { console.error('[inspect] unhandled rejection:', e?.message || e); reap().finally(() => process.exit(1)); });
+
 const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const page = await ctx.newPage();
 const report = { name, url: '', gpu: '', size: [W, H], quality: q, steps: [], shots: [], stats: [], state: [], console: [], errors: [], startedAt: new Date().toISOString() };
@@ -94,7 +119,10 @@ report.url = url;
 await page.goto(url, { waitUntil: 'load', timeout: 120000 }); // vite can take >30s to serve the module graph while parallel agent runs saturate it
 report.gpu = await page.evaluate(() => { const c = document.createElement('canvas'); const gl = c.getContext('webgl2'); const d = gl?.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; });
 if (!args.noready) {   // --noready: the page never starts the game loop by itself (e.g. the intro held on screen)
-  try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), { timeout: 60000 }); }
+  // 150 s, not 60: a cold headless boot is now ~30 s on this box (terrain full bake ~9 s, impostor bakes ~5 s)
+  // and lands near the old ceiling whenever the GPU is busy, so runs were dying with TIMEOUT before they
+  // rendered a frame. A too-short ceiling here reads exactly like a broken build.
+  try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), { timeout: 150000 }); }
   catch (e) { report.errors.push('TIMEOUT waiting for game to start: ' + e.message); }
 }
 const t0 = Date.now();
@@ -111,15 +139,35 @@ for (const step of steps) {
     if (k === 'wait') await sleep(v);
     else if (k === 'shot') await shot(v);
     else if (k === 'burst') {
-      for (let i = 0; i < (v.n ?? 5); i++) { await page.screenshot({ path: path.join(outDir, `burst-${v.name}-${i}.png`) }); await sleep(v.interval ?? 0.1); }
-      // One SKY MASK per burst (the camera is static through a burst): magenta = sky. tools/blobcheck.py
-      // uses it to ignore the sun and the sky seen through gaps in the trees, which are not blobs.
-      try {
-        if (process.env.CADLE_NOMASK) throw new Error("skip");
-        await page.evaluate(() => window.__game?.skyMask?.(true));
-        await sleep(0.25);
-        await page.screenshot({ path: path.join(outDir, `mask-${v.name}.png`) });
-      } catch (e) { if (!process.env.CADLE_NOMASK) throw e; } finally { await page.evaluate(() => window.__game?.skyMask?.(false)); await sleep(0.15); }
+      // ONE MASK PER FRAME, captured with the world frozen so the mask is the SAME INSTANT as the colour
+      // frame it scopes. This used to be one mask for the whole burst, taken after the last frame, on the
+      // stated assumption that "the camera is static through a burst" -- which is false for the burst that
+      // matters most: gate-steps.json holds KeyW down across blob-walk, so the camera travels for the whole
+      // burst and then another ~1 s before the mask. blobcheck then scoped frame 0 with a mask from a metre
+      // or more further down the meadow, so hazy distant canopy was tested under the strict ground-cover
+      // rule and the gate failed or passed depending on where the walk happened to land. That is the whole
+      // of the q=low blobcheck flake (measured: 4 runs each way, ~50% either side, cull on or off).
+      // Freezing for the pair costs nothing the burst is testing: frames are still `interval` apart with
+      // real motion between them, so a blob that ignites between frames still shows up in the FLASH test.
+      const noMask = !!process.env.CADLE_NOMASK;
+      // NEVER freeze the jitter probe. gate.mjs rule 2 asks "does a STATIC camera produce near-identical
+      // consecutive frames"; pausing for each capture would let any temporal accumulator settle and hand the
+      // rule a free pass. Its camera really is static, so a per-burst mask was already aligned for it.
+      const freeze = !noMask && !v.name.startsWith('jit');
+      const setPaused = (b) => page.evaluate((p) => { const g = window.__game?.game; if (g) g.paused = p; }, b).catch(() => {});
+      for (let i = 0; i < (v.n ?? 5); i++) {
+        if (freeze) { await setPaused(true); await sleep(0.05); }   // freeze: colour + mask must agree exactly
+        await page.screenshot({ path: path.join(outDir, `burst-${v.name}-${i}.png`) });
+        if (!noMask) {
+          try {
+            await page.evaluate(() => window.__game?.skyMask?.(true));
+            await sleep(0.08);
+            await page.screenshot({ path: path.join(outDir, `mask-${v.name}-${i}.png`) });
+          } finally { await page.evaluate(() => window.__game?.skyMask?.(false)); await sleep(0.05); }
+          if (freeze) await setPaused(false);
+        }
+        await sleep(v.interval ?? 0.1);
+      }
       report.shots.push({ file: `burst-${v.name}-*.png`, t: now(), state: await state() });
     }
     else if (k === 'key') await ev(([c, d]) => d ? window.__game.input.press(c) : window.__game.input.release(c), [v, step.down !== false]);
@@ -147,4 +195,4 @@ fs.writeFileSync(path.join(outDir, 'console.log'), report.console.join('\n'));
 // concise summary to stdout
 const sum = { gpu: report.gpu, shots: report.shots.length, errors: report.errors.slice(0, 10), stats: report.stats.map((s) => ({ label: s.label, fps: s.fps, meanMs: s.frameMs?.mean, p95ms: s.frameMs?.p95, p99ms: s.frameMs?.p99, cpuMs: s.cpuMs?.mean, gpuMs: s.gpuMs?.mean, gpuP95: s.gpuMs?.p95, calls: s.calls, tris: s.tris, memMB: s.memMB })), out: outDir };
 console.log(JSON.stringify(sum, null, 2));
-await browser.close();
+await reap();
