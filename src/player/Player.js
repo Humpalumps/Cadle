@@ -39,7 +39,12 @@ export class Player {
   get yaw() { return this.view.yaw; }
   get pitch() { return this.view.pitch; }
   async init() {
-    for (const p of this.parts) await p.init?.(this.game);
+    // A frame between parts, same as World.init: these build the viewmodels and ability rigs and ran as
+    // one 3.4 s synchronous block, which the loading screen cannot paint through.
+    for (const p of this.parts) {
+      await p.init?.(this.game);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
     this.game.combat.register(this.target);
     this.game.events.on('combat:hit', (e) => { if (e?.owner === this || e?.owner === this.target || e?.team === 'player') this.lastCombat = this.game.time; });
   }
