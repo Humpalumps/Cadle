@@ -603,8 +603,12 @@ export class Vegetation {
   _buildCrystals(rng, aniso) {
     const U = this.uniforms;
     // FF14 daylight read: deep saturated body, per-facet albedo contrast, internal streaks, thin normalized
-    // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout)
-    const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.22, metalness: 0.0, flatShading: true, clearcoat: 0.85, clearcoatRoughness: 0.12, envMapIntensity: 1.6 }), {
+    // white rim + sparse sun glints (normalize(uSunColor) caps HDR blowout — no more purple->white washout).
+    // Clearcoat 0.85 / roughness 0.12 / env 1.6 put a mirror on every facet, and a shard a few metres from the
+    // camera came back as a pale near-white slab whatever colour its body was — the same shape of bug as the
+    // glossy grass tips (CLAUDE.md: cap the VALUE, saturate the COLOUR). Toned so the facets still catch the
+    // sun without becoming the light source.
+    const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.30, metalness: 0.0, flatShading: true, clearcoat: 0.48, clearcoatRoughness: 0.30, envMapIntensity: 1.0 }), {
       key: 'crystal', uniforms: { uTime: U.uTime, uSunI: U.uSunI, uSunColor: U.uSunColor, uSunDirV: U.uSunDirV },
       vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN;', vBegin: `
         #ifdef USE_INSTANCING
@@ -622,7 +626,15 @@ export class Vegetation {
         // splinter stop looking like the same meadow crystal. Normalising to the brightest channel takes
         // the hue and leaves the value alone: saturate the colour, never raise it (CLAUDE.md law).
         #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
-          gTint = vColor.rgb / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
+          gTint = vColor.rgb;
+          // SATURATE, then normalise. Normalising alone keeps the hue but NOT the chroma, and a pale
+          // instance colour — the meadow's own cyan-to-magenta jitter runs up to (0.9, 0.85, 1.0) — comes
+          // out near-white, so the glow tone-maps to a white ball instead of its colour. The gate caught
+          // exactly that at hour 17 in the spawn meadow, which is the decree's bug by name. Chroma is pushed
+          // away from grey first; the value is untouched (the ceiling below is unchanged).
+          float tL = dot(gTint, vec3(0.2126, 0.7152, 0.0722));
+          gTint = max(vec3(0.0), tL + (gTint - tL) * 2.2);
+          gTint /= max(max(gTint.r, max(gTint.g, gTint.b)), 1e-3);
         #endif
         float fh = facetHash(vFN);                                                       // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
@@ -644,9 +656,12 @@ export class Vegetation {
         float eL = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722));           // keep the body's brightness, take the instance's hue
         vec3 e = eL * 2.0 * tintC * pulse * grad * streak * mix(1.0, 0.20, day)         // by day the inner glow yields to facet shading
           + 0.78 * tintC * fres * (0.5 + 0.5 * pulse) * mix(1.0, 0.55, day)             // rim in the shard's own colour, day and night
-          + sunN * fres * fres * 0.85 * day                                             // thin hot edge where the sun grazes
+          + mix(sunN, tintC, 0.55) * fres * fres * 0.70 * day                           // thin hot edge where the sun grazes
           + 0.82 * tintC * pow(back, 2.0) * (0.35 + 0.65 * fh) * day * 1.1              // translucency through the body
-          + sunN * glint * (0.35 + 0.5 * fh) * day * 0.9;
+          + mix(sunN, tintC, 0.50) * glint * (0.35 + 0.5 * fh) * day * 0.75;            // ...and the facet sparkle
+        // Both sun terms are pulled toward the shard's own colour. Left as raw sun they are white-gold, and a
+        // white-gold facet glint a few metres from the camera in the meadow is the decree's blob by every
+        // measure the gate uses (it caught one at 252,228,181). A crystal sparkles in its own hue.
         totalEmissiveRadiance = min(e, vec3(2.1)); }`,                                 // hard cap: bloom must never wash a facet to flat white
     });
     this.crystalMat = mat;
