@@ -147,13 +147,26 @@ def clusters(flags, w, h, min_area, im=None, max_aspect=None, sky=None):
                 out.append({'px': n, 'bbox': [x0,y0,x1,y1], 'rgb': (rs//n, gs//n, bs//n) if px else None})
     return sorted(out, key=lambda c: -c['px'])
 
+def mask_path_for(d, name):
+    """Mask that belongs to THIS frame. The harness now writes one per burst frame (mask-<burst>-<i>.png),
+       captured with the world frozen so it is the same instant as the colour frame. Falls back to the old
+       per-burst mask-<burst>.png for runs captured before that change.
+       Why per frame: gate-steps.json holds KeyW down across the blob-walk burst, so the camera travels
+       through it. A single mask taken after the burst scoped frame 0 with geometry from a second further on,
+       and hazy distant canopy got judged under the strict ground-cover rule -- the gate then passed or failed
+       depending on where the walk landed (measured ~50% either way, on unmodified code)."""
+    stem = name[len('burst-'):-len('.png')] if name.startswith('burst-') else name[:-len('.png')]
+    per_frame = os.path.join(d, 'mask-' + stem + '.png')                    # mask-<burst>-<i>.png
+    if os.path.exists(per_frame): return per_frame
+    return os.path.join(d, 'mask-' + re.sub(r'-\d+$', '', stem) + '.png')   # legacy: one per burst
+
 def selftest(frame):
     """Two-sided proof the sky mask did not blind the detector: paint synthetic bloom-balls onto a real
        frame (over GROUND, and over SKY) and assert the ground ones are caught and the sky one is not."""
     im = load(frame); L, w, h = lum_map(im)
     d = os.path.dirname(frame)
     name = os.path.basename(frame)
-    sky, grass = load_mask(os.path.join(d, 'mask-' + re.sub(r'-\d+\.png$', '.png', name)[len('burst-'):]), w, h)
+    sky, grass = load_mask(mask_path_for(d, name), w, h)
     print(f'[selftest] {name} {w}x{h}, mask: {"present" if sky else "MISSING (checking full frame)"}, '
           f'grass pixels: {sum(grass) if grass else "n/a"}')
     bm = lambda LL: [1 if v >= LUM_BRIGHT and (grass is None or grass[i]) else 0 for i, v in enumerate(LL)]
@@ -204,7 +217,7 @@ def main():
         name = os.path.basename(f)
         group = re.sub(r'-\d+\.png$', '', name)
         im = load(f); L, w, h = lum_map(im)
-        sky, grass = load_mask(os.path.join(d, 'mask-' + re.sub(r'-\d+\.png$', '.png', name)[len('burst-'):]), w, h)
+        sky, grass = load_mask(mask_path_for(d, name), w, h)
         if sum(L) / len(L) < DEAD_LUM:
             fails.append(f'DEAD FRAME: {name} — mean luminance < {DEAD_LUM}, renderer produced black (GPU/WebGL failure?)')
             prev_l, prev_name, prev_group = None, None, None
