@@ -108,6 +108,42 @@ crossing, for four separate reasons:
   scales with the q=high resolution/MSAA path.
 - Regression gate at merge: see "Gate status" below.
 
+### Biome identity: each region grows its own thing (2026-08-22, after user feedback)
+
+The complaint was "the trees are the same everywhere and kind of the same with the crystals" — nine regions
+furnished out of exactly two props, re-tinted. Fixed on three levels:
+
+1. **Trees and crystals were pulled back to where they are the honest answer.** Trees: Whisperwood, Frostveil,
+   Dragon Peaks (ledges), Shadowfen (drowned wood), Infernal (charred husks). Crystal spires: Whisperwood
+   (fae light), Frostveil (ice), Lost Realm (arcane), the Void. Everywhere else they are gone.
+2. **`Props._buildBiomeClutter`** gives every outer region its OWN kit, ~3.6k pieces in total: marble drums,
+   column stubs and arch fragments (Celestial); ribcages and scorched fangs (Dragon Peaks); vents with hot
+   throats, hexagonal basalt clumps and ash drifts (Infernal); reed clumps and rotted stumps (Shadowfen);
+   branching coral, anemone fans and wreck ribs (Sunken); hanging rubble and snapped pillars (Void); wind
+   drifts and frozen boulders (Frostveil); fallen logs and root-stumps (Whisperwood); rings of standing
+   stones (Lost Realm). One merged mesh per region per material, tight bounds so the other eight cull.
+3. **Foliage takes the region's colour** (BTREE `col`) instead of one global yellow-green jitter, and the
+   spires take a per-region aspect (BSPIRE `a`) so an ice shard, a coral fan and an obsidian stump differ in
+   silhouette, not just hue.
+
+**Reference passes** (user named these): Burning Steppes → Infernal (charcoal splat tint, ember sun 0xff8a3c,
+ambient 0.52, thick smoke, 230 clutter attempts); Winterspring → Frostveil (it is a FOREST under snow: tree
+density 0.13 → 0.34 with a grove floor); Ashenvale → Whisperwood (teal foliage, ambient 0.85 → 0.68, mist
+fogMul 1.55 → 1.95, and a grove FLOOR so the heart of the wood is not an open lawn with a treeline).
+
+**The grass rule changed, and the first two attempts were wrong — read this before touching it again.**
+Grass was forced GREEN-DOMINANT everywhere, which is why marble, ash and voidstone all wore the same lawn.
+Green was never the safety property — NOT BEING NEUTRAL is, because a neutral blade is what tone-maps to a
+white spike. The rule is now: a saturation floor, a green fallback for genuinely grey sources (you cannot
+saturate a grey by scaling a zero difference), and BOTH of the old clamp's ceilings — max channel 0.52 AND
+luminance 0.483. The middle attempt capped luminance only, and the gate caught it immediately at BOTH
+qualities (9-15 clusters up to 179 px): two colours of equal luminance are not equally close to white, and a
+cyan blade sits near the cap in two channels at once. **Cap the channel, not just the light.**
+
+**Tri budget is now 4 M** (user, 2026-08-22 — "we can work on optimizations elsewhere"). A closed canopy in
+two regions measured 4.19 M / 3.88 M at the old NEAR=190; EZTrees NEAR is 175 and SHADOW_CAST 68, which lands
+forest ~3.3 M and Frostveil ~3.9 M. Frostveil has the least headroom — check it first after any tree change.
+
 ### `?at=` — spawn straight into a region
 
 `http://127.0.0.1:5173/?at=<id>` drops you in that region instead of the Vale, facing its heart, with the

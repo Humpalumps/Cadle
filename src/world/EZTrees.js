@@ -27,7 +27,11 @@ const SPECIES_TUNE = {
 };
 // per-species leaf/needle tint (multiplies the per-instance jitter). Dead trees keep a bark-brown husk.
 const LEAF_TINT = { 3: [0.60, 0.80, 0.68], 4: [0.52, 0.40, 0.30] };
-const NEAR = 190, FAR = 780;                // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
+// NEAR was 190 when only Whisperwood was wooded. A closed canopy there plus Frostveil-as-forest measured
+// 4.19 M / 3.88 M tris, trees being 2.17 M of it. The near tier is area-scaled, so this is the dial: 175 m
+// holds the frame around 3.6 M against the 4 M budget, and the impostor tier — what you are actually looking
+// at past ~140 m — carries the treeline unchanged out to 780 m.
+const NEAR = 175, FAR = 780;                // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
 const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
 const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
                                             // band fade rides on distance — the fade stepped instead of gliding)
@@ -37,7 +41,7 @@ const REBUCKET = 2.25;                      // metres of camera travel between r
 // a canopy that is already shadowing the ground, so the read is identical and the cascades get 3x lighter.
 // Same pattern Enemies.js already uses for its skinned meshes (castShadow gated on distance).
 // Well inside NEAR - BAND, so a shadow-caster is never mid-cross-fade.
-const SHADOW_CAST = 75;
+const SHADOW_CAST = 68;   // most of a dense canopy's tri count is shadow re-draws (one trunk rasterised into every cascade); past ~68 m a trunk shadow under a canopy reads the same and costs three draws
 
 export function buildEZTrees(game, trees, vegetation) {
   const t0 = performance.now();

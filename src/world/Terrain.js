@@ -881,7 +881,7 @@ void biomeSet(float k, out float layer, out float scl, out float rough, out floa
   else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.45; snow = 1.0; rockCut = 0.55; }       // tundra glacier
   else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.80; rough = 0.55; tint = vec3(1.14, 1.03, 0.80); }    // celestial: sun-warmed marble, never neutral white
   else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.60; tint = vec3(0.95, 0.94, 0.96); }                  // dragon rock
-  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.80; }                   // infernal ash
+  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.80; tint = vec3(0.86, 0.84, 0.90); }   // infernal ash: Burning Steppes is CHARCOAL with red cracks, not red rock
   else if (k < 5.5) { layer = 6.0;  scl = 4.2; cov = 0.78; tint = vec3(0.80, 0.74, 1.02); }                  // lost realm: worn violet flagstone
   else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.80; rough = 0.55; rockCut = 0.45; }                   // shadowfen muck
   else if (k < 7.5) { layer = 4.0;  scl = 3.0; cov = 0.90; rough = 0.70; tint = vec3(0.78, 0.95, 0.94); rockCut = 0.55; }   // sunken reef

@@ -66,13 +66,18 @@ export function weightAt(x, z, k) {
 //   fog / fogMul      local aerial perspective     (render/Sky.js _gradeFog) — hue forced, luminance kept
 //   sun / amb         key light + ambient grade    (render/Lighting.js _gradeBiome) — what makes the
 //                     Wastes read as lit by fire and the Void as lit by almost nothing
-//   grass.d / .tint   ground-cover density + hue   (world/Terrain.js grassAt, world/Grass.js)
+//   grass.d           ground-cover DENSITY          (world/Terrain.js grassAt -> world/Grass.js)
+//   grass.tint        reference hue only — the blades actually take their colour from terrain.colorAt
+//                     (which is biome-tinted from Terrain.BALB); keep the two in the same family
 //   dry               no standing water            (Terrain.dryAt -> Water._bed / _bakeHeight)
 //   lava              molten skin on the water AND it burns   (world/Water.js, player/Player.js)
 //   sea               deep water region: ocean look + swim bed (world/Water.js, audio)
 //   float             floating isles + updraft columns        (world/Props.js)
 //   gravity           player gravity multiplier    (player/PlayerController.js)
 //   landmark          hero prop + map pin          (world/Props.js _buildBiomeLandmarks)
+//   passive           one line of RULES text on the zone card   (ui/HUD.js). ONLY for effects that are
+//                     really implemented — gravity, lava damage, swimming, wading, updrafts. If you add a
+//                     line here without the code behind it you have written a lie into the player's HUD.
 export const BIOMES = {
   meadow: {
     k: -1, name: 'The Vale', short: 'Meadow', zone: 'meadow', level: [1, 5],
@@ -82,7 +87,7 @@ export const BIOMES = {
   },
   forest: {
     name: 'Whisperwood Deep', short: 'Enchanted Forest', zone: 'forest', level: [5, 11],
-    fog: 0x6f9478, fogMul: 1.55, sun: 0xd8ffd0, amb: 0.85,
+    fog: 0x52806f, fogMul: 1.95, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, mist between the trunks
     ground: 'forest', grass: { d: 0.85, tint: 0x9fd4a8 }, music: 'wood',
     enemies: [['sprite', 4, 8, 90], ['treant', 2, 20, 110], ['hound', 3, 12, 100]],
     landmark: 'The Elderheart',
@@ -90,8 +95,8 @@ export const BIOMES = {
   },
   tundra: {
     name: 'Frostveil Tundra', short: 'Frostveil', zone: 'tundra', level: [11, 17],
-    fog: 0xc2dcee, fogMul: 1.35, sun: 0xdcecff, amb: 1.15,
-    ground: 'snow', grass: { d: 0.10, tint: 0xa8c0d8 }, music: 'frost',
+    fog: 0xc8e4f4, fogMul: 1.5, sun: 0xdcecff, amb: 1.2,     // Winterspring: bright, snow-bounced, hazy with falling ice
+    ground: 'snow', grass: { d: 0.03, tint: 0xa8c0d8 }, music: 'frost',
     enemies: [['frostwolf', 5, 12, 110], ['icegiant', 2, 30, 120], ['wisp', 3, 20, 110]],
     landmark: 'The Glacier Throne',
     blurb: 'Glaciers, frozen beasts and an aurora that never fully leaves the sky.',
@@ -99,33 +104,35 @@ export const BIOMES = {
   celestial: {
     name: 'Celestial Isles', short: 'Celestial', zone: 'celestial', level: [30, 38],
     fog: 0xe6dcff, fogMul: 0.60, sun: 0xfff2d0, amb: 1.45,
-    ground: 'stone', grass: { d: 0.14, tint: 0xd8e8c0 }, music: 'choir',
+    ground: 'stone', grass: { d: 0.05, tint: 0xd8e8c0 }, music: 'choir',
     enemies: [['seraph', 3, 16, 100], ['skyserpent', 2, 30, 120], ['wisp', 4, 14, 110]],
     landmark: 'The Empyrean Gate', float: true,
+    passive: 'Updraft columns at the Gate carry you to the isles',
     blurb: 'Islands adrift in gold light, divine ruins and serpents that swim the air.',
   },
   dragon: {
     name: 'Dragon Peaks', short: 'Dragon Peaks', zone: 'dragon', level: [24, 32],
     fog: 0x9fa8b6, fogMul: 1.15, sun: 0xffe8c8, amb: 0.95,
-    ground: 'rock', grass: { d: 0.18, tint: 0xa8b090 }, music: 'drums',
+    ground: 'rock', grass: { d: 0.07, tint: 0xa8b090 }, music: 'drums',
     enemies: [['wyvern', 3, 30, 130], ['forgeknight', 3, 14, 100], ['golem', 2, 20, 110]],
     landmark: 'Kharaz-Dun Gate',
     blurb: 'Enormous peaks, dragon nests on the ledges, and a dwarven gate cut into the mountain.',
   },
   infernal: {
     name: 'Infernal Wastes', short: 'Infernal', zone: 'infernal', level: [18, 25],
-    fog: 0x5a2a18, fogMul: 2.0, sun: 0xffb070, amb: 0.75,
+    fog: 0x4a1f11, fogMul: 1.85, sun: 0xff8a3c, amb: 0.52,    // Burning Steppes: black rock, red cracks, smoke you look through
     // NOT `dry`: the channels bhInfernal carves reach below terrain.waterLevel, so the ONE global water
     // surface fills them — that is where the lava rivers come from (see WATER_LOOK.infernal / uLava).
     ground: 'ash', grass: { d: 0, tint: 0x000000 }, lava: true, music: 'forge',
     enemies: [['imp', 5, 12, 110], ['magmagolem', 2, 24, 115], ['drake', 2, 30, 125]],
     landmark: 'The Cinder Maw',
+    passive: 'The lava burns — the channels are not water',
     blurb: 'A volcano bleeding lava rivers across black ash. Demons work the flows.',
   },
   lost: {
     name: 'The Lost Realm', short: 'Lost Realm', zone: 'lost', level: [40, 50],
     fog: 0xb4a0dc, fogMul: 0.95, sun: 0xffe0ff, amb: 1.2,
-    ground: 'stone', grass: { d: 0.12, tint: 0xc0b8d8 }, music: 'convergence',
+    ground: 'stone', grass: { d: 0.05, tint: 0xc0b8d8 }, music: 'convergence',
     enemies: [['archon', 1, 0, 3], ['sentinel', 3, 24, 120], ['golem', 2, 30, 120], ['wraith', 3, 20, 110]],
     landmark: 'The Convergence',
     blurb: 'Where every magic in the world meets and argues. The end of the road.',
@@ -133,17 +140,19 @@ export const BIOMES = {
   shadowfen: {
     name: 'Shadowfen', short: 'Shadowfen', zone: 'shadowfen', level: [15, 22],
     fog: 0x4e5c4a, fogMul: 2.4, sun: 0xa8c090, amb: 0.7,
-    ground: 'muck', grass: { d: 0.55, tint: 0x7a8a58 }, music: 'fen',
+    ground: 'muck', grass: { d: 0.22, tint: 0x7a8a58 }, music: 'fen',
     enemies: [['wraith', 4, 14, 105], ['bogwitch', 2, 20, 110], ['hound', 3, 16, 110]],
     landmark: 'The Hagstone',
+    passive: 'Peat to the knee: the fen drags at every step',
     blurb: 'Cursed water to the knee, witchlight, and things that used to be people.',
   },
   sunken: {
     name: 'The Sunken Kingdom', short: 'Sunken Kingdom', zone: 'sunken', level: [20, 28],
     fog: 0x2e6472, fogMul: 1.7, sun: 0x9fdcf0, amb: 0.9,
-    ground: 'sand', grass: { d: 0.05, tint: 0x6a9a90 }, sea: true, music: 'deep',
+    ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, sea: true, music: 'deep',
     enemies: [['drowned', 4, 14, 100], ['leviathan', 2, 40, 130], ['wisp', 3, 20, 110]],
     landmark: 'The Drowned Court',
+    passive: 'Past the shelf the sea is over your head — you swim',
     blurb: 'A civilisation under the water. Coral has taken the throne room.',
   },
   void: {
@@ -152,6 +161,7 @@ export const BIOMES = {
     ground: 'voidstone', grass: { d: 0, tint: 0x000000 }, dry: true, float: true, gravity: 0.55, music: 'void',
     enemies: [['riftling', 5, 12, 110], ['voidhorror', 3, 24, 120], ['wraith', 2, 20, 110]],
     landmark: 'The Unmaking',
+    passive: 'Gravity is broken: you fall slow, you jump far. Updrafts at the Unmaking',
     blurb: 'Reality gave up here. Islands hang, gravity forgets, and something watches.',
   },
 };

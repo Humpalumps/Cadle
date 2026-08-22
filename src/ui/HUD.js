@@ -189,9 +189,13 @@ export class HUD {
     t.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 180, easing: 'ease-out' });
     setTimeout(() => { t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 350 }).onfinish = () => t.remove(); }, ms);
   }
-  notify(title, subtitle = '') {
+  notify(title, subtitle = '', note = '') {
     const n = this.notifyEl;
     n.querySelector('h2').textContent = title; n.querySelector('p').textContent = subtitle;
+    // third line: the RULES of the place (low gravity, lava, swimming). Only regions that really change
+    // something set it — see BIOMES[].passive. textContent, never innerHTML: this string is content, not markup.
+    let e = n.querySelector('.rule'); if (!e) { e = document.createElement('p'); e.className = 'rule'; n.appendChild(e); }
+    e.textContent = note; e.style.display = note ? '' : 'none';
     n.getAnimations().forEach((a) => a.cancel());
     n.animate([{ opacity: 0, transform: 'scale(0.96)' }, { opacity: 1, transform: 'scale(1)', offset: 0.12 }, { opacity: 1, offset: 0.8 }, { opacity: 0, transform: 'scale(1.02)' }], { duration: 3600, easing: 'ease-out' });
   }
@@ -360,7 +364,7 @@ export class HUD {
       else if (rid !== this._region) {
         this._region = rid;
         const lv = B?.level;
-        this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '');
+        this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '', B?.passive ?? '');
       }
     }
   }

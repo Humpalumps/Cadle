@@ -25,16 +25,20 @@ import { BIOMES } from './Biomes.js';
 // One line per outer region: what grows there, what stone it is made of, what its spires look like.
 // `p` is the accept probability at the region's heart; it fades out with the biome weight.
 const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
+// [accept probability, species pool, LEAF TINT]. The tint is the one that was missing: every tree in the
+// world took the same yellow-green instance jitter, so a Frostveil pine, a Void husk and a Whisperwood oak
+// were the same tree wearing the same leaves. It multiplies the jitter (so the per-instance variation
+// survives) and fades in with the biome weight, exactly like the crystal spires' tint.
 const BTREE = {
-  forest:    { p: 0.52, sp: [0, 1] },      // Whisperwood Deep: closed canopy (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
-  tundra:    { p: 0.13, sp: [3] },         // sparse frozen conifers
-  celestial: { p: 0.05, sp: [0] },
-  dragon:    { p: 0.11, sp: [3] },         // pines on the lower ledges
-  infernal:  { p: 0.00, sp: [4] },         // nothing grows in the ash
-  lost:      { p: 0.04, sp: [1] },
-  shadowfen: { p: 0.32, sp: [4, 2] },      // drowned dead wood + willows
-  sunken:    { p: 0.00, sp: [2] },
-  void:      { p: 0.05, sp: [4] },
+  forest:    { p: 0.52, sp: [0, 1], col: [0.72, 1.12, 0.94], gv: 0.62 },   // Whisperwood Deep, Ashenvale-teal (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
+  tundra:    { p: 0.34, sp: [3],    col: [0.74, 0.88, 1.06], gv: 0.36 },   // Winterspring is a FOREST under snow, not an empty steppe: dense frosted conifers
+  celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
+  dragon:    { p: 0.10, sp: [3],    col: [0.70, 0.78, 0.68] },   // dark alpine pine, only on the lower ledges
+  infernal:  { p: 0.04, sp: [4],    col: [0.34, 0.24, 0.20] },   // charred husks, sparse — the wastes are mostly vents and ash
+  lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
+  shadowfen: { p: 0.32, sp: [4, 2], col: [0.62, 0.74, 0.42] },   // drowned dead wood + willows, sickly olive
+  sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
+  void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };
 // [accept probability, linear rock tint]
 const BROCK = {
@@ -51,17 +55,24 @@ const BROCK = {
 // biome spires reuse the crystal geometry: [p, linear instance tint, [minScale, maxScale]].
 // Colours stay SATURATED and the bright ones stay modest in value — an emissive spire that tone-maps
 // to white is the washed-white blob bug (CLAUDE.md architectural law).
+// ...plus `a` = [girth, height] aspect. Colour alone was not enough: nine regions all grew the SAME cluster
+// silhouette, so an ice shard, a coral fan and an obsidian stump only differed in hue. Aspect costs nothing
+// (it is the instance matrix) and is what makes them read apart at a distance.
 const BSPIRE = {
-  forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9] },   // fae light
-  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4] },   // ice shards
-  celestial: { p: 0.070, col: [1.05, 0.86, 0.42], s: [2.2, 4.2] },   // gold light-shards
-  dragon:    { p: 0.020, col: [0.86, 0.80, 0.74], s: [1.4, 2.8] },
-  infernal:  { p: 0.090, col: [0.30, 0.11, 0.08], s: [1.6, 3.6] },   // obsidian: dark, no glow
-  lost:      { p: 0.055, col: [0.78, 0.58, 1.10], s: [2.0, 3.8] },
-  shadowfen: { p: 0.045, col: [0.48, 1.00, 0.42], s: [0.8, 1.7] },   // witchlight
-  sunken:    { p: 0.100, col: [1.00, 0.46, 0.58], s: [1.2, 2.8] },   // coral fans
-  void:      { p: 0.120, col: [0.52, 0.22, 1.05], s: [2.0, 4.8] },   // void shards
+  forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9], a: [0.70, 1.05] },   // fae light: slim wisps
+  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4], a: [0.60, 1.60] },   // ice: tall thin fracture shards
+  celestial: { p: 0.000, col: [1.05, 0.86, 0.42], s: [2.2, 4.2], a: [0.74, 1.40] },   // marble + gold, no crystal
+  dragon:    { p: 0.000, col: [0.86, 0.80, 0.74], s: [1.4, 2.8], a: [1.10, 0.85] },   // bone and scorched rock
+  infernal:  { p: 0.000, col: [0.30, 0.11, 0.08], s: [1.6, 3.6], a: [1.30, 0.68] },   // basalt vents instead
+  lost:      { p: 0.055, col: [0.78, 0.58, 1.10], s: [2.0, 3.8], a: [0.85, 1.25] },   // arcane shards: this IS where magic collects
+  shadowfen: { p: 0.000, col: [0.48, 1.00, 0.42], s: [0.8, 1.7], a: [0.95, 0.90] },   // witchlight is the glowing fungus, not a crystal
+  sunken:    { p: 0.000, col: [1.00, 0.46, 0.58], s: [1.2, 2.8], a: [1.50, 0.55] },   // real coral instead
+  void:      { p: 0.120, col: [0.52, 0.22, 1.05], s: [2.0, 4.8], a: [0.78, 1.35] },   // void shards
 };
+// Crystal spires survive in FOUR regions only, and in each one a crystal is what the place is actually made
+// of: Whisperwood's fae lights, Frostveil's ice, the Lost Realm's arcane shards, the Void's splinters.
+// Everywhere else the region grows its own thing (Props._buildBiomeClutter) — the complaint that started
+// this was "trees and crystals in every biome", and re-tinting the same two props is not an answer to it.
 // grove noise for the outer regions (separate lattice from the home Whisperwood, so they clump differently)
 const grove2 = (x, z) => smoothstep(0.10, 0.52, fbm(x * 0.0075, z * 0.0075, { octaves: 3, seed: 41 }) * 0.5 + 0.5);
 
@@ -663,7 +674,10 @@ export class Vegetation {
       const road = terrain.roadAt?.(x, z) ?? 0;                         // nothing grows in the pass roads
       if (road > 0.35) continue;
       const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
-      if (bTree) p = p * (1 - bt.w) + bTree.p * grove2(x, z) * bt.w;
+      // `gv` is the FLOOR under the grove noise. Without one, grove2 returns 0 across whole stretches and the
+      // region's heart is an open lawn with a treeline around it — which is a meadow, not a forest. A closed
+      // canopy needs trees between the groves too; the noise should vary density, not switch it off.
+      if (bTree) { const gv = bTree.gv ?? 0; p = p * (1 - bt.w) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bt.w; }
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
       const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
@@ -675,7 +689,11 @@ export class Vegetation {
       const sp = treeSpec[species] ?? treeSpec[species === 3 ? 0 : 1];
       const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 ? 0.7 + rng() * 0.6 : 0.8 + rng() * 0.4;
       E.set((rng() - 0.5) * 0.08, rng() * Math.PI * 2, (rng() - 0.5) * 0.08); Qt.setFromEuler(E); P.set(x, y - 0.25 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
-      const tint = 0.76 + rng() * 0.44; C.setRGB(tint * (0.86 + rng() * 0.3), tint, tint * (0.8 + rng() * 0.32)); // strong per-instance hue jitter (yellow-green .. teal-green)
+      // per-instance hue jitter, then pushed toward the REGION's foliage colour by the biome weight
+      const tj = 0.76 + rng() * 0.44;
+      let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
+      if (bTree?.col) { const k = bTree.col, w = bt.w; cr *= 1 + (k[0] - 1) * w; cg *= 1 + (k[1] - 1) * w; cb *= 1 + (k[2] - 1) * w; }
+      C.setRGB(cr, cg, cb);
       (this.treeSets[species] ?? this.treeSets[species === 3 ? 0 : 1]).lod.add(M, C);
       const r = Math.max(0.28, sp.colR * scale);
       this.trees.push({ x, y, z, species, scale, r });
@@ -702,9 +720,10 @@ export class Vegetation {
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, y - 0.3 * scale + 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
     // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
-    const addCrystal = (x, z, scale, variant, tint) => {
+    const addCrystal = (x, z, scale, variant, tint, aspect) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
-      P.set(x, y - 0.1 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
+      const ax = aspect ? aspect[0] : 1, ay = aspect ? aspect[1] : 1;
+      P.set(x, y - 0.1 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
       const hue = rng();
       if (tint) { const j = 0.88 + hue * 0.24; C.setRGB(tint[0] * j, tint[1] * j, tint[2] * j); }   // biome spire: ice / obsidian / coral / void shard
       else C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
@@ -725,7 +744,8 @@ export class Vegetation {
       if (rng() > p) continue;
       const scale = bSpire && bc.w > 0.4 ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
         : field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
-      addCrystal(x, z, scale, Math.floor(rng() * 3), bSpire && bc.w > 0.4 ? bSpire.col : null);
+      const own = bSpire && bc.w > 0.4;
+      addCrystal(x, z, scale, Math.floor(rng() * 3), own ? bSpire.col : null, own ? bSpire.a : null);
     }
     // hero formations: a handful of towering (8-13 m) clusters in the eastern fields — FF14 landmark scale
     // (home bowl only; each outer biome gets its own landmark from Props)
