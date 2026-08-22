@@ -230,9 +230,11 @@ vec3 transformed; vec3 objectNormal;
     // the Whisperwood floor and the Shadowfen peat both came out as a mown lawn in full sun — the single
     // loudest "these are all the same place with a filter on" cue in the world. 0.133 is the measured mean
     // luminance of terrain.colorAt across the spawn meadow, so the Vale lands on exactly 1.0 and is untouched.
-    // Clamped both ways: a snowfield may not bleach the blades, and no floor may make them brighter than the
-    // Vale's by more than 15% (the caps below are still the absolute backstop).
-    tipC *= clamp(pow(tLum / 0.133, 1.15), 0.34, 1.12);
+    // DARKER-ONLY, and the upper clamp is 1.0 for a reason: 0.133 is the meadow MEAN, so a brighter-than-mean
+    // patch of the Vale scored >1 and the blades came out up to 12% hotter than the tuned value the whole blob
+    // gate is calibrated against. blobcheck caught it immediately (an 11 px green cluster spiking between two
+    // frames of burst-blob-clear13). This term may only ever take brightness away.
+    tipC *= clamp(pow(tLum / 0.133, 1.15), 0.34, 1.0);
   }
   {
     // A pale floor (celestial marble, the Lost Realm plain, snow) used to bleach the blades into bone-white
