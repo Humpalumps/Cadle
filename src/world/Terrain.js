@@ -469,6 +469,10 @@ uniform float uWater;
 uniform float uTime;
 varying vec3 vWPos;
 vec4 lyr(vec2 uv, float i) { return texture(uLayers, vec3(uv, i)); }
+// Explicit-gradient twin of lyr(). REQUIRED for any fetch inside a weight guard: implicit derivatives are
+// undefined in divergent control flow, so a guarded texture() would sample a garbage mip on the silhouette
+// of the branch. Callers hoist dFdx/dFdy(P.xz) out of the branch and scale them by the same factor as uv.
+vec4 lyrG(vec2 uv, float i, vec2 dx, vec2 dy) { return textureGrad(uLayers, vec3(uv, i), dx, dy); }
 // hex-tile stochastic sampling (technique: three-hex-tiling / Mikkelsen hextile, MIT) — random per-hex offsets kill visible repeats
 vec2 hexH(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
 vec4 lyrHex(vec2 uv, float i, float sharp) {
@@ -581,20 +585,40 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   cG.rgb *= mix(1.0, 0.55 + 0.95 * macroC, farC);                        // 143 m light/dark meadow patches from the air
   float dry = smoothstep(0.42, 0.64, macro2) * (1.0 - forestM);          // sun-dried grass patches ringing the dirt patches
   cG.rgb = mix(cG.rgb, cG.rgb * vec3(1.6, 1.25, 0.55) + vec3(0.05, 0.03, 0.0), dry * 0.6);
-  vec4 cF = lyr(P.xz * (1.0 / 3.6), 1.0);
-  cF.rgb = mix(cF.rgb, lyr(P.xz * (1.0 / 27.0) + 0.41, 1.0).rgb, farC * 0.5);
-  vec4 cD = lyr(P.xz * (1.0 / 4.2), 2.0);
-  cD.rgb = mix(cD.rgb, lyr(P.xz * (1.0 / 31.0) + 0.23, 2.0).rgb, farC * 0.55);
-  cD.rgb *= mix(1.0, 0.62 + 0.80 * macroC, farC);
-  vec4 cS = lyr(P.xz * (1.0 / 2.4), 4.0);
-  cS.rgb *= mix(vec3(1.08, 0.99, 0.88), vec3(0.92, 0.90, 0.97), smoothstep(0.35, 0.65, macro2));   // warm/cool sand patches
-  vec4 cW = lyr(P.xz * (1.0 / 9.0), 5.0);
+  // Weight-guarded layer fetches. Each of these five layers is multiplied by a weight that is exactly 0 across
+  // most of the map (no sand in the tundra, no snow in the meadow, no flagstone outside the ruins), yet every
+  // fetch ran unconditionally -- 7 of ~16 array taps serving layers contributing nothing. Same 0.002 threshold
+  // and same shape as the wRock / wB guards below; the sample is multiplied by ~0 either way, so the image does
+  // not move. Gradients are hoisted so the guarded taps keep the mip the unguarded ones would have picked.
+  vec2 pdx = dFdx(P.xz), pdy = dFdy(P.xz);
+  vec4 cF = vec4(0.0);
+  if (wForest > 0.002) {
+    cF = lyrG(P.xz * (1.0 / 3.6), 1.0, pdx * (1.0 / 3.6), pdy * (1.0 / 3.6));
+    cF.rgb = mix(cF.rgb, lyrG(P.xz * (1.0 / 27.0) + 0.41, 1.0, pdx * (1.0 / 27.0), pdy * (1.0 / 27.0)).rgb, farC * 0.5);
+  }
+  vec4 cD = vec4(0.0);
+  if (wDirt > 0.002) {
+    cD = lyrG(P.xz * (1.0 / 4.2), 2.0, pdx * (1.0 / 4.2), pdy * (1.0 / 4.2));
+    cD.rgb = mix(cD.rgb, lyrG(P.xz * (1.0 / 31.0) + 0.23, 2.0, pdx * (1.0 / 31.0), pdy * (1.0 / 31.0)).rgb, farC * 0.55);
+    cD.rgb *= mix(1.0, 0.62 + 0.80 * macroC, farC);
+  }
+  vec4 cS = vec4(0.0);
+  if (wSand > 0.002) {
+    cS = lyrG(P.xz * (1.0 / 2.4), 4.0, pdx * (1.0 / 2.4), pdy * (1.0 / 2.4));
+    cS.rgb *= mix(vec3(1.08, 0.99, 0.88), vec3(0.92, 0.90, 0.97), smoothstep(0.35, 0.65, macro2));   // warm/cool sand patches
+  }
+  vec4 cW = vec4(0.0);
+  if (wSnow > 0.002) cW = lyrG(P.xz * (1.0 / 9.0), 5.0, pdx * (1.0 / 9.0), pdy * (1.0 / 9.0));
   // flagstones: per-5m-cell whole-stone offset + 90deg rotation kills the parking-lot repeat (cell borders land on mortar)
-  vec2 stC = floor(P.xz * 0.2);
-  float stH = fract(sin(dot(stC, vec2(127.1, 311.7))) * 43758.545);
-  vec2 stUV = P.xz * 0.2 + floor(vec2(stH, fract(stH * 7.0)) * 7.0) * (1.0 / 7.0);   // quantum = one stone (7 stones/tile)
-  if (stH > 0.5) stUV = vec2(stUV.y, -stUV.x);
-  vec4 cT = lyr(stUV, 6.0);
+  vec4 cT = vec4(0.0);
+  if (wStone > 0.002) {
+    vec2 stC = floor(P.xz * 0.2);
+    float stH = fract(sin(dot(stC, vec2(127.1, 311.7))) * 43758.545);
+    vec2 stUV = P.xz * 0.2 + floor(vec2(stH, fract(stH * 7.0)) * 7.0) * (1.0 / 7.0);   // quantum = one stone (7 stones/tile)
+    vec2 sdx = pdx * 0.2, sdy = pdy * 0.2;
+    if (stH > 0.5) { stUV = vec2(stUV.y, -stUV.x); sdx = vec2(sdx.y, -sdx.x); sdy = vec2(sdy.y, -sdy.x); }   // rotate the gradients with the uv
+    cT = lyrG(stUV, 6.0, sdx, sdy);
+  }
   vec4 cR = vec4(0.0);
   if (wRock > 0.002) {
     vec3 bw = pow(abs(gN), vec3(5.0)); bw /= (bw.x + bw.y + bw.z);

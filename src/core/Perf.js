@@ -11,9 +11,33 @@ export class Perf {
     this._gpuTried = true; const gl = renderer.getContext(); const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
     if (!ext) return; this._gl = gl; this._ext = ext; this._queries = []; this.gpuSamples = new Float32Array(600); this._gi = 0; this._gn = 0;
   }
-  _gpuBegin() { if (!this._ext || this._queries.length > 8) return; const q = this._gl.createQuery(); this._gl.beginQuery(this._ext.TIME_ELAPSED_EXT, q); this._qActive = q; }
+  // Cap 32, not 8: under ANGLE/D3D11 a TIME_ELAPSED result takes ~10-20 frames to become available, so a
+  // shallow queue starves -- at 8 we sampled ~4 frames a second and the survivors were all post-stall
+  // frames, reading 19 ms against an 11 ms true mean. At 32 the sample rate is ~25/s and the GPU mean lands
+  // on the frame mean in every region, which is how you know the number is real.
+  // `gpuPaused`: WebGL2 allows exactly ONE query per target, and PostFX.profile() opens its own TIME_ELAPSED
+  // query inside the frame. While this timer was dead that collision was invisible; now it would make both
+  // readings garbage (its beginQuery fails, then its endQuery closes OUR query). Anything that wants the
+  // target to itself sets perf.gpuPaused = true for the duration; we simply stop sampling. The CURRENT_QUERY
+  // check is the backstop for any caller that forgets.
+  _gpuBegin() {
+    if (!this._ext || this.gpuPaused || this._queries.length > 31) return;
+    const gl = this._gl; if (gl.getQuery(this._ext.TIME_ELAPSED_EXT, gl.CURRENT_QUERY)) return;
+    const q = gl.createQuery(); gl.beginQuery(this._ext.TIME_ELAPSED_EXT, q); this._qActive = q;
+  }
+  // The drain must NOT sit behind an `!this._qActive` early return, which is what it used to do: boot frames
+  // are slow enough to back the queue up to the _gpuBegin cap (9), after which no query is active, so the
+  // drain was skipped, the queue never emptied, _gpuBegin never resumed, and gpuMs read 0 for the rest of
+  // the session (measured: 35 samples, then frozen forever).
   _gpuEnd() {
-    if (!this._ext || !this._qActive) return; const gl = this._gl; gl.endQuery(this._ext.TIME_ELAPSED_EXT); this._queries.push(this._qActive); this._qActive = null;
+    if (!this._ext) return; const gl = this._gl;
+    // Close ours only if it is still the active query — if someone else's endQuery already closed it, ending
+    // again would close THEIR query instead and the corruption would spread.
+    if (this._qActive) {
+      if (gl.getQuery(this._ext.TIME_ELAPSED_EXT, gl.CURRENT_QUERY) === this._qActive) { gl.endQuery(this._ext.TIME_ELAPSED_EXT); this._queries.push(this._qActive); }
+      else gl.deleteQuery(this._qActive);
+      this._qActive = null;
+    }
     while (this._queries.length) { const q = this._queries[0]; if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break; this._queries.shift();
       if (!gl.getParameter(this._ext.GPU_DISJOINT_EXT)) { this.gpuSamples[this._gi] = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; this._gi = (this._gi + 1) % 600; this._gn = Math.min(this._gn + 1, 600); }
       gl.deleteQuery(q); }

@@ -62,6 +62,38 @@ p50 3.6–4.3 ms at 1080p q=high on the RTX 3060 in every region, ≤ 3.0 M tris
 Bake unchanged at ~12.5 s (same as main). `CADLE_URL=http://127.0.0.1:<port>/` makes the harness and the gate
 target a worktree server on its own port.
 
+### Perf wave 2026-08-22 — GPU timing fixed, then two lossless wins
+
+**Orchestrator edited four builder-owned files** (`render/Sky.js`, `render/PostFX.js`, `world/Terrain.js`,
+`core/Perf.js`). Sky/postfx/terrain builders: the diffs in your files are these, not something you forgot.
+
+1. **`Perf.js` — `gpuMs` was 0 for the project's entire history.** The GPU-timer drain sat behind an
+   `!this._qActive` early return, so once the in-flight queue hit its cap nothing drained and nothing
+   restarted. Every perf number ever quoted here (including "p50 3.6-4.3 ms") was CPU/rAF only. Queue cap
+   8 -> 32 as well: under ANGLE a result takes 10-20 frames, so a shallow queue sampled ~4 frames/s and only
+   post-stall ones, reading 19 ms against an 11 ms truth. `PostFX.profile()` now pauses Perf's query
+   (`perf.gpuPaused`) — WebGL2 allows one query per target, and the collision used to hang the harness
+   forever on an unresolved promise.
+2. **`Terrain.js` — weight-guarded splat fetches.** Five layers (forest/dirt/sand/snow/flagstone) only sample
+   when their blend weight > 0.002, same shape as the existing wRock/wB guards. Guarded fetches use the new
+   `lyrG()` (explicit `textureGrad`) because implicit derivatives are undefined in divergent flow.
+3. **`Sky.js` + `PostFX.js` — the cloud march skips what the world already covers.** The volumetric march is
+   ~half the GPU frame and had no idea whether any sky was visible (measured: 4.75 ms in a closed canopy
+   showing zero sky pixels). It now reduces last frame's depth into a 1/8-res `min(1 - depth)` pyramid and
+   early-outs rays whose 5x5 neighbourhood is fully covered. **Measured 3.21 ms saved, 33.5% of the frame**,
+   image bit-identical. Kill switch: `sky.cloudOcclusionCull = false`.
+
+**Load-bearing details, do not "simplify" these:**
+- `postfx.depthTexture` returns null until a composer frame exists. The intro drives Sky through
+  `Game.stepInto`, which never runs the composer; an unwritten depth samples 0, which the pyramid reads as
+  "fully covered", so without the gate the cull would kill every cloud in the intro.
+- The cull is off while `_histValid` is 0 (boot, every resize), else the sentinel is stored as "clear sky".
+- The 5x5 margin (20 px) must stay >> the dome's tent radius + the resolve's bilinear radius. 3x3 measurably
+  leaked stale cloud at horizon silhouettes (up to 46/255).
+- The pyramid lookup uses `textureLod` and never returns from inside the loop: a gradient instruction under
+  varying iteration (fxc X3595) crashed the GPU process.
+- Four frames in every 32 march everything, so no texel's history can go stale indefinitely.
+
 ### OUTSTANDING — start here
 
 **Verification not done**
@@ -145,6 +177,12 @@ node tools/inspect.mjs --name x --script file.json --q low --w 1920 --h 1080
 - Step language is documented in the header of `tools/inspect.mjs`.
 - `--nolock` for quick screenshot iteration; **omit it for perf numbers** (mkdir-mutex serialises runs so parallel agents don't skew each other).
 - Perf: wait ≥ 5 s after load before a `perfWindow` (shader warmup). `stats().gpuMs` = true GPU ms (timer queries), `stats().systems` = per-system CPU ms EMA.
+  **`gpuMs` read 0 for the whole project until 2026-08-22** — the query queue in `Perf.js` deadlocked a few
+  seconds after boot, so every perf number anyone has quoted so far (including "p50 3.6-4.3 ms" below) is a
+  CPU/rAF number with no GPU side. Fixed; first honest reading is GPU mean ~11 ms at 1080p q=high in
+  meadow/forest/tundra and ~16 ms in infernal, i.e. **the harness is GPU-bound and over the 7 ms frame budget**.
+  `stats().systems` is still CPU-only — for GPU attribution use A/B toggles (`bypassPostfx`, `freezeShadows`,
+  hiding a system's meshes) and compare GPU mean, not the per-system table.
 - GPU flags that make headless use the RTX 3060: `--use-angle=d3d11 --ignore-gpu-blocklist --enable-gpu` (already in the harness). Without them you silently get SwiftShader and useless numbers.
 
 ---
