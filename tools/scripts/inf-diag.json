@@ -1,0 +1,12 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);JSON.stringify(window.__game.state())"},
+ {"eval":"JSON.stringify({b:window.__game.biomeAt(),sun:window.__game.game.lighting.sun.color.getHexString(),si:window.__game.game.lighting.sun.intensity,amb:window.__game.game.lighting.hemi&&window.__game.game.lighting.hemi.intensity,fog:window.__game.game.scene.fog&&{c:window.__game.game.scene.fog.color.getHexString(),d:window.__game.game.scene.fog.density}})"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":2.5},
+ {"eval":"JSON.stringify({b:window.__game.biomeAt(),p:window.__game.state().pos,fog:{c:window.__game.game.scene.fog.color.getHexString(),d:window.__game.game.scene.fog.density},sun:window.__game.game.lighting.sun.color.getHexString(),si:window.__game.game.lighting.sun.intensity})"},
+ {"look":[0.9,-0.15]},{"shot":"crater"},
+ {"tp":[0,null,0]},{"wait":2.5},
+ {"eval":"JSON.stringify({b:window.__game.biomeAt(),fog:{c:window.__game.game.scene.fog.color.getHexString(),d:window.__game.game.scene.fog.density},sun:window.__game.game.lighting.sun.color.getHexString(),si:window.__game.game.lighting.sun.intensity})"},
+ {"look":[0.9,-0.05]},{"shot":"vale"}
+]

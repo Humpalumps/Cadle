@@ -337,7 +337,14 @@ When the box is contended, run the legs standalone — that completes when the c
 node tools/inspect.mjs --nolock --name gate-high --q high --script tools/gate-steps.json --url http://127.0.0.1:5173/
 python tools/gate.py tools/out/gate-high && python tools/blobcheck.py tools/out/gate-high burst-blob-
 ```
-**Last measured, green leg by leg on `main`:** invariants PASS · q=high jitter 0.075 + blobcheck PASS (88
+**Last measured on `claude/biomes-full-pass` (2026-08-23):** invariants PASS · q=high **jitter 0.079 PASS**
+on a complete leg · that same leg's `blobcheck` FAILED with an 11 px green cluster in the meadow, which was
+a real regression in the new grass value coupling and is fixed in `2677096` (the coupling may now only take
+brightness away, so it cannot exceed the value the gate is calibrated against). **The post-fix blobcheck and
+both q=low legs are still owed** — three other agent sessions and a game were sharing the GPU, and runs were
+dying after 4-8 frames. Run `bash tools/scripts/gatesplit.sh high` then `... low` on a quiet box.
+
+**Previously measured, green leg by leg on `main`:** invariants PASS · q=high jitter 0.075 + blobcheck PASS (88
 frames) · q=low jitter 0.137 + blobcheck PASS (88 frames) · pointer lock PASS (gate leg + six standalone
 runs). **A single end-to-end `gate.mjs` run that captures every leg is still owed** on a quiet machine.
 
@@ -354,6 +361,12 @@ spamming the GPU log first. **None of it was the code.** Three separate causes, 
 2. **The user's own machine.** The user had League of Legends and three other agent sessions open. A run
    that fails three times and then passes unchanged is contention, not a regression.
 3. **Editing source while a run is in flight.** Vite HMR pushes a shader edit into a live headless page.
+
+**The gate is now splittable, and you should split it.** `tools/scripts/gate-blob.json` (steps 0-56, the 11
+blob bursts) and `tools/scripts/gate-jit.json` (the preamble + the frozen-world jitter probe) are the same
+`tools/gate-steps.json` cut in two, driven by `tools/scripts/gatesplit.sh <q>`. A full gate leg is ~110
+frames and takes 25-40 min on a contended box, and it dies most often in the LAST section — so a single
+crash throws away all 88 blob frames. Split, and each half is independently retryable.
 
 The decisive test is an A/B against unmodified `main`, interleaved, not sequential:
 `git worktree add ../fps4-base main`, junction `node_modules` into it, run a second vite on 5174, then

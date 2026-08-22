@@ -1,0 +1,6 @@
+[
+ {"wait":22},
+ {"eval":"(()=>{const g=window.__game.game,t=g.terrain;const B=g.world&&g.world.biomes;const out={};const pts={forest:[-66,-757],shadowfen:[-623,436],celestial:[734,-197],lost:[-197,734],dragon:[689,321]};for(const k in pts){const[x,z]=pts[k];out[k]={h:+t.heightAt(x,z).toFixed(1),grass:+t.grassAt(x,z).toFixed(2),dry:t.dryAt?+t.dryAt(x,z).toFixed(2):null,col:t.colorAt(x,z).toArray().map(v=>+v.toFixed(3))};}return JSON.stringify(out);})()"},
+ {"eval":"(()=>{const v=window.__game.game.world.vegetation;return JSON.stringify(Object.keys(v));})()"},
+ {"eval":"(()=>{const t=window.__game.game.terrain;const o=[];for(let d=0;d<=200;d+=20)o.push([d,+t.heightAt(-623,436+d).toFixed(1)]);return JSON.stringify({fenProfile:o,wl:t.waterLevel});})()"}
+]

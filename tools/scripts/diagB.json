@@ -1,0 +1,6 @@
+[
+ {"wait":22},
+ {"eval":"(()=>{const v=window.__game.game.world.vegetation;const c={};const R=(x,z,cx,cz)=>Math.hypot(x-cx,z-cz);const pts={forest:[-66,-757],tundra:[436,-623],shadowfen:[-623,436],dragon:[689,321],infernal:[321,689]};for(const k in pts){const[cx,cz]=pts[k];c[k]=[0,0,0];for(const t of v.trees){const d=R(t.x,t.z,cx,cz);if(d<60)c[k][0]++;else if(d<120)c[k][1]++;else if(d<210)c[k][2]++;}}c.total=v.trees.length;return JSON.stringify(c);})()"},
+ {"eval":"(()=>{const t=window.__game.game.terrain;const L=(c)=>0.2126*c.r+0.7152*c.g+0.0722*c.b;let s=0,n=0;for(let i=-80;i<=80;i+=17)for(let j=-80;j<=80;j+=19){const c=t.colorAt(i,j);s+=L(c);n++;}return JSON.stringify({meadowLum:+(s/n).toFixed(4)});})()"},
+ {"eval":"(()=>{const t=window.__game.game.terrain;const L=(c)=>0.2126*c.r+0.7152*c.g+0.0722*c.b;const pts={forest:[-66,-757],shadowfen:[-623,436],celestial:[734,-197],lost:[-197,734],void:[-537,-537],tundra:[436,-623]};const o={};for(const k in pts){const[cx,cz]=pts[k];let s=0,n=0;for(let i=-80;i<=80;i+=23)for(let j=-80;j<=80;j+=29){s+=L(t.colorAt(cx+i,cz+j));n++;}o[k]=+(s/n).toFixed(4);}return JSON.stringify(o);})()"}
+]
