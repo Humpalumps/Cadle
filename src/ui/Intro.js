@@ -407,6 +407,48 @@ export class Intro {
   }
 
   // ---------------------------------------------------------------- live game on the monitor
+  /**
+   * Build the live-monitor target and render ONE game frame into it. Split out of _arm() so main.js can
+   * pay for it while the loading bar is still moving, because it is not cheap and it used to land at the
+   * worst possible moment.
+   *
+   * MEASURED 2026-08-23 (tools/introprobe.mjs): this single stepInto cost **6244 ms** and linked 27 shader
+   * programs, and it ran AFTER the bar already read 100% -- 9.6 s of a full bar doing nothing, which is
+   * exactly what "the swap happens too late and looks clunky" is. It cannot be replaced by
+   * renderer.compile() (that cannot build depth/shadow programs at all, see Renderer.js) and it cannot be
+   * warmed by rendering something ELSE: a warm pass through the game camera into a small target linked
+   * only 8 of the 27. The warm has to draw what the real thing draws -- same target, same lens -- which is
+   * why this is one method called twice rather than two lookalike code paths.
+   * Idempotent: arm() calls it too, so the intro is correct whether or not main.js got there first.
+   */
+  prewarm() {
+    if (this.gameRT || !this.game?.stepInto) return false;
+    const g = this.game;
+    // 1536x864 with full anisotropy: the panel is 1.4x bigger than it was and sits at an angle, so a
+    // 1024-wide target sampled anisotropy-1 read as a blurry screen.
+    this.gameRT = new THREE.WebGLRenderTarget(1536, 864, {
+      type: THREE.UnsignedByteType, depthBuffer: true, samples: 0,
+    });
+    this.gameRT.texture.colorSpace = THREE.SRGBColorSpace;
+    this.gameRT.texture.minFilter = THREE.LinearFilter;
+    this.gameRT.texture.magFilter = THREE.LinearFilter;
+    this.gameRT.texture.anisotropy = g.renderer.capabilities.getMaxAnisotropy();
+    this.gameRT.texture.generateMipmaps = false;
+    // A menu backdrop is not gameplay: 95 deg crammed into a small target throws away detail and reads
+    // as a fisheye. Same position and orientation as the game camera, narrower lens.
+    this._menuCam = new THREE.PerspectiveCamera(58, 16 / 9, 0.05, 4000);
+    this._menuCam.rotation.order = 'YXZ';
+    // step only what makes the world LOOK alive on his monitor: sky, lighting, terrain LOD, grass wind,
+    // water, vfx, and the player (whose update places the camera). Not rpg/audio/hud/enemies/combat —
+    // the opening quest and its voice lines must fire when the player is actually in the game.
+    this._liveSystems = [g.sky, g.lighting, g.terrain, g.world, g.player, g.vfx].filter(Boolean);
+    // draw one frame into it BEFORE the monitor starts showing it: an unrendered target is black, and
+    // the panel would blink to black for a frame at the exact moment the player is asked to press a key
+    this._menuCam.position.copy(g.camera.position); this._menuCam.quaternion.copy(g.camera.quaternion);
+    g.stepInto(1 / 60, this.gameRT, this._liveSystems, this._menuCam);
+    return true;
+  }
+
   /** called when game.ready resolves: swap the monitor to the real game and invite the click */
   arm() {
     if (!this.active || this._armed) return;
@@ -427,28 +469,7 @@ export class Intro {
       return;
     }
     try {
-      // 1536x864 with full anisotropy: the panel is 1.4x bigger than it was and sits at an angle, so a
-      // 1024-wide target sampled anisotropy-1 read as a blurry screen.
-      this.gameRT = new THREE.WebGLRenderTarget(1536, 864, {
-        type: THREE.UnsignedByteType, depthBuffer: true, samples: 0,
-      });
-      this.gameRT.texture.colorSpace = THREE.SRGBColorSpace;
-      this.gameRT.texture.minFilter = THREE.LinearFilter;
-      this.gameRT.texture.magFilter = THREE.LinearFilter;
-      this.gameRT.texture.anisotropy = g.renderer.capabilities.getMaxAnisotropy();
-      this.gameRT.texture.generateMipmaps = false;
-      // A menu backdrop is not gameplay: 95 deg crammed into a small target throws away detail and reads
-      // as a fisheye. Same position and orientation as the game camera, narrower lens.
-      this._menuCam = new THREE.PerspectiveCamera(58, 16 / 9, 0.05, 4000);
-      this._menuCam.rotation.order = 'YXZ';
-      // step only what makes the world LOOK alive on his monitor: sky, lighting, terrain LOD, grass wind,
-      // water, vfx, and the player (whose update places the camera). Not rpg/audio/hud/enemies/combat —
-      // the opening quest and its voice lines must fire when the player is actually in the game.
-      this._liveSystems = [g.sky, g.lighting, g.terrain, g.world, g.player, g.vfx].filter(Boolean);
-      // draw one frame into it BEFORE the monitor starts showing it: an unrendered target is black, and
-      // the panel would blink to black for a frame at the exact moment the player is asked to press a key
-      this._menuCam.position.copy(g.camera.position); this._menuCam.quaternion.copy(g.camera.quaternion);
-      this.game.stepInto(1 / 60, this.gameRT, this._liveSystems, this._menuCam);
+      this.prewarm();                 // no-op if main.js already paid for it under the loading bar
       this._live = true;
       // 0.92: graded down just enough that the title reads over it. At 0.5 the meadow was mud and the
       // start screen stopped looking like a game worth clicking into.

@@ -748,6 +748,50 @@ Two more, same burst, both real bugs and not just log noise:
 Verified: `Mismatch=0 noImageData=0 ProgramObject=0` at q=high AND q=low, gate passes, and the tp route went
 from 3 spikes / 483 ms of stall to **0 spikes / 0 ms** (two reps).
 
+## 4l. The intro's late swap, 2026-08-23 — arm() was the first draw of the world (FIXED)
+
+Complaint: "the screen that should swap over just as it hits 100% swaps too late and looks clunky."
+`tools/introprobe.mjs` is the instrument for this — `hitchhunt.mjs` can only attach after the game loop is
+running, so it is blind to the entire loading screen. introprobe installs a frame recorder via
+`addInitScript` BEFORE page load and hooks the intro's own `setProgress`/`arm`/`play`, recording a program
+count with every event.
+
+**Measured cause.** Nothing draws the game world before `game.start()`, and with the intro that does not
+happen until the hand-off. So `arm()` -> `IntroHost._shipFrame()` -> `stepInto` was the **first time the
+world had ever been rendered**, and it linked 27 shader programs in one blocking call:
+
+| | before | after |
+|---|---|---|
+| `arm()` cost | 6955 ms | **11 ms** |
+| bar reads 100% -> clickable | **9631 ms** | **20 ms** |
+| total time to clickable | 21402 ms | 21537 ms |
+
+Fix: `IntroHost.prewarm()` / `Intro.prewarm()` render that frame under the loading bar instead, and the bar's
+last slice now reports the shader warm so 100% means "you may click" rather than "the systems are up".
+
+**Three things here that cost time to learn:**
+- **The intro monitor draws to the CANVAS** (`stepInto(dt, null, ...)`), so it needs the `srgb` program
+  variants — a DIFFERENT set from the composer's `srgb-linear` (4j). That is why warming the game's own path
+  never covered it, and it means the `srgb` twins are not always waste: the intro genuinely uses them.
+- **Warm what you will actually draw.** A warm pass through `game.camera` into a small target linked only 8
+  of the 27; `arm()` draws through a 58 deg menu lens into a 1536x864 target. `prewarm()` is therefore the
+  same method `arm()` calls, not a lookalike, so they cannot drift apart.
+- **Order: warmScene BEFORE prewarm.** Running prewarm cold (to make the pause land earlier in the bar) made
+  it link everything itself — 9.5 s instead of 6.3 s, ~8 s onto the whole boot for a cosmetic gain. Reverted.
+
+**Still open:** the bar pauses ~7-8 s at ~94% for that one render. It is a single `renderer.render()`, so it
+cannot be sliced — the loading screen stops for it either way; all that was chosen is WHERE. The real cure is
+to route the intro monitor through the composer so it reuses the already-warm `srgb-linear` programs and only
+the final fullscreen pass is `srgb` — but that changes how the monitor looks (tone mapping, post effects) and
+is a design call, not a perf one.
+
+**A drift trap this session walked into, twice.** After the intro change the no-intro boot measured 21.6 s
+against 11.6 s before it, which looks exactly like a 10 s regression. It was not: an interleaved A/B against
+`main` on a quiet box gave main 16.6/14.8 s and the branch 17.8/14.3 s — overlapping — and the two builds'
+JS bundles differ by 1004 bytes with identical chunking. **Cross-run boot comparisons on this box are
+worthless (4d), and 18 orphaned `chrome-headless-shell` processes were inflating everything (4b).** Kill the
+orphans, then interleave, before believing any boot number.
+
 ## 5. Everything else open
 
 **Performance**
