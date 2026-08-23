@@ -347,6 +347,15 @@ brightness away, so it cannot exceed the value the gate is calibrated against). 
 both q=low legs are still owed** — three other agent sessions and a game were sharing the GPU, and runs were
 dying after 4-8 frames. Run `bash tools/scripts/gatesplit.sh high` then `... low` on a quiet box.
 
+**MERGED WITHOUT A GREEN BLOB LEG (2026-08-23, user's explicit call).** At merge time: invariants PASS,
+`check.mjs` PASS, q=high **jitter PASS** (verified by hand — 6 real lit frames, byte-identical), Frostveil
+perf back inside budget (3.54 M tris / 162 calls / p50 5.5 ms). **The q=high blobcheck and the whole q=low
+leg were never run to completion** — three agent sessions were driving the harness on one GPU and captures
+died at 8-25 of the 88 frames. The argument for merging anyway was that the grass fix strictly LOWERS blade
+brightness, so it cannot exceed the value the gate is calibrated against — that is inference, not a
+measurement. **Run `bash tools/scripts/gatesplit.sh high` and `... low` on a quiet box and treat any failure
+as a live regression, not a stale note.**
+
 **Previously measured, green leg by leg on `main`:** invariants PASS · q=high jitter 0.075 + blobcheck PASS (88
 frames) · q=low jitter 0.137 + blobcheck PASS (88 frames) · pointer lock PASS (gate leg + six standalone
 runs). **A single end-to-end `gate.mjs` run that captures every leg is still owed** on a quiet machine.
