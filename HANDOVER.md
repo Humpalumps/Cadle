@@ -376,6 +376,62 @@ PASS; cull OFF → PASS, PASS, FAIL, FAIL. Same rate with the optimization disab
 is an automatic LOSE, the detector needs fixing before it can gate anything — see 4b, this may be the same
 root cause.
 
+## 4i. Per-system GPU attribution, 2026-08-23 — measured, and it retires three guesses
+
+First real per-system GPU numbers this project has had (the timer only started working 2026-08-22). Quiet box,
+q=high, 1080p, hour 13. Method that works: **per-frame alternation with its own `TIME_ELAPSED` query and a
+`gl.finish()` per frame**, alternating in blocks of 3, with a `none` control to establish the noise floor.
+
+**Meadow, open sky — base frame ~6.3 ms GPU** (noise floor +-0.2 ms):
+
+| system | cost ms | | system | cost ms |
+|---|---|---|---|---|
+| cloud march + resolve | **1.27** | | skydome | 0.09 (noise) |
+| grass | **0.39** | | **shadows / CSM** | **0.05 (noise — FREE)** |
+| rocks + crystals | **0.28** | | props / clutter | -0.05 (noise) |
+| enemies | **0.28** | | **terrain** | **-1.25 (negative, see below)** |
+| trees | **0.23** | | postfx | ~0.3, unstable |
+
+**Whisperwood, closed canopy — base ~8.0 ms** (1.7 ms dearer than the meadow): clouds **1.51**, trees **1.03**,
+grass 0.12, shadows **0.09 (free)**, everything else noise or unstable.
+
+**What this kills, so nobody re-proposes it:**
+- **Shadows are free.** Freezing all CSM rasterisation saves 0.05-0.09 ms, inside noise, in four reps out of
+  four. "Stagger the far cascade for 0.3-0.5 ms" is dead — the far cascade is ALREADY staggered
+  (`Lighting.js`, `stagger && i === last && (this._frame & 1)`) and the whole shadow pass is still free.
+- **Grass is 0.39 ms, not the 1.0 ms it is budgeted.** Nothing to win, and the blob law makes it expensive to
+  touch. Leave it.
+- **There is no 2 ms hiding anywhere.** Everything attributable sums to ~2.5 ms of 6.3. The remainder is
+  full-screen fragment work that this method CANNOT split, because the ground shader and the sky dome
+  substitute for each other — hide one and the other shades those pixels. That is the scene, not the method.
+
+**Terrain measures NEGATIVE (-1.25 ms) and it is the most useful number here.** Hiding the terrain makes the
+frame *slower*: it is the world's primary depth occluder, so without it every distant tree, rock and clutter
+mesh stops being early-Z rejected and starts shading. **The frame runs on occlusion.** The next real win is
+therefore in feeding early-Z better (draw order, front-to-back, impostors not drawing before the ground), not
+in making any one shader cheaper.
+
+**Reconciles with 4g rather than contradicting it.** Clouds measure 1.3-1.5 ms *with* the occlusion cull on;
+the cull's removal costs +3.7 ms; implied uncalled cost ~5.2 ms; and the independent pre-cull measurement of
+`sky.update` was 4.70-4.75 ms. Two methods, two days apart, same number. The cull took the march from ~4.7 ms
+to ~1.5 ms.
+
+**`PostFX.profile()` resolves but its output is NOT quotable.** The `gpuPaused` handshake fixed the hang, but
+on one unchanged scene it returned 16.175 / 2.009 / 1.507 / 0.847 ms — a 20x spread. `bypass` changes the
+frame's whole GPU/queue character, so the two alternating states are not comparable frames. A trustworthy
+postfx number needs per-PASS brackets inside the composer. Best current estimate 1-2 ms, no better.
+
+**Three traps that produce confidently wrong tables** (each one bit during this session):
+- `stats().gpuMs` **cannot attribute by subtraction** — it is a whole-frame bracket including GPU idle, so
+  removing GPU work makes the frame CPU-bound and the number goes UP. It "measured" grass at -9.45 ms.
+- **The frame alternates between two costs** (~196 and ~165 draw calls; an extra ~47-call scene pass on odd
+  frames). A 1:1 A/B aliases straight onto it. Alternate in blocks of 3. The alternation is NOT the water
+  reflection (disabling it leaves the swing unchanged) and not only the staggered cascade (freezing shadows
+  changes the swing rather than removing it); it is unattributed, but both candidate systems measure at or
+  below the noise floor, so it is **not a hidden cost**.
+- **`Grass.update` rewrites `mesh.visible` every frame**, so `visible = false` silently does nothing and grass
+  measures as free. Toggle with `layers.set(9)`. Anything that recomputes visibility per frame has this bug.
+
 ## 5. Everything else open
 
 **Performance**
@@ -400,8 +456,10 @@ root cause.
    `gpuMs` mean sits *well below* `frameMs` mean, on a quiet box with no orphaned `chrome-headless-shell`
    processes, that is NOT this — it is a real hitch and this item is reopened. Equally: if the ratio is ~1.0,
    check the orphan warning `inspect.mjs` prints at startup before believing anything else you measured.
-   **The honest item underneath: q=high spends ~6.9 ms of GPU against a ≤7 ms whole-frame budget — no
-   headroom.** Lower that and the backpressure cannot build regardless of pacing.
+   **The honest item underneath: q=high spends ~6.3-6.9 ms of GPU against a ≤7 ms whole-frame budget — no
+   headroom.** Lower that and the backpressure cannot build regardless of pacing. **4i now has the per-system
+   breakdown**: there is no single fat target, the meadow is already inside budget at rest, and the case that
+   actually breaks it is the forest at ~8.0 ms, where the answer is trees (1.03 ms) plus clouds (1.51 ms).
 
 2. **What a PLAYER actually gets, q=high, vsync ON: frameMs p99 18.5 ms, cpuMs p99 10.9 ms.** Every other
    number in this file comes from the uncapped harness and is therefore a *stress* figure, not an experience
