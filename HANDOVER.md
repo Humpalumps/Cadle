@@ -626,7 +626,38 @@ Fixed so far: `Enemies.warm()` builds one sleeping instance of all 23 types at b
 already left in the scene, so the boot compile reaches them); `Weapons.init` builds all 8 archetypes instead
 of 2; `Abilities.init` now `initTexture`s its glyph/glow/vignette.
 
-### THE TRAP: warmScene's visibility slicing does NOT slice material compilation
+### THE ROOT CAUSE OF ALL OF IT: the warmup was compiling the wrong COLORSPACE
+
+**`outputColorSpace` is the SECOND field of three's program cache key** (`WebGLPrograms.
+getProgramCacheKeyParameters`), and `getParameters` reads it as
+`currentRenderTarget === null ? renderer.outputColorSpace : ColorManagement.workingColorSpace`.
+
+This game draws every pixel through `composer.render()`, i.e. **always INTO a render target**, so every
+program it actually uses is keyed `srgb-linear`. `renderer.compile()` with nothing bound builds the `srgb`
+twin: a real program, fully linked, that the renderer will never look up — while the one it needs still
+links on first draw. **The warmup had been warming nothing for the whole history of the project, and
+actively costing boot time to do it.**
+
+Measured: warming that way left the program count **41 HIGHER** than not warming at all (`ctl-warm`
+137 -> 175 vs `ctl-nowarm` 129 -> 134, both reproduced exactly twice — program counts are deterministic and
+therefore trustworthy, unlike any timing on this box). Binding a target took the programs linked during one
+combat session from **44 to 1**, and on the tp route took time-to-playable from 16.7 s to **12.4 s** while
+also dropping stall from 1825 ms to 820 ms. Both axes at once, because ~40 programs stopped being built.
+
+Everything goes through `compileForComposer()` / `renderForComposer()` in `src/render/Renderer.js` now, and
+`tools/invariants.mjs` check (i) fails the build if any of main.js / Weapons.js / Abilities.js / EZTrees.js
+calls `renderer.compile()` directly again. **That guard was tested by reintroducing the bug and confirming a
+non-zero exit — a guard nobody has seen fail is not a guard.**
+
+Note `compile()` cannot build depth/distance programs AT ALL: `getDepthMaterial` is only reachable from
+`WebGLShadowMap.render()`, which only runs inside `renderer.render()`. Hence `renderForComposer()`.
+
+### The visibility red herring (do not retry it)
+
+"compile() skips hidden meshes, so pooled/invisible VFX meshes are missed" — tried 2026-08-23, WRONG. three
+r185 gathers LIGHTS with `traverseVisible` but MATERIALS with a plain `scene.traverse`. Measured live: a
+hidden mesh carrying a novel `customProgramCacheKey` took the count 171 -> 172 while still `visible = false`.
+The chunking buys paint time between calls; it does not slice compilation.
 
 It looks like `renderer.compile()` skips hidden meshes, so every pooled/invisible VFX mesh is missed. **That
 was tried on 2026-08-23 and it is WRONG.** three r185 gathers LIGHTS with `traverseVisible` but prepares
@@ -640,20 +671,21 @@ Second thing to know: **`game.start()` is chained on `game.ready` SEPARATELY fro
 and the game loop starts while it is still compiling. Its slices therefore interleave with live gameplay
 frames. That is why programs link "in play" at all.
 
-**An open decision, measured, not taken.** Collapsing `warmScene` to a single blocking `compile()` moves all
-of it in front of the first frame. Production builds, `--route tp`, same box, stalls counted only AFTER the
-game is playable (five consecutive sub-25 ms frames):
+**A trade-off that was on the table and is now MOOT — recorded so nobody re-opens it.** Before the
+colorspace bug was found, the only lever on the remaining stall looked like collapsing `warmScene` to a
+single blocking `compile()`, i.e. buying smoothness with loading time. Production builds, `--route tp`, same
+box, stalls counted only AFTER the game is playable (five consecutive sub-25 ms frames):
 
 | warmScene form | playable at | spikes | stall sum | worst frame |
 |---|---|---|---|---|
-| sliced (current) | 16.7 s | 5 | 1825 ms | 562 ms |
+| sliced, compiling unbound (was) | 16.7 s | 5 | 1825 ms | 562 ms |
 | sliced + a final full compile | 16.9 s | 7 | 2093 ms | 580 ms |
-| ONE blocking compile | 17.9 s | 4 | **918 ms** | **324 ms** |
+| ONE blocking compile, unbound | 17.9 s | 4 | 918 ms | 324 ms |
+| **sliced, compiling BOUND (now)** | **11.2 s** | **3** | **483 ms** | **213 ms** |
 
-So: ~1.2 s more loading screen buys roughly half the remaining in-play stall. It was NOT taken, because the
-comment above `warmScene` records that this exact shape was measured on cadle.gg at "16.0 s of frozen page"
-and deliberately rejected, and a fast local box cannot reproduce a weak client. Note the intro now runs
-off-thread (`IntroHost`/`introWorker`), which may be why that no longer applies — worth a real decision.
+Binding the target beat every one of them on BOTH axes at once — 5.5 s faster to playable AND less stall —
+because it stopped building ~40 programs the renderer could never use. There is no loading-time-for-
+smoothness trade here; there was only a bug. Do not spend the loading screen on this again.
 
 ### Cause 3 — boot: 13 MB of music for regions you cannot reach (FIXED)
 
@@ -724,16 +756,29 @@ Gate passed at q=high and q=low (blobs clean, jitter clean, pointer lock engage 
    was passively noticing this — hence the number is written here instead. A two-minute wait is not normal and
    should not become the next agent's baseline assumption.
 4. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
-5. **A REAL program-link stall class exists and 5.1's reopen condition is met — see 4j.** Worst measured
-   frame 6502.8 ms with page cpu 35.4 ms and GPU exec 5.93 ms, vsync on, quiet box. `Enemies.warm()`,
-   `Weapons.init` and `Abilities.init` now prewarm most of it; what still links late identifies itself by
-   `customProgramCacheKey`: `aether-shield` (x2), `aether-creature`, and an enemy depth material
-   (`onBeforeCompile(){}`). Depth/shadow programs are NOT built by `renderer.compile()` at all — they link
-   on the first shadow render that includes the object, which is a main.js-side fix if it is wanted.
-6. **`warmScene`: an open, measured decision — 4j has the table.** One blocking compile costs ~1.2 s more
-   loading screen and halves the remaining in-play stall (worst frame 562 -> 324 ms). Not taken unilaterally
-   because the same shape was previously measured on cadle.gg at 16 s of frozen page; the intro now runs
-   off-thread, which may have changed that.
+5. **A ~6.5 s stall on `__game.lineup()` that is NOT a program link and is NOT understood.** The last
+   unexplained thing from the hitch wave, and the honest state of it:
+   - `dt = 6492.8 ms | page cpu = 14.3 ms | GPU exec = 8.7 ms | programs 127 -> 127`. Nothing links. The
+     page is idle, the GPU is idle, and 6.5 s passes. Reproduces on every combat run, magnitude 5.9-6.8 s.
+   - It is NOT the 5.1 harness artifact: that needs `gpuMs` ~= `frameMs`, and this is 8.7 ms against 6.5 s
+     on a quiet box with vsync on. 5.1's own reopen condition is met.
+   - **Not observed in normal traversal.** A full route through all nine regions — teleport in, look around,
+     sprint, walk a border on foot, 25 s soak — has 3 spikes, worst 213 ms. Only `lineup()` (spawn one of
+     all 23 types at once, 6 of them freshly constructed) triggers it. Whether a player can reach it by
+     other means is UNKNOWN and is the first thing to establish.
+   - Ruled out by measurement, so do not re-propose: enemy construction (37 enemies in 1.4 ms); program
+     linking (count unchanged across the frame); the colorspace bug (fixed, see 4j); an empty pool (every
+     type has a spare); a missing depth program (warming one changed neither the stall nor the final
+     program count).
+   - Dead end worth knowing: the sun's shadows are Lighting.js's OWN cascade system, not three's
+     `WebGLShadowMap`, so a synthetic `renderer.render()` never builds an enemy's depth program — a forced
+     render with spares visible, `castShadow` on and `frustumCulled` off linked exactly ZERO programs, while
+     1.5 s of ordinary frames with those spares in front of the camera linked one. A `warmShadows()` built
+     on that was implemented, measured, found not to change the final program count, and REVERTED rather
+     than shipped on a plausible story.
+   - Next step: `node tools/hitchhunt.mjs --route combat` and bisect what `lineup()` does that a normal
+     spawn does not; then a chrome://tracing capture (`tools/hitchprobe.mjs --trace`) to see inside the GPU
+     process, since neither `cpuMs` nor `gpuMs` can see whatever this is.
 7. **~65-194 ms stalls while traversing, roughly once every 18 s, AFTER the program count has frozen**
    (page cpu 4-10 ms, GPU exec ~5 ms, no new programs). Something stalls the driver without linking.
    Unattributed — the next thing to point `hitchhunt.mjs` at.

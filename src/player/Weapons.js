@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
 import { DEFS, DEFAULT_SLOTS, ELEMENT_COLORS } from './weapons/defs.js';
 import { makeMaterials, buildGun, makeFlash, buildAbilityHand } from './weapons/models.js';
 
@@ -118,7 +119,7 @@ export class Weapons {
     await new Promise((r) => requestAnimationFrame(r));   // 8 guns of procedural geometry: let the loading bar paint
     // compile all shader variants now (all models visible), then show only the equipped gun
     for (const m of this._models.values()) m.group.visible = true;
-    this.flash.visible = true; this.rig.add(this.flash, this.flashLight); renderer.compile(this.scene, this.cam); this.flash.visible = false;
+    this.flash.visible = true; this.rig.add(this.flash, this.flashLight); compileForComposer(renderer, this.scene, this.cam); this.flash.visible = false;
     this._equip(0, true);
     this.game.events.on('player:land', ({ impact }) => { this._land.v -= Math.min(14, impact) * 0.045; });
     this.game.events.on('player:respawn', () => { for (const w of this.slots) { w.ammo = w.magSize; w.reserve = w.def.reserve; } });

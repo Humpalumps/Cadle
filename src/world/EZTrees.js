@@ -8,6 +8,7 @@
 // Instances rebucket between tiers when the camera has moved 6 m (throttled, typed-array
 // rewrite, ~2k instances — well under a millisecond).
 import * as THREE from 'three';
+import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Tree } from '@dgreenheck/ez-tree';
 import { patchMaterial, mergePatch, fadePatch, erodeFade } from './Vegetation.js';
@@ -292,7 +293,7 @@ export function buildEZTrees(game, trees, vegetation) {
     };
     // compile every new tree/impostor program NOW, while the boot splash still covers the screen —
     // first-use compiles were landing as multi-hundred-ms hitches in the player's first seconds.
-    try { renderer.compile(game.scene, game.camera); } catch (e) {}
+    try { compileForComposer(renderer, game.scene, game.camera); } catch (e) {}
     console.log(`[eztrees] ${count} trees, ${buckets.size} variants, impostors baked in ${(performance.now() - t0).toFixed(0)} ms`);
   });
 }

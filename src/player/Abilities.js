@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/Noise.js';
 
@@ -172,7 +173,7 @@ export class Abilities {
 
     // pre-warm shaders so the first ability use doesn't hitch (~3 ms compile otherwise)
     const hidden = []; this.root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
-    this.game.renderer.compile(scene, this.game.camera); for (const o of hidden) o.visible = false;
+    compileForComposer(this.game.renderer, scene, this.game.camera); for (const o of hidden) o.visible = false;
     // compile() links programs but never uploads MAPS: the 1024² sigil glyph and the glow sprite would
     // otherwise be uploaded on the first grenade/burst, mid-play. Push them to the GPU here instead.
     for (const t of [this._tex, this._glow]) this.game.renderer.initTexture(t);
@@ -233,7 +234,7 @@ export class Abilities {
     for (const o of orb.children) o.frustumCulled = false;
     mg.add(mglow, orb); mg.visible = false; w.scene.add(mg);
     this._mv = { group: mg, glow: mglow, orb, hand, t: -1, k: GK.throw };
-    this._vm.group.visible = true; mg.visible = true; this.game.renderer.compile(w.scene, w.cam); this._vm.group.visible = false; mg.visible = false; // pre-warm
+    this._vm.group.visible = true; mg.visible = true; compileForComposer(this.game.renderer, w.scene, w.cam); this._vm.group.visible = false; mg.visible = false; // pre-warm
     return true;
   }
   _updateVM(dt, t) {
