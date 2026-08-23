@@ -31,6 +31,7 @@ window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an un
 /* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
    white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first
    frame; anything drawn here would be a second, competing loading screen for that half second. */
+#introcanvas{position:fixed;inset:0;width:100%;height:100%;z-index:50;display:block;pointer-events:none}
 #splash{position:fixed;inset:0;z-index:99;background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%)}
 #splash.gone{opacity:0;pointer-events:none;transition:opacity .3s ease}
 </style>
@@ -38,6 +39,10 @@ window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an un
 <body>
 <div id="splash"></div>
 <canvas id="game"></canvas>
+<!-- The intro renders here, and this canvas is handed to a Web Worker (transferControlToOffscreen)
+     so the game's world build cannot stall the loading screen. It sits over #game and is removed
+     at hand-off. Sized/positioned to match the game canvas exactly. -->
+<canvas id="introcanvas"></canvas>
 <div id="ui"></div>
 <script type="module" src="/src/main.js"></script>
 </body>

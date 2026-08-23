@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeCanvas } from './intro/env.js';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ToneMappingEffect, ToneMappingMode, SMAAEffect, NoiseEffect, BlendFunction, Effect } from 'postprocessing';
 import { buildStage, SCREEN } from './intro/stage.js';
 
@@ -107,6 +108,12 @@ export class Intro {
     this.finished = new Promise((r) => { this._resolve = r; });
     // resolves the moment the room is actually on screen — main.js gates the world build on this
     this.firstFrame = new Promise((r) => { this._resolveFirst = r; });
+    // The intro renders in a worker (see intro/introWorker.js) so the game's world build cannot stall it.
+    // A worker has no document and no window.innerWidth, so both are treated as optional here and the
+    // main-thread controller feeds size/input in. Everything still runs unchanged with a DOM present.
+    this._dom = typeof document !== 'undefined' && !!document.body;
+    this.w = host?.size?.w ?? (typeof innerWidth !== 'undefined' ? innerWidth : 1280);
+    this.h = host?.size?.h ?? (typeof innerHeight !== 'undefined' ? innerHeight : 720);
   }
 
   /** hand over the real Game once its chunk has loaded; everything after arm() needs it */
@@ -121,12 +128,13 @@ export class Intro {
     const T0 = performance.now(); this._boot = []; const mark = (k) => this._boot.push([k, Math.round(performance.now() - T0)]);
     this._mark = mark;
     const g = this.game;
-    const style = document.createElement('style'); style.id = 'introcss'; style.textContent = CSS;
-    document.head.appendChild(style); this._style = style;
-
-    // the game's own HUD is built during init and would sit on top of the room — hide it until we're done
-    this._ui = document.getElementById('ui');
-    if (this._ui) this._ui.style.display = 'none';
+    if (this._dom) {
+      const style = document.createElement('style'); style.id = 'introcss'; style.textContent = CSS;
+      document.head.appendChild(style); this._style = style;
+      // the game's own HUD is built during init and would sit on top of the room — hide it until we're done
+      this._ui = document.getElementById('ui');
+      if (this._ui) this._ui.style.display = 'none';
+    }
 
     this._buildDom();                                  // BEFORE the awaits below: the bar has to exist at t=0
     mark('dom');
@@ -151,7 +159,7 @@ export class Intro {
     this.warp = new WarpEffect();
 
     this._onResize = () => this.resize();
-    window.addEventListener('resize', this._onResize);
+    if (this._dom) window.addEventListener('resize', this._onResize);
     this.resize();
 
     this.active = true;
@@ -182,7 +190,7 @@ export class Intro {
       grain,
       new SMAAEffect(),
     ));
-    composer.setSize(innerWidth, innerHeight);
+    composer.setSize(this.w, this.h);
     this.composer = composer;
     r.toneMapping = THREE.NoToneMapping;              // the composer tone-maps from here on
     this._mark?.('composer');
@@ -196,6 +204,7 @@ export class Intro {
 
   /** the click layer + the screen-space load bar. Built first, before any await. */
   _buildDom() {
+    if (!this._dom) return;              // the controller owns the prompt/flash on the main thread
     const ui = document.createElement('div'); ui.id = 'introui';
     // No screen-space load bar: the monitor in the scene carries it diegetically, and two bars for one
     // download is the kind of seam a real title screen never shows. The tab title still reports progress.
@@ -219,8 +228,8 @@ export class Intro {
     this.setProgress(this._progress, this._label);
   }
 
-  resize() {
-    const w = innerWidth, h = innerHeight;
+  resize(w = this.w, h = this.h) {
+    this.w = w; this.h = h;
     this.game.renderer.setSize(w, h, false);
     this.composer?.setSize(w, h);
     if (this.stage) { this.stage.camera.aspect = w / h; this.stage.camera.updateProjectionMatrix(); }
@@ -232,7 +241,7 @@ export class Intro {
   //   backdrop  an in-game vista (before the world exists: a painted menu background)
   //   ui        the title treatment, the load bar and the prompt, with alpha, over the top
   _makeScreenCanvas() {
-    const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+    const mk = (w, h) => makeCanvas(w, h);
     this.bdCv = mk(1024, 576); this.bdCtx = this.bdCv.getContext('2d');
     this.screenTex = new THREE.CanvasTexture(this.bdCv);
     this.screenTex.colorSpace = THREE.SRGBColorSpace; this.screenTex.anisotropy = 8;
@@ -376,11 +385,25 @@ export class Intro {
     this.uiTex.needsUpdate = true;
   }
 
+  /** worker path: a frame of the REAL game, shipped from the main thread, goes onto his monitor */
+  setMonitorFrame(bitmap) {
+    if (!this.stage || !bitmap) { bitmap?.close?.(); return; }
+    const prev = this._monTex;
+    const t = new THREE.Texture(bitmap);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.flipY = false;                    // ImageBitmap is already top-down
+    t.needsUpdate = true;
+    this._monTex = t;
+    this.stage.setScreenTexture(t);
+    this._live = true;
+    if (prev) { try { prev.image?.close?.(); prev.dispose(); } catch {} }
+  }
+
   setProgress(p, label) {
     this._progress = p;
     if (label) this._label = label;
     // the tab title is the one loading cue a visitor sees even when the page is in a background tab
-    if (!this._armed) document.title = `CADLE — loading ${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`;
+    if (!this._armed && this._dom) document.title = `CADLE — loading ${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`;
   }
 
   // ---------------------------------------------------------------- live game on the monitor
@@ -395,8 +418,14 @@ export class Intro {
     const g = this.game;
     this._armed = true;
     this._progress = 1; this._pShown = 1; this._label = 'THE VALE AWAITS';
-    document.title = 'CADLE';
+    if (this._dom) document.title = 'CADLE';
     this._drawScreen(this._t);
+    if (!this.game.stepInto) {          // worker: no game in this context, frames arrive by message
+      this._live = false;
+      this.stage?.setScreenBoost?.(1);
+      this.onArmed?.();
+      return;
+    }
     try {
       // 1536x864 with full anisotropy: the panel is 1.4x bigger than it was and sits at an angle, so a
       // 1024-wide target sampled anisotropy-1 read as a blurry screen.
@@ -428,7 +457,7 @@ export class Intro {
       console.warn('[intro] live monitor unavailable, keeping the title card:', e?.message);
       this._live = false;
     }
-    this._clickUI?.classList.add('armed');
+    this._clickUI?.classList?.add?.('armed');
     if (this._wantsPlay) { this._whoosh(); this.play(); return; }   // they already clicked; go now
     // harness: nobody is there to click, so play by itself shortly after arming (hold() cancels it)
     if (this.game.auto && this.game.params.get('introhold') !== '1') this._autoAt = performance.now() + 4000;
@@ -497,7 +526,7 @@ export class Intro {
 
     if (!this._firstFrame) {                            // the boot splash can go: we have a picture
       this._firstFrame = true;
-      const sp = document.getElementById('splash');
+      const sp = this._dom ? document.getElementById('splash') : null;
       // snap it off rather than the stock .8 s fade: the splash's own CADLE lettering sits right over the
       // monitor's, and the two overlapping wordmarks look like a mistake for the whole crossfade
       // remove it outright rather than fading: for the whole fade the splash's own CADLE lettering sat
@@ -518,7 +547,7 @@ export class Intro {
     // intro, clicked to resume, and nothing asked for the lock.
     // g.input only exists once the Game chunk has landed; before that the click just records intent and
     // the canvas's own mousedown -> Input.lock picks up the next one.
-    if (!g.auto && !document.pointerLockElement && g.input) g.input.constructor.lock(g.canvas);
+    if (this._dom && !g.auto && !document.pointerLockElement && g.input) g.input.constructor.lock(g.canvas);
     if (this._trans) return;
     if (!this._armed) {                                 // clicked while the world is still building
       this._wantsPlay = true;
@@ -542,7 +571,7 @@ export class Intro {
     // monitor is always centred on the way in (slerping to a fixed quaternion swings past it instead)
     this._look0 = cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(2.2).add(cam.position);
     this._lookT = new THREE.Vector3();
-    const fit = this.stage.fitCameraToScreen(innerWidth / innerHeight);
+    const fit = this.stage.fitCameraToScreen(this.w / this.h);
     this._cam1 = { pos: fit.pos };
     // where the monitor is on screen right now — the warp and the pull centre on it
     const s = SCREEN.pos.clone().project(cam);
@@ -588,7 +617,7 @@ export class Intro {
     this.stage.setScreenGrade(0.92 + 0.08 * ease(0.5, 1.2, t), 1 - ease(0.40, 0.95, t));
     this.warp.amount = 1.2 * Math.pow(ease(0.60, 1.50, t), 1.8);
 
-    if (t > 1.40 && !T.flashed) { T.flashed = true; this._flash.classList.add('on'); }
+    if (t > 1.40 && !T.flashed) { T.flashed = true; if (this._flash) this._flash.classList.add('on'); else this.onFlash?.(); }
     if (t > 1.58 && !T.handed && !T.frozen) { T.handed = true; this._handover(); }
   }
 
@@ -610,6 +639,12 @@ export class Intro {
     this.active = false;
     cancelAnimationFrame(this._raf);
     this._teardownGL();
+    if (!this._dom) {                   // worker: the controller swaps the canvases and starts the game
+      this.done = true;
+      this.onHandover?.();
+      this._resolve?.(true);
+      return;
+    }
     // ease the HUD in rather than slamming four UI elements onto the frame the instant the flash lifts
     if (this._ui) {
       this._ui.style.display = '';
@@ -642,23 +677,26 @@ export class Intro {
     this.active = false;
     cancelAnimationFrame(this._raf);
     this._teardownGL();
-    this._clickUI?.remove(); this._clickUI = null;
-    this._flash?.remove(); this._flash = null;
+    this._clickUI?.remove?.(); this._clickUI = null;
+    this._flash?.remove?.(); this._flash = null;
     if (this._ui) this._ui.style.display = '';
+    this.onSkip?.();
     this.done = true;
     this._resolve?.(false);
     this._resolveFirst?.();
   }
 
   _teardownGL() {
-    window.removeEventListener('resize', this._onResize);
-    if (this._onWinClick) window.removeEventListener('click', this._onWinClick);
-    if (this._onWinKey) window.removeEventListener('keydown', this._onWinKey);
+    if (this._dom) {
+      window.removeEventListener('resize', this._onResize);
+      if (this._onWinClick) window.removeEventListener('click', this._onWinClick);
+      if (this._onWinKey) window.removeEventListener('keydown', this._onWinKey);
+    }
     try { this.composer?.dispose(); } catch {}
     try { this.stage?.dispose(); } catch {}
     try { this.gameRT?.dispose(); } catch {}
     try { this.screenTex?.dispose(); this.uiTex?.dispose(); } catch {}
-    this._style?.remove();
+    this._style?.remove?.();
     const r = this.game.renderer;
     r.shadowMap.enabled = this._prevShadow ?? true;
     r.localClippingEnabled = this._prevClip ?? false;
@@ -669,6 +707,7 @@ export class Intro {
 
   /** a short synthesized whoosh on the click — the transition needs a sound and Audio isn't up yet */
   _whoosh() {
+    if (!this._dom) { this.onWhoosh?.(); return; }     // controller plays it; no AudioContext in a worker
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;

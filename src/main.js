@@ -1,5 +1,6 @@
 import { createRenderer } from './render/Renderer.js';
 import { Intro } from './ui/Intro.js';
+import { IntroHost, canUseIntroWorker } from './ui/IntroHost.js';
 
 // ?fresh=1: clean slate for demo recording — new character, quest from the top
 if (new URLSearchParams(location.search).get('fresh')) {
@@ -23,11 +24,18 @@ window.addEventListener('error', (e) => window.__game.errors.push(String(e.error
 window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
 
 const renderer = createRenderer(canvas, QUALITY);
-const intro = USE_INTRO ? new Intro({
+// The intro runs OFF the main thread when the browser allows it (IntroHost -> intro/introWorker.js), so
+// the world build below — seconds of blocking work — cannot stutter the loading screen. Same public API
+// either way; ?worker=0 (or a browser without OffscreenCanvas) falls back to the in-thread Intro.
+const introOpts = {
   canvas, renderer, params: PARAMS,
+  introCanvas: document.getElementById('introcanvas'),
   seed: Number(PARAMS.get('seed') || 1337),
   auto: PARAMS.get('auto') === '1',
-}) : null;
+};
+const USE_WORKER = USE_INTRO && !!introOpts.introCanvas && canUseIntroWorker(PARAMS);
+const intro = USE_INTRO ? (USE_WORKER ? new IntroHost(introOpts) : new Intro(introOpts)) : null;
+if (!USE_WORKER) introOpts.introCanvas?.remove();
 
 // Compile the world's shader programs a few objects at a time, with a frame between chunks.
 //
@@ -137,6 +145,12 @@ if (intro) {
   // SYNCHRONOUS compile() internally and only defers the link-completion poll, so it blocks for the whole
   // compile and the first render still compiles whatever it missed. On ?auto=1 q=low it took the boot from
   // 18 stalls / 13.1 s blocked to 26 stalls / 27.9 s, worst single stall 5.5 s -> 13.7 s. Do not re-add it.
+  // The monitor shows the REAL game: once terrain and sky exist there is something worth looking at, so
+  // start shipping frames of the game canvas onto his screen. Off-thread intro means this cannot stutter
+  // the room; when the main thread blocks, the monitor just holds its last frame.
+  if (intro.startMonitor) {
+    game.events.on('boot:progress', (e) => { if (e.done >= 4) intro.startMonitor(120); });
+  }
   game.ready.then(async () => {
     if (PARAMS.get('nowarm') !== '1') {
       const t0 = performance.now();
