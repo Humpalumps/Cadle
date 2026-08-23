@@ -714,6 +714,40 @@ Player-visible stall (counted after the game is playable), `--route tp`, product
 
 Gate passed at q=high and q=low (blobs clean, jitter clean, pointer lock engage + re-acquire).
 
+## 4k. The GL validation burst, 2026-08-23 — one dropped frame at boot, three causes (FIXED)
+
+Every capture logged `GL_INVALID_OPERATION: ... Mismatch between texture format and sampler type
+(signed/unsigned/float/shadow)`. It was reported as "~60 per 50 s during ordinary gameplay". **That premise
+was wrong and checking it first is what made this solvable:** across 21 captured `console.log`s the errors are
+ONE CONTIGUOUS BURST at boot with no other line interleaved (`span == count` in every file), then silence.
+11 at q=high, 7 at q=low — **exactly the cascade count**, which is the whole clue.
+
+**Cause: the far shadow cascade was staggered out before it had ever rendered.** `Lighting.update` does
+`this._frame++` BEFORE `_fitCascades()`, so `_frame === 1` on the first rendered frame, and the stagger test
+was `(this._frame & 1)` — true. The last cascade therefore never reached `WebGLShadowMap.render()`, its
+`DepthTexture` never got a GL texture (the constructor only makes the JS object; `version` stays 0 and
+`isRenderTargetTexture` is false, so `setTexture2D` skips the upload and binds `undefined`), three bound
+texture 0 to a `sampler2DShadow`, and the driver **dropped every lit draw on that frame**. Fix is the parity:
+`(this._frame & 1) === 0`. Same 50% duty cycle from frame 2 on.
+**Do NOT "simplify" that to `this._frame > 1`** — it was suggested and it is wrong: the far cascade would
+render once and then be staggered on every subsequent frame forever.
+
+Two more, same burst, both real bugs and not just log noise:
+- **`Texture marked for update but no image data found` x9, every run, every quality.** `EZTrees`'s readiness
+  gate read `if (!img || img.complete) return null` — but `TextureLoader` leaves `texture.image` NULL until
+  the data URI decodes, so "not loaded yet" was treated as "ready" and the gate resolved instantly for
+  precisely the 9 textures it existed to wait for. The bake then sampled unbound (black) maps, so the first
+  impostor albedos were baked wrong. It polls for `m.image && m.image.complete` now. Boot is ~0.9 s slower
+  because it now actually waits — that is the fix working, not a regression.
+- **`GL_INVALID_VALUE: glGetProgramiv: Program object expected`.** `Terrain.js` called
+  `renderer.compileAsync(...)`, which polls `gl.getProgramParameter` on a program three may already have
+  released. It was also unbound, so it was building the `srgb` twin (4j) — and `main.js:170` already records
+  compileAsync measuring 2x worse than the sync path. Now `compileForComposer`, and `invariants.mjs` check
+  (i) covers `Terrain.js` and the string `compileAsync(` too.
+
+Verified: `Mismatch=0 noImageData=0 ProgramObject=0` at q=high AND q=low, gate passes, and the tp route went
+from 3 spikes / 483 ms of stall to **0 spikes / 0 ms** (two reps).
+
 ## 5. Everything else open
 
 **Performance**
@@ -756,47 +790,23 @@ Gate passed at q=high and q=low (blobs clean, jitter clean, pointer lock engage 
    was passively noticing this — hence the number is written here instead. A two-minute wait is not normal and
    should not become the next agent's baseline assumption.
 4. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
-5. **A ~6.5 s stall on `__game.lineup()` that is NOT a program link and is NOT understood.** The last
-   unexplained thing from the hitch wave, and the honest state of it:
-   - `dt = 6492.8 ms | page cpu = 14.3 ms | GPU exec = 8.7 ms | programs 127 -> 127`. Nothing links. The
-     page is idle, the GPU is idle, and 6.5 s passes. Reproduces on every combat run, magnitude 5.9-6.8 s.
-   - It is NOT the 5.1 harness artifact: that needs `gpuMs` ~= `frameMs`, and this is 8.7 ms against 6.5 s
-     on a quiet box with vsync on. 5.1's own reopen condition is met.
-   - **Not observed in normal traversal.** A full route through all nine regions — teleport in, look around,
-     sprint, walk a border on foot, 25 s soak — has 3 spikes, worst 213 ms. Only `lineup()` (spawn one of
-     all 23 types at once, 6 of them freshly constructed) triggers it. Whether a player can reach it by
-     other means is UNKNOWN and is the first thing to establish.
-   - Ruled out by measurement, so do not re-propose: enemy construction (37 enemies in 1.4 ms); program
-     linking (count unchanged across the frame); the colorspace bug (fixed, see 4j); an empty pool (every
-     type has a spare); a missing depth program (warming one changed neither the stall nor the final
-     program count).
-   - Dead end worth knowing: the sun's shadows are Lighting.js's OWN cascade system, not three's
-     `WebGLShadowMap`, so a synthetic `renderer.render()` never builds an enemy's depth program — a forced
-     render with spares visible, `castShadow` on and `frustumCulled` off linked exactly ZERO programs, while
-     1.5 s of ordinary frames with those spares in front of the camera linked one. A `warmShadows()` built
-     on that was implemented, measured, found not to change the final program count, and REVERTED rather
-     than shipped on a plausible story.
-   - Next step: `node tools/hitchhunt.mjs --route combat` and bisect what `lineup()` does that a normal
-     spawn does not; then a chrome://tracing capture (`tools/hitchprobe.mjs --trace`) to see inside the GPU
-     process, since neither `cpuMs` nor `gpuMs` can see whatever this is.
-7. **~65-194 ms stalls while traversing, roughly once every 18 s, AFTER the program count has frozen**
-   (page cpu 4-10 ms, GPU exec ~5 ms, no new programs). Something stalls the driver without linking.
-   Unattributed — the next thing to point `hitchhunt.mjs` at.
-8. **`EZTrees-*.js` is a 4.0 MB chunk that gzips to 2.99 MB** — it barely compresses, so it is data, not
-   code, and it sits on the dynamic-import path.
-9. **Hostinger serves the build with brotli** (verified: `content-encoding: br`, `cache-control: public,
-   max-age=31536000, immutable`), so the earlier "no compression" worry is closed. `public/assets/` is NOT
-   content-hashed, so a regenerated asset needs a manual filename bump or that immutable year-long cache
-   will serve the old one.
+5. ~~A ~6.5 s stall on `__game.lineup()`~~ — **CLOSED 2026-08-23: it was the HARNESS, not the game.**
+   `tools/hitchhunt.mjs` called `await page.evaluate('window.__game.lineup()')`. `lineup()` RETURNS its 23
+   live `Enemy` instances, so Playwright serialised that entire Three.js object graph back over CDP. That
+   blocks the page's main thread BETWEEN frames: wall dt 6.5 s, the frame's own cpu ~15-35 ms, GPU idle, no
+   program links — the exact signature that made it look like a monstrous driver stall. Wrapping the call to
+   return a scalar removed it completely, on the first try, reproducibly.
+   **The lesson, and it is now enforced in the tool: never let an eval RETURN a game object.** `ev()` wraps
+   every evaluate so the page hands back a scalar; `give()`, `ability()`, `killAll()`, `clearEnemies()` and
+   `lineup()` all return live objects and every one of them was adding phantom stalls. Combat route before:
+   3 spikes, 10269 ms, worst 6812 ms. After: **3 spikes, 719 ms, worst 330 ms** — same build, same box.
+   This is the second time this project has been sent chasing a harness artifact (see 5.1). When a stall has
+   page cpu LOW and GPU LOW, suspect the instrument before the game.
+   What is actually left on that route: **330 ms on the first super** (cpu 319 ms, programs 127 -> 136), i.e.
+   nine real first-use program links from the effects `Abilities` calls into — `combat.explode`,
+   `combat.projectile`, `vfx.shockwave`/`emit`, `postfx.flash`. Those pools are not in the scene at boot, so
+   the boot compile cannot reach them; prewarming them is a Combat/VFX-side job.
 
-**World / content**
-3. **The floating isles read as brown discs / flying-saucer hats from below** (Celestial and the Void). The
-   tint was raised twice with no visible change, so it is the SHAPE — a flat rock dome plus a hanging keel —
-   and/or `stoneMat`'s sand map, not the vertex colour. They want to be modelled as layered rock with a
-   stepped underside. It is the one thing you always have a view of from the ground in both regions.
-4. Four of nine straight-line pass walks (dragon, lost, void, infernal) stop at the destination region's own
-   landform edge. The player is inside the region by then and would walk around, but a route would be better.
-5. The village (Hearthfall) is nine huts and a well: no interiors, no NPCs, no doors.
 6. Level bands are declared but never validated; nothing checks the XP/loot curve reaches 50, and a level-5
    player wandering into the Lost Realm just dies with no signposting.
 7. `wilds` (the belt between region cores) has an ambient bed but no identity of its own.

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound - see its doc comment
 import { mulberry32, smoothstep, clamp, lerp } from '../core/Noise.js';
 import { ORDER, RB, RR, RL_CORE, RL_EDGE, RING_IN, RING_OUT, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
 // The bake math lives in terrainKernel.js so a REAL module worker can import it (see terrainWorker.js).
@@ -349,8 +350,12 @@ export class Terrain {
     this.ready = true;                         // preview bake means there is always ground, from the very first frame
     scene.add(this.mesh);
     this.update(0, 0);
-    // start translating/linking the terrain program now (driver threads) so the first frame doesn't pay for it
-    renderer.compileAsync(this.mesh, camera, scene).catch(() => {});
+    // Start translating/linking the terrain program now so the first frame doesn't pay for it.
+    // NOT compileAsync: it polls gl.getProgramParameter on a program three may already have released
+    // (`GL_INVALID_VALUE: glGetProgramiv: Program object expected` in every capture), main.js:170 records it
+    // measuring 2x WORSE than the sync path, and with no render target bound it linked the `srgb` twin of the
+    // terrain program that this game -- which draws through the composer -- never looks up. See Renderer.js.
+    compileForComposer(renderer, this.mesh, camera, scene);
     const t1 = performance.now();
     console.log(`[terrain] preview ready in ${(t1 - t0).toFixed(0)} ms, ${L} levels x ${n} cells`);
     // real asset albedos (ASSETS.md): fetched + resized in parallel with the worker bake, merged over the procedural

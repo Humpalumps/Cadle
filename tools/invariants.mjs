@@ -209,9 +209,9 @@ if (props) {
   if (!/export function compileForComposer/.test(rend) || !/setRenderTarget\(_warmRT\)/.test(rend)) {
     fail('src/render/Renderer.js lost compileForComposer (or its bound scratch target) — shader warmup silently compiles the wrong colorspace and every program relinks during play');
   }
-  for (const f of [['src', 'main.js'], ['src', 'player', 'Weapons.js'], ['src', 'player', 'Abilities.js'], ['src', 'world', 'EZTrees.js']]) {
+  for (const f of [['src', 'main.js'], ['src', 'player', 'Weapons.js'], ['src', 'player', 'Abilities.js'], ['src', 'world', 'EZTrees.js'], ['src', 'world', 'Terrain.js']]) {
     const src = read(join(...f));
-    if (src.includes('renderer.compile(') || src.includes('.renderer.compile(')) {
+    if (src.includes('renderer.compile(') || src.includes('.renderer.compile(') || src.includes('compileAsync(')) {
       fail(f.join('/') + " calls renderer.compile() directly - use compileForComposer(), or it builds the srgb twin the renderer never uses and the real program links mid-play (see src/render/Renderer.js)");
     }
   }

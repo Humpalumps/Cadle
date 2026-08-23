@@ -80,7 +80,16 @@ await page.evaluate((SPIKE) => {
 }, SPIKE);
 
 const mark = (l) => page.evaluate((l) => window.__hpMark(l), l);
-const ev = (js) => page.evaluate(js).catch((e) => ({ err: String(e).slice(0, 200) }));
+// NEVER let an eval RETURN game objects. `window.__game.lineup()` hands back 23 live Enemy instances,
+// and Playwright then serialises that whole Three.js graph over CDP -- a MEASURED 6.5 s of blocked main
+// thread, off-frame, which reads as a monstrous game hitch (page cpu low, GPU idle, no program links)
+// and is nothing of the sort. It cost most of a session to chase. Always return a scalar.
+const LINEUP = 'window.__game.game.enemies.lineup()';
+// Wrap EVERY eval so the page returns a scalar, for the reason above: give()/ability()/killAll()/
+// clearEnemies()/lineup() all hand back live game objects, and serialising one over CDP blocks the main
+// thread off-frame for hundreds of ms to seconds. That is measurement noise indistinguishable from a hitch.
+const ev = (js) => page.evaluate(`(()=>{const __r=(${js});return typeof __r==="object"&&__r!==null?1:(__r??1);})()`)
+  .catch((e) => ({ err: String(e).slice(0, 200) }));
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 const key = (code, down) => page.evaluate(([c, d]) => (d ? window.__game.input.press(c) : window.__game.input.release(c)), [code, down]);
 
@@ -90,6 +99,28 @@ await sleep(8);                                    // impostor bake / staggered 
 await ev('window.__game.look(-1.5708, 0)');
 
 // --route tp: teleports only (~60 s). For attributing the fast-travel stall while iterating on a fix.
+// --route lineup: the SAME spawn three times over, each on its own mark. If the stall is a one-time driver
+// cost (a D3D shader re-translation for a new input layout, a texture upload) only pass 1 pays it; if every
+// pass pays, it is work the spawn itself does. That one bit decides whether it is warmable at all.
+if (a.route === 'lineup') {
+  await mark('l-idle'); await sleep(4);
+  // The combat route stalls ~6.5 s on lineup(); a bare lineup() does not. The only difference is that
+  // combat gives a weapon and fires first, so reproduce that prefix and bisect it.
+  if (a.prefix !== '0') {
+    await ev('window.__game.god(true)');
+    await mark('l-give'); await ev("window.__game.give('autorifle',0)"); await sleep(4);
+    await mark('l-fire'); await page.evaluate(() => window.__game.input.button(0, true)); await sleep(1.5);
+    await page.evaluate(() => window.__game.input.button(0, false)); await sleep(3);
+  }
+  for (let i = 1; i <= 3; i++) {
+    await mark('l-spawn' + i); await ev(LINEUP); await sleep(9);
+    await mark('l-clear' + i); await ev('window.__game.clearEnemies()'); await sleep(3);
+  }
+  // and one single enemy, to see whether the cost is per-spawn or per-batch
+  await mark('l-one'); await ev("window.__game.spawnNear('hound',12)"); await sleep(6);
+  await mark('l-two'); await ev("window.__game.spawnNear('drake',14)"); await sleep(6);
+  await mark('end');
+} else
 // --route combat: each first-use event on its own mark, so a program link lands in a named phase.
 if (a.route === 'combat') {
   await mark('c-idle'); await sleep(3);
@@ -97,7 +128,7 @@ if (a.route === 'combat') {
   await mark('c-give'); await ev("window.__game.give('autorifle',0)"); await sleep(2);
   await mark('c-fire1'); await page.evaluate(() => window.__game.input.button(0, true)); await sleep(1.5);
   await page.evaluate(() => window.__game.input.button(0, false)); await sleep(1.5);
-  await mark('c-lineup'); await ev('window.__game.lineup()'); await sleep(4);
+  await mark('c-lineup'); await ev(LINEUP); await sleep(4);
   await mark('c-fire2'); await page.evaluate(() => window.__game.input.button(0, true)); await sleep(2.5);
   await page.evaluate(() => window.__game.input.button(0, false)); await sleep(1.5);
   for (const ab of ['grenade', 'melee', 'class', 'super']) { await mark('c-' + ab); await ev(`window.__game.ability('${ab}')`); await sleep(4); }
@@ -117,7 +148,7 @@ await mark('spin'); for (let i = 0; i < 24; i++) { await page.evaluate((i) => wi
 
 await mark('combat'); await ev('window.__game.god(true)');
 await ev("window.__game.give('autorifle',0)");
-await ev('window.__game.lineup()');
+await ev(LINEUP);
 await sleep(1);
 await page.evaluate(() => window.__game.input.button(0, true)); await sleep(3);
 await page.evaluate(() => window.__game.input.button(0, false));

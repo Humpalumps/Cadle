@@ -168,11 +168,17 @@ export function buildEZTrees(game, trees, vegetation) {
 
   // ez-tree's embedded data-URI textures decode async — bake only after they are actually loaded
   const maps = [...new Set([...buckets.keys()].flatMap((v) => [v.barkMat.map, v.leafMat.map].filter(Boolean)))];
-  const ready = Promise.all(maps.map((m) => {
-    const img = m.image;
-    if (!img || img.complete) return null;
-    return new Promise((res) => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); });
-  }));
+  // `m.image` is NULL until the data URI decodes -- TextureLoader assigns it on load. The old gate read
+  // `if (!img || img.complete) return null`, i.e. it treated "no image yet" as "ready", so it resolved
+  // immediately for precisely the textures it existed to wait for: all 9 of them logged
+  // `THREE.WebGLRenderer: Texture marked for update but no image data found` in every capture, and the
+  // first impostor albedos were baked from an unbound (black) map. Poll for the image instead.
+  // ponytail: rAF poll, 1-2 frames in practice; upgrade path = patch ez-tree to expose its load promises.
+  const ready = Promise.all(maps.map((m) => new Promise((res) => {
+    let tries = 0;
+    const tick = () => ((m.image && m.image.complete) || ++tries > 600) ? res() : requestAnimationFrame(tick);
+    tick();
+  })));
 
   ready.then(async () => {
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
