@@ -1,0 +1,7 @@
+[
+ {"wait":26},{"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},{"hour":13},{"wait":1},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(-140,t.heightAt(-140,-700)+2,-700);return 'ok';})()"},{"wait":8},
+ {"perfWindow":{"secs":5,"label":"whisperwood"}},
+ {"look":[1.6,0]},{"wait":2},{"perfWindow":{"secs":4,"label":"whisperwood-e"}},
+ {"look":[3.2,0]},{"wait":2},{"perfWindow":{"secs":4,"label":"whisperwood-s"}}
+]

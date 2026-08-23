@@ -118,7 +118,11 @@ export class Audio {
     this.master = ctx.createGain(); this.master.gain.value = v.master;
     this.comp = ctx.createDynamicsCompressor(); const c = this.comp; c.threshold.value = -10; c.knee.value = 12; c.ratio.value = 2.5; c.attack.value = 0.004; c.release.value = 0.18;   // gentle glue; shots duck the beds a little (Destiny-style)
     this.limiter = ctx.createDynamicsCompressor(); const l = this.limiter; l.threshold.value = -1.5; l.knee.value = 0; l.ratio.value = 20; l.attack.value = 0.001; l.release.value = 0.06;
-    this.master.connect(c); c.connect(l); l.connect(ctx.destination);
+    // UNDERWATER. One master lowpass, wide open (20 kHz) on land and swept down to ~430 Hz when the camera
+    // is under the surface. The Sunken Kingdom's whole passive is that the sea closes over your head and
+    // until now nothing but the fog colour said so. One node, no per-voice work, free when you are dry.
+    this.subLP = ctx.createBiquadFilter(); this.subLP.type = 'lowpass'; this.subLP.frequency.value = 20000; this.subLP.Q.value = 0.7;
+    this.master.connect(this.subLP); this.subLP.connect(c); c.connect(l); l.connect(ctx.destination);
     this.buses = { sfx: ctx.createGain(), music: ctx.createGain(), ambient: ctx.createGain(), fb: ctx.createGain() };   // fb: feedback ticks (hit/crit/kill), bypasses the sfx duck
     this.buses.sfx.gain.value = v.sfx; this.buses.music.gain.value = v.music; this.buses.ambient.gain.value = v.ambient; this.buses.fb.gain.value = v.sfx;
     for (const b of Object.values(this.buses)) b.connect(this.master);
@@ -309,6 +313,11 @@ export class Audio {
     const ctx = this.ctx; if (!ctx) return;
     if (!this.unlocked) { if (ctx.state === 'running') this._onRunning(); else return; }
     const now = ctx.currentTime, cam = this.game.camera;
+    if (this.subLP) {                                          // muffle everything while the camera is submerged
+      const W = this.game.world?.water;
+      const under = W?.level != null && cam.position.y < W.level && (W.isWater?.(cam.position.x, cam.position.z) ?? true);
+      this.subLP.frequency.setTargetAtTime(under ? 430 : 20000, now, 0.12);
+    }
     // listener = camera
     const L = ctx.listener, p = cam.position; cam.getWorldDirection(this._fwd); this._up.set(0, 1, 0).applyQuaternion(cam.quaternion);
     if (L.positionX) { L.positionX.value = p.x; L.positionY.value = p.y; L.positionZ.value = p.z; L.forwardX.value = this._fwd.x; L.forwardY.value = this._fwd.y; L.forwardZ.value = this._fwd.z; L.upX.value = this._up.x; L.upY.value = this._up.y; L.upZ.value = this._up.z; }

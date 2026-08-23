@@ -1,0 +1,11 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":3},
+ {"look":[0.7,-0.55]},
+ {"eval":"(()=>{const L=window.__game.game.lighting;return JSON.stringify({key:L.keyColor&&L.keyColor.toArray().map(v=>+v.toFixed(3)),casc:L.cascades[0].color.toArray().map(v=>+v.toFixed(3)),cascI:L.cascades[0].intensity,hemi:[L.hemi.color.toArray().map(v=>+v.toFixed(3)),L.hemi.groundColor&&L.hemi.groundColor.toArray().map(v=>+v.toFixed(3)),+L.hemi.intensity.toFixed(2)],envI:+window.__game.game.scene.environmentIntensity.toFixed(3),exp:window.__game.game.renderer.renderer.toneMappingExposure});})()"},
+ {"shot":"post-on"},
+ {"eval":"window.__game.bypassPostfx(true);'ok'"},{"wait":1},{"shot":"post-off"},
+ {"eval":"window.__game.bypassPostfx(false);'ok'"}
+]

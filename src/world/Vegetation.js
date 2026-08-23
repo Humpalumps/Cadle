@@ -30,13 +30,13 @@ const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
 // were the same tree wearing the same leaves. It multiplies the jitter (so the per-instance variation
 // survives) and fades in with the biome weight, exactly like the crystal spires' tint.
 const BTREE = {
-  forest:    { p: 0.52, sp: [0, 1], col: [0.72, 1.12, 0.94], gv: 0.62 },   // Whisperwood Deep, Ashenvale-teal (0.78 put the frame over the 3 M tri budget — impostors carry the depth)
-  tundra:    { p: 0.34, sp: [3],    col: [0.74, 0.88, 1.06], gv: 0.36 },   // Winterspring is a FOREST under snow, not an empty steppe: dense frosted conifers
+  forest:    { p: 0.45, sp: [0, 1], col: [0.62, 1.02, 0.86], gv: 0.72 },   // Ashenvale is a CLOSED canopy. gv 0.62 left grove-shaped clearings the size of a football pitch; raising the grove FLOOR and dropping p keeps the same total tree count (p*(gv+(1-gv)*grove) is unchanged at ~0.42) and spends it evenly instead of in clumps — canopy closure for free, which matters because looking south out of the Whisperwood is already the heaviest view in the world (4.4 M tris)
+  tundra:    { p: 0.34, sp: [3],    col: [1.02, 1.22, 1.52], gv: 0.36 },   // FROSTED, not summer green: the tint multiplies an already-dark needle albedo, so 0.74/0.88/1.06 only made a dark pine very slightly bluer   // Winterspring is a FOREST under snow, not an empty steppe: dense frosted conifers
   celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
   dragon:    { p: 0.10, sp: [3],    col: [0.70, 0.78, 0.68] },   // dark alpine pine, only on the lower ledges
   infernal:  { p: 0.04, sp: [4],    col: [0.34, 0.24, 0.20] },   // charred husks, sparse — the wastes are mostly vents and ash
   lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
-  shadowfen: { p: 0.32, sp: [4, 2], col: [0.62, 0.74, 0.42] },   // drowned dead wood + willows, sickly olive
+  shadowfen: { p: 0.32, sp: [4],    col: [0.40, 0.46, 0.28] },   // ALL of it dead: species 2 is a leafy willow, and a canopy of healthy green over standing water reads as a damp wood, not a cursed fen
   sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
   void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };

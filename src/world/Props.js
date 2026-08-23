@@ -212,7 +212,7 @@ export class Props {
     // one recipe per region: { mat, n, tint, place(x, y, z, out) }. `out(geometry, tintOverride)` collects.
     // `n` is how many ATTEMPTS are made across the region disc; terrain rejects thin that out.
     const KIT = {
-      celestial: { mat: 'stone', n: 150, tint: [1.06, 1.00, 0.84], build: (x, y, z, P) => {
+      celestial: { mat: 'stone', n: 260, tint: [1.10, 1.06, 0.94], build: (x, y, z, P) => {
         const k = rng();
         if (k < 0.42) {                                                    // fallen column drums, half-buried
           const drums = 1 + ((rng() * 3) | 0), a = rng() * Math.PI * 2;
@@ -223,14 +223,46 @@ export class Props {
           P(box(2.0, 0.4, 2.0).translate(x, y + 0.2, z));
           P(columnGeometry(hh, true, rng).translate(x, y + 0.4, z));
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh, z), r: 1.0 });
-        } else {                                                           // arch fragment: two jambs and a broken span
+        } else if (k < 0.92) {                                             // arch fragment: two jambs and a broken span
           const w = 2.6 + rng() * 1.4, hh = 3.0 + rng() * 1.6, a = rng() * Math.PI;
           const ca = Math.cos(a), sa = Math.sin(a);
           for (const sd of [-1, 1]) P(box(0.7, hh, 0.7).translate(x + ca * sd * w * 0.5, y + hh / 2, z + sa * sd * w * 0.5));
           P(box(w * 0.8, 0.6, 0.7).rotateY(-a).rotateZ(0.12).translate(x, y + hh + 0.2, z));
+        } else {                                                           // a gilded standard: the GOLD the Isles are described by and never had on the ground
+          const hh = 3.4 + rng() * 2.2;
+          P(cyl(0.16, 0.22, hh, 8).translate(x, y + hh / 2, z), [1.14, 0.86, 0.34]);
+          P(new THREE.TorusGeometry(0.85, 0.09, 6, 20).rotateX(Math.PI / 2).translate(x, y + hh - 0.2, z), [1.18, 0.90, 0.36]);
+          for (let i = 0; i < 4; i++) P(new THREE.OctahedronGeometry(0.20).translate(x + Math.cos(i * 1.5708) * 0.85, y + hh - 0.2, z + Math.sin(i * 1.5708) * 0.85), [1.16, 0.88, 0.34]);
+          P(box(1.5, 0.35, 1.5).translate(x, y + 0.17, z), [1.08, 1.04, 0.92]);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh, z), r: 0.5 });
         }
       } },
-      dragon: { mat: 'basalt', n: 130, tint: [0.86, 0.84, 0.80], build: (x, y, z, P) => {
+      dragon: { mat: 'basalt', n: 210, tint: [0.86, 0.84, 0.80], build: (x, y, z, P) => {
+        const kd = rng();
+        if (kd < 0.24) {                                                   // dwarven ore working: a gold seam cut open, with the spoil under it
+          const a = rng() * Math.PI, ca = Math.cos(a), sa = Math.sin(a), seg = 2 + ((rng() * 3) | 0);
+          for (let i = 0; i < seg; i++) {
+            const t = (i - seg / 2) * 1.1;
+            P(box(1.0 + rng() * 0.6, 0.26, 0.34).rotateY(a).rotateZ(0.18 + (rng() - 0.5) * 0.3)
+              .translate(x + ca * t, y + 0.5 + i * 0.26 + rng() * 0.6, z + sa * t), [1.10, 0.80, 0.24]);   // gold: saturated hue, ordinary value — it catches the sun, it does not bloom
+          }
+          for (let i = 0; i < 3; i++) { const g = rock(2); const sc = 0.3 + rng() * 0.5; g.scale(sc, sc * 0.6, sc); g.translate(x + (rng() - 0.5) * 2.4, y + 0.1, z + (rng() - 0.5) * 2.4); P(g, [0.58, 0.54, 0.50]); }
+          return;
+        }
+        if (kd < 0.36) {                                                   // a nest: a bowl of splintered wood with eggs still in it
+          const cnt = 11;
+          for (let i = 0; i < cnt; i++) {
+            const a = (i / cnt) * 6.2832;
+            P(cyl(0.09, 0.13, 1.5, 4).rotateZ(1.05).rotateY(a).translate(x + Math.cos(a) * 1.5, y + 0.32, z + Math.sin(a) * 1.5), [0.36, 0.30, 0.24]);
+          }
+          for (let i = 0; i < 3; i++) {
+            const a = rng() * 6.2832, d = rng() * 0.7;
+            P(new THREE.SphereGeometry(0.42, 10, 8).scale(0.78, 1.0, 0.78).rotateZ((rng() - 0.5) * 0.5)
+              .translate(x + Math.cos(a) * d, y + 0.42, z + Math.sin(a) * d), [0.72, 0.66, 0.54]);
+          }
+          col.add({ type: 'sphere', pos: V3(x, y + 0.4, z), r: 1.8 });
+          return;
+        }
         if (rng() < 0.34) {                                                // ribcage: a spine and its ribs, picked clean
           const a = rng() * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ribs = 4 + ((rng() * 4) | 0);
           P(cyl(0.16, 0.2, ribs * 1.25, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.35, z), [0.92, 0.90, 0.82]);
@@ -265,7 +297,20 @@ export class Props {
           P(g, [0.24, 0.22, 0.23]);
         }
       } },
-      shadowfen: { mat: 'stone', n: 220, tint: [0.52, 0.60, 0.40], build: (x, y, z, P) => {
+      shadowfen: { mat: 'stone', n: 300, tint: [0.52, 0.60, 0.40], build: (x, y, z, P) => {
+        const ks = rng();
+        if (ks < 0.20) {                                                    // a drowned snag hung with moss: the fen's vertical, and what makes it feel roofed
+          const hh = 3.0 + rng() * 3.4, a = rng() * 6.2832;
+          P(cyl(0.14, 0.30, hh, 6).rotateZ((rng() - 0.5) * 0.30).rotateY(a).translate(x, y + hh / 2 - 0.2, z), [0.24, 0.23, 0.19]);
+          const drapes = 3 + ((rng() * 4) | 0);
+          for (let i = 0; i < drapes; i++) {                                // hanging moss: thin ragged sheets off the limbs
+            const da = rng() * 6.2832, dd = 0.35 + rng() * 0.9, dl = 0.9 + rng() * 1.8;
+            P(box(0.05, dl, 0.34 + rng() * 0.3).rotateY(da).translate(x + Math.cos(da) * dd, y + hh * (0.55 + rng() * 0.35) - dl * 0.5, z + Math.sin(da) * dd),
+              [0.30 + rng() * 0.10, 0.40 + rng() * 0.12, 0.22]);
+          }
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 0.45 });
+          return;
+        }
         if (rng() < 0.62) {                                                 // reed clump — the fen's signature, and it hides things
           const cnt = 7 + ((rng() * 9) | 0);
           for (let i = 0; i < cnt; i++) {
@@ -321,7 +366,19 @@ export class Props {
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 0.8 });
         }
       } },
-      tundra: { mat: 'ice', n: 130, tint: [0.92, 0.96, 1.04], build: (x, y, z, P) => {
+      tundra: { mat: 'ice', n: 155, tint: [0.92, 0.96, 1.04], build: (x, y, z, P) => {   // Frostveil is the tightest tri budget in the world (3.97 M of 4 M measured at the frozen lake) — the icicle pillars cost ~0.3 M, so this stays lean
+        const kt = rng();
+        if (kt < 0.22) {                                                    // pressure-ice pillar hung with icicles — Winterspring's vertical
+          const hh = 2.6 + rng() * 3.8, r0 = 0.5 + rng() * 0.5;
+          P(cyl(r0 * 0.55, r0, hh, 6).rotateY(rng()).translate(x, y + hh / 2 - 0.2, z), [0.86, 0.94, 1.06]);
+          const ic = 4 + ((rng() * 4) | 0);
+          for (let i = 0; i < ic; i++) {
+            const a = (i / ic) * 6.2832 + rng() * 0.5, il = 0.5 + rng() * 1.3;
+            P(cone(0.09 + rng() * 0.05, il, 5).rotateX(Math.PI).translate(x + Math.cos(a) * r0 * 1.05, y + hh - il * 0.5, z + Math.sin(a) * r0 * 1.05), [0.92, 0.98, 1.10]);
+          }
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: r0 + 0.2 });
+          return;
+        }
         if (rng() < 0.6) {                                                  // wind-carved drift
           const g = rock(2); g.scale(2.4 + rng() * 3.0, 0.6 + rng() * 0.8, 1.8 + rng() * 2.4);
           g.rotateY(rng() * 3.14); g.translate(x, y + 0.15, z);
@@ -332,7 +389,33 @@ export class Props {
           col.add({ type: 'sphere', pos: V3(x, y + sc * 0.35, z), r: sc * 0.9 });
         }
       } },
-      forest: { mat: 'stone', n: 120, tint: [0.60, 0.56, 0.44], build: (x, y, z, P) => {
+      forest: { mat: 'stone', n: 340, tint: [0.60, 0.56, 0.44], build: (x, y, z, P) => {
+        const kf = rng();
+        if (kf < 0.42) {                                                    // FERN clump: the forest floor, instead of meadow grass
+          const cnt = 5 + ((rng() * 6) | 0), tc = [0.16 + rng() * 0.08, 0.34 + rng() * 0.12, 0.20 + rng() * 0.08];
+          for (let i = 0; i < cnt; i++) {
+            const a = (i / cnt) * 6.2832 + rng() * 0.6, len = 0.55 + rng() * 0.85;
+            P(box(0.06, len, 0.30).rotateZ(0.85 + (rng() - 0.5) * 0.35).rotateY(a)
+              .translate(x + Math.cos(a) * len * 0.34, y + 0.12 + len * 0.30, z + Math.sin(a) * len * 0.34), tc);
+          }
+          return;
+        }
+        if (kf < 0.62) {                                                    // elven ruin going under the moss: a step, a jamb, a fallen lintel
+          const a = rng() * Math.PI, ca = Math.cos(a), sa = Math.sin(a), mc = [0.40, 0.50, 0.36];
+          const kind = rng();
+          if (kind < 0.4) {                                                 // half-buried stair block, moss on the tread
+            for (let i = 0; i < 3; i++) P(box(3.2 - i * 0.5, 0.42, 1.1).rotateY(a).translate(x - sa * i * 0.9, y + 0.1 + i * 0.34, z + ca * i * 0.9), i ? mc : [0.46, 0.44, 0.36]);
+            col.add({ type: 'sphere', pos: V3(x, y + 0.5, z), r: 1.7 });
+          } else if (kind < 0.78) {                                         // a jamb still standing, its arch snapped off
+            const hh = 2.4 + rng() * 2.6;
+            P(box(0.62, hh, 0.62).rotateY(a).translate(x, y + hh / 2 - 0.2, z), [0.44, 0.46, 0.36]);
+            P(box(0.78, 0.34, 0.78).rotateY(a).translate(x, y + hh - 0.3, z), mc);
+            col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 0.4, z), r: 0.55 });
+          } else {                                                          // the lintel that came off it, in the leaf litter
+            P(box(2.6 + rng() * 1.4, 0.5, 0.7).rotateY(a).rotateZ((rng() - 0.5) * 0.25).translate(x, y + 0.22, z), mc);
+          }
+          return;
+        }
         if (rng() < 0.5) {                                                  // fallen log, mossed on the up side
           const len = 3.5 + rng() * 5.0, a = rng() * Math.PI * 2;
           P(cyl(0.32, 0.42, len, 8).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.38, z), [0.46, 0.40, 0.30]);
@@ -548,7 +631,7 @@ export class Props {
         dais(13, 3, 0.6, [0.86, 0.83, 0.76]);
         gate(15, 17, 0.6, [0.9, 0.86, 0.78]);
         ring(6, 21, (a) => pillar(CX + Math.cos(a) * 21, CZ + Math.sin(a) * 21, 9 + rng() * 5, 0.9, 0.86, [0.88, 0.85, 0.78]));
-        isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [0.86, 0.84, 0.78] });
+        isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.42, 1.38, 1.26], kind: 'celestial' });   // marble, not mud: on the tan stone map anything at or below 1.0 hangs over the white plain as a brown pod
       } else if (B.id === 'dragon') {                                           // Kharaz-Dun Gate, cut into the mountain
         const GOLD = [1.25, 0.98, 0.52];
         slab(CX, CY + 12, CZ - 2.4, 44, 24, 7, 0.3, [0.60, 0.58, 0.56]);        // the wall, set BACK
@@ -596,11 +679,22 @@ export class Props {
         const top = dais(15, 3, 0.7, [0.72, 0.78, 0.74]);
         ring(10, 22, (a, i) => pillar(CX + Math.cos(a) * 22, CZ + Math.sin(a) * 22, i % 4 === 1 ? 5 + rng() * 3 : 15 + rng() * 5, 1.35, 0.8, [0.70, 0.80, 0.76]));
         slab(CX, top + 2.6, CZ - 4, 8, 5.2, 1.4, 0, [0.68, 0.78, 0.76]);        // the throne nobody sits on
+        // The hoard at the foot of the throne. The Sunken Kingdom is the one region you have to hold your
+        // breath to reach the bottom of and there was nothing down there to find — so: spilled coin, a
+        // broken chest, and the crown, all in gold that is saturated but nowhere near the bloom threshold.
+        for (let i = 0; i < 26; i++) {
+          const a = rng() * 6.2832, d = rng() * 5.5;
+          P(new THREE.CylinderGeometry(0.22 + rng() * 0.18, 0.24 + rng() * 0.2, 0.10, 10)
+            .rotateZ((rng() - 0.5) * 0.9).translate(CX + Math.cos(a) * d, top + 0.1 + rng() * 0.35, CZ + 2.5 + Math.sin(a) * d), [1.06, 0.78, 0.24]);
+        }
+        for (const sd of [-1, 1]) P(new THREE.BoxGeometry(2.2, 1.1, 1.4).rotateY(0.3 * sd).translate(CX + sd * 4.5, top + 0.55, CZ + 3.2), [0.42, 0.30, 0.20]);
+        P(new THREE.TorusGeometry(0.62, 0.10, 6, 16).rotateX(Math.PI / 2).translate(CX, top + 0.14, CZ + 2.2), [1.10, 0.84, 0.30]);
+        for (let i = 0; i < 6; i++) P(new THREE.ConeGeometry(0.13, 0.42, 5).translate(CX + Math.cos(i / 6 * 6.2832) * 0.62, top + 0.36, CZ + 2.2 + Math.sin(i / 6 * 6.2832) * 0.62), [1.10, 0.84, 0.30]);
       } else {                                                                  // void — The Unmaking: shattered ring, nothing holding it up
         ring(10, 24, (a, i) => { const x = CX + Math.cos(a) * 24, z = CZ + Math.sin(a) * 24, y = h(x, z) + 6 + (i % 4) * 5, hh = 8 + rng() * 6;
           P(monolithGeometry(hh, rng).rotateX(0.5 * Math.cos(a * 2)).rotateZ(0.5 * Math.sin(a * 3)).rotateY(-a).translate(x, y, z), [0.30, 0.26, 0.40]);
           col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + hh, z), r: 1.5 }); });
-        isles.push({ x: CX + 60, z: CZ + 62, y0: CY + 52, n: 8, spread: 105, tint: [0.32, 0.27, 0.42] });
+        isles.push({ x: CX + 60, z: CZ + 62, y0: CY + 52, n: 8, spread: 105, tint: [0.32, 0.27, 0.42], kind: 'void' });
       }
 
       if (parts.length) {
@@ -643,13 +737,51 @@ export class Props {
         // the sky, which is the one angle you always have on them while you are still on the ground below.
         // Hanging a torn root off each one gives the underside a silhouette and something for the light to
         // break on. Rock kind 3 is the pointed shard, flipped to hang.
+        // ...but a keel as deep as the isle is WIDE turns the silhouette into a mushroom. Shallower and
+        // wider reads as an eroded underside; the tint stays close to the cap so it is the same rock in shade.
         const gk = makeRockGeometry(3, (rng() * 1e6) | 0);
-        gk.rotateX(Math.PI); gk.scale(R * 0.74, R * 1.05, R * 0.70); gk.translate(x, y + R * 0.10, z);
-        parts.push(gk); tints.push([s.tint[0] * 0.62, s.tint[1] * 0.62, s.tint[2] * 0.66]);
+        gk.rotateX(Math.PI); gk.scale(R * 0.86, R * 0.58, R * 0.82); gk.translate(x, y + R * 0.06, z);
+        parts.push(gk); tints.push([s.tint[0] * 0.80, s.tint[1] * 0.80, s.tint[2] * 0.86]);
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
         isles.push({ x, y: y + R * 0.2, z, R });
         if (i % 3 === 0) this.updrafts.push({ x, z, r: i === 0 ? 13 : 8, top: y + 26 });   // a way back up from most of the ring
+        // SOMETHING ON THE ISLE. An archipelago you can walk to and find nothing on is a platforming test,
+        // not a place — both float regions shipped as bare rock caps. Each isle now carries the region's own
+        // ruin, and the biggest one carries a focal piece you can see from the ground below.
+        const ty = y + R * 0.2, hero = R > 18;
+        if (s.kind === 'celestial') {
+          const ring = hero ? 8 : 4, rr = R * 0.52;
+          for (let c = 0; c < ring; c++) {                                  // a peristyle, half of it fallen
+            const ca2 = (c / ring) * Math.PI * 2, px = x + Math.cos(ca2) * rr, pz = z + Math.sin(ca2) * rr;
+            if (c % 3 === 2) { parts.push(new THREE.CylinderGeometry(0.52, 0.55, 3.4, 10).rotateZ(Math.PI / 2).rotateY(ca2).translate(px, ty + 0.3, pz)); tints.push([1.02, 0.98, 0.86]); continue; }
+            const ph = hero ? 5.6 : 3.4;
+            parts.push(new THREE.CylinderGeometry(0.46, 0.56, ph, 10).translate(px, ty + ph / 2, pz)); tints.push([1.06, 1.02, 0.90]);
+            col.add({ type: 'capsule', a: V3(px, ty, pz), b: V3(px, ty + ph, pz), r: 0.7 });
+          }
+          if (hero) {                                                       // the altar: a gilded drum on a stepped dais
+            parts.push(new THREE.CylinderGeometry(4.2, 4.8, 0.5, 12).translate(x, ty + 0.25, z)); tints.push([1.04, 1.00, 0.88]);
+            parts.push(new THREE.CylinderGeometry(3.2, 3.6, 0.5, 12).translate(x, ty + 0.72, z)); tints.push([1.06, 1.02, 0.90]);
+            parts.push(new THREE.CylinderGeometry(1.5, 1.8, 1.6, 10).translate(x, ty + 1.75, z)); tints.push([1.20, 0.94, 0.44]);
+            col.add({ type: 'capsule', a: V3(x, ty, z), b: V3(x, ty + 2.6, z), r: 2.0 });
+          }
+        } else if (s.kind === 'void') {
+          const n2 = hero ? 5 : 3;
+          for (let c = 0; c < n2; c++) {                                    // snapped pillars, leaning the wrong way
+            const ca2 = rng() * Math.PI * 2, rr = R * (0.2 + rng() * 0.45), ph = 2.4 + rng() * (hero ? 7 : 3.5);
+            const px = x + Math.cos(ca2) * rr, pz = z + Math.sin(ca2) * rr;
+            parts.push(new THREE.BoxGeometry(0.85, ph, 0.85).rotateY(rng()).rotateZ((rng() - 0.5) * 0.55).translate(px, ty + ph / 2, pz));
+            tints.push([0.36, 0.30, 0.52]);
+            col.add({ type: 'capsule', a: V3(px, ty, pz), b: V3(px, ty + ph * 0.8, pz), r: 0.7 });
+          }
+          for (let c = 0; c < 4; c++) {                                     // rubble that never landed, orbiting the cap
+            const ca2 = rng() * Math.PI * 2, rr = R * (0.5 + rng() * 0.6), sc = 0.5 + rng() * 1.2;
+            const g2 = makeRockGeometry(1, (rng() * 1e6) | 0);
+            g2.scale(sc, sc * 0.7, sc); g2.rotateX(rng() * 3); g2.rotateZ(rng() * 3);
+            g2.translate(x + Math.cos(ca2) * rr, ty + 2.5 + rng() * 6, z + Math.sin(ca2) * rr);
+            parts.push(g2); tints.push([0.40, 0.33, 0.56]);
+          }
+        }
       }
       // spans: isle i to isle i-1, plus one back to the hub, laid as a few short segments so a long
       // bridge follows the height difference in steps instead of hovering as one impossible plank
@@ -668,6 +800,16 @@ export class Props {
           const L = f1 - f0 + 0.6;
           const g = new THREE.BoxGeometry(2.6, 0.55, L).rotateY(ry).translate(px, py, pz);
           parts.push(g); tints.push([s.tint[0] * 0.92, s.tint[1] * 0.92, s.tint[2] * 0.92]);
+          // Kerbs and posts. A 2.6 x 0.55 slab seen from the side is a plank hanging in the air — which is
+          // exactly how the spans read from the ground below, the angle you spend the most time at. A raised
+          // edge and a post at each joint give it a profile, and read as a bridge from any angle.
+          for (const sd of [-1, 1]) {
+            const ox = -uz * sd * 1.15, oz = ux * sd * 1.15;
+            const gk2 = new THREE.BoxGeometry(0.32, 0.46, L).rotateY(ry).translate(px + ox, py + 0.34, pz + oz);
+            parts.push(gk2); tints.push([s.tint[0] * 1.02, s.tint[1] * 1.02, s.tint[2] * 1.02]);
+            const gp = new THREE.BoxGeometry(0.42, 1.05, 0.42).rotateY(ry).translate(px + ox - ux * (L * 0.5 - 0.3), py + 0.6, pz + oz - uz * (L * 0.5 - 0.3));
+            parts.push(gp); tints.push([s.tint[0] * 0.98, s.tint[1] * 0.98, s.tint[2] * 0.98]);
+          }
           col.add({ type: 'box', box: new THREE.Box3(V3(px - 1.6, py - 0.3, pz - 1.6), V3(px + 1.6, py + 0.28, pz + 1.6)), walkable: true });
         }
       }
@@ -877,6 +1019,19 @@ export class Props {
       if (s > 0.75 && glowPts.length < 450 && rng() < 0.6) glowPts.push([x, y + 0.06, z, 0.7 + s * 0.9]); };
     for (const t of veg?.trees ?? []) { if (t.z > -175 || Math.abs(t.x) > 260 || rng() < 0.45) continue; const n = 1 + Math.floor(rng() * 4); for (let i = 0; i < n; i++) { const a = rng() * 6.28, d = t.r + 0.3 + rng() * 1.4; add(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.5 + rng() * 1.3); } }
     for (let i = 0; i < 700; i++) { const x = (rng() - 0.5) * 500, z = -190 - rng() * 230; if (Math.hypot(x, z + 28) < 10) continue; const n = 1 + Math.floor(rng() * 3); for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2, z + (rng() - 0.5) * 2, 0.4 + rng() * 1.0); }
+    // The same fungus, in the two OUTER regions whose spec asks for it by name: Whisperwood Deep's fae lights
+    // between the trunks, and Shadowfen's witchlight. Both were written down as region identity and neither
+    // existed — the glow only ever reached the home-bowl treeline. One instanced mesh serves all three.
+    const WL2 = this.game.terrain?.waterLevel ?? 4;
+    for (const [cx, cz, R, wet] of [[-66, -757, 190, false], [-623, 436, 185, true]]) {
+      for (let i = 0; i < 620; i++) {
+        const a = rng() * 6.2832, d = Math.sqrt(rng()) * R;
+        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, y = h(x, z);
+        if (wet ? y < WL2 + 0.15 || y > WL2 + 2.2 : y < WL2 + 0.4) continue;   // the fen's fungus grows on the hummocks, not under the peat
+        const n = 1 + Math.floor(rng() * 4);
+        for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2.2, z + (rng() - 0.5) * 2.2, 0.45 + rng() * 1.15);
+      }
+    }
     lod.finalize(); (veg?.lods ?? (this._ownLods = [])).push(lod); this.mushroomCount = lod.n;
     // additive cyan ground-glow pools under the bigger mushrooms (bloom halo + light-pool read at night; 1 draw call)
     if (glowPts.length) {

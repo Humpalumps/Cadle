@@ -1,0 +1,11 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":3},
+ {"look":[0.7,-0.55]},{"shot":"a-normal"},
+ {"eval":"(()=>{const L=window.__game.game.lighting;L._biomeSunT.setRGB(1,1,1);L._biomeSun.setRGB(1,1,1);return JSON.stringify({casc:L.cascades[0].color.toArray().map(v=>+v.toFixed(3)),hemi:L.hemi.color.toArray().map(v=>+v.toFixed(3)),hi:+L.hemi.intensity.toFixed(2),envI:+window.__game.game.scene.environmentIntensity.toFixed(3)});})()"},
+ {"wait":2},{"shot":"b-whitekey"},
+ {"eval":"(()=>{const L=window.__game.game.lighting;return JSON.stringify({casc:L.cascades[0].color.toArray().map(v=>+v.toFixed(3)),hemi:L.hemi.color.toArray().map(v=>+v.toFixed(3))});})()"},
+ {"eval":"window.__game.bypassPostfx(true);'ok'"},{"wait":1},{"shot":"c-nopostfx"}
+]

@@ -1,0 +1,12 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"eval":"window.__game.teleport(-66,null,-757);'ok'"},{"wait":2.6},
+ {"look":[0,0.03]},{"shot":"heart-n"},
+ {"look":[1.6,0.03]},{"shot":"heart-e"},
+ {"look":[0,-0.55]},{"shot":"heart-ground"},
+ {"look":[0.4,0.55]},{"shot":"canopy"},
+ {"eval":"window.__game.teleport(-160,null,-700);'ok'"},{"wait":2.2},{"look":[0.8,0.02]},{"shot":"off1"},
+ {"hour":21.5},{"wait":1.5},{"look":[0.8,0.02]},{"shot":"night"}
+]

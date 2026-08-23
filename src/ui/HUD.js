@@ -65,6 +65,7 @@ const TEMPLATE = `
 <div id="boss"><div class="bname"></div><div class="bar"><i class="bfill"></i><i class="bsh"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div></div>
 <div id="vitals"><div id="lvl"><b>1</b></div><div class="bars">
   <div id="hbar" class="bar"><i class="ghost"></i><i class="fill"></i><i class="shim"></i><span class="hpnum"></span></div>
+  <div id="bbar" class="bar hidden"><i class="fill"></i></div>
 </div></div>
 <div id="ammo">
   <div id="wline"><span id="wname"></span><span id="welem"></span></div>
@@ -96,6 +97,7 @@ export class HUD {
     this.lowhp = $('#lowhp'); this.lvlEl = $('#lvl b');
     this.hbar = $('#hbar');
     this.hFill = $('#hbar .fill'); this.hGhost = $('#hbar .ghost'); this.hpNum = $('#hbar .hpnum');
+    this.bbar = $('#bbar'); this.bFill = $('#bbar .fill');
     this.wname = $('#wname'); this.welem = $('#welem'); this.mag = $('#mag'); this.res = $('#res');
     this.rline = $('#rline'); this.rFill = $('#rline i');
     this.wslots = $('#wslots'); this.slotEls = [];
@@ -414,6 +416,10 @@ export class HUD {
     this._prevHp = p.health;
     setT(this.hpNum, Math.ceil(p.health) + ' / ' + Math.round(p.maxHealth));
     setT(this.lvlEl, String(p.level ?? 1));
+    // breath: only on screen when it is draining or refilling, so the Vale never shows a bar it does not need
+    const br = p.maxBreath ? p.breath / p.maxBreath : 1;
+    setCls(this.bbar, 'hidden', br > 0.999);
+    if (br <= 0.999) { setX(this.bFill, br); setCls(this.bbar, 'low', br < 0.3); }
     // low-health vignette
     const lo = p.alive ? clamp01((0.42 - hp) / 0.42) * 0.9 : 0;
     if (Math.abs((this.lowhp._o ?? -1) - lo) > 0.02) { this.lowhp._o = lo; this.lowhp.style.opacity = lo; }

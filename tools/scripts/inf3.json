@@ -1,0 +1,13 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":3},
+ {"eval":"JSON.stringify({fog:window.__game.game.scene.fog.color.getHexString(),d:+window.__game.game.scene.fog.density.toFixed(5),sun:window.__game.game.lighting.sun.color.getHexString()})"},
+ {"look":[0,0]},{"shot":"heart-n"},
+ {"look":[4.7124,0]},{"shot":"heart-w"},
+ {"look":[0.7,-0.55]},{"shot":"heart-ground"},
+ {"tp":[321,null,489]},{"wait":2},{"look":[3.1416,0.02]},{"shot":"n200-in"},
+ {"hour":20},{"wait":1.5},{"tp":[321,null,660]},{"wait":2},{"look":[2.2,0.0]},{"shot":"dusk"},
+ {"hour":13},{"wait":1},{"perfWindow":{"secs":4,"label":"inf"}}
+]

@@ -1,0 +1,4 @@
+[
+ {"wait":22},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.goto('forest',150);const p=window.__game.state().pos;const o=[];for(let d=-90;d<=90;d+=15)o.push([d,+(t.roadAt?t.roadAt(p[0]+d,p[2]):-1).toFixed(2)]);return JSON.stringify({pos:p,road:o});})()"}
+]

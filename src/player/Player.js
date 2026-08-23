@@ -65,11 +65,28 @@ export class Player {
           if (t - (this._lavaFx ?? 0) > 0.45) {
             this._lavaFx = t;
             this.game.postfx?.flash?.(0xff4a10, 0.35, 0.35);
-            this.game.vfx?.emit?.('aether-burst', c.position, { color: 0xff5c10, count: 8, scale: 0.7 });
+            // 'aether-burst' is the STAR-textured magic pop: recoloured orange it read as bright star flares
+            // coming off the player, which is a spell effect, not standing in lava. Embers instead.
+            this.game.vfx?.emit?.('sparks', c.position, { color: 0xff6a14, count: 10, scale: 0.6 });
             this.game.audio?.play?.('explosion', { pos: c.position, vol: 0.25 });
           }
         }
       }
+    }
+    // BREATH. The Sunken Kingdom's passive is that past the shelf the sea is over your head; without a
+    // clock on it, "swim down and look" has no stakes and no reason to come back up. 22 s under, then it
+    // starts costing health; a lungful comes back fast at the surface.
+    {
+      const c = this.controller, W = this.game.world?.water;
+      const head = c.position.y + 1.5;
+      const under = W?.level != null && head < W.level && (W.isWater?.(c.position.x, c.position.z) ?? true);
+      this.maxBreath = 22;
+      this.breath = this.breath == null ? this.maxBreath : this.breath;
+      if (under && this.alive) {
+        this.breath = Math.max(0, this.breath - dt);
+        if (this.breath <= 0) this.damage(dt * 14, null, { element: 'void', source: 'drowning' });
+      } else this.breath = Math.min(this.maxBreath, this.breath + dt * 6);
+      this.submerged = under;
     }
     // WoW-style recovery: ~1%/s trickle in combat, ~9%/s once out of combat for 6 s
     // (taking OR dealing damage counts as combat — weapons/abilities stamp lastCombat too)

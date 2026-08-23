@@ -45,7 +45,7 @@ const BH = [
     let t = 24 + g * 13 + rmf(x * 0.014, z * 0.014, s + 212, 3) * 6;
     t -= 4.5 * Math.sin(t * 0.42 + n2(x * 0.009, z * 0.009, s + 213) * 3.4);   // ice terraces / pressure ridges
     const bd = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.012, z * 0.012, s + 214) * 18;
-    t = mix(t, 5.2, ss(96, 52, bd));                                           // frozen lake (sits at/below WL -> real ice-cold water)
+    t = mix(t, 3.35, ss(96, 52, bd));                                          // FROZEN LAKE. It was 5.2 — 1.2 m ABOVE terrain.waterLevel, so Winterspring's signature was a dry dish. 3.35 puts ~0.65 m of ice-cold water over it: shallow enough to walk out onto, deep enough that Water paints it (WATER_LOOK.tundra)
     return mix(h, t, w);
   },
   function bhCelestial(x, z, h, s, w, cx, cz) {                                // Celestial Isles: shattered high plateau, chasms below the floating isles
@@ -71,14 +71,37 @@ const BH = [
     t = mix(t, 44, ss(105, 55, d));                                            // the gate needs a forecourt
     return mix(h, t, w);
   },
-  function bhInfernal(x, z, h, s, w, cx, cz) {                                 // Infernal Wastes: caldera cone, ash plains, channelled flows
-    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.01, z * 0.01, s + 241) * 16;
-    let t = 12 + fbm3(x * 0.008 + 5, z * 0.008, s + 242) * 6 + rmf(x * 0.02, z * 0.02, s + 243, 3) * 4.5;
-    t += ss(152, 42, d) * 98;                                                  // cone
-    t -= ss(48, 22, d) * 62;                                                   // crater
+  function bhInfernal(x, z, h, s, w, cx, cz) {                                 // Infernal Wastes: a cracked basalt plain, cinder cones on the skyline
+    // Burning Steppes is a BROKEN PLAIN you cross, not a volcano you stand inside. The old kernel put a
+    // 150 m-radius, 98 m-tall cone with a 62 m caldera on the region centre, so from the heart the whole
+    // view was one smooth red dome and the charcoal floor only showed on the ash plains off-centre. Now:
+    // the heart is a low plain of tilted basalt plates cut by lava channels, and the volcano is three
+    // smaller cinder cones off to the sides — a skyline you navigate by instead of a bowl you sit in.
+    const dx = x - cx, dz = z - cz;
+    const d = Math.sqrt(dx * dx + dz * dz + 1e-3) + n2(x * 0.01, z * 0.01, s + 241) * 12;
+    let t = 10 + fbm3(x * 0.0085 + 5, z * 0.0085, s + 242) * 4.5 + rmf(x * 0.028, z * 0.028, s + 243, 4) * 3.0;
+    // plates: fbm quantised with a cubic riser, so the plain is flat tops meeting at 2-3 m fault scarps
+    // (a rolling fbm plain reads as dunes — the thing that made this a red desert).
+    const p0 = (fbm2(x * 0.0075 - 4, z * 0.0075 + 9, s + 245) * 0.5 + 0.5) * 2.6;
+    const pr = Math.round(p0), pd = p0 - pr;
+    t += (pr + 4 * pd * pd * pd) * 2.3;
+    // three cinder cones on fixed bearings, each with its own summit crater and crag detail
+    let coneM = 0;
+    for (let i = 0; i < 3; i++) {
+      const a = 0.6 + i * 2.2, rr = 118 + i * 26;
+      const ox = cx + Math.cos(a) * rr, oz = cz + Math.sin(a) * rr;
+      const cd = Math.sqrt((x - ox) * (x - ox) + (z - oz) * (z - oz) + 1e-3) + n2(x * 0.02, z * 0.02, s + 246 + i) * 9;
+      const m = ss(46 + i * 12, 6, cd);
+      t += m * (38 + i * 13) - ss(11, 3, cd) * (13 + i * 4);
+      if (m > coneM) coneM = m;
+    }
+    t += rmf(x * 0.05, z * 0.05, s + 249, 4) * 6.0 * coneM * (1 - coneM) * 4;   // flank crags: the cones are not meringue
+    // The Cinder Maw sits in a low vent rampart, not a 62 m caldera: enough to frame the obsidian ring.
+    t += 7 * ss(28, 38, d) * ss(58, 46, d) - 3.0 * ss(22, 8, d);
     // Channels are cut BELOW terrain.waterLevel on purpose: the world water surface fills them and wears the
     // molten skin (Water uLava), so the lava rivers are real geometry you can fall into, not a decal.
-    t -= ss(0.52, 0.90, ridged3(x * 0.0095 + 3, z * 0.0095 - 2, s + 244)) * 15;
+    // Lower frequency than the old cut: fewer, longer, wider rivers across the plain instead of a rash.
+    t -= ss(0.50, 0.88, ridged3(x * 0.0075 + 3, z * 0.0075 - 2, s + 244)) * 14;
     return mix(h, t, w);
   },
   function bhLost(x, z, h, s, w, cx, cz) {                                     // The Lost Realm: ceremonial plain inside a ruined rampart ring
@@ -90,7 +113,10 @@ const BH = [
   },
   function bhShadowfen(x, z, h, s, w, cx, cz) {                                // Shadowfen: hummocks in standing water (WL = 4)
     const hum = fbm4(x * 0.021 + 3, z * 0.021 - 7, s + 261);
-    const t = 3.05 + (hum > 0 ? hum : 0) * 3.4 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.5;
+    // Wetter. At 3.05 the flats sat under 0.95 m of water and the hummocks were most of the surface, so from
+    // anywhere but the middle the fen read as a damp green wood. 2.45 puts the flats knee-to-thigh deep and
+    // leaves the hummocks as the only dry ground — which is the region's whole passive.
+    const t = 2.45 + (hum > 0 ? hum : 0) * 3.2 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.3;
     return mix(h, t, w);
   },
   function bhSunken(x, z, h, s, w, cx, cz) {                                   // The Sunken Kingdom: a real sea basin with coral ridges

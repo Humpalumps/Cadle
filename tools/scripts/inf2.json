@@ -1,0 +1,16 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":3},
+ {"look":[0,0]},{"shot":"heart-n"},
+ {"look":[1.5708,0]},{"shot":"heart-e"},
+ {"look":[3.1416,0]},{"shot":"heart-s"},
+ {"look":[4.7124,0]},{"shot":"heart-w"},
+ {"look":[0.7,-0.55]},{"shot":"heart-ground"},
+ {"tp":[321,null,589]},{"wait":2},{"look":[3.1416,0.02]},{"shot":"n100-in"},
+ {"tp":[321,null,489]},{"wait":2},{"look":[3.1416,0.02]},{"shot":"n200-in"},
+ {"tp":[321,220,689]},{"wait":2},{"look":[0,-0.5]},{"shot":"aerial-n"},{"look":[2.2,-0.5]},{"shot":"aerial-sw"},
+ {"hour":20},{"wait":1.2},{"tp":[321,null,660]},{"wait":2},{"look":[2.2,0.0]},{"shot":"dusk"},
+ {"eval":"(()=>{const t=window.__game.game.terrain;const o=[];for(let d=-210;d<=210;d+=15)o.push(+t.heightAt(321,689+d).toFixed(1));return JSON.stringify(o);})()"}
+]

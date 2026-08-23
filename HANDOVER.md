@@ -27,11 +27,38 @@ Method the user asked for and you should keep using:
 
 ---
 
-## 2. THE NEXT JOB — fix all the biomes fully
+## 2. THE BIOMES — pass 1 done (2026-08-23), what is left
 
 The world is ten regions (`src/world/Biomes.js` is the single source of truth; `CLAUDE.md` has the map). The
-border crossings, per-region music, zone cards and per-region furniture all landed. **What is left is that
-several regions still do not look like the place they are named after.**
+border crossings, per-region music, zone cards and per-region furniture landed earlier. **This pass went
+through all ten and made each one look like the place it is named after.** Every region below was
+re-screenshotted from inside itself on the final code (`tools/out/fin-<region>/`, 3 shots each: looking at
+the landmark, 90 deg off it, and straight down at the floor).
+
+### The single biggest thing this pass found: the pass roads were 100 m wide
+
+`Terrain.roadAt` measured the road's width in RADIANS (`ss(0.10, 0.022, da)`), so the tree/prop exclusion
+was a WEDGE: 24 m across at the mountain feet and **61 m across at a region's heart**. Every outer region
+had a bald corridor driven through the middle of it, and — because `__game.goto(id, back)` drops you on the
+region's bearing — every screenshot anyone had ever taken of a region heart was taken standing in that
+corridor. That is why the Whisperwood looked like "a lawn with a treeline round it": the trees were there,
+you were just standing in the clearing. `roadAt` now measures **metres off the centre line**
+(`ss(13.0, 3.5, arc)`), so a pass is a 7 m trail with a shoulder. **When you screenshot a region, teleport
+PERPENDICULAR to its bearing (see `tools/scripts/fin/*.json`) — on the bearing you are on the road.**
+
+### Three new pieces of machinery, all per-region data in `Biomes.js`
+
+- **`fogLum`** (Sky._gradeFog) — a haze BRIGHTNESS scale. Hue-only grading keeps the sky's luminance, which
+  is right for clear air and wrong for smoke: at midday a hue-only Infernal was a bright cream-orange
+  desert. Set only where the air is genuinely darker than the sky (infernal 0.26, shadowfen 0.42, forest
+  0.66, void 0.62). Default 1 = the old behaviour.
+- **`skyVeil`** 0..1 (Sky's DOME_FRAG `uVeil`) — how much of that air reaches the SKY DOME. A clean blue
+  noon dome over the Wastes and the fen was the loudest remaining "tinted meadow" cue. Eases both ways
+  (including on `_gradeFog`'s early-out, or it sticks over the Vale).
+- **Grass VALUE follows the floor** (Grass.js) — the hue coupling gave every region the Vale's brightness,
+  so a forest floor and a peat bog both came out as a mown lawn. `pow(tLum / 0.133, 1.15)` clamped to
+  [0.34, 1.12]; 0.133 is the measured mean luminance of `terrain.colorAt` in the spawn meadow, so the Vale
+  lands on exactly 1.0 and is untouched.
 
 The user's own standard, in their words: *"I need all these areas to be different and properly represent the
 kind of area and surroundings you'd expect to see in them."* They named three WoW zones as the bar —
@@ -51,8 +78,14 @@ after dark.
   tint 0.72/1.12/0.94]. The light is shade, not sun [amb 0.68, fog 0x52806f x 1.95].
 - ground: forest soil, leaf litter, moss. Crystals: only tiny **fae wisps** [BSPIRE 0.030], never big shards.
 - have: closed canopy, teal foliage, mist between trunks, fallen logs and root-stumps.
-- gap: the floor is a bright LAWN — it wants ferns and undergrowth and a darker ground cover. No light shafts.
-  No overgrown ruins. **Never:** meadow grass at 0.85 pretending to be forest floor.
+- DONE: the road fix put the trees back around you; grass 0.85 -> 0.40 and the floor layer darkened to a
+  shade-green (tint 0.42/0.60/0.50); `Props.KIT.forest` now builds **fern clumps** and **elven ruins going
+  under the moss** (stair blocks, jambs, fallen lintels) at n 340; fae fungus scattered through the region
+  (it only ever reached the home-bowl treeline before); `gv` 0.62 -> 0.72 with `p` 0.52 -> 0.45, which
+  closes the grove holes at the SAME total tree count (looking south out of the Whisperwood is the heaviest
+  view in the world — see §4d).
+- gap: the canopy still lets a lot of sky through, so there are no real light shafts (godrays need the
+  canopy to occlude); the floor is still fairly bright green in full sun.
 
 **❄️ Frostveil Tundra — the frozen forest.** Reference: **Winterspring**. Not an empty steppe: it is a CONIFER
 FOREST buried in snow. Blue-white everything, pines with snow on the boughs, frozen lakes with cracked ice you
@@ -62,8 +95,12 @@ can walk out onto, ice formations, icicles, a permanent aurora at night.
   tall and thin [BSPIRE 0.100, aspect 0.60/1.60], pale blue, NOT the meadow's violet aether.
 - rock: frost-bleached boulders, wind-carved drifts.
 - have: dense frosted conifers, ice shards, drifts, frozen boulders, aurora, bright snow-bounce [amb 1.2].
-- gap: **no frozen lakes** — Winterspring's signature. No icicles, no falling snow in-region. Tightest tri
-  budget in the world (~3.9 M of 4 M): check Frostveil first after ANY tree change.
+- DONE: the frozen lake exists now — `bhTundra` mixed its basin to 5.2, which is 1.2 m ABOVE
+  `terrain.waterLevel`, so Winterspring's signature was a dry dish; 3.35 puts ~0.65 m of ice-cold water
+  over it. Pressure-ice pillars hung with **icicles** added to the kit. Needles re-tinted 1.02/1.22/1.52 —
+  the old 0.74/0.88/1.06 multiplied an already-dark pine and read as summer green.
+- NOT a gap: falling snow already exists (`VFX.WEATHER.tundra`, ~48/s). The old note was stale.
+- gap: still the tightest tri budget in the world — check Frostveil first after ANY tree change.
 
 **🔥 Infernal Wastes — the volcanic waste.** Reference: **Burning Steppes**. Black cracked basalt and grey ash
 lit from BELOW by the red in its own cracks. Lava rivers and pools, vents breathing smoke, cinder cones,
@@ -76,9 +113,18 @@ scorched skeletal trees, bones, an orange-brown smoke haze you look through. The
   burns (26 dps). Light: ember key, dim ambient, thick smoke [sun 0xff8a3c, amb 0.52, fog 0x4a1f11 x 1.85].
 - have: charcoal splat tint, ember light, burning lava channels, vents with hot throats, hexagonal basalt
   clumps, ash drifts, charred husks.
-- gap: **the heart of the region is a lava caldera, so from the middle it reads as a red desert, not black
-  rock.** The charcoal floor only shows on the ash plains off-centre. The honest fix is TERRAIN SHAPE — less
-  lava surface, more black rock — not another tint. Also: submerged-in-lava throws bright star flares.
+- DONE, terrain shape first: `bhInfernal` used to put a 150 m-radius, 98 m-tall cone with a 62 m caldera on
+  the region centre, so the heart was one smooth red dome. It is now a low **basalt plain of tilted plates**
+  (fbm quantised with a cubic riser -> flat tops meeting at 2-3 m fault scarps) cut by wider, longer lava
+  channels, with **three cinder cones off to the sides** as a skyline and a low vent rampart framing the
+  Cinder Maw. Also: key light 0xff8a3c -> 0xffd2b0 (the old key is linear (1.00, 0.25, 0.05) — it multiplies
+  almost all the green and blue out of whatever it touches, so charcoal rendered as saturated (80, 11, 17)
+  RED); fissure emissive band tightened from 0.075..0.025 to 0.045..0.012 with a macro gate (measured
+  against ash.jpg's luma histogram: the old band lit ~10% of a 3.2 m tile = a glowing NET over every square
+  metre); `fogLum` 0.26 + `skyVeil` 0.72 for a real smoke ceiling; lava contact now throws EMBERS
+  (`'sparks'`) instead of the star-textured `'aether-burst'`.
+- gap: the rock reads dark warm brown rather than true black basalt. Going blacker needs the ash albedo
+  itself, not more tinting.
 
 **✨ Celestial Isles — the divine high plateau.** Sun-warmed white marble and gold, ruined colonnades and
 arches, islands floating in gold light with updrafts between them, wordless-choir calm. Everything here is
@@ -88,8 +134,17 @@ stone and light; nothing here is woodland.
 - ground: veined marble flagstone [layer 6], a trace of pale grass in the cracks [0.05]. The brightest light
   in the world [amb 1.45] through the thinnest haze [fogMul 0.60].
 - have: marble and gold ground, the colonnade kit, floating isles with hanging keels, updraft columns.
-- gap: reads WEAK at night — brown and unlit, no gold. **Nothing is ON the isles**: no props, no encounter, no
-  reward. Bridge spans still read as planks edge-on.
+- DONE: the ground is marble instead of sand — `celestial_marble.jpg` is TAN (linear ratio 1 : 0.85 : 0.61)
+  and the old warm tint pushed it further, which is why the Isles rendered as a beige desert; the tint now
+  INVERTS the asset's hue (0.98/1.14/1.46). Each isle carries a **peristyle** (half of it fallen) and the
+  big one an **altar on a stepped dais**; the void isles carry snapped pillars and orbiting rubble. Bridge
+  spans got **kerbs and posts** so they read as bridges edge-on, not planks. A **gilded standard** was added
+  to the ground kit (n 150 -> 260) — the gold the region is described by and never had.
+- gap: the isles still read as brown discs / hats from below. The tint was raised twice with no visible
+  change, so it is the SHAPE (a flat dome plus a keel) and/or `stoneMat`'s sand map, not the vertex colour —
+  they want to be modelled as layered rock with a stepped underside. The plain also still reads empty from
+  the middle: the colonnade kit is scattered, and it wants to be clustered into a plaza you walk to. Night
+  not re-checked this pass.
 
 **🏔️ Dragon Peaks — the high mountain.** 200 m fangs of rock, ledges with dragon nests, a dwarven gate cut
 into the mountain, the bones of whatever the dragons ate, wind and drums. Alpine, not forested.
@@ -97,8 +152,13 @@ into the mountain, the bones of whatever the dragons ate, wind and drums. Alpine
 - ground: bare strata rock [layer 3], almost no grass [0.07]. Crystals: **none** — broken mountain quartz at
   most. This is not an aether region.
 - have: the peaks, the gate, nest ledges, ribcages, scorched rock fangs.
-- gap: still the flattest-reading region. The rock is grey-brown with no gold or ice accent to catch the eye,
-  and there is no reason to climb — no reward, no nest encounter.
+- DONE: it is alpine granite now, not a sandstone mesa. Two things did it: the key went 0xffe8c8 ->
+  0xf0eeee (a warm key on warm strata was most of the problem) and the floor tint went cool
+  (0.84/0.88/1.02, cov 0.60 -> 0.88). `rockCut` stays LOW (0.12) ON PURPOSE — the triplanar cliff is the
+  only layer with real crag detail, and cutting it (tried at 0.55) replaced the faces with a top-projected
+  texture that smears into sand dunes on a slope. Kit (n 130 -> 210) gained **dwarven gold-ore workings**
+  (the accent that catches the eye) and **nests with eggs in them**.
+- gap: the nests are scenery, not an encounter, and there is still no loot for climbing.
 
 **🏰 The Lost Realm — where every magic meets.** Endgame. A violet flagstone plain, a rampart ring, sixteen
 monoliths, standing-stone circles, arcane shards, ceremonial light. Ruined and deliberate, not natural.
@@ -106,7 +166,11 @@ monoliths, standing-stone circles, arcane shards, ceremonial light. Ruined and d
   only four regions where a crystal is the honest answer, because this is where magic collects.
 - ground: worn violet flagstone [layer 6, tinted], trace grass [0.05], a wide pale-violet haze.
 - have: the flagstone, 16 monoliths, stone rings, arcane shards.
-- gap: an endgame zone with no endgame content, and the level band 40-50 is declared but never validated.
+- DONE (look only): the key went 0xffe0ff -> 0xfff2f8 and the floor tint went properly violet
+  (0.56/0.62/1.42, same tan asset as the Isles, so it needs the same blue lift). It was a pink light on pink
+  ground under a pink haze and the whole region read as candy.
+- gap: the flagstone still reads pale lilac dust rather than worn violet stone — it wants to go darker. And
+  it is still an endgame zone with no endgame content; the level band 40-50 is declared but never validated.
 
 **🌑 Shadowfen — the cursed swamp.** Knee-deep peat water you wade through, dead drowned wood, reeds taller
 than you, hanging moss, witchlight in the dark, and things that used to be people. Choked, sunk, green-black.
@@ -116,7 +180,14 @@ than you, hanging moss, witchlight in the dark, and things that used to be peopl
 - liquid: standing water everywhere, and wading slows you (the region's passive). The thickest haze in the
   world [fogMul 2.4] under a dim sickly key [sun 0xa8c090, amb 0.7].
 - have: peat murk, dead wood and willows, reed clumps, rotted stumps, wading.
-- gap: can still read too green and too bright in daylight. No hanging moss, no witchlight fungus clusters.
+- DONE, and this is the biggest single change after Infernal: `bhShadowfen`'s flats sat at 3.05 with
+  `waterLevel` 4, i.e. under 0.95 m of water, and the hummocks were most of the surface — so from anywhere
+  but the middle it was a damp green WOOD. 2.45 puts the flats knee-to-thigh deep and leaves the hummocks as
+  the only dry ground, which is the region's whole passive. Plus: grass 0.22 -> 0.12 (at 0.22 a quarter of
+  the blades still survive at full height), floor tinted to olive-black peat, key 0xa8c090 -> 0x9ab488 and
+  amb 0.7 -> 0.50, `fogLum` 0.42 + `skyVeil` 0.62, species pool cut to dead wood only (species 2 is a leafy
+  willow and a green canopy over standing water is a wood, not a fen), **drowned snags hung with moss**, and
+  **witchlight fungus** scattered on the hummocks.
 
 **🌊 The Sunken Kingdom — the drowned city.** A real sea you swim in and a civilisation under it: coral over
 the throne room, kelp, anemones, the ribs of wrecks in the sand, whale-song and muffled everything.
@@ -124,8 +195,13 @@ the throne room, kelp, anemones, the ribs of wrecks in the sand, whale-song and 
 - ground: reef sand [layer 4, tinted]. Sea [`sea: true`]: past the shelf the water is over your head and you
   swim (the region's passive).
 - have: the sea basin, swimming, coral, anemone fans, wreck ribs.
-- gap: **underwater is fog only** — no caustics, no muffled audio, no oxygen meter, and nothing down there to
-  find. The best region in the world for a reward you have to hold your breath to reach.
+- DONE, all four: **caustics** (two counter-drifting sine lattices sharpened with a power curve, in
+  `FRAG_SPLAT`; they MULTIPLY the albedo, so they respect the sun and the shadows and cannot bloom),
+  **muffled audio** (one master lowpass in `Audio.js`, 20 kHz on land, swept to 430 Hz when the camera is
+  under the surface), a **breath meter** (`Player.breath`, 22 s under then 14 dps; `#bbar` in the HUD, only
+  on screen while it is draining or refilling) and a **hoard at the Drowned Court** — spilled coin, broken
+  chests and the crown at the foot of the throne.
+- gap: none measured this pass. The caustics were added late and only checked in the region-heart shots.
 
 **🕳️ The Void — reality gave up.** Shelves of dark violet stone over an abyss, islands hanging with nothing
 holding them up, rubble that never landed, snapped pillars of something older, 0.55 gravity, no horizon.
@@ -133,7 +209,8 @@ holding them up, rubble that never landed, snapped pillars of something older, 0
   the densest spires in the world.
 - ground: voidstone with amethyst veins [layer 11], **no grass [0]**, `dry: true` so water never fills it.
 - have: voidstone, hanging rubble, snapped pillars, low gravity, floating isles with keels, updrafts.
-- gap: bridge spans read as planks edge-on, and nothing is on the isles.
+- DONE: bridges got kerbs and posts; the isles carry snapped pillars and rubble that never landed.
+- gap: same isle silhouette problem as the Celestial Isles (see there).
 
 **🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Aetheryte, Mirrormere,
 the Sundered Spire, the hamlet. Full grass [1.0], neutral light. **Do not "improve" it casually** — it is what
@@ -263,9 +340,42 @@ When the box is contended, run the legs standalone — that completes when the c
 node tools/inspect.mjs --nolock --name gate-high --q high --script tools/gate-steps.json --url http://127.0.0.1:5173/
 python tools/gate.py tools/out/gate-high && python tools/blobcheck.py tools/out/gate-high burst-blob-
 ```
-**Last measured, green leg by leg on `main`:** invariants PASS · q=high jitter 0.075 + blobcheck PASS (88
+**Last measured on `claude/biomes-full-pass` (2026-08-23):** invariants PASS · q=high **jitter 0.079 PASS**
+on a complete leg · that same leg's `blobcheck` FAILED with an 11 px green cluster in the meadow, which was
+a real regression in the new grass value coupling and is fixed in `2677096` (the coupling may now only take
+brightness away, so it cannot exceed the value the gate is calibrated against). **The post-fix blobcheck and
+both q=low legs are still owed** — three other agent sessions and a game were sharing the GPU, and runs were
+dying after 4-8 frames. Run `bash tools/scripts/gatesplit.sh high` then `... low` on a quiet box.
+
+**Previously measured, green leg by leg on `main`:** invariants PASS · q=high jitter 0.075 + blobcheck PASS (88
 frames) · q=low jitter 0.137 + blobcheck PASS (88 frames) · pointer lock PASS (gate leg + six standalone
 runs). **A single end-to-end `gate.mjs` run that captures every leg is still owed** on a quiet machine.
+
+### 4b-bis. The harness dies constantly when the box is busy — and it is not always your code
+
+This pass lost roughly an hour to `TIMEOUT waiting for game to start: Target crashed`, always around the
+terrain layer uploads, always with `GL_INVALID_OPERATION: Mismatch between texture format and sampler type`
+spamming the GPU log first. **None of it was the code.** Three separate causes, all environmental:
+
+1. **Two sweeps running at once.** A backgrounded loop that looks dead often is not: two copies of the same
+   `for region in ...` script were fighting for the GPU for ten minutes. Check with
+   `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'inspect.mjs' }` — kill the
+   *parents* (`run.sh`, the loop script) or they respawn.
+2. **The user's own machine.** The user had League of Legends and three other agent sessions open. A run
+   that fails three times and then passes unchanged is contention, not a regression.
+3. **Editing source while a run is in flight.** Vite HMR pushes a shader edit into a live headless page.
+
+**The gate is now splittable, and you should split it.** `tools/scripts/gate-blob.json` (steps 0-56, the 11
+blob bursts) and `tools/scripts/gate-jit.json` (the preamble + the frozen-world jitter probe) are the same
+`tools/gate-steps.json` cut in two, driven by `tools/scripts/gatesplit.sh <q>`. A full gate leg is ~110
+frames and takes 25-40 min on a contended box, and it dies most often in the LAST section — so a single
+crash throws away all 88 blob frames. Split, and each half is independently retryable.
+
+The decisive test is an A/B against unmodified `main`, interleaved, not sequential:
+`git worktree add ../fps4-base main`, junction `node_modules` into it, run a second vite on 5174, then
+`node tools/inspect.mjs --url http://127.0.0.1:5174/ ...`. Branch and main both passed back-to-back once the
+box was quiet, which is what proved the code innocent. **One region per run, three shots, serially** is the
+only shape that finishes here — a 13-leg script never completed once.
 
 ### 4c. The dev server silently serves stale modules
 
@@ -473,19 +583,30 @@ postfx number needs per-PASS brackets inside the composer. Best current estimate
 4. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
 
 **World / content**
-3. Four of nine straight-line pass walks (dragon, lost, void, infernal) stop at the destination region's own
+3. **The floating isles read as brown discs / flying-saucer hats from below** (Celestial and the Void). The
+   tint was raised twice with no visible change, so it is the SHAPE — a flat rock dome plus a hanging keel —
+   and/or `stoneMat`'s sand map, not the vertex colour. They want to be modelled as layered rock with a
+   stepped underside. It is the one thing you always have a view of from the ground in both regions.
+4. Four of nine straight-line pass walks (dragon, lost, void, infernal) stop at the destination region's own
    landform edge. The player is inside the region by then and would walk around, but a route would be better.
-4. The village (Hearthfall) is nine huts and a well: no interiors, no NPCs, no doors.
-5. Level bands are declared but never validated; nothing checks the XP/loot curve reaches 50, and a level-5
+5. The village (Hearthfall) is nine huts and a well: no interiors, no NPCs, no doors.
+6. Level bands are declared but never validated; nothing checks the XP/loot curve reaches 50, and a level-5
    player wandering into the Lost Realm just dies with no signposting.
-6. `wilds` (the belt between region cores) has an ambient bed but no identity of its own.
-7. Serpents read thin from below; their hover band wants tuning against the dive AI.
+7. `wilds` (the belt between region cores) has an ambient bed but no identity of its own.
+8. Serpents read thin from below; their hover band wants tuning against the dive AI.
+9. **Looking south out of the Whisperwood is 4.4-4.9 M tris — over the 4 M budget, and it already was
+   before this pass** (measured at the pre-pass tree density: 4.44 M). The forest tree count was deliberately
+   held at parity while closing the canopy, so this is unchanged, not caused — but it is the one view in the
+   world that breaks the budget and nobody has owned it. Draw calls (250) and frame time are fine.
+10. **Celestial Isles still read flat and empty from the middle.** The marble is right now, but the
+   colonnade kit is scattered thinly instead of clustered into a plaza you walk to, and the region's night
+   look was not re-checked in this pass.
 
 **Tooling / assets**
-8. `tools/blobcheck.py`'s BRIGHT test no longer covers airborne blobs (intended emissives made it unworkable
+9. `tools/blobcheck.py`'s BRIGHT test no longer covers airborne blobs (intended emissives made it unworkable
    there). Coverage for those is the `invariants.mjs` ceilings + the aether cap + `HOT_TINT`. If a glowing
    ball appears off the ground, that is the gap.
-9. `public/assets/` is ~43 MB against a 40 MB target — re-encoding the nine 192 kbps region themes to 128
+10. `public/assets/` is ~43 MB against a 40 MB target — re-encoding the nine 192 kbps region themes to 128
    would recover ~4 MB, but there is no mp3 encoder on this machine (no ffmpeg; Pillow is images only).
 
 **Not started** — RPG stats/loot/inventory depth, quests + voiced NPCs (`audio_tts` can voice them), world

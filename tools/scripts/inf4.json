@@ -1,0 +1,11 @@
+[
+ {"wait":24},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":13},{"wait":1},
+ {"tp":[321,null,689]},{"wait":3},
+ {"look":[0,0]},{"shot":"heart-n"},
+ {"look":[4.7124,0]},{"shot":"heart-w"},
+ {"look":[0.7,-0.55]},{"shot":"heart-ground"},
+ {"tp":[321,null,489]},{"wait":2},{"look":[3.1416,0.02]},{"shot":"n200-in"},
+ {"tp":[240,null,600]},{"wait":2},{"look":[1.0,0.0]},{"shot":"nw-in"}
+]

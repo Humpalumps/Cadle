@@ -1,0 +1,12 @@
+[
+ {"wait":26},{"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},{"hour":13},{"wait":1},
+ {"perfWindow":{"secs":4,"label":"meadow"}},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(-140,t.heightAt(-140,-700)+2,-700);return 'ok';})()"},{"wait":4},
+ {"perfWindow":{"secs":4,"label":"whisperwood"}},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(470,t.heightAt(470,-560)+2,-560);return 'ok';})()"},{"wait":4},
+ {"perfWindow":{"secs":4,"label":"frostveil"}},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(321,t.heightAt(321,689)+2,689);return 'ok';})()"},{"wait":4},
+ {"perfWindow":{"secs":4,"label":"infernal"}},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(-560,t.heightAt(-560,400)+2,400);return 'ok';})()"},{"wait":4},
+ {"perfWindow":{"secs":4,"label":"shadowfen"}}
+]

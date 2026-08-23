@@ -461,7 +461,7 @@ void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix)
 const DOME_FRAG = /* glsl */`
 uniform sampler2D uLut, uNoise, uClouds;
 uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow;
-uniform float uTime, uHaze, uAurora, uStarVis, uPixAng;
+uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil;
 uniform vec2 uTan, uCloudTexel;
 uniform mat3 uStarMat, uCamRot;
 varying vec3 vDir;
@@ -585,6 +585,10 @@ void main() {
   vec3 hcol = mix(fogCol, lutSky(normalize(vec3(d.x, abs(d.y) + 0.05, d.z))), 0.60) * 0.94;
   col = mix(col, hcol, hz * smoothstep(-0.1, 0.02, d.y));
   col = mix(col, fogCol * (1.0 - 0.28 * smoothstep(0.0, -0.32, d.y)), smoothstep(0.012, -0.03, d.y));
+  // Region veil (Biomes.skyVeil): smoke / peat reek / void murk that reaches the SKY, not just the aerial
+  // perspective. Without it the Wastes and the fen sit under a clean blue noon dome, which is the single
+  // loudest "this is a tinted meadow" cue left in those regions. Thickest at the horizon, thinner overhead.
+  col = mix(col, fogCol, uVeil * mix(1.0, 0.78, smoothstep(0.0, 0.80, d.y)));
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
   if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
@@ -688,7 +692,7 @@ export class Sky {
       uLut: { value: this.lutRT.texture }, uNoise: { value: this.noiseRT.texture }, uClouds: { value: this.cloudRT.texture },
       uShape: { value: this.shapeRT.texture }, uDetail: { value: this.detailRT.texture },
       uSunDir: { value: this.sunDir }, uMoonDir: { value: this.moonDir }, uSunDisc: { value: this.sunDiscColor }, uMoonCol: { value: new THREE.Color() }, uMoonGlow: { value: new THREE.Color() },
-      uFogColor: { value: this.fogColor }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
+      uFogColor: { value: new THREE.Color().copy(this.fogColor) }, uVeil: { value: 0 }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
       uCloudAmbTop: { value: new THREE.Color() }, uCloudAmbBot: { value: new THREE.Color() }, uBeltCol: { value: new THREE.Color() },
       uTime: { value: 0 }, uWindT: { value: 0 }, uCamY: { value: 0 }, uCamPos: { value: new THREE.Vector3() },
       uCloudCover: { value: 0.5 }, uCirrusCover: { value: 0.5 }, uHaze: { value: 0.3 }, uAurora: { value: 0 },
@@ -856,6 +860,10 @@ export class Sky {
     this.sunMesh.visible = this.sunDir.y > -0.08;
     this._gradeFog(camera);
     scene.fog.color.copy(this._fogC); scene.fog.density = this._fogD;
+    // the dome's horizon haze and the region veil read the GRADED fog, so the sky over a region is made of
+    // the same air the distance is (in the Vale _fogC === fogColor, so nothing changes there)
+    u.uFogColor.value.copy(this._fogC);
+    u.uVeil.value = this._veilE ?? 0;
   }
 
   /**
@@ -875,6 +883,10 @@ export class Sky {
     }
     const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._bb ??= {});
     const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
+    // the veil eases BOTH ways, including on this early-out — otherwise walking out of the Wastes leaves
+    // its smoke ceiling stuck over the Vale for the rest of the session
+    const veilT = B ? (B.skyVeil ?? 0) * b.w : 0;
+    this._veilE = (this._veilE ?? 0) + (veilT - (this._veilE ?? 0)) * 0.03;
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
     let t = cache.get(b.id);
@@ -884,8 +896,12 @@ export class Sky {
     const c = this._fogBiome ??= t.clone();
     c.lerp(t, 0.03);
     this._fogMulE = this._fogMulE == null ? (B.fogMul ?? 1) : this._fogMulE + ((B.fogMul ?? 1) - this._fogMulE) * 0.03;
+    // fogLum: the ONE place a region is allowed to move the haze's brightness. Hue-only grading keeps the
+    // sky's luminance, which is right for clear air — but smoke, peat reek and void murk are DARKER than
+    // the sky they hang under, and at midday a hue-only Wastes reads as a bright cream-orange desert.
+    this._fogLumE = this._fogLumE == null ? (B.fogLum ?? 1) : this._fogLumE + ((B.fogLum ?? 1) - this._fogLumE) * 0.03;
     const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
-    const k = L(out) / Math.max(1e-4, L(c)), w = b.w * 0.85;
+    const k = L(out) * (1 + (this._fogLumE - 1) * b.w) / Math.max(1e-4, L(c)), w = b.w * 0.85;
     out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
     this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
   }

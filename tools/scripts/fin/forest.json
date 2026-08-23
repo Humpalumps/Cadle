@@ -1,0 +1,1 @@
+[{"wait": 31}, {"eval": "window.__game.god(true);window.__game.passive(true);'ok'"}, {"hour": 13}, {"eval": "(()=>{const t=window.__game.game.terrain;window.__game.teleport(63.5,t.heightAt(63.5,-768.3)+2.2,-768.3);return 'ok';})()"}, {"wait": 5.0}, {"look": [1.6578, 0.03]}, {"shot": "in"}, {"look": [3.8578, 0.03]}, {"shot": "side"}, {"look": [1.6578, -0.55]}, {"shot": "ground"}]
