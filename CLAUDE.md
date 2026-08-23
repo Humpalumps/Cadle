@@ -30,6 +30,12 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 - Dev server: **always already running at `http://127.0.0.1:5173/`** (started by the orchestrator: `npm run dev`). Do NOT start another one. If it's down (curl fails), start it: `npx vite --port 5173 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &` then wait 5s.
 - Vite hot-reloads; the harness always loads a fresh page anyway.
 - Inspect the running game: `node tools/inspect.mjs --name <label> [--steps '<json>' | --script file.json] [--w 1920 --h 1080] [--q high]` → `tools/out/<label>/{shot-*.png, report.json, console.log}`. See the header of `tools/inspect.mjs` for step types. Runs headless Chromium WITH the real GPU (RTX 3060). fps is **uncapped** (no vsync) so frame ms = real cost.
+- **Hunt hitches: `node tools/hitchhunt.mjs --name <label> [--route tp|combat] [--url ...] [--params ...]`** →
+  `tools/out/<label>/{frames.json, summary.json}`. Records EVERY frame (wall dt, cpu, GPU, program count,
+  draw calls) and blames each spike on the system that was slow on that frame. Use it instead of
+  `stats()` for anything spike-shaped: `stats()` is percentiles over 600 frames and `perf.systems` is an
+  EMA, so both are blind to a single 1 s frame. Runs vsync ON by default (what a player feels);
+  `--uncapped` for the old stress behaviour. See HANDOVER 4j.
 - Game URL params: `?auto=1` (automation: no click-to-start, synthetic input), `&q=low|medium|high|ultra`, `&seed=N`, `&debug=1`,
   `&at=<biome id>` (spawn in that region instead of the Vale, facing its heart, music/bed already correct), `&back=N`
   (metres short of that region's landmark, default 150), `&hour=H` (set + freeze the clock).

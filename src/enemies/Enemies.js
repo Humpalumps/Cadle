@@ -23,7 +23,7 @@ import { OUTER } from '../world/Biomes.js';
  * Spawning: spawn(type, pos, { level, yaw }) -> enemy (cap 40: if full, the farthest camp enemy is recycled); populate() places camps per the
  *   CLAUDE.md layout (meadow wisps, Sundered Spire ruins + Warden, Whisperwood edge, crystal fields); slots respawn 45 s (boss 180 s) after death
  *   when the player is > 50 m away. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond; shadows < 45 m).
- * API: spawn(type, pos, opts), list (alive), all (alive + dying), clear(), populate(), types (defs), killAll(), lineup(pos?) (one of each type in a
+ * API: spawn(type, pos, opts), list (alive), all (alive + dying), clear(), populate(), warm() (one sleeping instance of every type in the pools, so boot compiles their shaders), types (defs), killAll(), lineup(pos?) (one of each type in a
  *   row facing the player, passive), passive (bool: nobody aggroes), nearest(pos, r), count(type?), stats()
  * Events: 'enemy:spawn' {enemy}, 'enemy:death' {enemy, killer}, 'enemy:attack' {enemy, kind}, 'enemy:stagger' {enemy}, 'enemy:shieldbreak' {enemy},
  *   'enemy:phase' {enemy, phase}
@@ -49,10 +49,39 @@ export class Enemies {
     const built = {};   // types that share a body share its geometry (23 types, 9 rigs)
     for (const type of Object.keys(DEFS)) { const bn = DEFS[type].body ?? type; this.assets[type] = built[bn] ??= BODIES[bn].build(); this.pools[type] = []; }
     this.populate();
+    this.warm();   // AFTER populate: the home camps consume from the pools, so warming first left the six home types with no spare
     this.game.events.on('weapon:fire', () => this._noise(this.game.player.position, 22));
     this.game.events.on('combat:explosion', (e) => { if (e?.owner === this.game.player || e?.owner?.kind === 'player') this._noise(e.point, 30); });
     this.game.events.on('player:respawn', () => { for (const e of this.list) { e.alert = false; } });
     if (this.game.debug) console.log(`[enemies] assets built in ${(performance.now() - t0).toFixed(0)} ms`);
+  }
+
+  /**
+   * Boot prewarm: one sleeping instance of EVERY type, parked in its pool, so that at boot the scene
+   * holds a mesh + material (+ shield bubble) for all 23 — nothing a shader-warming pass can miss and
+   * nothing left to construct mid-play. Called AFTER populate(), which pops the home types.
+   * Nothing is wasted: pooled enemies are already left in the scene (sleep() only hides the root, and
+   * an invisible object is still walked by renderer.compile(), which traverses rather than culls), and
+   * the first real spawn of a type just pops this one off the pool.
+   * Inert by construction: the Enemy constructor leaves root.visible = false, alive = false, no combat
+   * target registered, and it is in neither `list` nor `all`, so nothing sees it (AI, maxAlive, state()).
+   * ~1 ms for all 23 (bodies share geometry, so this is a bone clone + a material each) and it consumes
+   * no rnd() draws, so camp placement stays deterministic.
+   * NOTE (2026-08-23, measured): existing in the scene is necessary but NOT sufficient. The game draws
+   * through the postfx composer, i.e. into a render target, so every program it uses is keyed
+   * outputColorSpace = 'srgb-linear' (WebGLPrograms.getParameters), while a renderer.compile() with no
+   * render target bound builds the 'srgb' variant of the same shader. Warming therefore only pays off
+   * if the warm pass has a render target bound — see the report / main.js warmScene.
+   */
+  warm() {
+    const y = this.heightAt(0, 0) + 1;   // parked ON the spawn point: a one-frame warm render at boot (main.js) then
+    for (const type of Object.keys(DEFS)) {   // has them in frame AND in shadow cascade 0 — mesh.castShadow is already true from the ctor
+      if (this.pools[type].length) continue;
+      const e = new Enemy(this, type, this.assets[type]);
+      e.root.position.set(0, y, 0);
+      this.game.scene.add(e.root);
+      this.pools[type].push(e);
+    }
   }
 
   // ------------------------------------------------------------------ spawning

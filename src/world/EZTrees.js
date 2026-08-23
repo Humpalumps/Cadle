@@ -233,6 +233,7 @@ export function buildEZTrees(game, trees, vegetation) {
     }
 
     // rebucket near/far on movement; hooked into the render loop via one probe object
+    const up = (a, len) => { a.needsUpdate = true; if (len > 0 && a.clearUpdateRanges) { a.clearUpdateRanges(); a.addUpdateRange(0, len); } };
     const last = new THREE.Vector3(1e9, 0, 0);
     // must be a RENDERABLE object: onBeforeRender never fires for a bare Object3D
     const probe = new THREE.Mesh(new THREE.PlaneGeometry(0.001, 0.001),
@@ -280,10 +281,13 @@ export function buildEZTrees(game, trees, vegetation) {
         const nn = nS + nNS;
         s.leaves.instanceMatrix.array.set(tm.subarray(0, nn * 16));
         s.trunk.count = nS; s.trunkNS.count = nNS; s.leaves.count = nn; s.imp.count = nf;
-        s.trunk.instanceMatrix.needsUpdate = s.trunkNS.instanceMatrix.needsUpdate = true;
-        s.leaves.instanceMatrix.needsUpdate = s.imp.instanceMatrix.needsUpdate = true;
-        s.leaves.instanceColor.needsUpdate = true;
-        s.nearFade.needsUpdate = s.farFade.needsUpdate = s.nsFade.needsUpdate = true;
+        // Upload only the LIVE range. needsUpdate on its own re-uploads the whole attribute, which is sized
+        // to the variant's total tree count, not to .count -- a rebucket was pushing every tree's matrix
+        // over the bus every REBUCKET metres. Same idiom as Vegetation.InstLOD.refresh().
+        up(s.trunk.instanceMatrix, nS * 16); up(s.trunkNS.instanceMatrix, nNS * 16);
+        up(s.leaves.instanceMatrix, nn * 16); up(s.imp.instanceMatrix, nf * 16);
+        up(s.leaves.instanceColor, nn * 3);
+        up(s.nearFade, nn); up(s.farFade, nf); up(s.nsFade, nNS);   // nearFade is shared by trunk (nS) and leaves (nn); nn covers both
       }
     };
     // compile every new tree/impostor program NOW, while the boot splash still covers the screen —

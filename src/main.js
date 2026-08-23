@@ -50,6 +50,15 @@ async function warmScene(renderer, scene, camera, perChunk = 6) {
   if (!objs.length) return 0;
   const was = objs.map((o) => o.visible);
   try {
+    // DO NOT "fix" this by forcing the slice visible. It looks like compile() skips hidden meshes and that
+    // therefore every pooled/invisible VFX mesh is missed -- it was tried on 2026-08-23 and it is WRONG.
+    // three r185's compile() gathers LIGHTS with traverseVisible but prepares MATERIALS with a plain
+    // scene.traverse (three.module.js ~17403 vs ~17427), so visibility does not gate material compilation
+    // at all. Measured in the live game: a hidden mesh carrying a novel customProgramCacheKey took the
+    // program count 171 -> 172 while still `visible = false`.
+    // What DOES get missed is anything not in the scene YET at this point -- enemy types whose pool is
+    // empty, weapon archetypes never given, anything a floating dynamic import adds later. Those are
+    // prewarmed at their own systems' init instead (Enemies.warm, Weapons.init, Abilities.init).
     for (let i = 0; i < objs.length; i += perChunk) {
       for (let k = 0; k < objs.length; k++) objs[k].visible = was[k] && k >= i && k < i + perChunk;
       renderer.compile(scene, camera);

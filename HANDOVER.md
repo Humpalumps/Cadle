@@ -421,7 +421,11 @@ reintroduces the string form, drops the module-worker call, imports three into t
 `heightAt` wiring.
 
 `terrain.heightAt` is ground truth for the entire game. Snapshot it before touching the kernel — seed 1337
-must give `{"n":2695,"sum":164490.108949}`:
+must give `{"n":2695,"sum":162867.162973}`
+(**re-baselined 2026-08-23.** The old figure here, 164490.108949, was stale: the ten-biome pass moved the
+height kernels — `bhTundra`'s basin alone went 5.2 -> 3.35 — so this check had been FAILING on unmodified
+`main`. Verified identical on `main` @ 5e52a14 and on the hitch-wave branch. Re-baseline it deliberately
+whenever a kernel changes, and say so here; a snapshot that cries wolf is one nobody reads.):
 ```bash
 node tools/inspect.mjs --nolock --name heightcheck --steps '[{"wait":20},{"eval":"(()=>{const t=window.__game.game.terrain;let s=0,n=0;for(let i=-1000;i<=1000;i+=37)for(let j=-1000;j<=1000;j+=41){s+=t.heightAt(i,j);n++;}return JSON.stringify({n,sum:+s.toFixed(6)});})()"}]'
 ```
@@ -551,6 +555,133 @@ postfx number needs per-PASS brackets inside the composer. Best current estimate
 - **`Grass.update` rewrites `mesh.visible` every frame**, so `visible = false` silently does nothing and grass
   measures as free. Toggle with `layers.set(9)`. Anything that recomputes visibility per frame has this bug.
 
+
+## 4j. The hitch wave, 2026-08-23 — the per-frame trace, and what it found
+
+**The project had never recorded a per-frame trace, which is why these sat in plain sight for months.**
+`stats()` returns percentiles over a 600-frame ring and `perf.systems` is an EMA with alpha 0.05 — a single
+1.2 s frame moves the mean by 2 ms and the EMA by 5% of one sample. Both instruments are blind to exactly
+the thing "hitches" means. `tools/hitchprobe.mjs` reports the same aggregates and is blind the same way.
+
+`tools/hitchhunt.mjs` is the missing instrument. It wraps every system's `update()`, World's five sub-parts
+and `postfx.render()` **in-page** (no game source touched), hooks `perf.end` so the sample lands at the true
+end of frame, and records EVERY frame: wall dt, CPU, GPU, program count, draw calls, tris, position. Then it
+attributes each spike to whatever was slow ON THAT FRAME.
+
+    node tools/hitchhunt.mjs --name base                     # full route: 10 biomes, combat, border walk, soak
+    node tools/hitchhunt.mjs --name x --route tp             # teleports only (~90 s), for iterating
+    node tools/hitchhunt.mjs --name x --route combat         # each first-use event on its own mark
+    node tools/hitchhunt.mjs --name x --url http://127.0.0.1:5198/ --params nowarm=1    # A/B another build
+
+**Use it before believing any hitch claim, including the ones in this file.**
+
+### Steady state was never the problem
+
+p50 is **16.7 ms in every phase, in all ten biomes** — a vsync-locked 60 Hz. `walk-*` maxima were 20-21 ms
+BEFORE any fix. There is no steady-state deficit to chase; every complaint was a discrete event.
+
+### Cause 1 — the grass cache rebuild: 0.82-1.25 s frozen on EVERY fast travel (FIXED)
+
+`Grass._shiftTo` refills a column/row per frame, but a jump over 12 texels (= **6 m**, step is 0.5) falls
+through to `_rebuild`, which is `N*N = 262,144` `_texel()` calls with no budget. Measured on all nine
+regions: forest 977, tundra 958, celestial 957, dragon 995, infernal 1249, lost 855, shadowfen 886, sunken
+895, void 877 ms. Also fires on `respawn()`, on `?at=<biome>`, and once at boot.
+
+**The dominant term was not grass.** Microbenchmark in situ, q=high:
+
+| call | ns |
+|---|---|
+| `terrain.colorAt` | **1765** |
+| `terrain.heightAt` | 405 |
+| `_biomeMask` (already block-cached) | 20 |
+| whole `_texel` | 1895 |
+
+`colorAt` is 93% of a texel: 3 `heightAt` plus 2 fBm macro noises. Its own comment says "safe for Grass's
+100k init samples" — true when it was only an init cost. Its finest input is a slope term off a 1.2 m finite
+difference; everything that actually moves the colour is at 61 m and 143 m, so per-0.5 m sampling bought
+nothing.
+
+Fix, both inside `Grass.js`: (1) cache the packed albedo per 4x4-texel (2 m) block on the SAME key
+`_biomeMask` already used — the idiom was already in the file; (2) `_rebuild` now only ARMS a job and
+`update()` drains it under a 6 ms budget, hiding the rings until it lands. **Boot's fill still runs to
+completion synchronously** (`_drainRebuild(Infinity)` in `init`): it is behind the loading screen where a
+block is free, and slicing it let the splash lift (it waits only for five sub-25 ms frames) over a meadow
+with no grass in it. Every `goto-*` is now <= 25 ms.
+
+Do not "simplify" the hide-while-rebuilding branch — a half-written toroidal cache is blades at the OLD
+location's heights, i.e. floating and buried grass.
+
+### Cause 2 — shader programs linking during play (PARTLY FIXED — see 5.11)
+
+**A link blocks inside the ANGLE/D3D11 GPU PROCESS, so it is invisible to both `cpuMs` and `gpuMs`** — a
+`TIME_ELAPSED` query measures GPU *execution*, not driver-side HLSL compilation. The worst frame read:
+
+    dt = 6502.8 ms | page cpu = 35.4 ms | GPU exec = 5.93 ms | programs 177 -> 178 | vsync ON | quiet box
+
+**This is NOT the 5.1 harness artifact, and 5.1's own reopen condition is how you tell.** That artifact
+needs the GPU at ~100% occupancy (`gpuMs` ~= `frameMs`); here GPU exec is 5.93 ms against a 6.5 SECOND
+frame. `hitchhunt.mjs` records `gpu` on every spike frame precisely so this stays checkable.
+
+Fixed so far: `Enemies.warm()` builds one sleeping instance of all 23 types at boot (pooled enemies are
+already left in the scene, so the boot compile reaches them); `Weapons.init` builds all 8 archetypes instead
+of 2; `Abilities.init` now `initTexture`s its glyph/glow/vignette.
+
+### THE TRAP: warmScene's visibility slicing does NOT slice material compilation
+
+It looks like `renderer.compile()` skips hidden meshes, so every pooled/invisible VFX mesh is missed. **That
+was tried on 2026-08-23 and it is WRONG.** three r185 gathers LIGHTS with `traverseVisible` but prepares
+MATERIALS with a plain `scene.traverse` (`three.module.js` ~17403 vs ~17427). Measured in the live game: a
+hidden mesh carrying a novel `customProgramCacheKey` took the count 171 -> 172 while still `visible = false`.
+What actually gets missed is anything **not in the scene yet** — an empty enemy pool, an ungiven weapon,
+whatever a floating dynamic import adds later.
+
+Second thing to know: **`game.start()` is chained on `game.ready` SEPARATELY from `warmScene`**
+(`main.js:225` vs the warm block above it), and `warmScene` is `async`, so it yields at its first `await`
+and the game loop starts while it is still compiling. Its slices therefore interleave with live gameplay
+frames. That is why programs link "in play" at all.
+
+**An open decision, measured, not taken.** Collapsing `warmScene` to a single blocking `compile()` moves all
+of it in front of the first frame. Production builds, `--route tp`, same box, stalls counted only AFTER the
+game is playable (five consecutive sub-25 ms frames):
+
+| warmScene form | playable at | spikes | stall sum | worst frame |
+|---|---|---|---|---|
+| sliced (current) | 16.7 s | 5 | 1825 ms | 562 ms |
+| sliced + a final full compile | 16.9 s | 7 | 2093 ms | 580 ms |
+| ONE blocking compile | 17.9 s | 4 | **918 ms** | **324 ms** |
+
+So: ~1.2 s more loading screen buys roughly half the remaining in-play stall. It was NOT taken, because the
+comment above `warmScene` records that this exact shape was measured on cadle.gg at "16.0 s of frozen page"
+and deliberately rejected, and a fast local box cannot reproduce a weak client. Note the intro now runs
+off-thread (`IntroHost`/`introWorker`), which may be why that no longer applies — worth a real decision.
+
+### Cause 3 — boot: 13 MB of music for regions you cannot reach (FIXED)
+
+`Assets.init` awaited the whole 44 MB payload before system 1 of 13 began; 19 MB of it was music, nine
+region themes at 1.44 MB each for places minutes of walking away. They now start only AFTER the critical set
+resolves (firing them on the same tick still left them competing for the same six connections) and are never
+awaited; `Audio._decodeAssets` chains each decode onto its arrival. Safe by construction — `music.js
+_themeKey()` already played the Vale theme whenever a region buffer was absent.
+
+### Retired guesses — do not re-propose
+
+- **Enemy construction is not a cost.** `lineup()` builds 37 enemies in **1.4 ms**. The stall is entirely the
+  first DRAW of a type whose programs were never linked.
+- **`renderer.compile()` right after a spawn does nothing** (0 programs, 3 ms) — the fresh enemies are still
+  `visible = false` on that tick. But see the trap above: visibility is not why.
+- **The grass CPU cost was never the blades.** It was `terrain.colorAt`.
+
+### Result
+
+Player-visible stall (counted after the game is playable), `--route tp`, production builds, same box:
+
+| build | playable | spikes | stall sum | worst frame |
+|---|---|---|---|---|
+| `main` (control, 2 reps) | 16.8-17.0 s | 10, 11 | 6812, 6851 ms | 1212 ms |
+| this wave | 16.7 s | 5 | 1825 ms | 562 ms |
+
+Gate passed at q=high and q=low (blobs clean, jitter clean, pointer lock engage + re-acquire).
+
 ## 5. Everything else open
 
 **Performance**
@@ -584,12 +715,34 @@ postfx number needs per-PASS brackets inside the composer. Best current estimate
    number in this file comes from the uncapped harness and is therefore a *stress* figure, not an experience
    figure — the project had never recorded the second kind. Re-measure with `node tools/hitchprobe.mjs --vsync`
    after anything that moves the frame, and keep this line honest: it is the only number here a person feels.
-3. **Boot to `_running` is ~30 s headless against a stated < 4 s budget** (terrain full bake 9.2 s, impostor
+3. **Boot is ~13 s to `_running` and ~16.7 s to playable on a PRODUCTION build** (2026-08-23, local
+   preview, q=high; the old ~30 s figure was the dev server). Still far over the stated < 4 s budget.
+   Original attribution below, kept because the shape still holds:
+   ~~Boot to `_running` is ~30 s headless against a stated < 4 s budget~~ (terrain full bake 9.2 s, impostor
    bakes 5.1 s, vegetation 1.5 s; chunking has since taken the worst mid-load stall to ~1.2 s). The harness
    boot wait was raised 60 s -> 150 s to stop runs dying with TIMEOUT, which also removed the last thing that
    was passively noticing this — hence the number is written here instead. A two-minute wait is not normal and
    should not become the next agent's baseline assumption.
 4. Impostor tier swap is still a hard pop at the boundary — a dither crossfade over ~15 m is the fix.
+5. **A REAL program-link stall class exists and 5.1's reopen condition is met — see 4j.** Worst measured
+   frame 6502.8 ms with page cpu 35.4 ms and GPU exec 5.93 ms, vsync on, quiet box. `Enemies.warm()`,
+   `Weapons.init` and `Abilities.init` now prewarm most of it; what still links late identifies itself by
+   `customProgramCacheKey`: `aether-shield` (x2), `aether-creature`, and an enemy depth material
+   (`onBeforeCompile(){}`). Depth/shadow programs are NOT built by `renderer.compile()` at all — they link
+   on the first shadow render that includes the object, which is a main.js-side fix if it is wanted.
+6. **`warmScene`: an open, measured decision — 4j has the table.** One blocking compile costs ~1.2 s more
+   loading screen and halves the remaining in-play stall (worst frame 562 -> 324 ms). Not taken unilaterally
+   because the same shape was previously measured on cadle.gg at 16 s of frozen page; the intro now runs
+   off-thread, which may have changed that.
+7. **~65-194 ms stalls while traversing, roughly once every 18 s, AFTER the program count has frozen**
+   (page cpu 4-10 ms, GPU exec ~5 ms, no new programs). Something stalls the driver without linking.
+   Unattributed — the next thing to point `hitchhunt.mjs` at.
+8. **`EZTrees-*.js` is a 4.0 MB chunk that gzips to 2.99 MB** — it barely compresses, so it is data, not
+   code, and it sits on the dynamic-import path.
+9. **Hostinger serves the build with brotli** (verified: `content-encoding: br`, `cache-control: public,
+   max-age=31536000, immutable`), so the earlier "no compression" worry is closed. `public/assets/` is NOT
+   content-hashed, so a regenerated asset needs a manual filename bump or that immutable year-long cache
+   will serve the old one.
 
 **World / content**
 3. **The floating isles read as brown discs / flying-saucer hats from below** (Celestial and the Void). The

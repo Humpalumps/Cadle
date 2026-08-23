@@ -93,14 +93,23 @@ export class Audio {
   async _decodeAssets() {
     const A = this.game.assets; if (!A?.audioBuffer) return;
     const dctx = this.ctx ?? new OfflineAudioContext(1, 1, 48000);
-    const names = ['field-theme', 'night-theme', 'wood-theme', 'frost-theme', 'choir-theme', 'drums-theme', 'forge-theme', 'convergence-theme', 'fen-theme', 'deep-theme', 'void-theme'];   // every region theme is decoded up front: a first-play decode of a 60 s mp3 hitches exactly when you cross a border
+    const names = ['field-theme', 'night-theme'];   // themes are decoded up front, never on first play: a first-play decode of a 60 s mp3 hitches exactly when you cross a border
     for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) names.push(`shot-${a}-${i}`);
     for (let i = 1; i <= 4; i++) names.push(`explosion-${i}`);
-    await Promise.all(names.map(async (n) => {
+    const one = async (n) => {
       const b = await A.audioBuffer(dctx, n); if (!b) return;
       if (n.startsWith('shot-') || n.startsWith('explosion-')) b._onset = this._onset(b, n.startsWith('shot-fusion') ? 0.5 : 0.18);
       this.buffers[n] = b;
-    }));
+    };
+    // The nine REGION themes are the same "decode before you need it" deal, just not on this promise:
+    // Assets no longer awaits their 13 MB during boot, so each one decodes the moment ITS bytes land and
+    // fills this.buffers[n] then. Still hitch-free — the decode is off the frame path either way, and
+    // music.js _themeKey()/setRegion() play the Vale theme for a region whose buffer isn't there yet.
+    for (const n of ['wood-theme', 'frost-theme', 'choir-theme', 'drums-theme', 'forge-theme', 'convergence-theme', 'fen-theme', 'deep-theme', 'void-theme'])
+      (A.deferred?.[n] ?? Promise.resolve()).then(() => one(n)).then(() => {
+        if (this.buffers[n] && `${this.musicRegion}-theme` === n) this.musicSys?.setRegion?.(this.musicRegion);   // arrived while you're standing in it: drop the fallback's rate/tilt colouring and cross-fade to the real piece
+      });
+    await Promise.all(names.map(one));
   }
   _onset(buf, frac) {
     const d = buf.getChannelData(0); let peak = 0;

@@ -42,7 +42,11 @@ export const STEP = 40 * Math.PI / 180;      // 9 biomes x 40 deg = 360
 /** k -> biome id. Terrain.js's BH[] height kernels use the same order. */
 export const ORDER = ['forest', 'tundra', 'celestial', 'dragon', 'infernal', 'lost', 'shadowfen', 'sunken', 'void'];
 
-export const centerOf = (k) => { const a = THETA0 + k * STEP; return { x: Math.cos(a) * RB, z: Math.sin(a) * RB, a }; };
+// Precomputed once, frozen, and handed out shared: weightAt() sits under terrain.biomeAt/grassAt/dryAt/
+// gravityAt and boot alone calls it ~400k times (Water._bakeHeight + Vegetation._place), which used to be
+// 400k throwaway objects. Same flat-table spirit as terrainKernel.js's BC. Every call site only READS it.
+const CENTERS = Array.from({ length: 9 }, (_, k) => { const a = THETA0 + k * STEP; return Object.freeze({ x: Math.cos(a) * RB, z: Math.sin(a) * RB, a }); });
+export const centerOf = (k) => CENTERS[k];
 
 /** Nearest outer-biome index for a point (always returns one; check `weightAt` for whether we're inside it). */
 export function wedgeAt(x, z) {

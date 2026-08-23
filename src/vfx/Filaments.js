@@ -120,6 +120,8 @@ export class Filaments {
     const ia = (arr, n) => { const a = new THREE.InstancedBufferAttribute(arr, n); a.setUsage(THREE.DynamicDrawUsage); return a; };
     g.setAttribute('aA', ia(this.aA, 3)); g.setAttribute('aB', ia(this.aB, 3));
     g.setAttribute('aCol', ia(this.aCol, 3)); g.setAttribute('aP', ia(this.aP, 4));
+    // held directly so update() doesn't build a name array + iterator + four getAttribute lookups every live frame
+    this._atA = g.getAttribute('aA'); this._atB = g.getAttribute('aB'); this._atC = g.getAttribute('aCol'); this._atP = g.getAttribute('aP');
     g.instanceCount = 0;
     // built in world space in the vertex shader, so its own bounds are meaningless
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
@@ -210,7 +212,7 @@ export class Filaments {
     this.halo.visible = this.core.visible = on;
     this.geo.instanceCount = inst;
     if (on) {
-      for (const k of ['aA', 'aB', 'aCol', 'aP']) this.geo.getAttribute(k).needsUpdate = true;
+      this._atA.needsUpdate = this._atB.needsUpdate = this._atC.needsUpdate = this._atP.needsUpdate = true;
       this.halo.material.uniforms.uTime.value = time;
       this.core.material.uniforms.uTime.value = time;
     }

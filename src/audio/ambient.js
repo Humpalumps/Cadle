@@ -66,23 +66,27 @@ export class Ambient {
     set(L.wind.g.gain, P.wind); set(L.wind.f.frequency, P.windF); if (L.wind.f2) set(L.wind.f2.frequency, P.windF);
     set(L.rustle.g.gain, P.rustle); set(L.lap.g.gain, P.lap); set(L.whistle.g.gain, P.whistle); set(L.humLevel.gain, P.hum);
   }
+  /** One creature one-shot at a random bearing/distance around the listener. A method, not a closure inside
+   *  update(): update() runs every frame whether or not anything spawns, and the closure was an allocation
+   *  on every one of those frames. */
+  _spawn(name, at, x, y, z, minD, maxD, hMin, hMax, vol) {
+    const A = this.audio, a = rnd(Math.PI * 2), d = rnd(minD, maxD), p = A._tmpPos;
+    p.set(x + Math.sin(a) * d, y + rnd(hMin, hMax), z + Math.cos(a) * d);
+    A.play(name, { pos: p, vol, at, bus: 'ambient', pitch: 0.92 + rnd(0.16) });
+  }
   /** Book creature one-shots up to `ahead` seconds into the future. now = ctx.currentTime, listener pos (x,y,z), hour 0..24. */
   update(now, x, y, z, hour, ahead = 0.5) {
     if (!this.running) return;
     const P = ZONES[this.zone], day = smooth(5, 6.5, hour) * (1 - smooth(18.5, 20, hour)), night = 1 - day;
     const dawn = 1 + 1.2 * (smooth(4.8, 5.6, hour) * (1 - smooth(7.5, 9, hour)));                         // dawn chorus
     const N = this.next, A = this.audio;
-    const spawn = (name, at, minD, maxD, hMin, hMax, vol) => {
-      const a = rnd(Math.PI * 2), d = rnd(minD, maxD), p = A._tmpPos; p.set(x + Math.sin(a) * d, y + rnd(hMin, hMax), z + Math.cos(a) * d);
-      A.play(name, { pos: p, vol, at, bus: 'ambient', pitch: 0.92 + rnd(0.16) });
-    };
     const birdRate = P.birds * day * dawn;
-    if (now + ahead > N.bird) { if (birdRate > 0.03) spawn('bird', N.bird, 12, 45, 3, 12, 0.9); N.bird = Math.max(N.bird, now) + (birdRate > 0.03 ? (1.2 + rnd(4)) / birdRate : 3); }
+    if (now + ahead > N.bird) { if (birdRate > 0.03) this._spawn('bird', N.bird, x, y, z, 12, 45, 3, 12, 0.9); N.bird = Math.max(N.bird, now) + (birdRate > 0.03 ? (1.2 + rnd(4)) / birdRate : 3); }
     const insRate = P.insects * day * smooth(9, 11, hour) * (1 - smooth(16, 18, hour));
-    if (now + ahead > N.insect) { if (insRate > 0.03) spawn('insect', N.insect, 6, 25, 0, 2, 0.8); N.insect = Math.max(N.insect, now) + (insRate > 0.03 ? (6 + rnd(12)) / insRate : 4); }
-    if (now + ahead > N.owl) { if (night > 0.5 && P.birds > 0.15) spawn('owl', N.owl, 30, 90, 4, 15, 0.8); N.owl = Math.max(N.owl, now) + 14 + rnd(26); }
+    if (now + ahead > N.insect) { if (insRate > 0.03) this._spawn('insect', N.insect, x, y, z, 6, 25, 0, 2, 0.8); N.insect = Math.max(N.insect, now) + (insRate > 0.03 ? (6 + rnd(12)) / insRate : 4); }
+    if (now + ahead > N.owl) { if (night > 0.5 && P.birds > 0.15) this._spawn('owl', N.owl, x, y, z, 30, 90, 4, 15, 0.8); N.owl = Math.max(N.owl, now) + 14 + rnd(26); }
     const wispRate = P.wisps * (0.5 + night);
-    if (now + ahead > N.wisp) { if (wispRate > 0.1) spawn('wisp', N.wisp, 5, 30, 1, 6, 0.7); N.wisp = Math.max(N.wisp, now) + (wispRate > 0.1 ? (5 + rnd(10)) / wispRate : 4); }
+    if (now + ahead > N.wisp) { if (wispRate > 0.1) this._spawn('wisp', N.wisp, x, y, z, 5, 30, 1, 6, 0.7); N.wisp = Math.max(N.wisp, now) + (wispRate > 0.1 ? (5 + rnd(10)) / wispRate : 4); }
     if (night > 0.05 && P.insects > 0) for (const c of this.crickets) {                                       // crickets: fixed spots, rerolled now and then
       if (now > c.reroll) { const a = rnd(Math.PI * 2), d = rnd(6, 20); c.x = x + Math.sin(a) * d; c.z = z + Math.cos(a) * d; c.y = y; c.reroll = now + 20 + rnd(20); c.t = Math.max(c.t, now + rnd(1)); }
       if (now + ahead > c.t) { A._tmpPos.set(c.x, c.y, c.z); A.play('cricket', { pos: A._tmpPos, vol: 0.75 * night * Math.min(1, P.insects), at: c.t, bus: 'ambient', pitch: 0.95 + rnd(0.1) }); c.t += c.gap * (0.9 + rnd(0.2)); }

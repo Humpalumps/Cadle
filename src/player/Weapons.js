@@ -111,6 +111,11 @@ export class Weapons {
     for (let i = 0; i < 10; i++) { const mesh = new THREE.Mesh(cg, this.mats.brass); mesh.visible = false; mesh.frustumCulled = false; this.scene.add(mesh); this._casings.push({ mesh, v: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0 }); }
     this._buildScope();
     this.slots = DEFAULT_SLOTS.map((id) => this._make(id));
+    // EVERY archetype's model now, not on the first give(): _model() -> buildGun() used to run mid-play with
+    // no compile after it, and the link cost a 236 ms frozen frame (measured 2026-08-23, give('autorifle')).
+    // This is the only chance we get — main.js's warmScene() walks game.scene, never this overlay scene.
+    for (const id of Object.keys(DEFS)) this._model(id);
+    await new Promise((r) => requestAnimationFrame(r));   // 8 guns of procedural geometry: let the loading bar paint
     // compile all shader variants now (all models visible), then show only the equipped gun
     for (const m of this._models.values()) m.group.visible = true;
     this.flash.visible = true; this.rig.add(this.flash, this.flashLight); renderer.compile(this.scene, this.cam); this.flash.visible = false;
@@ -145,6 +150,7 @@ export class Weapons {
     const sh = ctx.createRadialGradient(512, 512, r * 0.62, 512, 512, r * 0.92); sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,10,0.55)');
     ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(512, 512, r * 0.93, 0, Math.PI * 2); ctx.fill();
     const tex = new THREE.CanvasTexture(cnv);
+    this.game.renderer.initTexture(tex);   // 1024² canvas: compile() links shaders but never uploads maps — without this the first sniper ADS pays the upload
     const M = (o) => { const m = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, ...o }); this._scopeMats.push(m); return m; };
     this._scopeMats = [];
     const add = (geo, mat, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.z = Z + z; m.renderOrder = 20 + this._scopeMats.length; m.frustumCulled = false; g.add(m); return m; };

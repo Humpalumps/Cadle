@@ -173,6 +173,9 @@ export class Abilities {
     // pre-warm shaders so the first ability use doesn't hitch (~3 ms compile otherwise)
     const hidden = []; this.root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
     this.game.renderer.compile(scene, this.game.camera); for (const o of hidden) o.visible = false;
+    // compile() links programs but never uploads MAPS: the 1024² sigil glyph and the glow sprite would
+    // otherwise be uploaded on the first grenade/burst, mid-play. Push them to the GPU here instead.
+    for (const t of [this._tex, this._glow]) this.game.renderer.initTexture(t);
     this._ensureVM(); // builds + pre-warms the super hands if weapons is already up (retried at super start otherwise)
 
     events.on('combat:hit', (e) => { if (e?.owner === this.player && !this.superActive) this._addMeter((e.amount || 0) / 1800 + (e.killed ? 0.04 : 0)); });
@@ -204,8 +207,9 @@ export class Abilities {
       this._vm.group.add(h); this._vm.hands.push(h); this._vm.glows.push(glow);
     }
     // golden screen vignette (persistent super-state feedback)
+    const vigTex = vignetteTexture(); this.game.renderer.initTexture(vigTex);   // upload now, not on the first super (compile() does programs only)
     const vig = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ ...ADD, map: vignetteTexture(), color: new THREE.Color(0xdd8a10), opacity: 0, depthTest: false }));
+      new THREE.MeshBasicMaterial({ ...ADD, map: vigTex, color: new THREE.Color(0xdd8a10), opacity: 0, depthTest: false }));
     vig.position.z = -1.5; vig.renderOrder = 10; this._vm.vig = vig; this._vm.group.add(vig);
     this._vm.group.visible = false; w.scene.add(this._vm.group);
     // Ability gesture hand: the SAME armored gauntlet the guns are held with (weapons.abilityHand()) in the same
