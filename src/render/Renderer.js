@@ -40,11 +40,11 @@ let _warmRT = null;
  * Bind and restore inside one synchronous span — the game loop starts before boot warmup finishes (main.js
  * chains game.start() on game.ready separately), so a target left bound across an await eats a real frame.
  */
-export function compileForComposer(renderer, scene, camera) {
+export function compileForComposer(renderer, scene, camera, targetScene = null) {
   _warmRT ??= new THREE.WebGLRenderTarget(4, 4);
   const prev = renderer.getRenderTarget();
   renderer.setRenderTarget(_warmRT);
-  try { renderer.compile(scene, camera); } finally { renderer.setRenderTarget(prev); }
+  try { renderer.compile(scene, camera, targetScene); } finally { renderer.setRenderTarget(prev); }
 }
 
 /**

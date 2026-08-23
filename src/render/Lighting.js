@@ -402,7 +402,14 @@ export class Lighting {
       const l = this.cascades[i], sh = l.shadow, size = preset.sizes[i];
       sh.intensity = CASCADE_INTENSITY[i] * this._shadowFade;   // distance + low-sun fade (uniform only, safe while staggered)
       this.shadowUniforms.uCsmI.value.setComponent(i, sh.intensity);
-      const stagger = preset.stagger && i === last && (this._frame & 1);
+      // Parity is deliberate: `& 1` staggered on _frame === 1, which is the FIRST rendered frame, so the far
+      // cascade's DepthTexture never reached WebGLShadowMap.render() and therefore had no GL texture at all.
+      // three then bound texture 0 to a `sampler2DShadow` and the driver dropped every lit draw that frame:
+      // 11 x `GL_INVALID_OPERATION ... Mismatch between texture format and sampler type` at q=high, 7 at
+      // q=low (= the cascade count), one contiguous burst at boot, in every capture ever taken. Flipping the
+      // parity renders all cascades on frame 1 and staggers from frame 2; identical 50% duty cycle after that.
+      // Do NOT 'simplify' this to `this._frame > 1` -- that staggers the far cascade on EVERY later frame.
+      const stagger = preset.stagger && i === last && (this._frame & 1) === 0;
       sh.needsUpdate = !stagger;
       if (stagger) continue;                         // keep camera + map consistent: don't move a cascade we don't re-render
       const n = i === 0 ? cam.near : this.shadowDistance * preset.splits[i - 1], f = this.shadowDistance * preset.splits[i];
