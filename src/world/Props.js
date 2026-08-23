@@ -356,12 +356,12 @@ export class Props {
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 0.8 });
         }
       } },
-      tundra: { mat: 'ice', n: 190, tint: [0.92, 0.96, 1.04], build: (x, y, z, P) => {
+      tundra: { mat: 'ice', n: 155, tint: [0.92, 0.96, 1.04], build: (x, y, z, P) => {   // Frostveil is the tightest tri budget in the world (3.97 M of 4 M measured at the frozen lake) — the icicle pillars cost ~0.3 M, so this stays lean
         const kt = rng();
         if (kt < 0.22) {                                                    // pressure-ice pillar hung with icicles — Winterspring's vertical
           const hh = 2.6 + rng() * 3.8, r0 = 0.5 + rng() * 0.5;
           P(cyl(r0 * 0.55, r0, hh, 6).rotateY(rng()).translate(x, y + hh / 2 - 0.2, z), [0.86, 0.94, 1.06]);
-          const ic = 5 + ((rng() * 6) | 0);
+          const ic = 4 + ((rng() * 4) | 0);
           for (let i = 0; i < ic; i++) {
             const a = (i / ic) * 6.2832 + rng() * 0.5, il = 0.5 + rng() * 1.3;
             P(cone(0.09 + rng() * 0.05, il, 5).rotateX(Math.PI).translate(x + Math.cos(a) * r0 * 1.05, y + hh - il * 0.5, z + Math.sin(a) * r0 * 1.05), [0.92, 0.98, 1.10]);
