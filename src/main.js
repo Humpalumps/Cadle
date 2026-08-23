@@ -1,4 +1,4 @@
-import { createRenderer } from './render/Renderer.js';
+import { createRenderer, compileForComposer, renderForComposer } from './render/Renderer.js';
 import { Intro } from './ui/Intro.js';
 import { IntroHost, canUseIntroWorker } from './ui/IntroHost.js';
 
@@ -41,9 +41,24 @@ if (!USE_WORKER) introOpts.introCanvas?.remove();
 //
 // The first render of the game scene compiles EVERY program in one blocking call — measured on cadle.gg
 // at 16.0 s of frozen page, at the exact moment the bar reads 100%. renderer.compileAsync does not help
-// (it calls the synchronous compile() internally; measured 2x worse, see 43f2837). But compile() only
-// walks VISIBLE objects, so hiding all but a slice and calling it repeatedly does the same total work in
-// slices the loading screen can paint between. Visibility is restored exactly as found.
+// (it calls the synchronous compile() internally; measured 2x worse, see 43f2837).
+//
+// THE RENDER TARGET IS NOT OPTIONAL — it is the whole reason this used to warm nothing.
+// `outputColorSpace` is the SECOND field of the program cache key (WebGLPrograms.getProgramCacheKeyParameters),
+// and getParameters reads it as `currentRenderTarget === null ? renderer.outputColorSpace : workingColorSpace`.
+// The game draws through composer.render(), i.e. always INTO a target, so every program it actually uses is
+// keyed `srgb-linear`. A compile() with nothing bound builds the `srgb` twin — a real, linked, never-used
+// program. Measured 2026-08-23: warming this way left the count 41 HIGHER than not warming at all while the
+// real programs still linked during play, worst frame 6502 ms with the page's own CPU idle at 35 ms (an
+// ANGLE/D3D11 link blocks inside the GPU process, where neither cpuMs nor gpuMs can see it).
+//
+// Two further things this must NOT do, both because game.start() is chained on game.ready SEPARATELY from
+// this (see below), so the game loop is ALREADY RUNNING and its frames interleave with ours:
+//   - never hold a bound target across an `await` — the game's own frame would render into it;
+//   - never borrow the composer's buffers — a 4x4 scratch target costs nothing and cannot corrupt them.
+// Visibility is restored exactly as found (and note it does not gate compilation at all: three r185 gathers
+// LIGHTS with traverseVisible but MATERIALS with a plain scene.traverse — the chunking buys paint time
+// between calls, nothing more).
 async function warmScene(renderer, scene, camera, perChunk = 6) {
   const objs = [];
   scene.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) objs.push(o); });
@@ -52,11 +67,22 @@ async function warmScene(renderer, scene, camera, perChunk = 6) {
   try {
     for (let i = 0; i < objs.length; i += perChunk) {
       for (let k = 0; k < objs.length; k++) objs[k].visible = was[k] && k >= i && k < i + perChunk;
-      renderer.compile(scene, camera);
+      compileForComposer(renderer, scene, camera);
       await new Promise((r) => requestAnimationFrame(r));
     }
   } finally {
     for (let k = 0; k < objs.length; k++) objs[k].visible = was[k];   // never leave the scene half-hidden
+  }
+  // One real render, shadows forced. compile() cannot build depth/distance programs AT ALL — getDepthMaterial
+  // is only reachable from WebGLShadowMap.render(), which only runs inside renderer.render() — so without
+  // this the shadow variants link on the first frame that casts one. Enemies.warm() parks a sleeping spare of
+  // every type on the spawn point precisely so this pass has them in frame and inside cascade 0.
+  try {
+    for (let k = 0; k < objs.length; k++) objs[k].visible = true;
+    renderForComposer(renderer, scene, camera);
+  } catch (e) { console.warn('[boot] shadow warm skipped:', e?.message); }
+  finally {
+    for (let k = 0; k < objs.length; k++) objs[k].visible = was[k];
   }
   return objs.length;
 }

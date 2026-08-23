@@ -2,7 +2,7 @@
 export class Perf {
   constructor() {
     this.samples = new Float32Array(600); this.i = 0; this.n = 0; this._t0 = 0;
-    this.ms = 0; this.last = {};
+    this.ms = 0; this.last = { calls: 0, tris: 0, geometries: 0, textures: 0, programs: 0 };   // filled in place every frame; stats() spreads it, so no caller holds this object
     this.frameTimes = new Float32Array(600); this._lastFrame = 0; // wall-clock rAF deltas
     this.systems = {};  // per-system CPU ms EMA, filled by Game.frame
   }
@@ -56,7 +56,8 @@ export class Perf {
     this.samples[this.i] = this.ms;
     this.i = (this.i + 1) % this.samples.length; this.n = Math.min(this.n + 1, this.samples.length);
     const info = renderer.info;
-    this.last = { calls: info.render.calls, tris: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length ?? 0 };
+    const L = this.last;   // assigned in place: a fresh object literal here was one allocation every frame
+    L.calls = info.render.calls; L.tris = info.render.triangles; L.geometries = info.memory.geometries; L.textures = info.memory.textures; L.programs = info.programs?.length ?? 0;
   }
   _q(arr, n = this.n) {
     const a = Array.from(arr.subarray(0, n)).sort((x, y) => x - y);

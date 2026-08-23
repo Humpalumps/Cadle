@@ -195,5 +195,27 @@ if (props) {
   if (!/FRAG_SHOULDER/.test(terr2)) fail('src/world/Terrain.js lost FRAG_SHOULDER — the ground goes flat white where a low sun rakes across it');
 }
 
+// ------------------------------------------------- (i) SHADER WARMUP MUST COMPILE IN THE COMPOSER'S SPACE
+// `outputColorSpace` is the SECOND field of three's program cache key, and getParameters reads it as
+// `currentRenderTarget === null ? renderer.outputColorSpace : workingColorSpace`. This game draws every pixel
+// through composer.render(), i.e. INTO a target, so its programs are keyed `srgb-linear`. A bare
+// renderer.compile() with nothing bound links the `srgb` twin — a real program the renderer never looks up —
+// and the one it needs still links on first draw, inside the GPU process, where neither cpuMs nor gpuMs sees
+// it. This shipped unnoticed for the project's whole history: warming that way left the program count 41
+// HIGHER than not warming at all. Binding a target took programs linked during one combat session 44 -> 1.
+// Route every warmup through compileForComposer/renderForComposer in src/render/Renderer.js.
+{
+  const rend = read(join('src', 'render', 'Renderer.js'));
+  if (!/export function compileForComposer/.test(rend) || !/setRenderTarget\(_warmRT\)/.test(rend)) {
+    fail('src/render/Renderer.js lost compileForComposer (or its bound scratch target) — shader warmup silently compiles the wrong colorspace and every program relinks during play');
+  }
+  for (const f of [['src', 'main.js'], ['src', 'player', 'Weapons.js'], ['src', 'player', 'Abilities.js'], ['src', 'world', 'EZTrees.js']]) {
+    const src = read(join(...f));
+    if (src.includes('renderer.compile(') || src.includes('.renderer.compile(')) {
+      fail(f.join('/') + " calls renderer.compile() directly - use compileForComposer(), or it builds the srgb twin the renderer never uses and the real program links mid-play (see src/render/Renderer.js)");
+    }
+  }
+}
+
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');
 process.exit(failed ? 1 : 0);

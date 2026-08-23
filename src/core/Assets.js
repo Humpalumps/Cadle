@@ -11,6 +11,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  *   game.assets.model(name)          -> gltf object {scene, ...} | null. Callers .clone(true) the scene; never mutate the cached original's materials — clone materials too.
  *   game.assets.sfxData(name)        -> ArrayBuffer | null   (raw mp3 bytes; decode via audioBuffer())
  *   game.assets.audioBuffer(ctx, n)  -> Promise<AudioBuffer> (decoded + cached per name)
+ *   game.assets.deferred[name]       -> Promise, resolved when a DEFERRED (region-theme) fetch has landed in this.audio
  *   game.assets.progress             -> 0..1;  event 'assets:progress' {loaded, total, item} for the HUD load bar
  *   game.assets.loadMs               -> total preload wall time
  * Texture keys: grass_albedo cliff_strata forest_soil beach_sand snow ruins_stone bark leaf_card glyph1 glyph2
@@ -46,12 +47,18 @@ AUDIO['field-theme'] = '/assets/music/field-theme.mp3';
 AUDIO['night-theme'] = '/assets/music/night-theme.mp3';
 // One theme per region (BIOMES[id].music -> `<music>-theme`). A region does not get the Vale's tune
 // re-EQ'd any more — crossing a border swaps the piece, WoW-style. See audio/music.js _themeKey.
-for (const m of ['wood', 'frost', 'choir', 'drums', 'forge', 'convergence', 'fen', 'deep', 'void']) AUDIO[`${m}-theme`] = `/assets/music/${m}-theme.mp3`;
+// DEFERRED: 1.44 MB apiece = 13 MB of the 44 MB payload, and the nearest of these regions is minutes of
+// walking away. They start downloading with everything else (warm long before you need one) but init()
+// does NOT await them, so the other 12 systems no longer queue behind music for a place you can't see.
+// Safe by construction: music.js _themeKey() plays the Vale theme while a region buffer is absent.
+const AUDIO_DEFER = {};
+for (const m of ['wood', 'frost', 'choir', 'drums', 'forge', 'convergence', 'fen', 'deep', 'void']) AUDIO_DEFER[`${m}-theme`] = `/assets/music/${m}-theme.mp3`;
 
 export class Assets {
   constructor(game) {
     this.game = game;
     this.textures = {}; this.models = {}; this.audio = {}; this._decoded = {};
+    this.deferred = {};   // name -> in-flight fetch for the region themes (not awaited by init; see AUDIO_DEFER)
     this.progress = 0; this.loadMs = 0;
   }
 
@@ -91,11 +98,16 @@ export class Assets {
         tick(name);
       }
     })());
-    for (const [name, url] of Object.entries(AUDIO)) jobs.push(
-      fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-        .then((b) => { this.audio[name] = b; })
-        .catch((e) => console.warn('[assets] audio missing:', name, e?.message)).finally(() => tick(name)));
+    const grabAudio = (name, url) => fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then((b) => { this.audio[name] = b; })
+      .catch((e) => console.warn('[assets] audio missing:', name, e?.message));
+    for (const [name, url] of Object.entries(AUDIO)) jobs.push(grabAudio(name, url).finally(() => tick(name)));
     await Promise.all(jobs);
+    // Region themes start only NOW, after the critical set has landed. Firing them on the same tick still
+    // took the boot off the critical path, but it left 13 MB competing for the same six connections as the
+    // textures and GLBs that the loading screen is actually waiting on. Nothing awaits these; they are out
+    // of the progress total (the bar must reach 1) and Audio._decodeAssets chains each decode onto them.
+    for (const [name, url] of Object.entries(AUDIO_DEFER)) this.deferred[name] = grabAudio(name, url);
 
     // GPU warmup: upload every texture (incl. GLB-embedded) now so first sight of an asset never hitches.
     // Batched with a frame between batches: this is ~11 MB of texture upload and as one unbroken loop it

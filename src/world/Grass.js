@@ -395,6 +395,8 @@ export class Grass {
     // --- terrain cache texture (toroidal) ---
     this._data = new Float32Array(N * N * 4);
     this._nb = N >> 2; this._bkey = new Int32Array(this._nb * this._nb).fill(0x7fffffff); this._bval = new Float32Array(this._nb * this._nb); this._bbio = new Array(this._nb * this._nb).fill('meadow');
+    this._bcol = new Int32Array(this._nb * this._nb); this._bcolCur = 0;   // packed ground albedo per 2 m block, same key as _bkey
+    this._job = null;                                                     // in-flight sliced cache rebuild (see _rebuild)
     this.tex = new THREE.DataTexture(this._data, N, N, THREE.RGBAFormat, THREE.FloatType);
     this.tex.magFilter = this.tex.minFilter = THREE.NearestFilter;
     this.tex.wrapS = this.tex.wrapT = THREE.RepeatWrapping;
@@ -453,9 +455,13 @@ export class Grass {
       this.rings.push({ mesh, geo, inst, buf: inst.array, n: 0, max: maxPatches, P: cfg.P[r] });
     }
 
-    // initial cache fill around the spawn
+    // initial cache fill around the spawn. Finished HERE, synchronously: this one is behind the loading
+    // screen, where a block costs nothing, and slicing it would let the splash lift (it only waits for
+    // five sub-25 ms frames) on a meadow with no grass in it yet. With the 2 m colour cache the whole
+    // fill is ~170 ms now, not the ~1.25 s that made slicing necessary in the first place.
     const p = g.player?.position ?? new THREE.Vector3();
     this._rebuild(Math.round(p.x / step), Math.round(p.z / step));
+    this._drainRebuild(Infinity);
     this._csmDone = false;
   }
 
@@ -535,21 +541,27 @@ export class Grass {
     const bx = ix >> 2, bz = iz >> 2, nb = this._nb;
     const i = (((bz % nb) + nb) % nb) * nb + (((bx % nb) + nb) % nb);
     const key = bx * 131072 + bz;
-    if (this._bkey[i] !== key) { this._bkey[i] = key; this._bval[i] = this._maskAt(bx * 4 * this.step + this.step, bz * 4 * this.step + this.step); this._bbio[i] = this._biome; }
+    if (this._bkey[i] !== key) {
+      this._bkey[i] = key;
+      const cx = bx * 4 * this.step + this.step, cz = bz * 4 * this.step + this.step;
+      this._bval[i] = this._maskAt(cx, cz); this._bbio[i] = this._biome;   // _maskAt sets _biome; the colour fallback below reads it
+      this._bcol[i] = this._packedColor(cx, cz);
+    }
     this._biome = this._bbio[i];
+    this._bcolCur = this._bcol[i];
     return this._bval[i];
   }
-  _texel(ix, iz) {
-    const N = this.N, step = this.step, t = this.game.terrain, d = this._data;
-    const x = ix * step, z = iz * step;
-    const h = t.heightAt(x, z);
-    const wl = t.waterLevel ?? 0;
-    let m = this._biomeMask(ix, iz) * smoothstep(wl + 0.35, wl + 1.3, h);
-    const lx = x + 170, lz = z + 70;                                    // Mirrormere beach band (world layout, CLAUDE.md)
-    if (lx * lx + lz * lz < 27225) m *= smoothstep(wl + 2.2, wl + 3.6, h);
-    const c = this._c;
+  // Ground albedo for this 4x4-texel (2 m) block, cached on the same key as the biome mask above.
+  // MEASURED 2026-08-23: terrain.colorAt is 1765 ns against 405 ns for heightAt -- 93% of a texel's whole
+  // cost -- and _rebuild does 262144 of them, which is the ~1.0-1.25 s freeze on every fast travel.
+  // Sampling it per 0.5 m texel bought nothing: colorAt's finest input is a slope term off a 1.2 m finite
+  // difference, and everything that actually moves the colour (its two macro noises) is at 61 m and 143 m.
+  // At 2 m the full rebuild drops to ~0.17 s and the per-frame column refill drops with it.
+  _packedColor(x, z) {
+    const t = this.game.terrain, c = this._c;
     if (t.colorAt) t.colorAt(x, z, c);
     else {   // ponytail: approximate the terrain splat's rendered albedo per biome (splat is GPU-only); replace when terrain exposes colorAt(x,z,out)
+      const h = t.heightAt(x, z), wl = t.waterLevel ?? 0;
       const n = 1 + noise2(x * 0.02, z * 0.02, 11) * 0.3;
       const b = this._biome;
       if (b === 'forest') c.setRGB(0.12 * n, 0.115 * n, 0.05);
@@ -563,16 +575,42 @@ export class Grass {
       }
       if (h < wl + 2.5) c.lerp(this._sand, smoothstep(wl + 2.5, wl + 1.2, h));
     }
-    const packed = (clamp(c.r, 0, 1) * 255 | 0) * 65536 + (clamp(c.g, 0, 1) * 255 | 0) * 256 + (clamp(c.b, 0, 1) * 255 | 0);
+    return (clamp(c.r, 0, 1) * 255 | 0) * 65536 + (clamp(c.g, 0, 1) * 255 | 0) * 256 + (clamp(c.b, 0, 1) * 255 | 0);
+  }
+  _texel(ix, iz) {
+    const N = this.N, step = this.step, t = this.game.terrain, d = this._data;
+    const x = ix * step, z = iz * step;
+    const h = t.heightAt(x, z);
+    const wl = t.waterLevel ?? 0;
+    let m = this._biomeMask(ix, iz) * smoothstep(wl + 0.35, wl + 1.3, h);
+    const lx = x + 170, lz = z + 70;                                    // Mirrormere beach band (world layout, CLAUDE.md)
+    if (lx * lx + lz * lz < 27225) m *= smoothstep(wl + 2.2, wl + 3.6, h);
+    const packed = this._bcolCur;   // set by _biomeMask above, cached per 2 m block (see _packedColor)
     const fd = smoothstep(0.15, 0.55, noise2(x * 0.025 + 7.3, z * 0.025 - 2.1, this.game.seed + 77) * 0.5 + 0.5 + noise2(x * 0.09, z * 0.09, 5) * 0.25);
     const o = ((((iz % N) + N) % N) * N + (((ix % N) + N) % N)) * 4;
     d[o] = h; d[o + 1] = m; d[o + 2] = packed; d[o + 3] = fd;
   }
+  // A full refill is N*N = 262144 texels. Run to completion it was a MEASURED 0.82-1.25 s frozen frame on
+  // every fast travel, every respawn and once at boot -- the single worst hitch in the game. It is now
+  // sliced: _rebuild only ARMS the job, update() drains it under a time budget and hides the field until
+  // it lands. Grass drawn against a half-written cache is blades at the old location's heights (floating
+  // and buried), so hiding is not politeness, it is the only correct thing to show.
   _rebuild(cx, cz) {
-    const N = this.N, h = N >> 1;
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) this._texel(cx - h + i, cz - h + j);
-    this._cx = cx; this._cz = cz;
-    this.tex.needsUpdate = true;
+    this._cx = cx; this._cz = cz;                 // claim the window now, or _shiftTo re-arms this every frame
+    this._job = { cx, cz, j: 0 };
+  }
+  // Returns true while still working. 6 ms: the drain runs INSTEAD of the rest of Grass.update, so the
+  // frame stays inside the 7 ms budget, and ~170 ms of work lands in ~28 frames (~0.45 s of hidden field).
+  _drainRebuild(budgetMs = 6) {
+    const job = this._job; if (!job) return false;
+    const N = this.N, h = N >> 1, t0 = performance.now();
+    do {
+      for (let i = 0; i < N; i++) this._texel(job.cx - h + i, job.cz - h + job.j);
+      job.j++;
+    } while (job.j < N && performance.now() - t0 < budgetMs);
+    if (job.j < N) return true;
+    this._job = null; this.tex.needsUpdate = true;
+    return false;
   }
   // world texel index stored at texture index i for a window centered on c
   _worldIdx(i, c) { const N = this.N, lo = c - (N >> 1); return lo + ((((i - lo) % N) + N) % N); }
@@ -619,6 +657,9 @@ export class Grass {
     const g = this.game, u = this.uniforms, cfg = this.cfg;
     const pp = g.player?.position; if (!pp) return;
     if (!this.enabled) { for (const r of this.rings) r.mesh.visible = false; return; }
+    // A sliced cache rebuild is in flight (fast travel / respawn / boot): fill what the budget allows and
+    // show nothing this frame. Every ring reads the same cache, so there is no partial field to draw.
+    if (this._job) { this._drainRebuild(); for (const r of this.rings) r.mesh.visible = false; return; }
     const t0 = performance.now();
 
     // cache follows the player (a few columns/rows per frame at most)
