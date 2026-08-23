@@ -1,3 +1,4 @@
+import { WebGLRenderTarget } from 'three';   // scratch target for the boot warm frames
 import { createRenderer, compileForComposer, renderForComposer } from './render/Renderer.js';
 import { Intro } from './ui/Intro.js';
 import { IntroHost, canUseIntroWorker } from './ui/IntroHost.js';
@@ -59,7 +60,7 @@ if (!USE_WORKER) introOpts.introCanvas?.remove();
 // Visibility is restored exactly as found (and note it does not gate compilation at all: three r185 gathers
 // LIGHTS with traverseVisible but MATERIALS with a plain scene.traverse — the chunking buys paint time
 // between calls, nothing more).
-async function warmScene(renderer, scene, camera, perChunk = 6) {
+async function warmScene(renderer, scene, camera, perChunk = 6, onProgress = null) {
   const objs = [];
   scene.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) objs.push(o); });
   if (!objs.length) return 0;
@@ -68,6 +69,7 @@ async function warmScene(renderer, scene, camera, perChunk = 6) {
     for (let i = 0; i < objs.length; i += perChunk) {
       for (let k = 0; k < objs.length; k++) objs[k].visible = was[k] && k >= i && k < i + perChunk;
       compileForComposer(renderer, scene, camera);
+      onProgress?.(Math.min(1, (i + perChunk) / objs.length));
       await new Promise((r) => requestAnimationFrame(r));
     }
   } finally {
@@ -85,6 +87,29 @@ async function warmScene(renderer, scene, camera, perChunk = 6) {
     for (let k = 0; k < objs.length; k++) objs[k].visible = was[k];
   }
   return objs.length;
+}
+
+// Render a few REAL game frames into a scratch target while the loading bar is still moving.
+//
+// Only the intro path needs this, and it needs it badly. With the intro, game.start() does not run until
+// intro.finished, so NOTHING has ever rendered the world when _arm() finally calls stepInto -- and that one
+// call linked 35 programs in a MEASURED 6.95 s (introprobe: prog 99 -> 134, arm:enter -> arm:done), with the
+// bar sitting pinned at 100% the whole time. That is the "swap happens too late and looks clunky".
+// It has to be stepInto and not renderer.compile(): Lighting drives its own shadow cascades from update(),
+// so the depth programs only exist once something has actually rendered a shadowed frame (Renderer.js says
+// why compile() can never build them). ?auto=1 without the intro does not need this -- there the loop starts
+// immediately and ordinary frames do the same work.
+async function warmFrames(game, n, onProgress) {
+  const rt = new WebGLRenderTarget(320, 180, { depthBuffer: true });
+  const sys = [game.sky, game.lighting, game.terrain, game.world, game.player, game.vfx].filter(Boolean);
+  try {
+    for (let i = 0; i < n; i++) {
+      try { game.stepInto(1 / 60, rt, sys, game.camera); }
+      catch (e) { console.warn('[boot] warm frame failed:', e?.message); break; }
+      onProgress?.((i + 1) / n);
+      await new Promise((r) => requestAnimationFrame(r));   // let the loading screen paint between them
+    }
+  } finally { rt.dispose(); }
 }
 
 if (intro) {
@@ -162,9 +187,12 @@ if (intro) {
     VFX: 'BINDING THE AETHER', Audio: 'TUNING THE WINDS', RPG: 'WRITING YOUR TALE', HUD: 'WRITING YOUR TALE', PostFX: 'THE VALE AWAITS',
   };
   let boot = 0;
-  game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.55 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
+  // The bar's last slice is the SHADER WARM, not the system build. It used to read 100% the moment the
+  // systems were up and then sit there for a measured 9.6 s while warmScene and _arm() linked 79 more
+  // programs. A bar that finishes and then does nothing for ten seconds is the clunk.
+  game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.50 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
   game.events.on('boot:progress', (e) => {
-    boot = 0.55 + 0.45 * (e.done / e.total);
+    boot = 0.50 + 0.38 * (e.done / e.total);          // systems end at 0.88; 0.88-1.0 is the warm
     intro.setProgress(boot, BOOT_LABEL[e.system] || null);
   });
   // NO compileAsync warmup here. It was tried and measured WORSE, twice: three's compileAsync calls the
@@ -174,9 +202,22 @@ if (intro) {
   game.ready.then(async () => {
     if (PARAMS.get('nowarm') !== '1') {
       const t0 = performance.now();
-      try { const n = await warmScene(game.renderer, game.scene, game.camera);
+      // ORDER MATTERS. warmScene FIRST, then intro.prewarm(): prewarm renders one frame through the menu
+      // lens and is the FIRST time the world is ever drawn (nothing draws it before game.start(), which
+      // waits for the hand-off), so running it cold links everything itself -- MEASURED 9.5 s cold versus
+      // 6.3 s after warmScene, i.e. ~8 s added to the whole boot for nothing. It is a single render, so it
+      // cannot be sliced: the loading screen stops for it either way. What this ordering buys is that it
+      // stops at ~95% and then finishes, instead of stopping AFTER the bar already read 100% -- which is
+      // what made the swap feel late (a full bar sitting there for a measured 9.6 s).
+      // prewarm draws to the CANVAS (target null), so it needs the `srgb` program variants -- a different
+      // set from the composer's `srgb-linear` ones, which is why warming the game's own path never covered
+      // it. See Renderer.js. arm() afterwards costs ~10 ms.
+      try { const n = await warmScene(game.renderer, game.scene, game.camera, 6, (f) => intro.setProgress(0.88 + 0.06 * f, 'THE VALE AWAITS'));
         if (game.debug) console.info(`[boot] warmScene ${n} objects in ${Math.round(performance.now() - t0)} ms`); }
       catch (e) { console.warn('[boot] warmScene skipped:', e?.message); }
+      await new Promise((r) => requestAnimationFrame(r));
+      try { intro.prewarm?.(); } catch (e) { console.warn('[boot] intro prewarm skipped:', e?.message); }
+      await warmFrames(game, 2, (f) => intro.setProgress(0.95 + 0.05 * f, 'THE VALE AWAITS'));
     }
     intro.arm();
   }).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });

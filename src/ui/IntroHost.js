@@ -120,17 +120,7 @@ export class IntroHost {
     // hand-off — so without this the canvas is still blank and the monitor showed a black screen with
     // just the title on it. stepInto is what the old in-thread intro used for exactly this, and the
     // system list is the same one: only what makes the world LOOK alive, not rpg/audio/hud/enemies.
-    if (!g._running) {
-      try {
-        this._menuCam ||= new THREE.PerspectiveCamera(58, 16 / 9, 0.05, 4000);
-        this._liveSystems ||= [g.sky, g.lighting, g.terrain, g.world, g.player, g.vfx].filter(Boolean);
-        this._menuCam.aspect = (this.gameCanvas.width || 16) / (this.gameCanvas.height || 9);
-        this._menuCam.updateProjectionMatrix();
-        this._menuCam.position.copy(g.camera.position);
-        this._menuCam.quaternion.copy(g.camera.quaternion);
-        g.stepInto(1 / 30, null, this._liveSystems, this._menuCam);
-      } catch (e) { /* a system not ready yet: skip this frame, try the next */ }
-    }
+    if (!g._running) this._renderMonitorFrame();
     const src = this.gameCanvas;
     if (!src || !src.width) return;
     // imageOrientation flipY, same trap as the wall posters: a raw canvas bitmap arrives top-down and
@@ -139,6 +129,37 @@ export class IntroHost {
       if (this.done || !this.worker) { bmp.close(); return; }
       this.worker.postMessage({ type: 'monitor', bitmap: bmp }, [bmp]);
     }).catch(() => {});
+  }
+
+  /** The draw half of _shipFrame, on its own so prewarm() can pay for it early. */
+  _renderMonitorFrame() {
+    const g = this._game; if (!g) return false;
+    try {
+      this._menuCam ||= new THREE.PerspectiveCamera(58, 16 / 9, 0.05, 4000);
+      this._liveSystems ||= [g.sky, g.lighting, g.terrain, g.world, g.player, g.vfx].filter(Boolean);
+      this._menuCam.aspect = (this.gameCanvas.width || 16) / (this.gameCanvas.height || 9);
+      this._menuCam.updateProjectionMatrix();
+      this._menuCam.position.copy(g.camera.position);
+      this._menuCam.quaternion.copy(g.camera.quaternion);
+      g.stepInto(1 / 30, null, this._liveSystems, this._menuCam);
+      return true;
+    } catch (e) { return false; }   // a system not ready yet: skip this frame, try the next
+  }
+
+  /**
+   * Draw one game frame WITHOUT shipping it to the monitor. main.js calls this while the loading bar is
+   * still moving; arm() then finds the shaders already linked instead of paying for them at 100%.
+   *
+   * MEASURED 2026-08-23 (tools/introprobe.mjs): arm() -> _shipFrame() -> stepInto was the FIRST time the
+   * world had ever been drawn (nothing renders it before game.start(), which waits for the hand-off), and
+   * that one call cost **6.2 s** and linked 27 shader programs -- all of it after the bar already read
+   * 100%. That is the clunk. This keeps the deliberate "do not FEED the monitor early" rule above intact:
+   * it renders, it does not postMessage, so nobody ever sees the half-built world.
+   */
+  prewarm() {
+    if (!this._game || this._game._running || this._warmed) return false;
+    this._warmed = true;
+    return this._renderMonitorFrame();
   }
 
   /** start feeding the monitor once there is a world worth looking at */
