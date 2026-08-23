@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 /**
  * Main-thread half of the cinematic intro.  (orchestrator)
  *
@@ -14,13 +16,30 @@
  *
  * Falls back to the main-thread Intro when OffscreenCanvas is unavailable (or ?worker=0).
  */
-const CSS = [
-  '#introui{position:fixed;inset:0;z-index:60;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6vh}',
-  '#introui .cta{margin:0;font:400 15px/1 Georgia,serif;letter-spacing:6px;color:#f0e2bf;text-shadow:0 0 18px rgba(0,0,0,.8);opacity:.9}',
-  '#introflash{position:fixed;inset:0;z-index:70;background:#fff;opacity:0;pointer-events:none}',
-  '#introflash.on{opacity:1}',
-  '#introflash.off{opacity:0;transition:opacity .85s ease}',
-].join('\n');
+// The intro's own stylesheet, verbatim from Intro.js. Writing a fresh one here is what turned the
+// prompt into a small grey caption at the bottom instead of the gold small-caps title-screen
+// prompt with rules either side — and dropped the `armed` reveal with it.
+const CSS = `
+#introui{position:fixed;inset:0;z-index:120;font-family:Georgia,'Palatino Linotype',serif;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:16px;padding-bottom:6vh;background:transparent}
+/* The call to action has to be unmissable — it is the only instruction on the page. Gold on a soft
+   dark plate, wide tracking, breathing, with a rule either side so it reads as a title-screen prompt
+   rather than a caption. */
+#introui .cta{margin:0 0 2vh;font-size:clamp(19px,2.35vw,34px);letter-spacing:.5em;text-indent:.5em;
+  font-variant:small-caps;color:#f7eed6;padding:.62em 1.5em;border-radius:2px;
+  background:linear-gradient(90deg,rgba(9,6,20,0),rgba(9,6,20,.72) 18%,rgba(9,6,20,.72) 82%,rgba(9,6,20,0));
+  text-shadow:0 0 26px rgba(211,165,72,.85),0 0 6px rgba(211,165,72,.6),0 2px 10px #000;
+  opacity:0;transition:opacity 1s ease;animation:introPulse 2.4s ease-in-out infinite}
+#introui .cta::before,#introui .cta::after{content:'';position:absolute;top:50%;width:clamp(40px,7vw,120px);height:1px;
+  background:linear-gradient(90deg,rgba(211,165,72,0),rgba(211,165,72,.9))}
+#introui .cta::before{right:calc(100% + 10px)}
+#introui .cta::after{left:calc(100% + 10px);transform:scaleX(-1)}
+#introui.armed .cta{opacity:1}
+@keyframes introPulse{0%,100%{filter:brightness(.8)}50%{filter:brightness(1.35)}}
+#introflash{position:fixed;inset:0;z-index:130;pointer-events:none;opacity:0;transition:opacity .16s ease-in;
+  background:radial-gradient(58% 58% at 50% 50%,#efe9ff 0%,#b9a2ff 34%,#6b4fd0 62%,#160f30 100%)}
+#introflash.on{opacity:1}
+#introflash.off{opacity:0;transition:opacity .7s cubic-bezier(.2,.7,.3,1)}`;
 
 export class IntroHost {
   constructor(host) {
@@ -74,7 +93,7 @@ export class IntroHost {
 
   _onMessage(m) {
     if (m.type === 'firstFrame') { document.getElementById('splash')?.remove(); this._resolveFirst?.(); }
-    else if (m.type === 'armed') this._armed = true;
+    else if (m.type === 'armed') { this._armed = true; this._clickUI?.classList.add('armed'); }
     else if (m.type === 'whoosh') this._whoosh();
     else if (m.type === 'flash') this._flash?.classList.add('on');
     else if (m.type === 'handover') this._handover();
@@ -89,6 +108,22 @@ export class IntroHost {
    *  which is exactly what a game mid-load looks like, rather than a broken page. */
   _shipFrame() {
     if (this.done || !this.worker || !this._game) return;
+    const g = this._game;
+    // RENDER the world first. Nothing draws the game until game.start(), which does not happen until
+    // hand-off — so without this the canvas is still blank and the monitor showed a black screen with
+    // just the title on it. stepInto is what the old in-thread intro used for exactly this, and the
+    // system list is the same one: only what makes the world LOOK alive, not rpg/audio/hud/enemies.
+    if (!g._running) {
+      try {
+        this._menuCam ||= new THREE.PerspectiveCamera(58, 16 / 9, 0.05, 4000);
+        this._liveSystems ||= [g.sky, g.lighting, g.terrain, g.world, g.player, g.vfx].filter(Boolean);
+        this._menuCam.aspect = (this.gameCanvas.width || 16) / (this.gameCanvas.height || 9);
+        this._menuCam.updateProjectionMatrix();
+        this._menuCam.position.copy(g.camera.position);
+        this._menuCam.quaternion.copy(g.camera.quaternion);
+        g.stepInto(1 / 30, null, this._liveSystems, this._menuCam);
+      } catch (e) { /* a system not ready yet: skip this frame, try the next */ }
+    }
     const src = this.gameCanvas;
     if (!src || !src.width) return;
     createImageBitmap(src).then((bmp) => {

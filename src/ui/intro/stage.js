@@ -76,7 +76,11 @@ const GUY_URL = '/assets/intro/guy.glb';
 // Solved against the desk and the chair by eye in intro.html (__intro.stage.fitGuy / setChair), not
 // derived: he is one rigid mesh, so "hands on the desk" and "back in the chair" are a placement problem.
 const GUY_FIT = { height: 1.46, x: -0.15, y: 0.0, z: -0.12, rotY: Math.PI, rotZ: 0 };
-const GUY_CHAIR = [-0.15, 0, 0.04];        // character.js measured the chair against its own body
+const GUY_CHAIR = [-0.15, 0, 0.12];        // character.js measured the chair against its own body
+// z 0.04 -> 0.12: the generated body is a rigid mesh fitted by eye against a procedural chair, and at
+// 0.04 the chair sat far enough forward that its back panel cut through his shoulder blades and the
+// armrest through his thigh. Solved with stage.setChair() live, then baked: 0.18 reads as perched off
+// the seat, 0.12 puts the backrest behind him and clears the armrest.
 
 async function loadGuy() {
   try {

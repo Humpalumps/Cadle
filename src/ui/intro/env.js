@@ -27,8 +27,11 @@ export function makeCanvas(w, h) {
 export async function loadTexture(url, { srgb = true, tile = false, aniso = 8 } = {}) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  const bmp = await createImageBitmap(await res.blob());
+  // imageOrientation flipY + texture.flipY=false reproduces exactly what <img> + flipY=true did.
+  // Without this every texture is upside down — invisible on tiling ground, obvious on the posters.
+  const bmp = await createImageBitmap(await res.blob(), { imageOrientation: 'flipY' });
   const t = new THREE.Texture(bmp);
+  t.flipY = false;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = aniso;
   if (tile) t.wrapS = t.wrapT = THREE.RepeatWrapping;
