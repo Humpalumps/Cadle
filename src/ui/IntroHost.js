@@ -73,10 +73,17 @@ export class IntroHost {
     const off = this.canvas.transferControlToOffscreen();
     this.worker = new Worker(new URL('./intro/introWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this._onMessage(e.data || {});
+    // Hand over the body's bytes. index.html starts that fetch during HTML parse, but window.__guyGlb
+    // lives on THIS thread — without passing it the worker re-fetches from scratch and he lands late.
+    let guyBuf = null;
+    try { guyBuf = await Promise.race([globalThis.__guyGlb, new Promise((r) => setTimeout(() => r(null), 2500))]); }
+    catch (e) { guyBuf = null; }
+    const transfer = [off];
+    if (guyBuf) transfer.push(guyBuf);              // zero-copy; this thread does not need it again
     this.worker.postMessage({
       type: 'init', canvas: off, size: { w: this.canvas.width, h: this.canvas.height },
-      params: String(this.host.params || ''), seed: this.host.seed,
-    }, [off]);
+      params: String(this.host.params || ''), seed: this.host.seed, guyBuf,
+    }, transfer);
 
     this._onWinClick = () => this._click();
     this._onWinKey = (e) => { if (!e.repeat) this._click(); };
@@ -126,7 +133,9 @@ export class IntroHost {
     }
     const src = this.gameCanvas;
     if (!src || !src.width) return;
-    createImageBitmap(src).then((bmp) => {
+    // imageOrientation flipY, same trap as the wall posters: a raw canvas bitmap arrives top-down and
+    // lands upside down on the panel. Pre-flip here so the texture can stay flipY=false.
+    createImageBitmap(src, { imageOrientation: 'flipY' }).then((bmp) => {
       if (this.done || !this.worker) { bmp.close(); return; }
       this.worker.postMessage({ type: 'monitor', bitmap: bmp }, [bmp]);
     }).catch(() => {});
@@ -143,7 +152,16 @@ export class IntroHost {
     if (!this._armed) document.title = 'CADLE — loading ' + Math.round(Math.max(0, Math.min(1, p)) * 100) + '%';
   }
 
-  arm() { this.worker?.postMessage({ type: 'arm' }); document.title = 'CADLE'; }
+  /** 100%: the world is finally worth looking at, so the monitor switches from its painted backdrop to
+   *  the live game — one frame shipped immediately so the swap has no gap, then a steady feed.
+   *  Deliberately NOT started earlier: feeding it from ~69% showed a half-built world (no trees, flat
+   *  water) on his screen, which reads as broken rather than as loading. */
+  arm() {
+    this.worker?.postMessage({ type: 'arm' });
+    document.title = 'CADLE';
+    this._shipFrame();
+    this.startMonitor(120);
+  }
   hold() { this.worker?.postMessage({ type: 'hold' }); return true; }
   _click() { if (!this.done) this.worker?.postMessage({ type: 'click' }); }
 

@@ -138,7 +138,7 @@ export class Intro {
 
     this._buildDom();                                  // BEFORE the awaits below: the bar has to exist at t=0
     mark('dom');
-    this.stage = await buildStage({ seed: g.seed });
+    this.stage = await buildStage({ seed: g.seed, guyBuf: g.guyBuf || null });
     mark('stage');
     this._makeScreenCanvas();
     this.stage.setScreenTexture(this.screenTex);
@@ -391,7 +391,7 @@ export class Intro {
     const prev = this._monTex;
     const t = new THREE.Texture(bitmap);
     t.colorSpace = THREE.SRGBColorSpace;
-    t.flipY = false;                    // ImageBitmap is already top-down
+    t.flipY = false;                    // the bitmap is shipped pre-flipped (imageOrientation), see IntroHost
     t.needsUpdate = true;
     this._monTex = t;
     this.stage.setScreenTexture(t);

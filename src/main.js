@@ -145,12 +145,6 @@ if (intro) {
   // SYNCHRONOUS compile() internally and only defers the link-completion poll, so it blocks for the whole
   // compile and the first render still compiles whatever it missed. On ?auto=1 q=low it took the boot from
   // 18 stalls / 13.1 s blocked to 26 stalls / 27.9 s, worst single stall 5.5 s -> 13.7 s. Do not re-add it.
-  // The monitor shows the REAL game: once terrain and sky exist there is something worth looking at, so
-  // start shipping frames of the game canvas onto his screen. Off-thread intro means this cannot stutter
-  // the room; when the main thread blocks, the monitor just holds its last frame.
-  if (intro.startMonitor) {
-    game.events.on('boot:progress', (e) => { if (e.done >= 4) intro.startMonitor(120); });
-  }
   game.ready.then(async () => {
     if (PARAMS.get('nowarm') !== '1') {
       const t0 = performance.now();

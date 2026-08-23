@@ -82,7 +82,7 @@ const GUY_CHAIR = [-0.15, 0, 0.12];        // character.js measured the chair ag
 // armrest through his thigh. Solved with stage.setChair() live, then baked: 0.18 reads as perched off
 // the seat, 0.12 puts the backrest behind him and clears the armrest.
 
-async function loadGuy() {
+async function loadGuy(preloaded = null) {
   try {
     // meshopt-compressed (4.5 MB -> 1.3 MB); the decoder is a ~30 KB module bundled with the app, no
     // side files to host. Compressed offline with: npx @gltf-transform/cli optimize in.glb out.glb
@@ -92,7 +92,7 @@ async function loadGuy() {
     // a <link rel="preload" as="fetch"> reused by a fetch() here, but the preload never matched — Chrome
     // logged "credentials mode does not match" and downloaded all 443 KB a second time, every cold load.
     // The fallback keeps intro.html (which has no such script) working.
-    const buf = await (globalThis.__guyGlb ?? fetch(GUY_URL).then((r) => {
+    const buf = await (preloaded ?? globalThis.__guyGlb ?? fetch(GUY_URL).then((r) => {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       return r.arrayBuffer();
     }));
@@ -130,7 +130,7 @@ function greyBoxScreen() {
   return m;
 }
 
-export async function buildStage({ seed = 7, withRoom = true, withCharacter = true } = {}) {
+export async function buildStage({ seed = 7, withRoom = true, withCharacter = true, guyBuf = null } = {}) {
   RectAreaLightUniformsLib.init();
   const t0 = performance.now();
 
@@ -146,7 +146,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   const rng = mulberry32(seed);
   // Kicked off BEFORE the awaits below: meshopt decode and the two embedded WebP images (createImageBitmap,
   // off-thread) then overlap the texture load and the room/chair build instead of queueing behind them.
-  const guyReady = withCharacter ? loadGuy() : Promise.resolve(null);
+  const guyReady = withCharacter ? loadGuy(guyBuf) : Promise.resolve(null);
   const tex = await loadIntroTextures();
   // import.meta.glob rather than a static import: the room/character modules are optional by design, and
   // a bare `import './room.js'` makes their absence a build error instead of a missing prop.
@@ -404,9 +404,14 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     // then the world build on the same thread). He now parses at ~300 ms against a first paint at ~2 s,
     // so fading him would show a semi-transparent body with the chair and desk visible through it for
     // several seconds: the "silhouette in the chair" bug. Arrive before the first frame => arrive solid.
-    const late = painted;
-    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = late ? 0 : 1; } });
-    guyFade = late ? 0 : -1;
+    // He ALWAYS arrives solid. The cross-fade is gone, not conditioned: it was written to cover a body
+    // that landed after the room, but every version of "fade him in" has shipped as the silhouette bug —
+    // dt is clamped upstream so a 0.4 s fade costs 8 RENDERED frames, and during boot those frames are
+    // seconds apart. In the worker he is always later than the intro's own first frame, so the condition
+    // added in 66e6dfd stopped saving us. A body that pops in is a beat; a see-through body is a bug.
+    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = 1; } });
+    guyFade = -1;
+    void painted;
     bindSuck(guyHolder);
     api.guy = guy;
   });
