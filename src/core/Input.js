@@ -19,11 +19,37 @@ export class Input {
     // arrives asynchronously, by which time the click's transient activation is gone, so the fallback
     // request is rejected with "a user gesture is required" and the mouse stays free. Asking plain the
     // second time keeps the retry inside the gesture. (This is what made re-lock after Esc flaky.)
+    //
+    // TWO THINGS THE FIRST VERSION OF THIS GOT WRONG, both measured 2026-08-24 against a reproduction
+    // (3 of 8 fresh-profile runs failed with the browser's own
+    // "NotAllowedError: A user gesture is required to request Pointer Lock"):
+    //
+    //   1. The refusal is a property of the MACHINE, not of the page load, but the flag only lived in
+    //      memory - so EVERY reload paid the first-click failure again. It is persisted now, and a
+    //      machine that has ever refused asks plain from the very first click forever after.
+    //   2. The retry was a setTimeout, which by construction runs with no transient activation and so
+    //      is rejected 100% of the time - a retry that cannot ever succeed. It now re-arms on the next
+    //      REAL pointerdown instead, which is a genuine gesture, so the recovery actually recovers.
+    if (Input._noUnadjusted === undefined) {
+      try { Input._noUnadjusted = localStorage.getItem('cadle.noUnadjusted') === '1'; }
+      catch { Input._noUnadjusted = false; }        // storage blocked (privacy mode): behave as before
+    }
     if (Input._noUnadjusted) { plain(); return; }
+    const refused = () => {
+      Input._noUnadjusted = true;
+      try { localStorage.setItem('cadle.noUnadjusted', '1'); } catch {}
+      plain();                                       // may still be inside the gesture; free to try
+      // and if it was not, take the next real one. once:true so this can never pile up.
+      if (!document.pointerLockElement) {
+        window.addEventListener('pointerdown', () => {
+          setTimeout(() => { if (!document.pointerLockElement) plain(); }, 0);
+        }, { once: true, capture: true });
+      }
+    };
     try {
       const p = c.requestPointerLock?.({ unadjustedMovement: true });
-      p?.catch?.(() => { Input._noUnadjusted = true; plain(); setTimeout(() => { if (!document.pointerLockElement) plain(); }, 1400); });
-    } catch { Input._noUnadjusted = true; plain(); }
+      p?.catch?.(refused);
+    } catch { refused(); }
   }
   _bind() {
     const c = this.canvas;
