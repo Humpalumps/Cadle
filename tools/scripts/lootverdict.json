@@ -1,0 +1,12 @@
+[
+  {"wait": 10},
+  {"eval": "window.__game.god(true); window.__game.teleport(40,null,-40); 'tp'"},
+  {"wait": 2},
+  {"eval": "JSON.stringify({hasMarker: typeof window.__game.game.rpg.ctx.hud.marker, hasRollItem: typeof window.__game.game.rpg.ctx.rpg.rollItem})"},
+  {"eval": "const p=window.__game.game.player.position; window.__game.game.rpg.dropLoot({x:p.x+2.2,y:p.y,z:p.z-3}, 'legendary', {kind:'weapon'}); 'dropped'"},
+  {"wait": 3},
+  {"eval": "const p=window.__game.game.player.position; window.__game.teleport(p.x+1.2,null,p.z-2); window.__game.look(0,-0.12); 'walk'"},
+  {"wait": 2},
+  {"eval": "JSON.stringify({prompt: window.__game.game.hud._promptShown, drops: window.__game.loot().length})"},
+  {"shot": "loot-verdict"}
+]

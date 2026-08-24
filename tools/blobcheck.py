@@ -211,6 +211,22 @@ def main():
     files = sorted(glob.glob(os.path.join(d, f'{prefix}*.png')))
     if not files:
         print(f'BLOBCHECK: no frames matched {prefix}*.png in {d}'); return 1
+    # A TRUNCATED RUN IS NOT A FAILING RUN. Both tests are scoped by the mask; a colour frame whose
+    # mask is missing gets judged against the WHOLE frame, and the first thing that finds is the sky —
+    # a warm (243, 210, 157) "blob" at y = 7..23. That exact false positive has now cost two separate
+    # investigations (HANDOVER 4b, and a gate run on 2026-08-23 killed mid-burst by four concurrent
+    # headless browsers: 34 of 88 frames captured, one frame left without its mask, "BLOBCHECK FAIL").
+    # Refusing to judge an unscoped frame is the difference between a gate people trust and one they
+    # learn to explain away. Report the truncation as a HARNESS error, distinct from a blob finding.
+    unmasked = [os.path.basename(f) for f in files if not os.path.exists(mask_path_for(d, os.path.basename(f)))]
+    if unmasked:
+        print('BLOBCHECK INCONCLUSIVE (harness, not the game)')
+        print(f' - {len(unmasked)} of {len(files)} frame(s) have no mask-*.png, so they cannot be scoped to ground cover.')
+        print(f'   first few: {", ".join(unmasked[:6])}')
+        print('   A burst writes one mask per frame; missing masks mean the capture was cut short —')
+        print('   check for orphaned chrome-headless-shell processes and re-run (HANDOVER 4b).')
+        json.dump({'inconclusive': unmasked}, open(os.path.join(d, 'blobcheck.json'), 'w'), indent=1)
+        return 2                      # 2 = could not judge; 1 stays "found a blob"
     fails, report = [], {}
     prev_l = None; prev_name = None; prev_group = None
     for f in files:

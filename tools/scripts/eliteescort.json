@@ -1,0 +1,16 @@
+[
+  {"wait": 8},
+  {"hour": 10},
+  {"eval": "window.__game.god(true); window.__game.teleport(60,null,-60); 'open ground'"},
+  {"wait": 2},
+  {"eval": "const p=window.__game.game.player.position; const e=window.__game.spawn('sentinel',p.x,p.z-14,{level:6,elite:true,name:'Warden of the Spire',questTag:'demo'}); window.__game.game.hud.showBoss('Warden of the Spire', ()=>({hp:e.health/e.maxHealth, shield:0})); window.__game.passive(true); JSON.stringify({elite:!!e, name:e&&e.name, hp:e&&e.maxHealth})"},
+  {"eval": "window.__game.look(0,-0.03); 'look'"},
+  {"wait": 3},
+  {"shot": "elite-bossbar"},
+  {"eval": "window.__game.game.hud.hideBoss(); window.__game.killAll(); 'clear'"},
+  {"wait": 2},
+  {"eval": "const p=window.__game.game.player.position; const h=window.__game.game.enemies.spawnFriendly('wisp',{x:p.x,y:p.y,z:p.z-8},{to:{x:p.x,y:p.y,z:p.z-60},hp:120,tag:'demo#0'}); JSON.stringify({handle:!!h})"},
+  {"wait": 3},
+  {"shot": "escort-guide"},
+  {"eval": "JSON.stringify({friendly: !!window.__game.game.enemies.friendly, alive: window.__game.game.enemies.friendly && window.__game.game.enemies.friendly.alive})"}
+]

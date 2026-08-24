@@ -1,0 +1,16 @@
+[
+  {"wait": 2},
+  {"eval": "window.__game.quest.accept('frost-03')"},
+  {"eval": "window.__game.quest.accept('vale-03')"},
+  {"eval": "window.__game.quest.accept('wood-02')"},
+  {"eval": "window.__game.quest.debugTick('frost-03')"},
+  {"eval": "window.__game.quest.debugTick('frost-03')"},
+  {"eval": "window.__game.quest.debugTick('vale-03')"},
+  {"wait": 1},
+  {"eval": "JSON.stringify(window.__game.quest.state().active.map(q=>({id:q.id,name:q.name,obj:q.objectives.map(o=>o.text)})))"},
+  {"shot": "tracker-real"},
+  {"key": "KeyJ", "down": true},
+  {"key": "KeyJ", "down": false},
+  {"wait": 1.5},
+  {"shot": "questlog-real"}
+]

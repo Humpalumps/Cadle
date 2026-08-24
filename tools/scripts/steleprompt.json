@@ -1,0 +1,8 @@
+[
+  {"wait": 8},
+  {"eval": "const P=window.__game.game.world.props; JSON.stringify({hasUpdateSteles: typeof P._updateSteles, steleList: (P._steleList||[]).length, meadow: P.steleAt('meadow')})"},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+1.5,null,s.z+1.5); 'tp'"},
+  {"wait": 2},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'), p=window.__game.game.player.position; JSON.stringify({playerY:+p.y.toFixed(2), steleY:+s.y.toFixed(2), dist3d:+Math.hypot(p.x-s.x,p.y-s.y,p.z-s.z).toFixed(2), extPrompt: window.__game.game.hud?._extPrompt ?? null, promptShown: window.__game.game.hud?._promptShown ?? null})"},
+  {"shot": "prompt-close"}
+]

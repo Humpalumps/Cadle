@@ -10,6 +10,30 @@ const BASE = process.env.CADLE_URL || 'http://127.0.0.1:5173/';
 const URL = BASE.replace(/\/$/, '') + '/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
 let failed = false;
 
+// EXCLUSIVITY. inspect.mjs warns about orphaned browsers and carries on, which is right for a scoped
+// burst and wrong here: the gate captures 88 frames per quality and a starved run truncates, which
+// then reads as a failure rather than as an aborted measurement. That has now cost two full re-runs
+// (2026-08-23) — once as a fake BLOBCHECK FAIL on an unmasked frame, once as INCONCLUSIVE at 8 of 88
+// frames. Fail fast instead: a gate that produces an untrustworthy verdict is worse than one that
+// refuses to start. Set CADLE_GATE_FORCE=1 to override.
+if (!process.env.CADLE_GATE_FORCE) {
+  const ps = spawnSync(process.platform === 'win32' ? 'powershell' : 'sh',
+    process.platform === 'win32'
+      ? ['-NoProfile', '-Command', '@(Get-Process chrome-headless-shell -ErrorAction SilentlyContinue).Count']
+      : ['-c', 'pgrep -c chrome-headless-shell || true'],
+    { encoding: 'utf8' });
+  const n = parseInt(String(ps.stdout || '0').trim(), 10) || 0;
+  if (n > 0) {
+    console.error(`[gate] ==== NOT STARTING ====`);
+    console.error(`[gate] ${n} chrome-headless-shell process(es) are already running.`);
+    console.error('[gate] The gate captures 88 frames per quality and needs the GPU to itself; a starved run');
+    console.error('[gate] truncates, and a truncated capture reads as a failure it did not earn.');
+    console.error('[gate] Reap them and re-run, or set CADLE_GATE_FORCE=1 if you know what you are doing:');
+    console.error('[gate]   Get-Process chrome-headless-shell | Stop-Process -Force');
+    process.exit(3);
+  }
+}
+
 console.log('[gate] source invariants...');
 {
   const r0 = spawnSync('node', ['tools/invariants.mjs'], { stdio: 'inherit' });

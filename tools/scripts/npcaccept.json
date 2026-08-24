@@ -1,0 +1,12 @@
+[
+  {"wait": 12},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+2.0, null, s.z+2.0); 'tp'"},
+  {"wait": 3},
+  {"eval": "JSON.stringify({prompt: window.__game.game.hud._promptShown, activeBefore: window.__game.quest.state().active.map(q=>q.id), offers: window.__game.quest.offersAt('meadow')})"},
+  {"eval": "window.__game.input.press('KeyE'); 'pressE'"},
+  {"wait": 0.5},
+  {"eval": "window.__game.input.release('KeyE'); 'releaseE'"},
+  {"wait": 2},
+  {"eval": "JSON.stringify({afterE: window.__game.quest.state().active.map(q=>q.id)})"},
+  {"eval": "JSON.stringify({direct: window.__game.quest.readStele('meadow'), afterDirect: window.__game.quest.state().active.map(q=>q.id)})"}
+]

@@ -1,0 +1,14 @@
+[
+  {"wait": 10},
+  {"hour": 12},
+  {"eval": "window.__game.god(true); window.__game.teleport(40,null,-40); 'tp'"},
+  {"wait": 2},
+  {"eval": "const p=window.__game.game.player.position, R=window.__game.game.rpg; for(let i=0;i<5;i++) R.ammoDrop('light',{x:p.x-3+i*1.6,y:p.y,z:p.z-6}); for(let i=0;i<3;i++) R.ammoDrop('special',{x:p.x-2+i*2,y:p.y,z:p.z-13}); 'bricks'"},
+  {"eval": "window.__game.look(0,-0.10); 'look'"},
+  {"wait": 3},
+  {"shot": "ammo-day"},
+  {"hour": 22},
+  {"wait": 3},
+  {"shot": "ammo-night"},
+  {"eval": "JSON.stringify(window.__game.game.rpg.ammo())"}
+]

@@ -1,0 +1,9 @@
+[
+  {"wait": 8},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+1.5,null,s.z+1.5); 'near'"},
+  {"wait": 1.5},
+  {"eval": "JSON.stringify({near: window.__game.game.hud._promptShown})"},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+40,null,s.z+40); 'far'"},
+  {"wait": 1.5},
+  {"eval": "JSON.stringify({far: window.__game.game.hud._promptShown, ext: window.__game.game.hud._extPrompt})"}
+]

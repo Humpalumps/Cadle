@@ -1,0 +1,19 @@
+[
+  {"wait": 12},
+  {"hour": 11},
+  {"eval": "const P=window.__game.game.world.props; JSON.stringify({regions: Object.keys(P.steles||{}), meadow: P.steleAt('meadow')})"},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+22, null, s.z+22); const p=window.__game.game.player.position; window.__game.look(Math.atan2(-(s.x-p.x),-(s.z-p.z)), -0.03); JSON.stringify({dist:+Math.hypot(p.x-s.x,p.z-s.z).toFixed(1)})"},
+  {"wait": 3},
+  {"shot": "npc-30m"},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+6, null, s.z+6); const p=window.__game.game.player.position; window.__game.look(Math.atan2(-(s.x-p.x),-(s.z-p.z)), -0.06); JSON.stringify({dist:+Math.hypot(p.x-s.x,p.z-s.z).toFixed(1)})"},
+  {"wait": 3},
+  {"shot": "npc-8m"},
+  {"eval": "const P=window.__game.game.world.props, s=P.steleAt('meadow'); window.__game.teleport(s.x+2.2, null, s.z+2.2); const p=window.__game.game.player.position; window.__game.look(Math.atan2(-(s.x-p.x),-(s.z-p.z)), -0.02); JSON.stringify({dist:+Math.hypot(p.x-s.x,p.z-s.z).toFixed(1), prompt: window.__game.game.hud._promptShown})"},
+  {"wait": 2.5},
+  {"shot": "npc-2m"},
+  {"eval": "const before=window.__game.quest.state().active.length; window.__game.input.press('KeyE'); return 'E:'+before"},
+  {"wait": 0.3},
+  {"eval": "window.__game.input.release('KeyE'); 'up'"},
+  {"wait": 2},
+  {"eval": "JSON.stringify({active: window.__game.quest.state().active.map(q=>q.id), prompt: window.__game.game.hud._promptShown})"}
+]

@@ -1,0 +1,14 @@
+[
+  {"wait": 11},
+  {"eval": "window.__game.teleport(30,null,30); window.__game.game.player.weapons.setHidden(true); 'tp'"},
+  {"hour": 18},
+  {"eval": "const sd=window.__game.game.sky.sunDir; window.__game.look(Math.atan2(-sd.x,-sd.z), -0.02); 'facing sun'"},
+  {"wait": 3},
+  {"shot": "backlit-18"},
+  {"eval": "const sd=window.__game.game.sky.sunDir; window.__game.look(Math.atan2(sd.x,sd.z), -0.02); 'sun behind'"},
+  {"wait": 2.5},
+  {"shot": "frontlit-18"},
+  {"hour": 12},
+  {"wait": 2.5},
+  {"shot": "noon"}
+]

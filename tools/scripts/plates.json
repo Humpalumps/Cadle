@@ -1,0 +1,10 @@
+[
+  {"wait": 10},
+  {"eval": "window.__game.god(true); window.__game.teleport(40,null,-40); 'tp'"},
+  {"wait": 2},
+  {"eval": "const p=window.__game.game.player.position; const R=window.__game.game.rpg; for(let i=0;i<5;i++) R.dropLoot({x:p.x-4+i*2,y:p.y,z:p.z-10},'legendary',{kind:'weapon'}); R.dropLoot({x:p.x,y:p.y,z:p.z-12},'exotic',{kind:'weapon'}); 'six plates'"},
+  {"eval": "window.__game.look(0,-0.05); 'look'"},
+  {"wait": 4},
+  {"shot": "plates-9m"},
+  {"eval": "JSON.stringify({drops: window.__game.loot().length})"}
+]

@@ -217,5 +217,80 @@ if (props) {
   }
 }
 
+// ------------------------------------------------- (j) QUESTS ARE WRITTEN, NEVER SPOKEN
+// User decision 2026-08-23: the voiced opening quest was removed and every quest from here on is READ.
+// The failure mode this pins: a later builder "improves" a quest beat by reaching for audio.playVoice()
+// again, and the game silently reacquires a voice cast, a pinned-voice consistency contract and a
+// per-line asset budget that nobody signed up for. Narration belongs in the quest text and the quest
+// log. If story-mode voiced NPCs are ever green-lit, lift this rule deliberately — do not route
+// around it, and do not re-add /assets/voice/* to the preloader to make a single line work.
+for (const f of srcFiles) {
+  if (!f.includes(join('src', 'rpg'))) continue;
+  const src = read(f);
+  if (/playVoice\s*\(/.test(src)) fail(f + ' calls playVoice() - quests are WRITTEN, never spoken (user decision 2026-08-23). Put the words in the quest text and the quest log.');
+  if (/assets\/voice\//.test(src)) fail(f + ' references /assets/voice/ - the voice lines were deleted with the voiced opener; quests are written now.');
+}
+{
+  const assets = read(join('src', 'core', 'Assets.js'));
+  if (/voice-vale|assets\/voice\//.test(assets)) fail('src/core/Assets.js still preloads voice lines - they were deleted with the voiced opening quest (quests are written now).');
+}
+
+// ------------------------------------------------- (k) QUEST/AMMO DROPS MUST NOT FIGHT THE LOOT CAP
+// The opening quest's reward kept being evicted by loot.js's MAX_DROPS cap, and the workaround shipped
+// was a 5-second poll that re-dropped a legendary on the ground forever. Quest items and ammo bricks are
+// not loot: a fight that drops twelve commons must never delete the thing a quest told you to pick up,
+// and a quest item must never push someone's exotic off the floor either. Whoever owns loot.js keeps
+// these populations separate - if this rule blocks legitimate work, say so in your report.
+{
+  const ammo = read(join('src', 'rpg', 'ammo.js'));
+  if (ammo && !/MAX_BRICKS|BRICK_CAP/.test(ammo)) fail('src/rpg/ammo.js has no separate brick cap - bricks must not share loot.js MAX_DROPS, or a firefight evicts the loot you came for');
+}
+
+// ------------------------------------------------------------------ (l) NO TRADEMARKED ITEM NAMES
+// The weapon-name grammar is combinatorial and keyed by archetype, so one evocative word in a pool can
+// reproduce a real shipped item from the very games this project is benchmarked against — and land it on
+// the same weapon class as the original, which makes it look deliberate rather than accidental. Two were
+// already live: "Last Word" (Destiny exotic hand cannon; our `lastbreath` tag rolled onto hand cannons)
+// and "Thorn" (likewise). This greps the generator's pools, not free prose, so flavour text is unaffected.
+{
+  // Strip comments first. The whole point of this rule is that removals get EXPLAINED in place, and an
+  // explanation naming the word it removed would otherwise trip the rule that removal satisfied — which
+  // is how a guardrail teaches people to write vaguer comments.
+  const names = read(join('src', 'rpg', 'names.js'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+  // Proper nouns, not ordinary words: "Reckoning" alone is fine English; the faction name is not.
+  const banned = ['Last Word', 'Gjallarhorn', 'Ace of Spades', 'Fatebringer', 'Whisper of the Worm',
+                  'Hawkmoon', 'Sunshot', 'Riskrunner', 'the Nine', 'Xur', 'the Traveler',
+                  'Frostmourne', 'Thunderfury', 'Ashbringer', 'Shadowmourne', 'Atiesh'];
+  for (const b of banned) {
+    if (new RegExp("'" + b + "'").test(names)) {
+      fail(`src/rpg/names.js has "${b}" in a generator pool - that is a real shipped item from Destiny or WoW, and this project is benchmarked against both. Pick an original word.`);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ (m) LOOT DROPS ARE AIRBORNE EMISSIVES
+// HANDOVER 9 says the coverage for glowing things OFF the ground is "the invariants.mjs ceilings + the
+// aether cap + HOT_TINT". That was not true of src/rpg/dropmesh.js, which had NO rule here at all while
+// carrying per-rarity emissive intensities up to 1.05 on an object that hovers at chest height and is
+// deliberately built to catch the eye. blobcheck.py cannot help: its BRIGHT test is scoped to ground
+// cover, so a drop beacon is invisible to it by construction. That is exactly the gap a future "make
+// exotics pop more" tweak walks through.
+// The ceiling is the same one the wisps use (1.1) — below the ~1.2 bloom threshold with margin.
+{
+  const dm = read(join('src', 'rpg', 'dropmesh.js'));
+  const m = dm.match(/const EMIS = \{([^}]*)\}/);
+  if (!m) fail('src/rpg/dropmesh.js lost its per-rarity EMIS table - the drop emissive ceiling is unpinned');
+  else {
+    for (const pair of m[1].split(',')) {
+      const kv = pair.split(':');
+      if (kv.length !== 2) continue;
+      const k = kv[0].trim(), v = Number(kv[1]);
+      if (Number.isFinite(v) && v > 1.1) fail(`src/rpg/dropmesh.js EMIS.${k} is ${v} - above the 1.1 ceiling. A drop hovers at chest height where blobcheck's ground-cover scoping cannot see it; saturate the COLOUR, cap the INTENSITY.`);
+    }
+  }
+}
+
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');
 process.exit(failed ? 1 : 0);
