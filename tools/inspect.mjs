@@ -142,7 +142,14 @@ async function verifyServedTree() {
     if (!marker) continue;
     let served;
     try {
-      const r = await fetch(`${base.replace(/\/$/, '')}/${rel}`);
+      // Build the probe off the ORIGIN, not the raw --url. A caller passing a url that already
+      // carries a query (`http://host:5174/?auto=1`) produced `.../?auto=1/src/main.js`, which the
+      // dev server answers with index.html for every probe - so all three "mismatch" and the guard
+      // cries WRONG TREE on a perfectly correct tree. A guard that false-positives is worse than no
+      // guard: it taught one agent to run with CADLE_SKIP_TREECHECK, and its captures then could not
+      // be trusted at all. Strip query and hash before probing.
+      const origin = new URL(base).origin + new URL(base).pathname.replace(/\/$/, '');
+      const r = await fetch(`${origin}/${rel}`);
       if (!r.ok) { bad.push(`${rel}: server returned ${r.status}`); continue; }
       served = await r.text();
     } catch (e) { bad.push(`${rel}: ${e.message}`); continue; }
