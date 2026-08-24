@@ -1,0 +1,9 @@
+[
+  {"wait": 3},
+  {"eval": "JSON.stringify({steles: Object.keys(window.__game.game.props?.steles||{}), meadowStele: !!window.__game.game.props?.steleAt?.('meadow')})"},
+  {"wait": 3},
+  {"eval": "JSON.stringify({active: window.__game.quest.state().active.map(q=>q.id), offersMeadow: window.__game.quest.offersAt('meadow')})"},
+  {"eval": "window.__game.goto('tundra')"},
+  {"wait": 4},
+  {"eval": "JSON.stringify({afterTravel: window.__game.quest.state().active.map(q=>q.id), region: window.__game.biomeAt()})"}
+]

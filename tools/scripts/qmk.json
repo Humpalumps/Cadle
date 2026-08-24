@@ -1,0 +1,44 @@
+[
+  { "wait": 5.0 },
+  { "resetStats": true },
+  { "eval": "(() => { const g = window.__game.game; return { pos: g.world.props.steleAt('meadow'), offers: g.rpg.quest.offersAt('meadow') }; })()" },
+
+  { "log": "60m -- marker should read from here, NPC should not" },
+  { "tp": [7.22, null, 45] }, { "look": [0, -0.05] }, { "wait": 0.8 }, { "shot": "60m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); return m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null; })()" },
+
+  { "log": "30m -- the shot that must beat the old npcaudit blob" },
+  { "tp": [7.22, null, 15] }, { "look": [0, -0.05] }, { "wait": 0.8 }, { "shot": "30m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); return m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null; })()" },
+
+  { "log": "8m -- NPC legible, marker fading out" },
+  { "tp": [7.22, null, -7] }, { "look": [0, -0.1] }, { "wait": 0.8 }, { "shot": "8m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); return m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null; })()" },
+
+  { "log": "2m -- marker gone, [E] prompt should be up instead" },
+  { "tp": [7.22, null, -13] }, { "look": [0, -0.2] }, { "wait": 1.0 }, { "shot": "2m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); const p = document.querySelector('#iprompt'); return { marker: m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null, promptOpacity: p.style.opacity, promptText: document.querySelector('#iprompt .ipt').textContent }; })()" },
+
+  { "log": "reprove accept flow: active before, press E, active after" },
+  { "eval": "window.__game.game.rpg.quest.state().active.length" },
+  { "key": "KeyE", "down": true }, { "wait": 0.15 }, { "key": "KeyE", "down": false },
+  { "wait": 0.5 },
+  { "eval": "window.__game.game.rpg.quest.state()" },
+
+  { "log": "tick vale-01 to ready, screenshot at 30m -- gold ?" },
+  { "eval": "(() => { const q = window.__game.game.rpg.quest; let i = 0; while (i++ < 20) { const st = q.state().active.find(a => a.id === 'vale-01'); if (!st || st.ready) break; q.debugTick('vale-01'); } return q.state(); })()" },
+  { "tp": [7.22, null, 15] }, { "look": [0, -0.05] }, { "wait": 0.8 }, { "shot": "ready-30m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); return m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null; })()" },
+
+  { "log": "accept remaining sides -- offers empty, one active not ready -> dim ? (progress)" },
+  { "eval": "(() => { const q = window.__game.game.rpg.quest; q.turnIn('vale-01', 0); for (const id of q.offersAt('meadow')) q.accept(id); return { offers: q.offersAt('meadow'), active: q.state().active.filter(a => a.region === 'meadow') }; })()" },
+  { "wait": 0.6 }, { "shot": "progress-30m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest b'); const el = document.querySelector('#markers .mk-quest'); return m ? { text: m.textContent, color: m.style.color, opacity: el.style.opacity } : null; })()" },
+
+  { "log": "exhaust meadow entirely -- no offers, no active -> no marker at all" },
+  { "eval": "(() => { const q = window.__game.game.rpg.quest; let i = 0; while (i++ < 40) { const st = q.state(); const activeMeadow = st.active.filter(a => a.region === 'meadow'); if (activeMeadow.length) { q.complete(activeMeadow[0].id); continue; } const offers = q.offersAt('meadow'); if (offers.length) { q.complete(offers[0]); continue; } break; } return { iters: i, offers: q.offersAt('meadow'), active: q.state().active.filter(a => a.region === 'meadow') }; })()" },
+  { "wait": 0.8 }, { "shot": "none-30m" },
+  { "eval": "(() => { const m = document.querySelector('#markers .mk-quest'); return m ? 'MARKER STILL PRESENT (bug)' : 'no marker (correct)'; })()" },
+
+  { "stats": "final" }
+]

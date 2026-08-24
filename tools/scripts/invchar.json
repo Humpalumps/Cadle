@@ -1,0 +1,13 @@
+[
+  {"wait": 10},
+  {"eval": "const R=window.__game.game.rpg, p=window.__game.game.player.position; for(let i=0;i<9;i++) R.dropLoot({x:p.x,y:p.y,z:p.z},'rare',{kind: i%2?'weapon':'armour'}); 'seeded'"},
+  {"wait": 1.5},
+  {"eval": "for(let i=0;i<9;i++) window.__game.game.rpg.pickup(60); JSON.stringify({inv: window.__game.game.rpg.ctx.rpg.inventory.length})"},
+  {"wait": 1},
+  {"key": "KeyI", "down": true}, {"key": "KeyI", "down": false},
+  {"wait": 2},
+  {"shot": "inventory"},
+  {"key": "KeyC", "down": true}, {"key": "KeyC", "down": false},
+  {"wait": 2},
+  {"shot": "character"}
+]

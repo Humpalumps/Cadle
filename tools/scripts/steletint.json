@@ -1,0 +1,9 @@
+[
+  {"wait": 10},
+  {"hour": 11},
+  {"eval": "window.__game.teleport(28, null, 6); 'tp'"},
+  {"wait": 2},
+  {"eval": "const s=window.__game.game.world.props.steleAt('meadow'); const p=window.__game.game.player.position; window.__game.look(Math.atan2(-(s.x-p.x),-(s.z-p.z)), -0.02); JSON.stringify({dist:+Math.hypot(p.x-s.x,p.z-s.z).toFixed(1), stele:[+s.x.toFixed(1),+s.z.toFixed(1)]})"},
+  {"wait": 1.5},
+  {"shot": "meadow-30m-tinted"}
+]

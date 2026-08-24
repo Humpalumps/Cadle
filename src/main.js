@@ -161,6 +161,33 @@ Object.assign(window.__game, {
   damagePlayer: (n = 30) => P().damage(n, null),
   respawn: () => P().respawn(),
   god: (v = true) => { P().god = v; },
+  // --- rpg: quests, loot, ammo ---
+  // EVERY call here returns a SCALAR or plain JSON. Handing a live Enemy/Object3D back to
+  // Playwright serialises the whole Three.js graph over CDP and manufactures a phantom multi-second
+  // stall that looks exactly like a driver hang (HANDOVER 5.5). tools/questgate.mjs depends on this.
+  quest: {
+    accept: (id) => !!game.rpg?.quest?.accept?.(id),
+    abandon: (id) => !!game.rpg?.quest?.abandon?.(id),
+    complete: (id) => !!game.rpg?.quest?.complete?.(id),
+    turnIn: (id) => !!game.rpg?.quest?.turnIn?.(id),
+    fail: (id) => !!game.rpg?.quest?.fail?.(id),          // escort death path; a failed quest is re-acceptable
+    debugTick: (id) => !!game.rpg?.quest?.debugTick?.(id),
+    all: () => game.rpg?.quest?.all?.() ?? [],
+    offersAt: (region) => game.rpg?.quest?.offersAt?.(region) ?? [],
+    state: () => game.rpg?.quest?.state?.() ?? { active: [], completed: [] },
+  },
+  ammo: () => P().weapons.slots.map((w) => ({ id: w.id, archetype: w.archetype, ammo: w.ammo, magSize: w.magSize, reserve: w.reserve, maxReserve: w.maxReserve })),
+  drain: () => { for (const w of P().weapons.slots) { w.ammo = 0; w.reserve = 0; } return true; },   // run every gun dry: the dry-guard test
+  loot: () => game.rpg?.activeDrops?.() ?? [],
+  dropLoot: (tier, opts) => { game.rpg?.dropLoot?.(P().position, tier, opts); return true; },
+  rpgState: () => { const R = game.rpg?.ctx?.rpg; return R ? { level: R.level, xp: R.xp, next: R.next, points: R.points, power: R.stats?.power, currencies: { ...R.currencies } } : null; },
+  addXp: (n) => { game.rpg?.addXp?.(n); return game.rpg?.ctx?.rpg?.level ?? 0; },
+  setLevel: (n) => {   // jump the curve for band testing; xp-only, never touches gear
+    const R = game.rpg?.ctx?.rpg; if (!R) return 0;
+    let guard = 0;
+    while ((R.level ?? 1) < n && guard++ < 200) game.rpg.addXp(R.next ?? 1000);
+    return R.level;
+  },
   // --- vfx / postfx / audio ---
   vfxShowcase: () => game.vfx.showcase?.(),
   flash: (c = 0xffffff, s = 0.8, d = 0.3) => game.postfx.flash?.(c, s, d),

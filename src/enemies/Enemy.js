@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { BODIES } from './bodies.js';
 import { cloneBones, plantLegs, damp } from './rig.js';
 import { createCreatureMaterial, createShieldMaterial } from './materials.js';
-import { DEFS, LEVEL_HP, LEVEL_DMG } from './defs.js';
+import { DEFS, LEVEL_HP, LEVEL_DMG, LEVEL_XP } from './defs.js';
+
+// Elite modifier: a lightweight reskin of an existing body for slay-a-mini-boss quest objectives and the
+// loot builder's elite tier floor. Not a new creature — same rig, same AI, three numbers and a look tweak.
+// The tint is a DIFFUSE multiplier (uTint, see materials.js `diffuseColor.rgb *= uTint * ...`), never the
+// emissive/glow channel, so it reads as "richer, elite-coloured" without touching anything the blob law caps.
+const ELITE_HP_MUL = 3.0, ELITE_DMG_MUL = 1.35, ELITE_XP_MUL = 4.0, ELITE_SCALE_MUL = 1.35;
+const ELITE_TINT = new THREE.Color(0xd9a53a);   // saturated antique gold — distinguishing, diffuse only
 
 /**
  * Enemy: one creature instance (pooled by type). Owns its SkinnedMesh (shared geometry, own skeleton + material),
@@ -67,19 +74,36 @@ export class Enemy {
     this._fApplied = { on: false, b: null, z: 0, x: 0, h: null, hz: 0, hx: 0 };   // preallocated: no per-frame garbage in the anim path
     this.fireK = 0; this.fireV = 0;                                  // per-bolt recoil: volleys used to fire with the shooter dead still
     this.turnRate = 0; this.localVel = new THREE.Vector2();
+    // resolved combat target for this tick: normally the player, but generalized to "nearest of {player, the
+    // escort guide}" so hostile AI can aggro the guide too (see _perceive) — one seam, reused by _think/_attack.
+    this._threat = { pos: new THREE.Vector3(), feet: new THREE.Vector3(), obj: null };
+    this.isGuide = false;   // true only for the escort guide instance (Enemies.spawnFriendly) — see takeDamage
     this.body.setup(this, asset);
     this._fBody = this.bones.torso ?? this.bones.body ?? this.bones.core ?? null;
     this._fHead = this.bones.head ?? this.bones.neck1 ?? this.bones.neck ?? null;
     if (this._fHead === this._fBody) this._fHead = null;
   }
 
-  /** (re)initialise for a spawn at feet position `pos` */
-  spawn(pos, { level = 1, camp = null, slot = null, yaw } = {}) {
+  /** (re)initialise for a spawn at feet position `pos`. `elite`: scaled mini-boss modifier (see ELITE_* above);
+   *  `name`: override the readable name (elite default: "Elite <def.name>"); `questTag`: opaque string quest
+   *  code can match on (e.g. objectives keyed to a specific spawn, not just a type). `isGuide`: true only for
+   *  the escort guide (Enemies.spawnFriendly) — routes takeDamage to _guideDamage instead of the normal AI death. */
+  spawn(pos, { level = 1, camp = null, slot = null, yaw, elite = false, name = null, questTag = null, isGuide = false } = {}) {
     const def = this.def, g = this.game, rnd = this.sys.rnd;
     this.id = NEXT_ID++; this.level = level; this.camp = camp; this.slot = slot; this.alive = true; this.state = 'idle'; this.stateT = 0;
-    this.name = def.name; this.target.name = def.name; this.target.level = level;
-    this.maxHealth = LEVEL_HP(def.health, level); this.health = this.maxHealth; this.maxShield = LEVEL_HP(def.shield, level); this.shield = this.maxShield;
-    this.damage = LEVEL_DMG(def.damage, level);
+    this.elite = elite; this.questTag = questTag; this.isGuide = isGuide;
+    this.target.team = 'enemy';   // reset every spawn: spawnFriendly flips this to 'player' AFTER calling spawn()
+    // for the escort guide specifically — without this reset a pooled ex-guide instance stays immune to the
+    // player's own fire forever the next time it is recycled as a normal hostile.
+    // safe default before the first _perceive tick runs (percT can start > 0): threat = the player, so nothing
+    // reads a stale/zero position on frame 1.
+    this._threat.pos.copy(this.sys.playerPos); this._threat.obj = g.player?.target ?? null;
+    this._threat.feet.copy(g.player?.position ?? this.sys.playerPos);
+    this.name = name ?? (elite ? `Elite ${def.name}` : def.name); this.target.name = this.name; this.target.level = level;
+    this.maxHealth = Math.round(LEVEL_HP(def.health, level) * (elite ? ELITE_HP_MUL : 1)); this.health = this.maxHealth;
+    this.maxShield = Math.round(LEVEL_HP(def.shield, level) * (elite ? ELITE_HP_MUL : 1)); this.shield = this.maxShield;
+    this.damage = Math.round(LEVEL_DMG(def.damage, level) * (elite ? ELITE_DMG_MUL : 1));
+    this.xp = Math.round(LEVEL_XP(def.xp, level) * (elite ? ELITE_XP_MUL : 1));
     this.position.copy(pos); if (!def.flying) this.position.y = g.terrain.heightAt(pos.x, pos.z); else this.position.y = g.terrain.heightAt(pos.x, pos.z) + def.hover;
     this.home.copy(this.position); this.velocity.set(0, 0, 0); this.yaw = yaw ?? rnd() * Math.PI * 2; this.seedT = rnd() * 100;
     this.alert = false; this.seen = false; this.lastSeenT = -99; this.hurtT = -99; this.attackCd = 1 + rnd(); this.percT = rnd() * 0.3; this.fleeCd = 0; this.idleDur = 1.5 + rnd() * 3;
@@ -88,13 +112,13 @@ export class Enemy {
     this.thinkDt = 0; this.moveDt = 0; this.animDt = 0; this.steer.set(0, 0, 0); this.wantPos.copy(this.position); this.flinch.set(0, 0); this.flinchV.set(0, 0); this._fApplied.on = false; this.fireK = 0; this.fireV = 0; this.turnRate = 0; this.localVel.set(0, 0); this.strafeLean = 0;
     // look: deterministic palette pick per spawn (emissive colour, tint)
     const pal = def.palette[Math.floor(rnd() * def.palette.length)];
-    this.glowColor.set(pal[0]); this.u.uEmissive.value.set(pal[0]); this.u.uTint.value.set(pal[1]);
+    this.glowColor.set(pal[0]); this.u.uEmissive.value.set(pal[0]); this.u.uTint.value.set(elite ? ELITE_TINT : pal[1]);
     this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uBump.value = def.bump ?? 0.05; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
     if (this.shieldMat) { this.shieldMat.color.set(pal[0]); this.shieldMat.emissive.set(pal[0]); this.su.uHit.value = 0; this.su.uAlpha.value = 1; }
     this.target.alive = true; this.target.health = this.health; this.target.maxHealth = this.maxHealth; this.target.shield = this.shield; this.target.maxShield = this.maxShield;
     g.combat.register(this.target);
     // pose
-    this.root.position.copy(this.position); this.root.rotation.set(0, this.yaw, 0); this.root.scale.setScalar(def.scale ?? 1); this.root.visible = true;
+    this.root.position.copy(this.position); this.root.rotation.set(0, this.yaw, 0); this.root.scale.setScalar((def.scale ?? 1) * (elite ? ELITE_SCALE_MUL : 1)); this.root.visible = true;
     this.mesh.castShadow = true; this.mesh.visible = true;
     for (const b of this.boneList) { b.position.copy(this.asset.bindPos[b.userData.index]); b.quaternion.identity(); b.scale.setScalar(1); b.updateMatrix(); }
     this.root.updateMatrixWorld(true);
@@ -110,6 +134,10 @@ export class Enemy {
   // ------------------------------------------------------------------ damage / death
   takeDamage(info) {
     if (!this.alive) return;
+    // escort guide: a straight-lerp follower, not a hostile AI — skip stagger/flee/blink/phase/_die entirely
+    // (which would fire 'enemy:death' and trip loot/xp listeners built for a real kill) and let Enemies.js
+    // own the quest-visible death instead.
+    if (this.isGuide) { this._guideDamage(info); return; }
     const t = this.game.time; let a = info.amount;
     if (a <= 0) return;
     const s = Math.min(this.shield, a); this.shield -= s; a -= s;
@@ -155,6 +183,13 @@ export class Enemy {
     if (ph && this.phaseIdx < ph.length && this.health <= ph[this.phaseIdx] * this.maxHealth) this._phase();
   }
   knockback(dir, s) { if (!this.alive) return; const k = this.def.boss ? 0.15 : this.def.role === 'slam' ? 0.3 : 1; this.velocity.addScaledVector(dir, s * k); if (s > 6 && k >= 1 && this.game.time - this.lastStagger > 1.4) { this._setState('stagger'); this.staggerT = this.def.staggerTime; this.lastStagger = this.game.time; } }
+  /** guide-only damage path: just HP, no stagger/flinch/AI. Cleanup + the quest-visible death event is
+   *  Enemies.js's job (_killFriendly) since it owns the route/tag state this instance doesn't carry. */
+  _guideDamage(info) {
+    const a = info.amount; if (a <= 0) return;
+    this.health = Math.max(0, this.health - a); this.target.health = this.health;
+    if (this.health <= 0) this.sys._killFriendly(this);
+  }
   _shieldBreak() {
     this.game.vfx?.emit?.('ring', this.center, { color: this.glowColor.getHex(), scale: this.def.shieldRadius ?? 1 });
     this.game.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 24 });
@@ -190,10 +225,14 @@ export class Enemy {
     // decisions + steering: attack/stagger frame-accurate (strike timing is gameplay); the rest ticks by distance
     const active = this.state === 'attack' || this.state === 'stagger';
     this.thinkDt += dt;
-    const thinkEvery = active ? 1 : lod === 0 ? 3 : lod === 1 ? 5 : lod === 2 ? 9 : 16;
+    // crowd-scaled beyond 110 m: a hound 200 m away does not need to re-steer every frame, and a bigger
+    // crowd means less of it matters that we notice late. lod 0/1 (close, in a fight) stay un-decimated
+    // by crowd size — that band is where a late decision reads as the enemy standing still for a beat.
+    let thinkEvery = active ? 1 : lod === 0 ? 3 : lod === 1 ? 5 : lod === 2 ? 9 : 16;
+    if (!active && lod >= 2 && this.sys.crowd > 1) thinkEvery = Math.ceil(thinkEvery * this.sys.crowd);
     if (thinkEvery === 1 || (frame + this.id) % thinkEvery === 0) {
       const td = this.thinkDt; this.thinkDt = 0;
-      this.distP = this.position.distanceTo(this.sys.playerPos);
+      this.distP = this.position.distanceTo(this._threat.pos);
       this.wantDir.set(0, 0, 0); this.wantSpeed = 0; this.facePlayer = false;
       this._think(td, t);
       this._steer(td, t);
@@ -208,13 +247,33 @@ export class Enemy {
     let animEvery = lod === 0 ? (d2cam < 144 ? 1 : d2cam < 900 ? 2 : 3) : lod === 1 ? 4 : lod === 2 ? 6 : 0;
     if (cm > 1 && animEvery) animEvery = Math.ceil(animEvery * cm);
     if (animEvery && (frame + this.id) % animEvery === 0) { this._animate(this.animDt, t); this.animDt = 0; }
-    if (lod < 2 ? (cm === 1 || (frame + this.id) % 2 === 0) : (frame + this.id) % 3 === 0) this._sync(dt, t, lod);
+    // uniform upkeep (uTime/uGlow/weak-point/shield) is invisible-stale at distance: crowd-scale it too, free.
+    if (lod < 2 ? (cm === 1 || (frame + this.id) % 2 === 0) : (frame + this.id) % Math.ceil(3 * cm) === 0) this._sync(dt, t, lod);
   }
 
   _perceive(t) {
     const g = this.game, P = g.player;
-    if (!P?.alive || this.sys.passive) { this.seen = false; if (this.sys.passive || (this.alert && t - this.lastSeenT > 4)) this.alert = false; return; }
-    const def = this.def, pc = this.sys.playerPos;
+    // A dead player used to stop perception for EVERY hostile, which was correct when the player was the
+    // only possible threat. With an escort out it made the guide invulnerable for the whole
+    // death-to-respawn window — the escort's only fail state switching off exactly when it is most
+    // likely to fire. Keep perceiving while a guide is alive; only `passive` silences everything.
+    const guideOut = !!this.sys.friendly?.enemy?.alive;
+    if (this.sys.passive || (!P?.alive && !guideOut)) { this.seen = false; if (this.sys.passive || (this.alert && t - this.lastSeenT > 4)) this.alert = false; return; }
+    const def = this.def;
+    // threat = nearest of {player, the escort guide, if one is out}. combat.nearest(..., 'player') is reused
+    // completely unmodified: the guide's target.team is flipped to 'player' on spawn (Enemies.spawnFriendly)
+    // specifically so this query already returns "whichever of the two is closer" for free — that is the
+    // whole of "hostile enemies should aggro it", no per-role AI rewrite. Gated on sys.friendly so the O(n)
+    // combat.nearest scan only runs while an escort is actually out (rare) — every other tick, of which there
+    // are far more, stays the old O(1) player-only read.
+    const th = (this.sys.friendly ? g.combat.nearest(this.center, 1e9, 'player') : null) ?? P.target;
+    this._threat.obj = th; this._threat.pos.copy(th.position);
+    // feet: the player publishes them directly; anything else (the guide) carries its own `position`,
+    // and we fall back to the centre rather than inventing an offset for a body we do not own.
+    // The player publishes feet separately. Anything else (the guide) only exposes its combat centre,
+    // and inventing an offset for a body we do not own would be worse than using the centre.
+    this._threat.feet.copy(th === P.target ? P.position : th.position);
+    const pc = this._threat.pos;
     const d = this.center.distanceTo(pc);
     let see = false;
     if (d < def.perception * (this.alert ? 1.6 : 1)) {
@@ -240,7 +299,12 @@ export class Enemy {
   _startAttack(kind) { this._setState('attack'); this.attackKind = kind; this.struck = false; this.telegraph = 0; this.attackT = 0; this.volleyLeft = 0; }
 
   _think(dt, t) {
-    const def = this.def, g = this.game, P = g.player, pc = this.sys.playerPos, pf = P.position;
+    // pc = the threat's CENTRE (chest height), pf = its FEET. These are two different points and always
+    // were: `sys.playerPos` is `player.target.position`, which Player.js sets to feet + 0.9. Collapsing
+    // both onto _threat.pos moved every `pf` consumer up by 0.9 m and made melee's vertical gate
+    // asymmetric — a player on a 2 m ledge became unreachable while one 2 m below became reachable to
+    // 3.4 m. Keep them distinct; `_threat.feet` is maintained beside `_threat.pos` in _perceive.
+    const def = this.def, g = this.game, P = g.player, pc = this._threat.pos, pf = this._threat.feet;
     const st = this.state;
     if (this.camp && !this.alert && t - this.camp.alertT < 6 && this.camp.alertT > 0) { this.alert = true; this.lastSeen.copy(pc); this.lastSeenT = t; } // pack alert
     if (st === 'stagger') { this.staggerT -= dt; if (this.staggerT <= 0) this._setState(this.alert ? 'chase' : 'idle'); return; }
@@ -347,7 +411,7 @@ export class Enemy {
   }
 
   _attack(dt, t) {
-    const def = this.def, g = this.game, pc = this.sys.playerPos, pf = g.player.position, kind = this.attackKind;
+    const def = this.def, g = this.game, pc = this._threat.pos, pf = this._threat.feet, kind = this.attackKind, atPlayer = this._threat.obj === g.player.target;
     const wind = def.attackWindup, total = wind + def.attackRecover;
     this.attackT = this.stateT < wind ? 0.35 * this.stateT / wind : 0.35 + 0.65 * Math.min(1, (this.stateT - wind) / def.attackRecover);
     this.telegraph = this.stateT < wind ? this.stateT / wind : Math.max(0, this.telegraph - dt * 6);
@@ -361,8 +425,8 @@ export class Enemy {
     if (!this.struck && this.stateT >= wind) {
       this.struck = true; g.events.emit('enemy:attack', { enemy: this, kind });
       const sig = def.signature;
-      if (sig?.pull) {                                  // the strike DRAGS you in: backing off is not free
-        const pcv = g.player.controller;
+      if (sig?.pull && atPlayer) {                       // the strike DRAGS you in: backing off is not free
+        const pcv = g.player.controller;                 // player-only: the guide has no controller to pull
         _v.subVectors(this.position, pf); _v.y = 0.25; _v.normalize();
         pcv?.velocity?.addScaledVector?.(_v, sig.pull.force);
         g.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 10, scale: 0.8 });
@@ -374,8 +438,8 @@ export class Enemy {
         const facing = Math.abs(wrapAngle(Math.atan2(dx, dz) - this.yaw)) < 1.0;
         this._muzzle(_w); g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 8, scale: 0.6 });
         if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) {
-        this._hitPlayer(this.damage, 'kinetic');
-        if (sig?.chill) g.player.controller?.chill?.(sig.chill.secs, sig.chill.mul);   // the bite is cold: you slow down
+        this._hitThreat(this.damage, 'kinetic');
+        if (sig?.chill && atPlayer) g.player.controller?.chill?.(sig.chill.secs, sig.chill.mul);   // the bite is cold: you slow down (player-only — the guide has no controller)
       }
       } else if (kind === 'slam') {
         _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)); _w.copy(this.position).addScaledVector(_v, def.radius + 1.2); _w.y = this.sys.heightAt(_w.x, _w.z);
@@ -384,7 +448,7 @@ export class Enemy {
         g.vfx?.emit?.('dust', _w, { count: 30, scale: 2 });
         // burning/freezing ground: the slam leaves a patch, so the arena shrinks while you fight
         if (def.signature?.ground) { const gr = def.signature.ground; this.sys.addHazard?.(_w, gr.r, gr.dps, gr.secs, gr.color, gr.element); }
-        const dd = _w.distanceTo(pc); g.player.view?.shake?.(THREE.MathUtils.clamp(1.2 - dd / 14, 0, 0.9));
+        const dd = _w.distanceTo(g.player.position); g.player.view?.shake?.(THREE.MathUtils.clamp(1.2 - dd / 14, 0, 0.9));   // camera shake is always keyed to the REAL player, not the threat
         g.audio?.play?.('explosion', { pos: _w, vol: 0.8 });
       } else if (kind === 'bolt') this._fireBolt(def.projectile, this.damage);
       else if (kind === 'volley') { this.volleyLeft = def.volley; this.volleyT = 0; }
@@ -417,22 +481,24 @@ export class Enemy {
     const dCam = _w.distanceTo(this.game.camera.position);
     this._breath.fade((br.alpha ?? 0.8) * THREE.MathUtils.clamp((dCam - (br.near ?? 8)) / ((br.far ?? 18) - (br.near ?? 8)), 0, 1));
   }
-  _hitPlayer(amount, element) {
-    const g = this.game, P = g.player; if (!P?.alive) return;
-    _n.subVectors(P.target.position, this.center).normalize();
-    g.combat.damage(P.target, { amount, element, crit: false, point: P.target.position, normal: _v.copy(_n).negate(), dir: _n, owner: this, source: this.type });
-    P.view?.flinch?.(0.6);
+  /** damage whatever this enemy resolved as its threat this tick — the player, or the escort guide. */
+  _hitThreat(amount, element) {
+    const g = this.game, th = this._threat.obj; if (!th?.alive) return;
+    _n.subVectors(th.position, this.center).normalize();
+    g.combat.damage(th, { amount, element, crit: false, point: th.position, normal: _v.copy(_n).negate(), dir: _n, owner: this, source: this.type });
+    if (th === g.player.target) g.player.view?.flinch?.(0.6);   // screen flinch is player-only
   }
   _muzzle(out) {
     const b = this.bones.orb ?? this.bones.core ?? this.bones.head ?? this.bones.hdR ?? this.boneRoot;
     return out.setFromMatrixPosition(b.matrixWorld);
   }
   _fireBolt(pj, damage, spread = 0.05) {
-    const g = this.game, pc = this.sys.playerPos, P = g.player;
+    const g = this.game, pc = this._threat.pos, P = g.player, atPlayer = this._threat.obj === P.target;
     this.fireV += 3.4;                                                // kick the shooter back on every bolt of the volley
     this._muzzle(_w);
-    // lead the target a little (Destiny enemies mostly miss a moving player; a bit of lead keeps them honest)
-    _v.copy(pc).addScaledVector(P.controller?.velocity ?? _n.set(0, 0, 0), 0.25).sub(_w);
+    // lead the target a little (Destiny enemies mostly miss a moving player; a bit of lead keeps them honest).
+    // Player-only: the guide has no controller velocity to lead (it barely moves, no lead needed).
+    _v.copy(pc).addScaledVector(atPlayer ? (P.controller?.velocity ?? _n.set(0, 0, 0)) : _n.set(0, 0, 0), 0.25).sub(_w);
     const dist = _v.length() || 1; _v.multiplyScalar(1 / dist);
     _v.x += (this.sys.rnd() - 0.5) * spread; _v.y += (this.sys.rnd() - 0.5) * spread * 0.6; _v.z += (this.sys.rnd() - 0.5) * spread; _v.normalize();
     const explode = pj.explodeRadius ? { radius: pj.explodeRadius, damage: damage * 0.8, knockback: 2 } : null;
@@ -447,7 +513,7 @@ export class Enemy {
     g.audio?.play?.('enemy-shot', { pos: _w, vol: 0.7 });
   }
   _throwRock() {
-    const g = this.game, pf = g.player.position, th = this.def.throw;
+    const g = this.game, pf = this._threat.feet, th = this.def.throw;
     this._muzzle(_w); _w.y += 0.5;
     _v.subVectors(pf, _w); const dy = _v.y + 1; _v.y = 0; const dx = _v.length() || 1; _v.multiplyScalar(1 / dx);
     // ballistic low-arc: sin(2θ) = d·g/v²  (clamped -> 45° lob when out of reach), plus a height correction
@@ -509,7 +575,7 @@ export class Enemy {
       // facing
       const sp = Math.hypot(v.x, v.z); this.speedN = Math.min(1, sp / def.speed);
       let ty = this.yaw;
-      if (this.facePlayer || this.state === 'attack') { const pf = g.player.position; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
+      if (this.facePlayer || this.state === 'attack') { const pf = this._threat.pos; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
       else if (sp > 0.4) ty = Math.atan2(v.x, v.z);
       const rate = def.turn * (this.state === 'attack' ? 1.5 : 1);
       const dyaw = THREE.MathUtils.clamp(wrapAngle(ty - this.yaw), -rate * dt, rate * dt);
@@ -533,7 +599,7 @@ export class Enemy {
       const sp = v.length(); this.speedN = Math.min(1, sp / def.speed);
       let ty = this.yaw;
       if (def.role === 'dive') { if (Math.hypot(v.x, v.z) > 1) ty = Math.atan2(v.x, v.z); }
-      else if (this.facePlayer || this.alert) { const pf = g.player.position; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
+      else if (this.facePlayer || this.alert) { const pf = this._threat.pos; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
       else if (sp > 0.5) ty = Math.atan2(v.x, v.z);
       const dy = THREE.MathUtils.clamp(wrapAngle(ty - this.yaw), -def.turn * dt, def.turn * dt); this.yaw += dy;
       this.rollAnim = damp(this.rollAnim, -dy / Math.max(dt, 1e-3) * 0.25, 4, dt);

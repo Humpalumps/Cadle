@@ -1,0 +1,15 @@
+[
+  {"wait": 6},
+  {"eval": "window.__game.god(true); window.__game.passive(false); window.__game.drain(); JSON.stringify(window.__game.ammo())"},
+  {"eval": "JSON.stringify(window.__game.game.rpg.ammo())"},
+  {"eval": "const p=window.__game.game.player.position; for(let i=0;i<4;i++) window.__game.spawn('hound', p.x+3+i, p.z+2, {level:3}); 'spawned'"},
+  {"wait": 1.5},
+  {"eval": "window.__game.killAll(); 'killed'"},
+  {"wait": 2.5},
+  {"eval": "JSON.stringify({afterKillBeforePickup: window.__game.ammo(), bricks: window.__game.game.rpg.ammo()})"},
+  {"eval": "const p=window.__game.game.player.position; window.__game.teleport(p.x+3.5, null, p.z+2); 'walked'"},
+  {"wait": 2.5},
+  {"eval": "JSON.stringify({afterPickup: window.__game.ammo(), bricks: window.__game.game.rpg.ammo()})"},
+  {"wait": 2},
+  {"eval": "JSON.stringify({final: window.__game.ammo(), bricks: window.__game.game.rpg.ammo()})"}
+]

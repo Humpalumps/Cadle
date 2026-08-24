@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp, lerp, smoothstep } from '../core/Noise.js';
 import { InstLOD, patchMaterial, triplanarPatch, fadePatch, mergePatch, noiseTexture, normalFromLuma, makeRockGeometry, tn, tfbm } from './Vegetation.js';
-import { OUTER, THETA0, STEP } from './Biomes.js';
+import { OUTER, THETA0, STEP, BIOMES } from './Biomes.js';
+// Read-only reuse of the creature machinery (src/enemies/* is owned by the enemies builder — imported, never edited).
+// The Wayfinder NPCs are built with the SAME Rig/SkinnedMesh pipeline and the SAME shader program as every
+// enemy ('aether-creature' cache key), so eleven quest givers add zero new programs and one shared geometry.
+import { Rig, prim, cloneBones, aimAt, relaxBone } from '../enemies/rig.js';
+import { createCreatureMaterial } from '../enemies/materials.js';
 
 /**
  * Props: hand-placed landmarks (procedural geometry, seeded detail), all colliding:
@@ -76,6 +81,8 @@ const LANDMARK_STONE = {
   sunken:    { glyph: [0.45, 1.5, 1.9],  mat: 'stone' },
   void:      { glyph: [1.1, 0.4, 2.4],   mat: 'basalt' },
 };
+// Wayfinder Stele / chest neutral instance tints (identity = vertex colour as-authored; dim = "looted").
+const NEUTRAL_TINT = new THREE.Color(1, 1, 1), LOOTED_TINT = new THREE.Color(0.45, 0.45, 0.48);
 const flat = (g) => { const n = g.index ? g.toNonIndexed() : g; n.deleteAttribute('uv'); n.computeVertexNormals(); return n; }; // faceted stone
 /** Merge parts to one non-indexed geometry. tints: per-part [r,g,b] array (or one tint for all) -> vertex colors
  *  (stoneMat has vertexColors on: per-block tint kills the single-beige-albedo read). */
@@ -139,9 +146,111 @@ function mushroomGeometry() {
   const g = mergeGeometries([cap.toNonIndexed(), stem.toNonIndexed()]); g.computeVertexNormals(); return g;
 }
 
+// ---------------------------------------------------------------- the Wayfinder (quest giver)
+/**
+ * THE WAYFINDER — the NPC you take quests from. One shared rig, eleven instances.
+ *
+ * WHY THIS EXISTS: quests used to be given by a 5.4 m carved slab. User, verbatim: "the giant rocks for
+ * accepting and completing quests - we need a better model for this, not a rock lol". In WoW and FF14 you
+ * take quests from PEOPLE. So the slab shrank to a knee-high waystone marker (the stone the order is named
+ * for — it still carries the gold filigree, the region weathering and the rune plaque that make the spot
+ * read at 30 m) and a robed, hooded, staff-bearing figure now stands on the dais beside it.
+ *
+ * BUILT ON THE ENEMY RIG ON PURPOSE. src/enemies/rig.js merges every part into ONE non-indexed geometry
+ * with skinIndex/skinWeight, so a Wayfinder is a single SkinnedMesh (1 draw call) whose GEOMETRY IS SHARED
+ * by all eleven; only the ~13-bone skeleton and the material uniforms are per instance. It also hands us
+ * aimAt() for free, which is the entire difference between a character and a statue: the head turns to
+ * follow you. Everything past 150 m is `visible = false` and never animates, and the regions are 400+ m
+ * apart, so in practice ONE skinned mesh is ever in the frame.
+ *
+ * BLOB LAW: the only emissive element is the staff finial, and it is not a new emissive recipe — it is the
+ * shared creature material, whose fragment shader already caps aether luminance at 0.62 (hue-preserving)
+ * against a ~1.2 bloom threshold. uGlow is pulled to 1.3 and uRim to 0.15 (a calm NPC, not a telegraphing
+ * enemy). Roughness 0.85 everywhere: no point glints. Region character is COLOUR (uTint + a saturated
+ * finial hue per region), never brightness.
+ *
+ * Authored in root space: Y up, +Z forward, root at the feet. ~1.80 m to the crown of the hood, staff 2.47.
+ */
+const BOX1 = new THREE.BoxGeometry(1, 1, 1);   // plain 12-tri box for flat gold inlays (prim.box is a 300-tri RoundedBox)
+const _WF_EYE = new THREE.Vector3();           // scratch: no per-frame allocation in the idle/look path
+function buildWayfinderRig() {
+  const R = new Rig(), { root } = R;
+  const ROBE = 0x39325a, ROBE2 = 0x4b4272, DARK = 0x241f38, HOOD = 0x2c2542, TRIM = 0xc2913f,
+    LEATHER = 0x4a3a2a, SKIN = 0xc39a74, SKIN_DK = 0x9c7a5c, WOOD = 0x9a8763, PAPER = 0xd8c9a4, GLOW = 0xffffff;
+
+  // ---- pelvis: the floor-length robe (no leg bones at all — the hem hides them, so no gait, no IK, no cost)
+  const pelvis = R.bone('pelvis', root, 0, 0.95, 0);
+  R.part(pelvis, prim.limb(1.45), { p: [0, 1.06, 0], s: [0.215, 1.06, 0.185], color: ROBE, mottle: 0.12 });      // skirt. Flare kept MODEST on purpose: at taper 1.85 the cone swallowed both arms and he read as a chess bishop
+  R.part(pelvis, prim.hex(), { p: [0, 0.055, 0], s: [0.325, 0.11, 0.285], color: DARK, mottle: 0.1, flat: true }); // heavy hem
+  R.part(pelvis, prim.hex(), { p: [0, 0.155, 0], s: [0.318, 0.028, 0.280], color: TRIM, mottle: 0.04, flat: true });
+  R.part(pelvis, BOX1, { p: [0, 0.62, 0.238], r: [0.10, 0, 0], s: [0.035, 0.86, 0.018], color: TRIM, mottle: 0.04 }); // gold conduit down the front
+  for (const s of [-1, 1]) R.part(pelvis, prim.limb(1.35), { p: [s * 0.135, 0.98, 0.075], r: [0, 0, s * 0.06], s: [0.046, 0.94, 0.043], color: DARK, mottle: 0.1 }); // two shadow folds: the skirt is a cone otherwise
+  R.part(pelvis, prim.hex(), { p: [0, 1.04, 0], s: [0.225, 0.075, 0.195], color: DARK, mottle: 0.08, flat: true });   // belt
+  R.part(pelvis, prim.hex(), { p: [0, 1.078, 0], s: [0.232, 0.022, 0.201], color: TRIM, mottle: 0.04, flat: true });
+  R.part(pelvis, prim.box(), { p: [-0.215, 0.90, 0.045], r: [0, 0.25, 0.1], s: [0.085, 0.105, 0.05], color: LEATHER, mottle: 0.14 }); // satchel: he carries the catalogue
+  R.part(pelvis, BOX1, { p: [-0.225, 0.945, 0.10], s: [0.03, 0.016, 0.012], color: TRIM, mottle: 0.04 });
+
+  // ---- torso: chest + shoulder mantle. The mantle is the 30 m silhouette cue (a wide dark shoulder line).
+  const torso = R.bone('torso', pelvis, 0, 0.30, 0);
+  R.part(torso, prim.hex(), { p: [0, 1.28, 0], r: [0, 0.39, 0], s: [0.215, 0.30, 0.175], color: ROBE, mottle: 0.14, flat: true });
+  R.part(torso, prim.sphereLo(), { p: [0, 1.37, 0], s: [0.255, 0.085, 0.205], color: DARK, mottle: 0.1 });
+  R.part(torso, prim.sphereLo(), { p: [0, 1.428, 0], s: [0.268, 0.115, 0.215], color: ROBE2, mottle: 0.14 });   // mantle: WIDE and FLAT, not a fur boa — it has to read as shoulders
+  for (const s of [-1, 1]) R.part(torso, BOX1, { p: [s * 0.09, 1.36, 0.16], r: [0, 0, -s * 0.6], s: [0.16, 0.022, 0.014], color: TRIM, mottle: 0.04 }); // mantle chevron
+  R.part(torso, BOX1, { p: [0, 1.20, 0.168], s: [0.055, 0.42, 0.015], color: TRIM, mottle: 0.05 });              // stole
+  R.part(torso, prim.torus(), { p: [0, 1.50, 0], r: [Math.PI / 2, 0, 0], s: 0.135, color: TRIM, mottle: 0.03 }); // collar ring
+
+  // ---- head: cowl open at the front. A FACE, not a void — you take quests from people, not from wraiths.
+  const head = R.bone('head', torso, 0, 0.35, 0);
+  R.part(head, prim.cyl(), { p: [0, 1.525, 0], s: [0.055, 0.09, 0.055], color: SKIN_DK });
+  R.part(head, prim.sphereLo(), { p: [0, 1.615, 0.012], s: [0.098, 0.115, 0.105], color: SKIN, mottle: 0.08 });
+  R.part(head, prim.sphereLo(), { p: [0, 1.565, 0.055], s: [0.062, 0.048, 0.055], color: 0x6f6576, mottle: 0.12 });   // short grey beard: reads "elder" instantly
+  R.part(head, prim.sphereLo(), { p: [0, 1.642, -0.078], s: [0.162, 0.168, 0.156], color: HOOD, mottle: 0.12 });      // cowl shell (pushed back so the face clears it)
+  R.part(head, prim.cone(), { p: [0, 1.735, -0.105], r: [-0.75, 0, 0], s: [0.105, 0.17, 0.105], color: HOOD, mottle: 0.1, flat: true }); // hood peak (laid back: upright it read as a horn)
+  R.mirror(head, prim.hex(), { p: [0.113, 1.628, 0.005], r: [0, 0, 0], s: [0.045, 0.145, 0.115], color: HOOD, mottle: 0.1, flat: true }); // cowl cheek panels frame the face
+  R.part(head, BOX1, { p: [0, 1.688, 0.072], r: [-0.25, 0, 0], s: [0.115, 0.035, 0.055], color: HOOD, mottle: 0.08 }); // brow lip: casts the face into shadow
+  R.mirror(head, prim.sphereLo(), { p: [0.038, 1.628, 0.098], s: 0.0135, color: 0x15111c, mottle: 0 });
+
+  // ---- arms: shoulder -> elbow -> hand, bell sleeves
+  for (const [n, sx] of [['R', 0.235], ['L', -0.235]]) {
+    const sh = R.bone('sh' + n, torso, sx, 0.155, 0), el = R.bone('el' + n, sh, 0, -0.27, 0), hd = R.bone('hd' + n, el, 0, -0.26, 0);
+    R.part(sh, prim.sphereLo(), { p: [sx, 1.405, 0], s: 0.075, color: ROBE2, mottle: 0.12 });
+    R.part(sh, prim.limb(0.95), { p: [sx, 1.405, 0], s: [0.062, 0.28, 0.062], color: ROBE2, mottle: 0.12 });   // sleeve is the LIGHTER cloth: a same-tone arm on a same-tone robe is one blob
+    R.part(el, prim.limb(1.5), { p: [sx, 1.125, 0], s: [0.056, 0.255, 0.056], color: ROBE2, mottle: 0.12 });      // bell sleeve
+    R.part(el, prim.hex(), { p: [sx, 0.875, 0], s: [0.088, 0.024, 0.088], color: TRIM, mottle: 0.04, flat: true });
+    R.part(hd, prim.sphereLo(), { p: [sx, 0.838, 0.015], s: [0.044, 0.057, 0.042], color: SKIN, mottle: 0.08 });
+    if (n === 'R') {   // the staff: the vertical that breaks the skyline and says "someone is standing there"
+      // PALE shaft, not dark wood: at 30 m the whole site is dark-on-green and a dark stick simply is not
+      // there. A bleached-ash vertical is the one high-value line in the silhouette and it is what carries
+      // the "someone is standing here" read at range — the same job the 5.4 m slab used to do.
+      R.part(hd, prim.cyl(), { p: [0.295, 1.36, 0.075], s: [0.024, 2.42, 0.024], color: WOOD, mottle: 0.16 });
+      R.part(hd, prim.hex(), { p: [0.295, 0.85, 0.075], s: [0.032, 0.15, 0.032], color: LEATHER, flat: true });
+      R.part(hd, prim.hex(), { p: [0.295, 1.66, 0.075], s: [0.030, 0.038, 0.030], color: TRIM, mottle: 0.04, flat: true });
+      R.part(hd, prim.hex(), { p: [0.295, 2.42, 0.075], r: [Math.PI / 2, 0, 0], s: [0.105, 0.030, 0.105], color: TRIM, mottle: 0.04, flat: true }); // gold medallion
+      R.part(hd, prim.crystal(), { p: [0.295, 2.55, 0.075], s: [0.052, 0.16, 0.052], color: GLOW, glow: 0.85, flat: true });   // capped at 0.62 luminance by the shared shader
+      R.part(hd, prim.crystal(), { p: [0.295, 2.35, 0.075], r: [Math.PI, 0, 0], s: [0.030, 0.075, 0.030], color: GLOW, glow: 0.55, flat: true });
+    } else {           // a rolled charter in the off hand
+      R.part(hd, prim.cyl(), { p: [-0.245, 0.845, 0.065], r: [0, 0, 1.35], s: [0.027, 0.20, 0.027], color: PAPER, mottle: 0.1 });
+    }
+  }
+  return R.build();
+}
+// Cloth weathering per region: the Frostveil one snow-dusted, the Infernal one ash-scorched, the Sunken
+// one kelp-damp. COLOUR ONLY (uTint multiplies albedo) — one geometry serves all eleven, which is the
+// whole reason a quest giver in every region costs one shared mesh instead of eleven.
+const WAYFINDER_TINT = {
+  meadow: [1.00, 1.00, 1.00], forest: [0.86, 0.98, 0.90], tundra: [1.08, 1.12, 1.20], celestial: [1.10, 1.05, 0.94],
+  dragon: [1.00, 0.93, 0.85], infernal: [0.70, 0.64, 0.60], lost: [0.95, 0.91, 1.09], shadowfen: [0.80, 0.90, 0.80],
+  sunken: [0.80, 1.00, 0.95], void: [0.84, 0.80, 1.02],
+};
+
+// Quest-giver HUD marker glyph/colour per state (see Props#_questGiverState) — gold "!"/"?" for anything
+// actionable, dim grey "?" for "nothing new, don't bother" (WoW/FF14 convention).
+const QMK_GLYPH = { offer: '!', ready: '?', progress: '?' };
+const QMK_COLOR = { offer: '#ffd24a', ready: '#ffd24a', progress: '#8a8a8a' };
+
 // ---------------------------------------------------------------- the system
 export class Props {
-  constructor(game) { this.game = game; this.lights = []; this.landmarks = {}; this._rot = []; }
+  constructor(game) { this.game = game; this.lights = []; this.landmarks = {}; this._rot = []; this.steles = {}; this.chests = []; this._qmk = new Map(); }
 
   async init() {
     const { game } = this, { scene, terrain } = game, veg = game.world.vegetation, col = game.world.colliders;
@@ -159,7 +268,15 @@ export class Props {
     this.iceMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: 0.34, metalness: 0.0, color: 0xdfeeff }), mergePatch(triplanarPatch(0.5, 0.35), { key: 'ice-stone' }));
     this.basaltMat = patchMaterial(new THREE.MeshStandardMaterial({ map: basalt, vertexColors: true, roughness: 0.95, metalness: 0.02, color: 0x8e8a96 }), mergePatch(triplanarPatch(0.42, 0.5), { key: 'basalt-stone' }));
     this.plinthMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, roughness: 0.7, metalness: 0.08, color: 0xe8e4f0 }), mergePatch(triplanarPatch(0.5, 0.0), { key: 'plinth' }));
-    const runeTex = runeColumnTexture(rng);
+    // Wayfinder Steles get their OWN material, not stoneMat/basaltMat: stoneMat's map is the sandstone
+    // brick photo (or its brick-patterned procedural fallback) — a vertex tint can darken a brick texture
+    // but can never remove the brick pattern, which is why the steles read as a chimney. This is a flat
+    // noise-based slate (no masonry coursing at all) at basalt-dark value, one instance shared by all 11.
+    const steleTex = stoneTexture(aniso, [0.22, 0.21, 0.25], [0.46, 0.44, 0.52]);
+    // color stays neutral white: texture x per-instance vertex TINT already carries the darkening (see
+    // TINT in _buildSteles) — a third darkening multiplier here compounded them down to near-black.
+    this.steleMat = patchMaterial(new THREE.MeshStandardMaterial({ map: steleTex, vertexColors: true, roughness: 0.88, metalness: 0.03, color: 0xffffff }), mergePatch(triplanarPatch(0.42, 0.4), { key: 'stele-slate' }));
+    const runeTex = runeColumnTexture(rng); this._runeTex = runeTex; // reused by the stele plaques below
     this.monoMat = patchMaterial(new THREE.MeshStandardMaterial({ map: basalt, roughness: 0.8, metalness: 0.05, color: 0xffffff, emissiveMap: runeTex, emissive: 0x6a3cff, emissiveIntensity: 2.8 }),
       mergePatch(triplanarPatch(0.4, 0.2), { key: 'monolith', uniforms: { uTime: this.U.uTime }, fHead: 'uniform float uTime;', fEmissive: 'totalEmissiveRadiance *= 0.72 + 0.28 * sin(uTime * 0.9 + vWPos.x * 0.35 + vWPos.z * 0.21);' }));
     this.glyphMat = (tex, color) => new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
@@ -177,6 +294,12 @@ export class Props {
     this._buildMushrooms(rng, h, veg, Q);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildBiomeLandmarks(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
+    this._buildSteles(rng, h, col);
+    await new Promise((r) => requestAnimationFrame(r));
+    this._buildWayfinders();
+    await new Promise((r) => requestAnimationFrame(r));
+    this._buildChests(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildVillage(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
@@ -714,6 +837,475 @@ export class Props {
   }
 
   /**
+   * WAYFINDER STELES — one carved stone per region (11: the Vale gets two, at its two hubs; the nine
+   * outer regions get one each), so a quest chain has a giver instead of the auto-offer fallback.
+   * `steleAt(regionId)` is the whole contract with the quest engine: truthy position => real flow.
+   *
+   * Placed ON the straight line from the world origin through the region's own landmark (every outer
+   * region's centre already sits on that bearing per Biomes.js, and it is the line the mountain pass
+   * feeds into), offset back toward home far enough to clear the landmark's own footprint — so a player
+   * walking the pass-to-landmark line the way the game already routes them walks straight past it.
+   *
+   * 2026-08-23 — THE SLAB IS NO LONGER THE GIVER. It was 5.4 m of carved rock and the user's verdict was
+   * "we need a better model for this, not a rock lol", which is correct: in WoW and FF14 you take quests
+   * from a person. What this method still builds is the SETTING — a two-step walkable dais, and on one
+   * side of it a knee-to-chest WAYSTONE MARKER (the stone the order is named for). The giver himself is a
+   * robed Wayfinder NPC standing on the other side; see _buildWayfinders / buildWayfinderRig.
+   *
+   * The marker is kept rather than deleted because it is what makes the SPOT read at 30 m, and it is free:
+   * it merges into the same single steleMat draw call it always did, and at 2.1 m it costs a THIRD of the
+   * triangles the slab did. It carries everything the range-read was built out of — the dark-slate value
+   * contrast (steleMat: flat procedural noise, no masonry coursing, so a per-instance tint darkens toward
+   * slate instead of toward dirty brick), the saturated non-emissive gold FILIGREE (spine inlay, crown
+   * chevron, base band, two studs, all flush against the approach-facing side, never a ring around the
+   * shaft), the per-region weathering, and the small additive rune plaque that reuses the SAME
+   * runeColumnTexture/hue already shipped on the landmark floor sigils (LANDMARK_STONE.glyph). Nothing
+   * here is a new emissive recipe. Never emissive-glowing stone: marker and gold both live entirely in
+   * steleMat, which carries no emissive channel at all.
+   */
+  _buildSteles(rng, h, col) {
+    const { scene, terrain } = this.game;
+    const WL = terrain.waterLevel ?? 4;
+    const SP = [], ST = []; // one merge bucket for all 11 (steleMat) — see steleMat comment in init()
+    const GP = [], GT = []; // additive rune-plaque parts (kept separate: these need real UVs, mergeAll strips them)
+    const GOLD = [1.15, 0.90, 0.40];
+    this.steles = {}; this._steleList = [];
+
+    // per-region weathering: only the three regions CLAUDE.md calls out by name get bespoke geometry —
+    // everyone else already reads as their region through the stone/ice/basalt material bucket + tint.
+    // (x, y, z) is the MARKER's base — already on the dais top, not on the terrain. Radii were retuned when
+    // the 5.4 m slab became a 2.1 m waystone: the old ones were sized off the slab's 4 m width and would
+    // now leave the icicles and the scorch marks hanging in mid air a metre off the stone.
+    const WEATHER = {
+      tundra: (x, y, z, faceAngle, hh, P) => { for (let i = 0; i < 4; i++) { const a = faceAngle + (rng() - 0.5) * 1.6, il = 0.22 + rng() * 0.3;
+        P(new THREE.ConeGeometry(0.04 + rng() * 0.02, il, 5).rotateX(Math.PI).translate(x + Math.sin(a) * 0.40, y + hh * 0.84 - il * 0.5, z + Math.cos(a) * 0.40), [0.92, 0.97, 1.08]); } }, // icicles off the crown
+      infernal: (x, y, z, faceAngle, hh, P) => { for (let i = 0; i < 3; i++) { const yy = y + 0.35 + rng() * (hh - 0.9);
+        P(new THREE.BoxGeometry(0.05, 0.28 + rng() * 0.26, 0.04).rotateY(faceAngle).translate(x + Math.sin(faceAngle) * 0.50, yy, z + Math.cos(faceAngle) * 0.50), [0.55, 0.22, 0.09]); } }, // scorch cracks on the approach-facing side; hue, never a bloom-capable value (same trick as the vent throat elsewhere in this file)
+      sunken: (x, y, z, faceAngle, hh, P) => { for (let i = 0; i < 5; i++) { const a = rng() * 6.2832, d = 0.55 + rng() * 0.5, chh = 0.2 + rng() * 0.28;
+        P(new THREE.CylinderGeometry(0.045, 0.08, chh, 6).translate(x + Math.cos(a) * d, y + chh / 2 - 0.1, z + Math.sin(a) * d), [0.55 + rng() * 0.25, 0.72, 0.66]); } }, // coral crust at the base
+    };
+    // Deliberately darker and more saturated-slate than the landmark/plinth/lanterns it stands next to
+    // (those are warm-pale) — a "waystone" needs VALUE contrast against its own backdrop to read as a
+    // distinct object at 30 m, not just another block of the same material. Region hue is still present
+    // (a hint, not camouflage). Values are ~1.4x brighter than they'd be over stoneMat's warm-pale
+    // sandstone: steleMat's own texture is already slate-dark, so the old multipliers stacked to near-black.
+    // Per-region stone tint. Raised ~1.35x over the first dark-slate pass (2026-08-23) because at 30 m
+    // the Vale stele read as a flat BLACK CUTOUT: the carving is in the texture, but the tint crushed it
+    // into a narrow low band that ACES and the filmic grade then compressed further, so the silhouette
+    // survived and the detail did not. Value contrast is what makes it read as a giver at range —
+    // silhouette alone is a hole in the world.
+    // These sit around 0.15-0.45 against a ~1.2 bloom threshold, so there is no BLOB LAW risk here and
+    // there is no emissive channel on this material at all. If a stele ever needs to draw the eye MORE,
+    // raise the tint or the crevice contrast — never add glow. Ground-adjacent bright things are what
+    // the architectural law exists for.
+    const TINT = { meadow: [0.57, 0.51, 0.46], forest: [0.42, 0.46, 0.36], tundra: [0.72, 0.78, 0.90], celestial: [0.78, 0.72, 0.62],
+      dragon: [0.63, 0.56, 0.48], infernal: [0.32, 0.26, 0.26], lost: [0.65, 0.55, 0.74], shadowfen: [0.42, 0.46, 0.34],
+      sunken: [0.49, 0.65, 0.62], void: [0.39, 0.34, 0.48] };
+    // offset back from the landmark centre (metres), tuned per region so the stele clears that region's
+    // widest ring/gate/dais footprint (see _buildBiomeLandmarks) instead of standing inside it
+    const OFFSET = { meadowA: 13, meadowB: 45, forest: 32, tundra: 32, celestial: 38, dragon: 58, infernal: 42, lost: 58, shadowfen: 26, sunken: 36, void: 42 };
+
+    const place = (landmark, D0, side) => {
+      const r0 = Math.hypot(landmark.x, landmark.z) || 1, ux = landmark.x / r0, uz = landmark.z / r0, tx = -uz, tz = ux;
+      // A few metres OFF the dead-centre bearing line, not on it: standing exactly on the line to the
+      // landmark puts the stele's silhouette directly in front of (and eclipsed by) the landmark itself
+      // when a player looks straight down the approach — offset to one side so it reads as its own
+      // object beside the path instead of a shadow cast on the landmark behind it.
+      const base = 6.5 * side;
+      let x = landmark.x, z = landmark.z, y = 0, bestY = -1e9, bx = x, bz = z;
+      for (let att = 0; att < 6; att++) {
+        const D = D0 + att * 9, jig = base + att * 0.9 * (att % 2 ? 1 : -1);
+        x = landmark.x - ux * D + tx * jig; z = landmark.z - uz * D + tz * jig; y = h(x, z);
+        if (y > WL + 1 && terrain.slopeAt(x, z) < 0.5) { bestY = y; bx = x; bz = z; break; }
+        if (y > bestY) { bestY = y; bx = x; bz = z; }   // no attempt cleared the water: keep the DRIEST one,
+      }                                                 // not the last one. The Sunken Kingdom's giver was 22 m under the sea.
+      x = bx; z = bz; y = bestY;
+      return { x, y, z, faceAngle: Math.atan2(-ux, -uz) }; // plaque faces back down the approach (toward home)
+    };
+
+    const build = (id, landmark, D0, regionId, side = 1) => {
+      if (!landmark) return;
+      const { x, y, z, faceAngle } = place(landmark, D0, side);
+      const [P, T] = [SP, ST]; // all 11 share steleMat now — region character comes from TINT + WEATHER below
+      const tint = TINT[id] ?? [0.3, 0.28, 0.26];
+      const hh = 2.0 + rng() * 0.35;  // waystone, not monolith: chest-high beside a 1.8 m man
+      const Push = (g, t) => { P.push(g); T.push(t ?? tint); };
+      // two-step dais, walkable. It is the stage: marker on one side, the Wayfinder standing on the other.
+      // The dais is PALE and the marker stays dark. Value contrast has to run one way or the other and it
+      // used to run neither: a near-black slab on a near-black pad in a bright meadow read as one hole in
+      // the world. A light stone platform is also what a dark robed figure needs to pop off at 30 m.
+      Push(new THREE.CylinderGeometry(1.95, 2.25, 0.32, 10).translate(x, y + 0.16, z), tint.map((v) => v * 1.62));
+      Push(new THREE.CylinderGeometry(1.55, 1.78, 0.28, 10).translate(x, y + 0.46, z), tint.map((v) => v * 1.80));
+      col.add({ type: 'box', box: new THREE.Box3(V3(x - 2.15, y - 1, z - 2.15), V3(x + 2.15, y + 0.65, z + 2.15)), walkable: true });
+      // One frame of reference for everything on the dais. `dir` is the way the giver faces (back down the
+      // approach, toward home); `t` is the horizontal tangent to it. rotateY(a) maps local +Z to
+      // (sin a, cos a) = dir, so a plane/box rotated by faceAngle has its front face pointing at `dir` —
+      // no +PI/2 correction anywhere any more (the old slab needed one only because monolithGeometry had
+      // to be pre-rotated to put its WIDE axis on the approach; the menhir kit is already narrow-on).
+      const dx = Math.sin(faceAngle), dz = Math.cos(faceAngle), tx = Math.cos(faceAngle), tz = -Math.sin(faceAngle);
+      const DY = 0.60;                                        // top of the upper dais step
+      const mx = x - tx * 0.95, mz = z - tz * 0.95;            // the waystone marker
+      const nx = x + tx * 0.72, nz = z + tz * 0.72;            // where the Wayfinder stands
+      Push(menhirGeometry(hh, rng).scale(0.95, 1, 0.9).rotateY(faceAngle).translate(mx, y + DY, mz), tint);
+      col.add({ type: 'capsule', a: V3(mx, y + DY - 0.4, mz), b: V3(mx, y + DY + hh - 0.5, mz), r: 0.55 });
+      col.add({ type: 'capsule', a: V3(nx, y + DY, nz), b: V3(nx, y + DY + 1.5, nz), r: 0.42 });   // you bump into him, like a WoW NPC
+      // gold: FINE metal detail flush against the approach-facing face only — never a ring around the
+      // whole shaft (that's the "plank stuck through it" bug: a torus reads edge-on at 2 m). Saturated
+      // hue on the ordinary stele-slate value, no emissive/low-roughness channel — the read is shape +
+      // colour, never glow (BLOB LAW). goldOff clears the marker's ~0.4 m half-depth at its widest.
+      const goldOff = 0.50, my = y + DY;
+      // vertical spine: a fine rune-conduit inlay down the centre, the first thing a "read me" glance finds
+      Push(new THREE.BoxGeometry(0.07, hh * 0.42, 0.04).rotateY(faceAngle).translate(mx + dx * goldOff, my + hh * 0.40, mz + dz * goldOff), GOLD);
+      // crown chevron: two short angled inlays meeting over the top, echoes the carved waist notch below it
+      for (const s of [-1, 1]) Push(new THREE.BoxGeometry(0.24, 0.055, 0.035).rotateZ(s * 0.55).rotateY(faceAngle).translate(mx + dx * goldOff, my + hh * 0.74, mz + dz * goldOff), GOLD);
+      // base band: a low carved trim line above the dais, not a collar around the shaft
+      Push(new THREE.BoxGeometry(0.34, 0.05, 0.035).rotateY(faceAngle).translate(mx + dx * goldOff, my + hh * 0.10, mz + dz * goldOff), GOLD);
+      // two small studs flanking the spine, tucked against the marker edge (not floating gems)
+      for (const s of [-1, 1]) Push(new THREE.OctahedronGeometry(0.075).translate(mx + dx * goldOff * 0.8 + tx * s * 0.26, my + hh * 0.52, mz + dz * goldOff * 0.8 + tz * s * 0.26), GOLD);
+      // THE BANNER — what actually carries the 30 m read now that the 5.4 m slab is gone. A person is 1.8 m
+      // tall and 50 px at 30 m; he cannot break a skyline on his own. So the ORDER gets a standard: a 3.4 m
+      // pole and a cloth in the region's own accent hue, which is silhouette + SATURATED COLOUR and not one
+      // photon of emissive (BLOB LAW — the read is albedo against green, exactly like the gold filigree).
+      // It merges into the same steleMat bucket as everything else here: no extra draw call for any of the 11.
+      const G = LANDMARK_STONE[id]?.glyph ?? [1.2, 0.95, 0.5], gmax = Math.max(...G);
+      // The tint is a MULTIPLIER on steleMat's slate map (mean ~0.34), so a "1.0" tint is a dark grey rag.
+      // 2.35 lands the cloth around 0.8 albedo: bright saturated fabric, still nowhere near a light source.
+      const cloth = G.map((v) => 0.12 + Math.pow(v / gmax, 1.6) * 2.6);   // gamma on the ratio, not a flat lift: a floor added to all three channels is exactly what turns a coloured banner into a grey rag
+      // Far side of the NPC, not behind the marker: stacked on the marker the pole read as a second slab and
+      // the whole point was to stop having one. Left to right the site is now marker | Wayfinder | standard.
+      const px = x + tx * 1.45, pz = z + tz * 1.45, pyb = y + DY - 0.25;
+      Push(new THREE.CylinderGeometry(0.055, 0.07, 3.65, 7).translate(px, pyb + 1.82, pz), [1.7, 1.52, 1.2]);
+      Push(new THREE.BoxGeometry(0.86, 0.055, 0.055).rotateY(faceAngle).translate(px, pyb + 3.42, pz), GOLD);
+      Push(new THREE.OctahedronGeometry(0.10).translate(px, pyb + 3.62, pz), GOLD);
+      Push(new THREE.BoxGeometry(0.74, 1.58, 0.035).rotateY(faceAngle).translate(px, pyb + 2.58, pz), cloth);
+      Push(new THREE.BoxGeometry(0.74, 0.07, 0.045).rotateY(faceAngle).translate(px, pyb + 1.82, pz), GOLD);   // hem bar, stops the cloth reading as a floating rectangle
+      col.add({ type: 'capsule', a: V3(px, pyb, pz), b: V3(px, pyb + 3.4, pz), r: 0.14 });
+      WEATHER[id]?.(mx, my, mz, faceAngle, hh, Push);
+      // additive rune plaque, reusing the shared runeColumnTexture at the same hue/scale as the landmark floor sigils
+      GP.push(new THREE.PlaneGeometry(0.62, hh * 0.46).rotateY(faceAngle).translate(mx + dx * goldOff, my + hh * 0.50, mz + dz * goldOff));
+      GT.push(LANDMARK_STONE[id]?.glyph ?? [1.2, 0.95, 0.5]);
+
+      // The GIVER's position is the NPC's feet, not the marker's — that is the thing you walk up to, and
+      // it is what `steleAt(region)` hands the quest engine and the harness scripts.
+      const pos = V3(nx, y + DY, nz);
+      this.steles[regionId] ??= pos; // meadow gets two givers; the first built (the Aetheryte hub) is the canonical position
+      this._steleList.push({ id, region: regionId, pos, faceAngle });
+    };
+
+    build('meadow', this.landmarks.aetheryte, OFFSET.meadowA, 'meadow', 1);
+    build('meadow', this.landmarks.ruins, OFFSET.meadowB, 'meadow', -1);
+    for (const B of OUTER) build(B.id, this.landmarks[B.id], OFFSET[B.id] ?? 40, B.id, B.k % 2 ? -1 : 1);
+
+    const mk = (parts, tints, mat, name) => { if (!parts.length) return; const m = new THREE.Mesh(flat(mergeAll(parts, tints)), mat); m.castShadow = m.receiveShadow = true; m.name = name; scene.add(m); };
+    mk(SP, ST, this.steleMat, 'steles-slate'); // one draw call for the body+trim of all 11 steles
+    if (GP.length) {
+      this.steleGlyphMat ??= new THREE.MeshBasicMaterial({ map: this._runeTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, fog: false });
+      const glyphGeo = mergeGeometries(GP.map((g, gi) => { const t = GT[gi], cnt = g.attributes.position.count, a = new Float32Array(cnt * 3); for (let k = 0; k < cnt; k++) { a[k * 3] = t[0]; a[k * 3 + 1] = t[1]; a[k * 3 + 2] = t[2]; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; }));
+      const gm = new THREE.Mesh(glyphGeo, this.steleGlyphMat); gm.name = 'steles-glyphs'; gm.renderOrder = 1; scene.add(gm);
+    }
+    console.log(`[props] waystones: ${this._steleList.length} across ${Object.keys(this.steles).length} regions`);
+  }
+
+  /**
+   * THE ELEVEN WAYFINDERS. One shared geometry (buildWayfinderRig, ~1.5k tris) + one SkinnedMesh per
+   * region. Per instance: a cloned 13-bone skeleton and a material object (same shader PROGRAM as every
+   * enemy — `customProgramCacheKey: 'aether-creature'` — so this adds no compile time to boot).
+   *
+   * PERF: `visible = false` past SHOW m, and only the nearest visible one is animated. The regions are
+   * 400+ m apart and the Vale's two are 130 m apart, so exactly one skinned draw is ever in the frame.
+   * The bind-pose bounding sphere (+the rig's own 1.5x slack) rides the mesh, so the frustum culls the
+   * rest for free even inside SHOW.
+   */
+  _buildWayfinders() {
+    const { scene } = this.game;
+    const list = this._steleList; if (!list?.length) return;
+    this._wfAsset = buildWayfinderRig();
+    this.wayfinders = [];
+    for (const st of list) {
+      const { root: boneRoot, bones, byName } = cloneBones(this._wfAsset.bonesTemplate);
+      const mat = createCreatureMaterial({ tint: 0xffffff, emissive: 0x9fd0ff, roughness: 0.85 });
+      const u = mat.userData.u;
+      const T = WAYFINDER_TINT[st.id] ?? [1, 1, 1]; u.uTint.value.setRGB(T[0], T[1], T[2]);
+      // finial hue = the region's own sigil colour, normalised to a HUE (max channel 1). The shader squares
+      // and scales it, then caps outgoing luminance at 0.62 — saturate the colour, cap the intensity.
+      const G = LANDMARK_STONE[st.id]?.glyph ?? [0.62, 0.82, 1.0], gm = Math.max(...G);
+      u.uEmissive.value.setRGB(G[0] / gm, G[1] / gm, G[2] / gm);
+      u.uGlow.value = 1.3; u.uRim.value = 0.15; u.uBump.value = 0.05;   // a calm NPC, not a telegraphing enemy
+      const mesh = new THREE.SkinnedMesh(this._wfAsset.geometry, mat);
+      mesh.add(boneRoot);
+      mesh.bind(new THREE.Skeleton(bones, this._wfAsset.boneInverses), new THREE.Matrix4());
+      mesh.boundingSphere = this._wfAsset.geometry.boundingSphere.clone();
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.name = 'wayfinder-' + st.id;
+      mesh.position.copy(st.pos); mesh.rotation.y = st.faceAngle; mesh.visible = false;
+      scene.add(mesh);
+      st.wf = { mesh, mat, u, b: byName, baseYaw: st.faceAngle, yaw: st.faceAngle, seed: (this.wayfinders.length * 2.39996) % 6.2832 };
+      this.wayfinders.push(st.wf);
+    }
+    console.log(`[props] wayfinders: ${this.wayfinders.length} (shared geo ${this._wfAsset.geometry.attributes.position.count / 3} tris)`);
+  }
+
+  /**
+   * Breathe, sway, and turn to look at you. These two things are the whole difference between a character
+   * and a statue, and both are nearly free because the rig already ships aimAt/damp.
+   * Only the nearest Wayfinder inside SHOW m runs any of it; the other ten are `visible = false`.
+   */
+  _updateWayfinders(dt, t) {
+    const wfs = this.wayfinders; if (!wfs?.length) return;
+    const SHOW = 150, cam = this.game.camera.position;
+    let near = null, bestD2 = SHOW * SHOW;
+    for (const w of wfs) {
+      const d2 = w.mesh.position.distanceToSquared(cam);
+      if (d2 < bestD2) { bestD2 = d2; near = w; }
+    }
+    // Written EVERY frame, not only on the transition. main.js's warmScene() snapshots every mesh's
+    // `visible` at boot and restores that snapshot from a `finally` that runs interleaved with the game
+    // loop — an edge-triggered toggle gets clobbered by the restore and the Wayfinder stays invisible
+    // forever. Eleven boolean writes a frame is not a cost worth being clever about.
+    for (const w of wfs) w.mesh.visible = (w === near);
+    this._wfNear = near;
+    if (!near) return;
+    const b = near.b, ph = t * 1.45 + near.seed;
+    near.u.uTime.value = t;
+    // breathing: chest rises, shoulders lift a hair, the whole body settles a few mm. Never a big motion —
+    // an idle you can SEE from 8 m is an idle that looks like a bad loop from 2 m.
+    b.torso.scale.y = 1 + Math.sin(ph) * 0.020;
+    b.torso.rotation.x = 0.02 + Math.sin(ph) * 0.022;
+    b.pelvis.position.y = 0.95 + Math.sin(ph) * 0.009;
+    b.pelvis.rotation.z = Math.sin(t * 0.41 + near.seed) * 0.022;   // slow weight shift
+    // The bind pose is a straight hanging arm chain (rig.js merges rigid parts, there is no authored pose),
+    // so the STANCE is set here: both elbows bent so the forearms come forward past the robe, and hdR
+    // counter-rotated by exactly the elbow bend so the staff it carries stays vertical anyway.
+    b.shR.rotation.x = -0.10 + Math.sin(ph) * 0.02; b.shR.rotation.z = -0.09;
+    b.elR.rotation.x = -0.42; b.hdR.rotation.x = 0.52;
+    b.shL.rotation.x = -0.14 + Math.sin(ph + 0.6) * 0.03; b.shL.rotation.z = 0.11;
+    b.elL.rotation.x = -0.58; b.hdL.rotation.x = -0.15;
+    // head tracking + body turn. Inside TURN m he squares up to you (the WoW "he noticed you" beat);
+    // outside it he keeps facing the approach and just glances around.
+    const p = this.game.player?.position;
+    const d = p ? Math.sqrt(bestD2) : 999;
+    let want = near.baseYaw;
+    if (p && d < 14) {
+      const a = Math.atan2(p.x - near.mesh.position.x, p.z - near.mesh.position.z);
+      let rel = a - near.baseYaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      want = near.baseYaw + clamp(rel, -1.0, 1.0);   // clamped: he turns toward you, he does not spin on the spot
+    }
+    let dy = want - near.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    near.yaw += dy * (1 - Math.exp(-3.0 * dt)); near.mesh.rotation.y = near.yaw;
+    if (p && d < 18) { _WF_EYE.set(p.x, p.y + 1.55, p.z); aimAt(b.head, _WF_EYE, 1.0, 0.45, 6, dt); }
+    else { relaxBone(b.head, 2.5, dt); b.head.rotation.y = Math.sin(t * 0.33 + near.seed) * 0.42; }
+  }
+
+  /** props.steleAt(regionId) -> Vector3 | null. The quest engine's whole contract: truthy => real quest-giver flow. */
+  steleAt(regionId) { return this.steles?.[regionId] ?? null; }
+
+  /**
+   * Proximity + [E] read, mirroring _updateChests exactly (hud.prompt + justPressed('KeyE')).
+   *
+   * THIS IS THE HALF THAT WAS MISSING AND IT BROKE THE WHOLE FEATURE. `quest.js` treats a truthy
+   * `steleAt(region)` as "a real giver exists here" and switches OFF its auto-offer fallback. Once
+   * the steles were built, that fallback went quiet everywhere while nothing on this side ever told
+   * the quest engine a player had walked up and read one — so for a while no quest in the game could
+   * be accepted or turned in at all. Props must never import src/rpg/*; it emits the event and the
+   * quest engine owns everything after it. Both meadow steles emit region 'meadow' on purpose: the
+   * Vale has two stones but one catalogue, and `steleAt('meadow')` is single-valued.
+   */
+  _updateSteles() {
+    const list = this._steleList; if (!list || !list.length) return;
+    const g = this.game, p = g.player?.position; if (!p) return;
+    let best = null, bestD2 = 16;                       // 4 m: prompt radius and [E] radius are the same
+    for (const st of list) {
+      const dx = p.x - st.pos.x, dy = p.y - st.pos.y, dz = p.z - st.pos.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; best = st; }
+    }
+    if (!best) {
+      this._steleHeld = false;
+      // Whoever raises a prompt owns lowering it. Without this the "[E] Speak to the Wayfinder"
+      // line stayed on screen after you walked away — it was still up at 30 m — because HUD.prompt()
+      // only ever stores what it is given and RPG's loot prompt clears only prompts IT set.
+      if (this._promptOwned) { this._promptOwned = false; g.hud?.prompt?.(null); }
+      return;
+    }
+    this._promptOwned = true;
+    g.hud?.prompt?.('Speak to the Wayfinder');
+    // edge-triggered: justPressed already debounces, the flag stops a re-read while you stand there
+    if (g.input?.justPressed?.('KeyE')) {
+      if (this._steleHeld) return;
+      this._steleHeld = true;
+      g.events.emit('props:stele', { region: best.region, position: best.pos.clone() });
+    } else this._steleHeld = false;
+  }
+
+  /**
+   * QUEST-GIVER MARKER — the WoW/FF14 "! / ?" read at range that a person-sized NPC cannot carry on its
+   * own (a Wayfinder is a small dark smudge by 30 m; see the harness screenshots this replaced). Reuses
+   * hud.marker() wholesale — a floating HUD glyph, screen-space, so its pixel size (and thus its
+   * legibility) never shrinks with world distance, which is the whole fix.
+   * States, in the priority readStele() itself uses (turn-ins before offers):
+   *   'ready'    — an active quest at this giver is complete: gold ?  (come collect)
+   *   'offer'    — offersAt(region) has something new: gold !         (come talk to me)
+   *   'progress' — you have a quest here but it is not done yet: dim ? (nothing new — skip me)
+   *   none       — no marker at all (a stuck plate for nothing there is worse than no plate)
+   * Reads game.rpg.quest defensively (Props must never import src/rpg/*) and degrades to no markers if
+   * it is absent.
+   */
+  _questGiverState(region) {
+    const q = this.game.rpg?.quest; if (!q) return null;
+    try {
+      const st = q.state();
+      let inProgress = false;
+      for (const a of st.active) {
+        if (a.region !== region) continue;
+        if (a.ready) return 'ready';
+        inProgress = true;
+      }
+      if (q.offersAt(region).length) return 'offer';
+      return inProgress ? 'progress' : null;
+    } catch (e) { return null; }
+  }
+  /**
+   * PERF: 11 givers exist but only ever one (rarely two — the Vale's two meadow steles) are ever near the
+   * player, so this never touches the other nine. `RANGE2` gates a cheap squared-distance check before
+   * anything else runs; state is only (re)read at 2 Hz (`quest.state()`/`offersAt()` walk the active map
+   * and the full catalogue — not free, not a per-frame cost either); the DOM marker itself is only
+   * torn down and rebuilt when the STATE actually changes, never every poll.
+   */
+  _updateQuestMarkers(t) {
+    const list = this._steleList; if (!list?.length) return;
+    const g = this.game, p = g.player?.position, hud = g.hud;
+    if (!p || typeof hud?.marker !== 'function') return;
+    const doPoll = t >= (this._qmkPoll ?? 0); if (doPoll) this._qmkPoll = t + 0.5;
+    const RANGE2 = 220 * 220;
+    for (const st of list) {
+      const dx = p.x - st.pos.x, dz = p.z - st.pos.z, d2 = dx * dx + dz * dz;
+      const rec = this._qmk.get(st);
+      if (d2 > RANGE2) { if (rec) { rec.unmark(); this._qmk.delete(st); } continue; }
+      if (rec && !doPoll) continue;                       // marker exists and stays live via hud's own per-frame projection
+      const state = this._questGiverState(st.region);
+      if (rec && rec.state === state) continue;            // unchanged — no DOM rebuild
+      rec?.unmark();
+      if (!state) { this._qmk.delete(st); continue; }
+      const unmark = hud.marker({
+        text: QMK_GLYPH[state], position: st.pos, kind: 'quest', color: QMK_COLOR[state],
+        nearFade: [4.5, 15],   // 0 by the [E]-prompt radius (4 m), full strength past the Wayfinder's own look-at range (18 m)
+      });
+      this._qmk.set(st, { unmark, state });
+    }
+  }
+
+  /**
+   * WORLD CHESTS — 1-3 per region scattered around (not next to) the landmark, so exploring off the
+   * direct path to a stele/boss is rewarded. One shared low-poly wood+iron+gold kit, instanced (2 draw
+   * calls total for every chest in the world regardless of count). Deterministic placement (same `rng`
+   * chain as the steles, continuing the seeded stream from _buildSteles).
+   *
+   * Opening does NOT touch src/rpg/*: it emits `props:chest` ({ region, position, level }) and dims +
+   * pops the lid; the loot side rolls the drop off that event. 20-minute respawn restores both.
+   */
+  _buildChests(rng, h, col) {
+    const { scene, terrain } = this.game;
+    const WL = terrain.waterLevel ?? 4;
+    const regions = [{ id: 'meadow', landmark: this.landmarks.ruins, level: BIOMES.meadow.level }]
+      .concat(OUTER.map((B) => ({ id: B.id, landmark: this.landmarks[B.id], level: B.level })));
+
+    const WOOD = [0.36, 0.24, 0.14], IRON = [0.22, 0.20, 0.20], GOLD = [1.12, 0.86, 0.36];
+    const bodyParts = [], bodyTints = []; const bp = (g, t) => { bodyParts.push(g); bodyTints.push(t); };
+    bp(new THREE.BoxGeometry(1.05, 0.62, 0.72), WOOD);
+    bp(new THREE.BoxGeometry(1.09, 0.10, 0.76).translate(0, -0.26, 0), IRON);
+    bp(new THREE.BoxGeometry(1.09, 0.10, 0.76).translate(0, 0.05, 0), IRON);
+    for (const s of [-1, 1]) bp(new THREE.BoxGeometry(0.08, 0.62, 0.76).translate(s * 0.51, 0, 0), IRON);
+    bp(new THREE.BoxGeometry(0.16, 0.20, 0.10).translate(0, -0.02, 0.39), GOLD); // lock plate
+    const bodyGeo = flat(mergeAll(bodyParts, bodyTints));
+
+    const lidParts = [], lidTints = []; const lp = (g, t) => { lidParts.push(g); lidTints.push(t); };
+    lp(new THREE.BoxGeometry(0.98, 0.12, 0.66), WOOD);
+    lp(new THREE.BoxGeometry(1.0, 0.05, 0.10).translate(0, 0.085, 0), GOLD); // hasp
+    const lidGeo = flat(mergeAll(lidParts, lidTints)); lidGeo.translate(0, 0.37, 0); // rests flush on the body's top
+
+    const specs = [];
+    // Shadowfen and Sunken are marshy/sea regions by design (Biomes.js) — most of the disc around their
+    // landmark legitimately sits below waterLevel, so the dry-ground bar has to be lower there (same
+    // "hummocks, not the peat" band the Whisperwood/Shadowfen glow-mushroom placement already uses) or
+    // every roll fails and the region ends up with zero chests.
+    const WET_TOL = { shadowfen: 0.15, sunken: 0.15 };
+    for (const R of regions) {
+      if (!R.landmark) continue;
+      const tol = WET_TOL[R.id] ?? 0.6;
+      const n = 1 + ((rng() * 3) | 0);
+      for (let i = 0; i < n; i++) {
+        let x = 0, z = 0, y = 0, ok = false;
+        for (let att = 0; att < 14; att++) {
+          const a = rng() * Math.PI * 2, d = att < 7 ? 16 + rng() * 30 : 24 + rng() * 66; // try close-in first, then the wider explore ring
+          x = R.landmark.x + Math.cos(a) * d; z = R.landmark.z + Math.sin(a) * d; y = h(x, z);
+          if (y > WL + tol && terrain.slopeAt(x, z) < 0.55) { ok = true; break; }
+        }
+        if (!ok) { // guaranteed fallback: the landmark's own footprint was already validated dry when it was built
+          const a = i * 2.4, d = 9 + i * 5; x = R.landmark.x + Math.cos(a) * d; z = R.landmark.z + Math.sin(a) * d; y = h(x, z);
+        }
+        const [lo, hi] = R.level, level = Math.min(hi, lo + ((rng() * (hi - lo + 1)) | 0));
+        specs.push({ id: `${R.id}-chest-${i}`, region: R.id, level, position: V3(x, y, z), yaw: rng() * Math.PI * 2, opened: false, respawnAt: 0 });
+        col.add({ type: 'box', box: new THREE.Box3(V3(x - 0.6, y - 0.05, z - 0.45), V3(x + 0.6, y + 0.65, z + 0.45)) });
+      }
+    }
+    this.chests = specs;
+    if (!specs.length) { console.log('[props] chests: 0 (no valid spots found)'); return; }
+
+    const chestMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.15 });
+    const body = new THREE.InstancedMesh(bodyGeo, chestMat, specs.length);
+    const lid = new THREE.InstancedMesh(lidGeo, chestMat, specs.length);
+    body.castShadow = lid.castShadow = true; body.receiveShadow = lid.receiveShadow = true;
+    body.name = 'chests-body'; lid.name = 'chests-lid';
+    const Qt = new THREE.Quaternion(), Sc = V3(1, 1, 1), E = new THREE.Euler();
+    specs.forEach((c, i) => {
+      c._idx = i; E.set(0, c.yaw, 0); Qt.setFromEuler(E);
+      c._baseMat = new THREE.Matrix4().compose(c.position, Qt, Sc);
+      c._openMat = c._baseMat.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.16, -0.22)); // simple pop-off, no hinge maths
+      body.setMatrixAt(i, c._baseMat); body.setColorAt(i, NEUTRAL_TINT);
+      lid.setMatrixAt(i, c._baseMat); lid.setColorAt(i, NEUTRAL_TINT);
+    });
+    scene.add(body); scene.add(lid);
+    this._chestBody = body; this._chestLid = lid;
+    console.log(`[props] chests: ${specs.length} across ${regions.length} regions`);
+  }
+
+  /** Proximity + [E] open, mirroring the aetheryte/loot-pickup prompt pattern exactly (hud.prompt + justPressed('KeyE')). */
+  _updateChests(t) {
+    const chests = this.chests; if (!chests.length) return;
+    const g = this.game, p = g.player?.position; if (!p) return;
+    let best = null, bestD2 = 9; // 3 m: both the "show prompt" and the "E works" radius
+    for (const c of chests) {
+      if (c.opened) { if (t >= c.respawnAt) this._respawnChest(c); continue; }
+      const dx = p.x - c.position.x, dy = p.y - c.position.y, dz = p.z - c.position.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; best = c; }
+    }
+    if (best) {
+      this._chestPromptOwned = true;
+      g.hud?.prompt?.('Open the chest');
+      if (g.input?.justPressed?.('KeyE')) this._openChest(best);
+    } else if (this._chestPromptOwned) {
+      this._chestPromptOwned = false;                 // same ownership rule as the stele prompt above
+      g.hud?.prompt?.(null);
+    }
+  }
+  _openChest(c) {
+    c.opened = true; c.respawnAt = this.game.time + 1200; // 20 minutes
+    if (this._chestLid) {
+      this._chestLid.setMatrixAt(c._idx, c._openMat); this._chestLid.instanceMatrix.needsUpdate = true;
+      this._chestLid.setColorAt(c._idx, LOOTED_TINT); this._chestBody.setColorAt(c._idx, LOOTED_TINT);
+      this._chestLid.instanceColor.needsUpdate = true; this._chestBody.instanceColor.needsUpdate = true;
+    }
+    this.game.events.emit('props:chest', { region: c.region, position: c.position.clone(), level: c.level });
+    this.game.hud?.toast?.('Chest opened');
+  }
+  _respawnChest(c) {
+    c.opened = false;
+    if (!this._chestLid) return;
+    this._chestLid.setMatrixAt(c._idx, c._baseMat); this._chestLid.instanceMatrix.needsUpdate = true;
+    this._chestLid.setColorAt(c._idx, NEUTRAL_TINT); this._chestBody.setColorAt(c._idx, NEUTRAL_TINT);
+    this._chestLid.instanceColor.needsUpdate = true; this._chestBody.instanceColor.needsUpdate = true;
+  }
+
+  /**
    * Floating isles: flattened rock domes with a flat walkable cap. An archipelago is only a place if you
    * can move around it, so the isles are LINKED — each one is joined to the previous by a ruined span you
    * can walk, and every third isle carries its own updraft column so a fall is a detour, not a death.
@@ -1044,6 +1636,10 @@ export class Props {
   }
 
   update(dt, t) {
+    this._updateChests(t);
+    this._updateSteles();
+    this._updateWayfinders(dt, t);
+    this._updateQuestMarkers(t);
     const A = this.aetheryte; if (!A) return;
     A.crystal.rotation.y += dt * 0.12; A.crystal.position.y = 13.0 + Math.sin(t * 0.6) * 0.4; A.shards.rotation.y -= dt * 0.3; A.shards.position.y = Math.sin(t * 0.9 + 1) * 0.3;
     for (const r of A.rings) r.rotation.y += dt * r.userData.speed;

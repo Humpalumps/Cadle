@@ -40,9 +40,11 @@ const MODELS = {
 const AUDIO = {};
 for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) AUDIO[`shot-${a}-${i}`] = `/assets/sfx/shot-${a}-${i}.mp3`;
 for (let i = 1; i <= 4; i++) AUDIO[`explosion-${i}`] = `/assets/sfx/explosion-${i}.mp3`;
-// opening-quest voice lines (see ASSETS.md "Voice cast" — ONE pinned voice per character, always)
-for (let i = 1; i <= 4; i++) AUDIO[`voice-vale-0${i}`] = `/assets/voice/vale-0${i}.mp3`;
-AUDIO['voice-vale-01b'] = '/assets/voice/vale-01b.mp3';   // the marching order that follows the wake line
+// NO SPOKEN LINES ARE PRELOADED. Quests are written, never spoken (user decision 2026-08-23):
+// the five opening-quest narration clips and their mp3s were deleted with the voiced opener, and
+// tools/invariants.mjs now fails if anything re-adds them. Story-mode NPC narration may be
+// green-lit later; if it is, re-read ASSETS.md "Voice cast" first — a character is pinned to one
+// generated performance and every line for them is regenerated together or not at all.
 AUDIO['field-theme'] = '/assets/music/field-theme.mp3';
 AUDIO['night-theme'] = '/assets/music/night-theme.mp3';
 // One theme per region (BIOMES[id].music -> `<music>-theme`). A region does not get the Vale's tune

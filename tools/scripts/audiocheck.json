@@ -1,0 +1,11 @@
+[
+  {"wait": 9},
+  {"eval": "window.__game.game.audio.debugCounts = {}; const before=JSON.stringify(window.__game.game.audio.debugCounts||{}); window.__game.quest.accept('vale-02'); window.__game.quest.debugTick('vale-02'); 'accepted+ticked'"},
+  {"wait": 1.5},
+  {"eval": "JSON.stringify(window.__game.game.audio.debugCounts||{})"},
+  {"eval": "window.__game.drain(); const p=window.__game.game.player.position; window.__game.spawn('hound',p.x+2,p.z+2,{level:2}); 'spawn'"},
+  {"wait": 1.2},
+  {"eval": "window.__game.killAll(); 'kill'"},
+  {"wait": 3},
+  {"eval": "JSON.stringify({counts: window.__game.game.audio.debugCounts||{}, ammo: window.__game.ammo().map(w=>w.reserve)})"}
+]

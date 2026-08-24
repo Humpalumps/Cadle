@@ -3,6 +3,12 @@
 # at the screen edge). tools/invariants.mjs greps the source for the rules; tools/check.mjs
 # syntax-checks every module and resolves imports. Neither needs npm install or a GPU.
 #
+# tools/curvecheck.mjs is the cheap half of the MECHANICS gate: it imports the real
+# progression/droptable/quest/enemy modules (all deliberately free of `three` and browser
+# globals) and asserts the xp curve closes, the level bands are contiguous, every enemy and
+# item a quest names exists, and the drop table's published rates and pity actually hold.
+# ~1 s, no GPU. Its expensive half (tools/questgate.mjs) needs the dev server and runs locally.
+#
 # The FULL regression gate (node tools/gate.mjs: screenshot blob/jitter analysis + a real
 # pointer-lock session) needs the dev server and a real GPU, so it runs locally, not here —
 # CLAUDE.md makes it mandatory before any builder reports done.
@@ -23,3 +29,5 @@ jobs:
         run: node tools/invariants.mjs
       - name: Syntax + import resolution
         run: node tools/check.mjs
+      - name: Game mechanics (xp curve, level bands, quest content, drop rates)
+        run: node tools/curvecheck.mjs

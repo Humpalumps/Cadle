@@ -321,6 +321,101 @@ one reads as its own colour at the same brightness. Three lessons that cost real
 Ground cover is never emissive; rim/backlight goes in `reflectedLight.directDiffuse`. `tools/invariants.mjs`
 pins the ceilings — **fix the code, never the rule.**
 
+### 4a-bis. THE DEV SERVER MAY NOT BE SERVING YOUR CODE (2026-08-23, cost most of a wave)
+
+`CLAUDE.md` says "the dev server is **always already running** at `http://127.0.0.1:5173/`". That
+sentence was true and became a trap the moment work moved into a **git worktree**. The user's server
+was started in the MAIN repo (`C:/Users/ianca/Desktop/fps4`), which sits on its own branch. A worktree
+under `.claude/worktrees/<name>/` is a different directory with different files, and nothing about
+`localhost:5173` tells you which one it is showing you.
+
+**What that produced:** five agents measuring a tree that contained none of their work. Screenshots of
+UI that had not been written. A density cap "measured" on the wrong branch. A full `GATE PASSED`
+(blobcheck clean at both qualities, jitter 0.031/0.034, pointer lock OK) reported as evidence for code
+the server had never loaded. Every one of those results *looked* completely healthy, because a wrong
+tree serves a perfectly good game. It was found by accident: `window.__game.quest` was undefined in the
+running page although it was plainly there in `src/main.js` on disk.
+
+**One-line diagnosis — run it before you trust any harness number:**
+```bash
+curl -s http://127.0.0.1:5173/src/main.js | grep -c "<a phrase you just wrote>"
+```
+Zero matches = wrong tree. Or check the obvious: `git -C C:/Users/ianca/Desktop/fps4 branch --show-current`.
+
+**The fix is in the harness now, so this cannot silently recur.** `tools/inspect.mjs` fetches
+`src/main.js`, `src/core/Game.js` and `src/render/PostFX.js` back off the server before it navigates,
+and requires the longest distinctive comment line of each to match the copy on disk in the current
+working directory. Mismatch prints `==== WRONG TREE ====` and exits 2, before a single frame is
+captured. Every agent-facing tool routes through `inspect.mjs`, which is why the check lives there
+rather than in each gate. `CADLE_SKIP_TREECHECK=1` overrides it, for the rare case where measuring
+another tree is the actual intent.
+
+**When you are working in a worktree:** start your own server in it on a free port and pass the URL
+explicitly to everything — `--url http://127.0.0.1:5174/`, or `CADLE_URL=http://127.0.0.1:5174/`,
+which `gate.mjs`, `inspect.mjs`, `hitchhunt.mjs` and `questgate.mjs` all honour. **Do not kill the
+server on 5173** — it is the user's. Tell every sub-agent the port in its opening prompt; they have no
+way to work it out.
+
+### 4a-ter. THREE THINGS THAT MAKE `gate.mjs` LIE, ALL FOUND 2026-08-23
+
+**0. `gate.mjs` NOW REFUSES TO START when any `chrome-headless-shell` is already running.** It captures
+88 frames per quality and needs the GPU to itself; a starved run truncates, and a truncated capture reads
+as a failure it did not earn. That cost two full re-runs on the day this was written — once as a fake
+`BLOBCHECK FAIL` on an unmasked frame, once as `INCONCLUSIVE` at 8 of 88 frames. It now exits 3 with
+`==== NOT STARTING ====` and tells you to reap. `CADLE_GATE_FORCE=1` overrides. Reap with
+`Get-Process chrome-headless-shell | Stop-Process -Force`, and note that agents' browsers linger after
+their runs finish — check immediately before starting the gate, not five minutes earlier.
+
+**1. `gate.mjs` writes to FIXED output directories, so parallel runs eat each other.** Every invocation
+captures into `tools/out/gate-high` and `tools/out/gate-low`. Two agents and the orchestrator each ran
+the gate at once; their bursts interleaved in one directory and their browsers killed each other. The
+result looked like a real regression: `GATE FAIL`, `BLOBCHECK FAIL`, and
+`pointer lock check errored: Target page, context or browser has been closed`. Re-running `blobcheck`
+against the *same directory* minutes later returned `PASS (60 frames)`. **Only one party runs the gate
+at a time — the orchestrator, at the end.** Builders run their own scoped bursts into their own
+`--name` directories instead.
+
+**2. A truncated capture used to be reported as a blob, and now is not.** `blobcheck` scopes both of
+its tests through `mask-*.png`. A colour frame whose mask never got written is judged against the WHOLE
+frame, and the first thing that finds is the sky — a warm `(243, 210, 157)` cluster at `y = 7..23`. That
+false positive has now cost two investigations. `tools/blobcheck.py` therefore refuses to judge a run
+with missing masks: it prints `BLOBCHECK INCONCLUSIVE (harness, not the game)`, names the unmasked
+frames, and **exits 2** — distinct from exit 1, which still means "found a blob". If you see exit 2,
+the capture was cut short; reap orphaned `chrome-headless-shell` and re-run. The selftest was re-run
+after this change per `CLAUDE.md` and still catches painted ground blobs.
+
+**3. OPEN — `blobcheck`'s BRIGHT test false-positives on very pale ground cover at `q=low`.** Measured
+at the Sundered Spire's sandy plateau (`tools/out/stele-blob-low`, prefix `burst-stelelow`): three
+clusters, largest 32 px, mean rgb `(223, 219, 210)`, masks present, so this is NOT case 2. Cropping the
+pixels shows **pale sunlit sand with tan reed blades** — the ground itself crosses `LUM_BRIGHT` without
+anything emissive being involved. It is a genuine limitation of a luminance bar on near-white terrain,
+not the washed-white-blob bug the decree is about. The standard gate route never walks that ground,
+which is why it has never surfaced. **Do not fix this by lowering the bar** — thresholds are
+orchestrator-owned and weakening them is how a gate stops catching the real thing. The honest fix is
+scoping the BRIGHT test by *local contrast* rather than absolute luminance, so a blade brighter than
+its surroundings is caught while uniformly bright ground is not. Nobody owns that yet.
+
+### 4a-quater. `{key: ...}` STEPS DO NOT REACH DOM KEY HANDLERS (2026-08-23)
+
+`tools/inspect.mjs`'s `{key: code, down: bool}` step calls `Input.press()`, which drives the GAME's
+input system. It does **not** dispatch a DOM `KeyboardEvent`. So anything listening on `window`/
+`document` for real keys — `Screens.js`'s `_onKey`, which owns the M / C / I / K / J tab switches —
+never hears a harness keypress.
+
+**What that quietly produced:** every screenshot anyone has taken of a "second" full-screen tab was
+actually the FIRST tab. It was caught because `tools/out/invchar/shot-character.png` is byte-identical
+to `shot-inventory.png` in the same run: the `KeyC` step did nothing and the capture is the inventory
+screen wearing a character-screen filename. Assume any historical screenshot of a non-default tab is
+suspect unless the image itself proves otherwise.
+
+**Real keyboard input was never broken** — only the harness path. `Screens.js` now polls the game input
+system from its own rAF, gated on `g.auto`, so `?auto=1` runs can switch tabs while a real player keeps
+the single `_onKey` handler with nothing racing it.
+
+**How to check you are not fooling yourself:** compare file hashes across a multi-shot run, or assert a
+state change in an `{eval: ...}` step rather than trusting the image. Generally: a screenshot proves a
+render, never that the input that was supposed to produce it landed.
+
 ### 4b. The gate lies when the box is busy — check this before you "fix" a shader
 
 `node tools/gate.mjs` failed five times in a row with `JITTER: burst-jit frames missing — gate steps did not
@@ -870,8 +965,39 @@ orphans, then interleave, before believing any boot number.
 10. `public/assets/` is ~43 MB against a 40 MB target — re-encoding the nine 192 kbps region themes to 128
    would recover ~4 MB, but there is no mp3 encoder on this machine (no ffmpeg; Pillow is images only).
 
-**Not started** — RPG stats/loot/inventory depth, quests + voiced NPCs (`audio_tts` can voice them), world
-bosses, story mode.
+**Not started** — world bosses with mechanics, story mode. (Voiced NPCs are RETIRED, not pending: the
+user decided 2026-08-23 that quests are written. See `CLAUDE.md` and invariant (j).)
+
+**DELIVERED 2026-08-23 — loot, ammo, quests, density.** Spec: `docs/LOOT-QUESTS-BRIEF-2026-08-23.md`.
+- **Ammo economy** (`src/rpg/ammo.js`). `Weapons.addAmmo` had existed since the weapons wave with **no
+  caller**, so a dry gun stayed dry until you died. Two brick types (light = 12% of `maxReserve` on both
+  slots, special = 25% for shotgun/sniper/fusion/beam) and a **dry-guard**: at 0/0 on every slot the next
+  kill drops one guaranteed brick at your feet. Three bugs were found by TESTING, each of which already
+  had a passing report attached: `Weapons.give()` reset `reserve` on every pickup (a loot weapon
+  confiscated your ammo, AND a dry player got a free top-up — which is precisely what faked the first
+  passing dry-guard test); the dry-guard fired once per corpse, so clearing a camp took reserves 0 ->
+  maximum, an ammo faucet spelled "run out first"; and `ctx.weapons` exposed no `reload`, so the
+  auto-reload-on-pickup would have silently no-opped forever.
+- **Quests are DATA and are WRITTEN** (`src/rpg/quest.js` + `src/rpg/quests/`). 55 quests across ten
+  regions, five objective types (kill / collect / slay / reach / escort), each region's chain ending on a
+  `reach` at the next region's landmark, so the route through the world IS the content.
+  Givers are **Wayfinder Steles**: `props.steleAt(region)` -> `props:stele` event -> `quest.readStele`,
+  with a region auto-offer fallback for any region whose stele is missing.
+- **Escorts are real escorts**: `enemies.spawnFriendly('wisp', from, {to, hp, tag})` walks a guide that
+  hostiles aggro and that CAN DIE; death fails the quest, and a failed quest never enters `done` so it
+  stays re-acceptable. It carries a HUD frame (`hud.showGuide` / `hideGuide`) with a live health bar,
+  because an escort whose health you cannot see is a `reach` quest in a costume.
+- **Density** 40 -> 72 alive, three camps per outer region plus roaming packs, paid for by an extended
+  LOD ladder. **Measured with a CONTROL** — see the comment above `MAX_ALIVE` in `Enemies.js`: the raise
+  costs 0.01 ms of mean, and the uncapped p99 miss is pre-existing at BOTH caps, so it is not this change.
+- **`LEVEL_XP`** added to `defs.js` (xp was flat while hp and damage scaled with level) and `RPG.js` now
+  reads `enemy.xp`, not `enemy.def.xp` — without that second half the first half is a no-op.
+- **The mechanics gate now exists**, and it did not before. `tools/curvecheck.mjs` (pure node, ~1 s, runs
+  in CI: xp curve closes, bands contiguous, every enemy/item a quest names exists, no raw ids in
+  player-facing text, objective mix, drop rates and pity — deterministic via five fixed seeds and a
+  median, after the first version flaked 1 run in 4 on sampling noise) and `tools/questgate.mjs` (drives
+  the live game: ammo returns after running dry AND is not a faucet, every objective type accepts, ticks,
+  turns in and pays, no leak). `CLAUDE.md` carries the three-gate sign-off decree.
 
 ---
 

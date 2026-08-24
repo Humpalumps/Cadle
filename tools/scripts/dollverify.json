@@ -1,0 +1,10 @@
+[
+  {"wait": 11},
+  {"eval": "const R=window.__game.game.rpg, p=window.__game.game.player.position; for(let i=0;i<10;i++) R.dropLoot({x:p.x,y:p.y,z:p.z}, i%3?'rare':'legendary', {kind: i%2?'weapon':'armour'}); 'seed'"},
+  {"wait": 2},
+  {"eval": "for(let i=0;i<10;i++) window.__game.game.rpg.pickup(60); JSON.stringify({inv: window.__game.game.rpg.ctx.rpg.inventory.length})"},
+  {"eval": "window.__game.game.rpg.screens.show('inv'); 'open'"},
+  {"wait": 2.5},
+  {"shot": "doll-verified"},
+  {"eval": "const e=document.querySelector('.pdgrid'); const r=e?e.getBoundingClientRect():null; return JSON.stringify({found:!!e, w: r&&Math.round(r.width), h: r&&Math.round(r.height), slots: document.querySelectorAll('.pdslot').length})"}
+]

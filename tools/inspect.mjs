@@ -116,6 +116,53 @@ page.on('pageerror', (e) => report.errors.push(`[pageerror] ${e.message}`));
 
 const url = `${base}${base.includes('?') ? '&' : '?'}auto=1&q=${q}&seed=${seed}${args.params ? '&' + args.params : ''}`;
 report.url = url;
+
+// ---------------------------------------------------------------- IS THIS SERVER SERVING *THIS* TREE?
+// 2026-08-23: five agents spent a session measuring http://127.0.0.1:5173/, which was a dev server the
+// user had started in the MAIN repo — a different git branch entirely. Screenshots, frame timings, a
+// density cap and a full "GATE PASSED" were all produced against code that did not contain the work
+// being measured, and every one of them looked like evidence. Nothing in the harness noticed, because
+// a wrong tree serves a perfectly healthy game.
+// So: before any run, fetch a few source files back off the server and check they are the ones on disk
+// here. Vite transforms modules, but it preserves comment and string bodies for plain ES modules, so a
+// long distinctive line from the local file must appear in what the server hands back.
+// Set CADLE_SKIP_TREECHECK=1 only if you are deliberately measuring another tree.
+async function verifyServedTree() {
+  if (process.env.CADLE_SKIP_TREECHECK) return;
+  const { readFileSync } = await import('node:fs');
+  const probes = ['src/main.js', 'src/core/Game.js', 'src/render/PostFX.js'];
+  const bad = [];
+  for (const rel of probes) {
+    let local;
+    try { local = readFileSync(rel, 'utf8'); } catch { continue; }
+    // longest line that is a comment or a long string — those survive Vite's transform verbatim
+    const marker = local.split(/\r?\n/).map((l) => l.trim())
+      .filter((l) => l.length > 60 && l.length < 300 && (l.startsWith('//') || l.startsWith('*')))
+      .sort((a, b) => b.length - a.length)[0];
+    if (!marker) continue;
+    let served;
+    try {
+      const r = await fetch(`${base.replace(/\/$/, '')}/${rel}`);
+      if (!r.ok) { bad.push(`${rel}: server returned ${r.status}`); continue; }
+      served = await r.text();
+    } catch (e) { bad.push(`${rel}: ${e.message}`); continue; }
+    if (!served.includes(marker)) bad.push(`${rel}: served copy does not match the one on disk here`);
+  }
+  if (bad.length) {
+    console.error('');
+    console.error('[inspect] ==== WRONG TREE ====');
+    console.error(`[inspect] ${base} is not serving this working directory:`);
+    for (const b of bad) console.error('  - ' + b);
+    console.error('[inspect] Every number and screenshot from this run would describe code that is not here.');
+    console.error('[inspect] Start a dev server in THIS directory on a free port and pass --url / CADLE_URL,');
+    console.error('[inspect] or set CADLE_SKIP_TREECHECK=1 if you really mean to measure another tree.');
+    console.error('');
+    await browser.close().catch(() => {});
+    process.exit(2);
+  }
+  console.log(`[inspect] served tree matches this working directory (${base})`);
+}
+await verifyServedTree();
 await page.goto(url, { waitUntil: 'load', timeout: 120000 }); // vite can take >30s to serve the module graph while parallel agent runs saturate it
 report.gpu = await page.evaluate(() => { const c = document.createElement('canvas'); const gl = c.getContext('webgl2'); const d = gl?.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; });
 if (!args.noready) {   // --noready: the page never starts the game loop by itself (e.g. the intro held on screen)

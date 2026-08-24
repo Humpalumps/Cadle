@@ -9,12 +9,18 @@
 
 // ---------------------------------------------------------------- element palettes
 // what the element looks like when it hits something
+// ORIGINALITY. This grammar is combinatorial, so a single evocative word in a pool can collide with a
+// real shipped item from the games we benchmark against — and because the pools are keyed by ARCHETYPE,
+// a collision tends to land on the same weapon class as the original, which makes it look deliberate.
+// Two were already live and are fixed: "Last Word" (Destiny exotic hand cannon, and our tag rolled onto
+// hand cannons) and "Thorn" (likewise). Before adding a word here, check it is not a real Destiny or WoW
+// item name. tools/invariants.mjs rule (l) greps for the ones we have already had to remove.
 const EL_PRE = {
   kinetic: ['Iron', 'Rune', 'Grave', 'Stone', 'Old', 'Plain', 'Quiet'],
   solar:   ['Dawn', 'Ember', 'Cinder', 'Sun', 'Bright', 'Kindle', 'Pyre'],
   arc:     ['Storm', 'Gale', 'Levin', 'Quick', 'Bright', 'Skysung', 'Rime'],
   void:    ['Sable', 'Hollow', 'Night', 'Umbral', 'Mourn', 'Grave', 'Ashen'],
-  verdant: ['Moss', 'Thorn', 'Verdant', 'Vale', 'Briar', 'Bloom', 'Green'],
+  verdant: ['Moss', 'Bramble', 'Verdant', 'Vale', 'Briar', 'Bloom', 'Green'],   // 'Thorn' -> 'Bramble': Thorn is a Destiny exotic hand cannon
 };
 const EL_SUF = {
   kinetic: ['wrought', 'fall', 'bearer', 'ward', 'reach', 'grasp'],
@@ -50,12 +56,19 @@ const TAG_NOUN = {
   firefly:    'Tinder',
   valesong:   'Mercy',
   headseeker: 'Certainty',
-  lastbreath: 'Last Word',
+  lastbreath: 'Final Say',      // NOT "Last Word": that is a famous Destiny 2 exotic HAND CANNON, and this
+                                // tag rolled onto hand cannons, so the generator was reproducing it almost
+                                // exactly. See the ORIGINALITY note below — we are benchmarked against
+                                // Destiny, which makes lifting its item names a real risk, not a homage.
   unwavering: 'Anchor',
 };
 
 const PLACE = ['Aurelen', 'the Sable Vale', 'Emberfen', 'Kaltmere', 'the Sunken Choir', 'Windrest',
-  'the Glass Reach', 'Old Thrynn', 'Hallowmere', 'the Verdant Deep', 'the Nine', 'Broken Arch'];
+  'the Glass Reach', 'Old Thrynn', 'Hallowmere', 'the Verdant Deep', 'the Sundered Choir', 'Broken Arch'];
+// 'the Nine' -> 'the Sundered Choir': the Nine are a Destiny 2 faction, and paired with the 'Reckoning'
+// noun in the beam pool the generator produced "Reckoning of the Nine" — two Destiny proper nouns in one
+// item name, on the game we are explicitly benchmarked against. 'Reckoning' on its own is ordinary English
+// and stays; it was the pairing that read as a lift.
 const WHO = ['Kalari', 'Sorren', 'Ysolde', 'Marrow', 'Vashti', 'Elowen', 'Threnn', 'Ovid', 'Aurek', 'Nima',
   'Bel', 'Corvain', 'Isk', 'Rhosyn'];
 

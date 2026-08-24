@@ -10,7 +10,13 @@ export const RARITY = {
   rare:      { key: 'rare',      label: 'Rare',      w: 0.125, color: 0x6aa6ff, perks: 2, mult: 1.14, statSpread: 0.66 },
   legendary: { key: 'legendary', label: 'Legendary', w: 0.038, color: 0xb478ff, perks: 3, mult: 1.26, statSpread: 0.82 },
   exotic:    { key: 'exotic',    label: 'Exotic',    w: 0.007, color: 0xffb43c, perks: 4, mult: 1.42, statSpread: 1.00 },
+  // Quest items are not a rarity you can roll — they are here so `RARITY[it.rarity]` resolves
+  // for them everywhere (save validation, inventory colour, dismantle guards) instead of
+  // returning undefined and being silently thrown away. w: 0 and its absence from TIERS mean
+  // rollTier can never produce one.
+  quest:     { key: 'quest',     label: 'Quest',     w: 0,     color: 0xd3a548, perks: 0, mult: 1.00, statSpread: 0 },
 };
+// The five ROLLABLE tiers, in ascending order. droptable.js indexes this — 'quest' stays out.
 export const TIERS = ['common', 'uncommon', 'rare', 'legendary', 'exotic'];
 export const rarityOf = (k) => RARITY[k] || RARITY.common;
 
@@ -218,6 +224,61 @@ export function makeArmour(tier, powerLevel, opts = {}) {
   };
 }
 
+// ---------------------------------------------------------------- quest items
+// The fourth kind. No stats, no rarity roll, no perks — a collect-N quest needs a countable
+// token and nothing else. They STACK: one record per quest item id with a `count`, because
+// "5 x Frost Shard" as five inventory rows would push real gear out of a 120-slot bag.
+//
+// Flags are declarative so the screens/progression owners can honour them with one check
+// instead of a `kind === 'quest'` special case at every call site:
+//   equippable: false   noDismantle: true   noInfuse: true   stack: true
+// The `id` is the QUEST ITEM id, not a uid — that is what makes find-and-increment work.
+export function makeQuestItem(id, name, opts = {}) {
+  return {
+    // `questItem` duplicates `id` on purpose: the quest engine's single loot:picked handler
+    // matches on either spelling, and one redundant string beats a contract argument.
+    id, questItem: id, kind: 'quest', rarity: 'quest',
+    name: name || id,
+    desc: opts.desc || '',
+    quest: opts.quest || null,            // the quest id this belongs to, for the log/cleanup
+    count: Math.max(1, Math.round(opts.count || 1)),
+    power: 0, perks: [], stats: null,
+    stack: true, equippable: false, noDismantle: true, noInfuse: true,
+  };
+}
+
+export const isQuestItem = (it) => !!it && it.kind === 'quest';
+
+/**
+ * Add `n` of a quest item to a plain inventory array, merging into the existing stack.
+ * This IS the stacking implementation — the quest engine calls it with progression's
+ * `state.inventory` rather than each caller reinventing find-or-push.
+ * Returns the live stack record.
+ */
+export function addQuestItem(list, id, name, n = 1, opts = {}) {
+  const have = list.find((x) => isQuestItem(x) && x.id === id);
+  if (have) { have.count += Math.max(1, Math.round(n)); return have; }
+  const it = makeQuestItem(id, name, { ...opts, count: n });
+  list.push(it);
+  return it;
+}
+
+/** Remove `n` (default: the whole stack) — quest turn-in consuming what it asked for. */
+export function takeQuestItem(list, id, n = Infinity) {
+  const i = list.findIndex((x) => isQuestItem(x) && x.id === id);
+  if (i < 0) return 0;
+  const it = list[i];
+  const took = Math.min(it.count, n);
+  it.count -= took;
+  if (it.count <= 0) list.splice(i, 1);
+  return took;
+}
+
+export const questItemCount = (list, id) => {
+  const it = list.find((x) => isQuestItem(x) && x.id === id);
+  return it ? it.count : 0;
+};
+
 export const CONSUMABLES = {
   draught: { id: 'draught', name: 'Vale Draught',   desc: 'restores 60 health' },
   tonic:   { id: 'tonic',   name: 'Glasswright Tonic', desc: '+45 overshield for 25s' },
@@ -253,12 +314,17 @@ export function restat(item) { if (item && item.kind === 'weapon') item.stats = 
 export function itemPower(it) { return (it && it.power) || 0; }
 
 // one compact line for prompts and nameplates: what it is called, and what it is
-export const shortLabel = (it) => !it ? '' : it.kind === 'weapon'
+export const shortLabel = (it) => !it ? '' : it.kind === 'quest'
+  ? (it.count > 1 ? `${it.name} × ${it.count}` : it.name)
+  : it.kind === 'weapon'
   ? `${it.name} · ${rarityOf(it.rarity).label} ${it.archetypeLabel}`
   : `${it.name} · ${rarityOf(it.rarity).label} ${SLOT_LABEL[it.slot] || it.slot}`;
 
 export function describe(it) {
   if (!it) return '';
+  if (it.kind === 'quest') {
+    return `${it.name} × ${it.count}` + (it.desc ? ' — ' + it.desc : ' — Quest Item');
+  }
   if (it.kind === 'weapon') {
     const s = it.stats || weaponStats(it);
     return `${it.name} — ${rarityOf(it.rarity).label} ${it.archetypeLabel} · ${(ELEMENTS[it.element] || ELEMENTS.kinetic).label} · ${Math.round(s.damage)} dmg / ${s.rpm} rpm · pwr ${it.power}`;
