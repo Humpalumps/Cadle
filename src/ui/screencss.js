@@ -328,37 +328,63 @@ export const SCREEN_CSS = `
 /* row-gap is doing real work: it is the space the drawn figure shows THROUGH. Close the rows up
    and the slots tile over the figure and it vanishes, which is how this reads as six buttons
    in a box instead of a person you are dressing. */
-/* ONE knob: --pdi (the icon plate) drives the plate, the head-room row, the foot-room row and the
-   row gaps together. The drawn figure is stretched onto this grid, so its head only stays in the
-   helm cell and its hands in the weapon cells while those four keep their RATIO — tuning them
-   independently per breakpoint is what slid the figure off its own slots. */
+/* ONE knob: --pdi (the icon plate) drives the plate art and, through --pdh, the whole figure box. */
 /* sized off the VIEWPORT height, not off breakpoints: the panel is 93vh, so the doll has to be
    too or it hangs below the fold at every size the tiers did not name (1600x900 was exactly
    that). One clamp replaces three guesses. */
 #ui .pdoll{--pdi:clamp(21px,3.1vh,29px)}
-/* the head row is the ONE band with no plate over it, so it is the only place the head can live.
-   1.36 gave 39 px at 1080p and 30 px at 720p — a head that small is a smudge. 1.78 buys a head at
-   readable scale; it is the same single knob, so every other row moves with it. */
-#ui .pdgrid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
-  grid-template-rows:calc(var(--pdi)*1.78) repeat(4,auto) calc(var(--pdi)*0.45);
-  column-gap:4px;row-gap:calc(var(--pdi)*0.30);
+/* THE FIGURE BOX. No rows any more: slots are absolutely positioned from points in the figure's
+   own viewBox (DOLL_POS in rpgscreens.js), so the plate and the body part it equips scale together
+   and cannot drift apart at a different window size — which is what a uniform grid behind a
+   separately-stretched SVG could only ever get right by luck, and did not.
+   --pdh reproduces EXACTLY the height the old six-row grid computed (pdi*3.73 of gaps and head/
+   foot room + four 84-px plate rows; 220px becomes 138.8px below 900 where the item name is
+   dropped and a plate is 57 tall). Same fit at every viewport, so nothing new can fall past the
+   fold. --pdw is derived from --pdh, never from the column width: that is what keeps the figure's
+   PROPORTIONS constant instead of squashing him 1.33x at 1080p and 1.44x at 720p. */
+#ui .pdgrid{position:relative;
+  --pdh:calc(var(--pdi)*7.73 + 220px);
+  --pdw:min(100%,calc(var(--pdh)*0.47));
+  --pdsw:calc((100% - 12px)/3);
+  height:var(--pdh);
   /* the room he stands in: aether rising off the floor, a cold key behind the shoulders, and a
      vignette that pushes the corners back so the lit slot plates come forward. Stretch-proof
      because it is all soft radials — this is why the backdrop is CSS and not more SVG. */
   background:
-    radial-gradient(62% 30% at 50% 99%,rgba(124,91,214,.38),transparent 74%),
-    radial-gradient(46% 18% at 50% 100%,rgba(143,216,255,.22),transparent 76%),
+    /* a dark plate right where the body stands: the figure is a flat mid-violet, so the gaps in it
+       (arm-to-ribs, between the legs) only read against something DARKER than the fill. */
+    radial-gradient(33% 54% at 50% 46%,rgba(3,2,10,.52),transparent 72%),
+    radial-gradient(62% 26% at 50% 100%,rgba(124,91,214,.26),transparent 74%),
+    radial-gradient(46% 15% at 50% 101%,rgba(143,216,255,.15),transparent 76%),
     radial-gradient(60% 44% at 50% 20%,rgba(143,216,255,.13),transparent 78%),
     radial-gradient(118% 92% at 50% 44%,transparent 54%,rgba(4,3,11,.34))}
-/* The figure is stretched (preserveAspectRatio="none") so its parts stay registered to the rows,
-   but the grid is a fixed ~268 px wide at EVERY window while its height rides --pdi — so a fixed
-   100% width would squash him half again as much at 720p as at 1080p. Width is therefore driven
-   off the SAME knob: 9.2x --pdi is full column width at 1080p and narrows in step with the rows,
-   which holds his proportions roughly constant instead of tuning a second value per breakpoint. */
-#ui .pdfig{position:absolute;top:-6px;bottom:-6px;left:50%;transform:translateX(-50%);
-  width:min(100%,calc(var(--pdi)*9.2));height:calc(100% + 12px);
+/* The figure fills the box's HEIGHT and takes its width from that height, so it keeps one shape at
+   every window size. Every slot is placed from this same box (see --pdw above), which is the whole
+   reason the plates now land on the anatomy instead of near it. */
+#ui .pdfig{position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:var(--pdw);height:100%;
   z-index:0;pointer-events:none;overflow:visible;
-  filter:drop-shadow(0 3px 10px rgba(0,0,0,.65)) drop-shadow(0 0 14px rgba(124,91,214,.30))}
+  /* TIGHT shadows only. A 14-px aether glow used to fill the wedge between arm and ribs and the gap
+     between the legs, which flattened the whole silhouette into one slab — the contour IS the
+     drawing here, so nothing may bleed across a gap narrower than the gap itself. */
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.7))}
+/* The leader from an outboard plate to the body part it names — a shoulder and a forearm are too
+   narrow to carry an 84-px plate without vanishing under it, so the plate steps aside and points.
+   Width is computed in the markup and clamps to zero when the anchor already falls inside the
+   plate, so this draws only where it is actually needed. */
+#ui .pdlk{position:absolute;height:1.5px;transform:translateY(-50%);z-index:0;pointer-events:none;
+  background:linear-gradient(90deg,rgba(216,189,122,.62),rgba(216,189,122,.22))}
+#ui .pdlk.r{background:linear-gradient(90deg,rgba(216,189,122,.22),rgba(216,189,122,.62))}
+/* the dot is the half that does the work: a bare line reads as a stray rule, a line ending in a
+   pip reads as "this plate, that body part". It sits on the BODY end, never on the plate end. */
+#ui .pdlk::after{content:'';position:absolute;top:50%;right:-2px;width:5px;height:5px;
+  margin-top:-2.5px;border-radius:50%;background:rgba(216,189,122,.75);
+  box-shadow:0 0 6px rgba(216,189,122,.45)}
+#ui .pdlk.r::after{right:auto;left:-2px}
+/* On the figure a slot is placed by its ANCHOR, not by a cell: left/right/centre column comes from
+   DOLL_POS.col and the vertical centre from the anchor's viewBox y. --ty:-50% is what makes the top
+   offset mean "the plate's centre sits here", so the plate lands on the body part rather than beside it. */
+#ui .pdgrid .pdslot{position:absolute;--ty:-50%;width:var(--pdsw);max-width:none}
 #ui .pdspare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px}
 #ui .pdhint{margin:8px 0 0;text-align:center;font:italic 400 10.5px/1.45 var(--serif);
   color:rgba(232,222,196,.45)}
@@ -371,11 +397,15 @@ export const SCREEN_CSS = `
    The plate is deliberately TRANSLUCENT: the figure is behind it, and a plate you cannot see
    it through is the reason he used to read as wallpaper. */
 #ui .pdslot{position:relative;z-index:1;min-width:0;width:100%;max-width:84px;justify-self:center;appearance:none;-webkit-appearance:none;cursor:pointer;
+  /* --ty is the slot's own resting transform: 0 in the spare row, -50% on the figure where the
+     plate is centred on its anchor point. --lift is the hover/drag nudge, subtracted so the
+     hover rules never have to restate the whole transform (and never fight the anchor). */
+  --ty:0px;--lift:0px;transform:translateY(calc(var(--ty) - var(--lift)));
   /* .74 is the most glass this can give up before the item name stops sitting cleanly on it;
-     hover/on/drag states still go opaque on top of it. It is NOT what makes the hands readable —
-     the hands are readable because the weapon cells moved to row 5 and left row 4's outer columns
-     unplated (see DOLL_CELL/HAND_CELL in rpgscreens.js). Lowering it further to chase the figure
-     would only buy a ghost, and would cost the one thing every slot has to keep: its name. */
+     hover/on/drag states still go opaque on top of it. The figure reads through it: the head, the
+     sternum and the shins are DIRECTLY behind their plates now, and that is deliberate — the parts
+     too narrow to survive it (shoulder, forearm) sit outboard with a leader instead. Lowering it
+     further would only buy a ghost, and would cost the one thing every slot has to keep: its name. */
   --plate:rgba(11,9,24,.74);--plate2:rgba(7,5,17,.55);--brk:rgba(216,189,122,.44);
   display:grid;justify-items:center;align-content:start;gap:2px;padding:6px 4px 5px;
   border:1px solid color-mix(in srgb,var(--r,#d8bd7a) 30%,rgba(216,189,122,.20));
@@ -396,7 +426,7 @@ export const SCREEN_CSS = `
   transition:background-color .16s var(--ease),border-color .16s var(--ease),transform .2s var(--spring),
     box-shadow .18s var(--ease)}
 #ui .pdslot:hover{--plate:rgba(34,27,64,.88);--plate2:rgba(18,14,38,.72);--brk:var(--gold-hi);
-  transform:translateY(-2px);box-shadow:inset 0 1px 0 rgba(255,240,205,.16),0 6px 16px rgba(0,0,0,.55)}
+  --lift:2px;box-shadow:inset 0 1px 0 rgba(255,240,205,.16),0 6px 16px rgba(0,0,0,.55)}
 #ui .pdslot.on{--plate:rgba(52,40,20,.86);--plate2:rgba(28,21,12,.70);--brk:var(--gold-hi);
   border-color:var(--gold);box-shadow:0 0 0 1px rgba(216,189,122,.3)}
 #ui .pdslot .ic{width:var(--pdi);height:var(--pdi)}
@@ -456,7 +486,7 @@ export const SCREEN_CSS = `
 #ui .pdslot.dragok::after{content:'';position:absolute;inset:-3px;border-radius:11px;
   border:1px solid rgba(216,189,122,.75);pointer-events:none}
 #ui .pdslot.dragok.over{--plate:rgba(216,189,122,.34);--plate2:rgba(216,189,122,.14);
-  transform:translateY(-3px) scale(1.04);
+  --lift:3px;transform:translateY(calc(var(--ty) - var(--lift))) scale(1.04);
   box-shadow:0 0 0 2px var(--gold-hi),0 0 34px rgba(216,189,122,.5)}
 /* the refusal has to be READABLE — fading the whole slot fades the ✕ with it, which is how a
    "you cannot put it there" ends up looking like nothing happened. Dim the CONTENTS, mark the box. */
@@ -467,7 +497,7 @@ export const SCREEN_CSS = `
   font:400 22px/1 var(--serif);color:rgba(255,154,134,.85);pointer-events:none;
   text-shadow:0 1px 6px rgba(0,0,0,.9)}
 #ui .scr.dragging .tile:not(.ghost){opacity:.55}
-#ui .scr.dragging .pdfig{opacity:.35}
+#ui .scr.dragging .pdfig,#ui .scr.dragging .pdlk{opacity:.35}
 /* the sheet's paper doll carries the same badge, under the power number */
 #ui .dslot .pw .dl{display:block;margin-top:4px;font:400 10px/1 var(--serif);color:#8fdc8a}
 #ui .dslot.has{border-left-color:#8fdc8a}
@@ -542,6 +572,7 @@ export const SCREEN_CSS = `
      sheet's Loadout card already has. Art + slot + power + the upgrade badge still identify a
      slot (this is what every paper doll shows); the full name is on hover and in the card. */
   #ui .pdslot .nm{display:none}
+  #ui .pdgrid{--pdh:calc(var(--pdi)*7.73 + 138.8px)}
   #ui .pdslot .pw{font-size:11px}
   #ui .pdslot .sl{font-size:7.5px}
   #ui .pdhd{margin-bottom:4px;padding-bottom:3px}
