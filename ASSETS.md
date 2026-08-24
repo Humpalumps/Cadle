@@ -139,31 +139,28 @@ Usage: `game.assets.model('aetheryte')` (already loaded + textures GPU-uploaded)
 - More GLBs on ASSET ASK (enemy statues, lanterns, monoliths...)
 
 
-## Voice cast (opening quest — VOICE CONSISTENCY IS BINDING)
+## Voice cast — RETIRED 2026-08-23 (quests are written, never spoken)
 
-**The rule (user decree): a character's voice NEVER changes.** Each speaking character below is
-pinned to exactly one ElevenLabs voice. Every line for that character — now and in any future
-quest — is generated with the SAME voice id, same model, same stability/style settings, ideally in
-one batch. Never regenerate a single line with different settings; if a voice must change,
-regenerate EVERY line the character has ever spoken and replace them together.
+**Status: no voice assets ship.** The opening quest's five narration clips were deleted along with
+the voiced opener when the user decided that quests are READ, not heard. `src/core/Assets.js`
+preloads no narration, `src/rpg/` may not call `playVoice`, and `tools/invariants.mjs` fails the
+build if either comes back. The words now live in the quest text and the quest log
+(`src/rpg/quests/`, `src/ui/Screens.js`).
 
-| Character | Voice (pin on first generation) | Delivery | Files |
-|---|---|---|---|
-| The Vale (narrator) | **PINNED: Magnific voice id 364 — "Sophia Morgan" (ElevenLabs), model eleven_v3, stability 0.6, speed 0.95, similarityBoost default.** Generated 2026-08-20 in one batch. Every future Vale line uses exactly these settings. | ethereal, unhurried, low female register, slight reverb feel; painterly-fantasy narrator, never name trademarked games in prompts | `public/assets/voice/vale-01..04.mp3`, `vale-01b.mp3` |
+`public/assets/tex/vale_portrait.jpg` is KEPT — it is a 57 KB character portrait that the written
+quest card can still use. Nothing else from the cast survived.
 
-Portrait: `public/assets/tex/vale_portrait.jpg` (Magnific text-to-image, 512px, shown on the dialogue card — regenerate only together with a deliberate redesign of the character). Registered in `src/core/Assets.js` as `voice-vale-01..04` + `voice-vale-01b`; `src/rpg/quest.js` plays them at the
-quest beats and shows the subtitle regardless, so missing files degrade gracefully.
+**The rule below is retained deliberately, because it is the expensive lesson, not the feature.**
+If voiced story-mode NPCs are ever green-lit: a character's performance NEVER changes. Pin each
+speaking character to exactly one generated voice — one voice id, one model, one stability/style
+setting — and generate every line for that character in a single batch. Never regenerate one line
+with different settings; if a character's voice must change, regenerate EVERY line they have ever
+spoken and replace them together. A character whose voice drifts between lines reads as two
+characters, and the fix is always a full re-generation, so pinning up front is the cheap path.
 
-Line scripts (generate verbatim, one batch):
-1. `vale-01` — "Wake, Wayfarer. The Vale remembers you — even if the world does not."
-1b. `vale-01b` — "Follow the rising sun — east, across the meadow, until broken stone climbs the sky. The Sundered Spire is where you begin, Wayfarer." (the marching order: the greeting alone left a new player with a tracker and no idea what it meant. Same pinned voice/settings, generated 2026-08-20.)
-2. `vale-02` — "The Sundered Spire. Aether bleeds where the stone was broken — and something feeds on the wound."
-3. `vale-03` — "The wound breathes easier. Take up the arm the Spire kept for you — you have earned its name."
-4. `vale-04` — "So armed, so named. Walk the Vale, Wayfarer — it has more to remember."
-
-Generation (Magnific MCP, when connected): `audio_tts` per line with the pinned voice →
-`creations_wait` → download IMMEDIATELY (URL tokens expire) → mp3 into `public/assets/voice/` →
-fill the voice id into the table above → commit the mp3s.
+Delivery notes worth keeping for that day: ethereal narrators want a low register and an unhurried
+read; generate with `audio_tts`, `creations_wait`, then download IMMEDIATELY because the URL tokens
+expire; never name trademarked games in an audio prompt.
 
 ## UI item art — `public/assets/ui/items/` (256×256 RGBA PNG, ~720 KB total)
 
