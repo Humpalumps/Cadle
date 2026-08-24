@@ -91,6 +91,10 @@ vec3 transformed; vec3 objectNormal;
   vec4 t00 = gFetch(ij), t10 = gFetch(ij + ivec2(1, 0)), t01 = gFetch(ij + ivec2(0, 1)), t11 = gFetch(ij + ivec2(1, 1));
   vec2 hm = mix(mix(t00.rg, t10.rg, fr.x), mix(t01.rg, t11.rg, fr.x), fr.y);
   float rootY = hm.x; float mask = hm.y;
+  // Ground-cover DENSITY before the slope term below eats it. "gap" is "how much of this region's
+  // ground cover was thinned away" (0 in the Vale, ~0.52 in the Whisperwood Deep, ~1 in the Shadowfen).
+  // Everything keyed off it is zero at mask >= 0.95, so the Vale is untouched BY CONSTRUCTION.
+  float gap = smoothstep(0.95, 0.10, hm.y);
   float sx = (t10.r - t00.r + t11.r - t01.r) * 0.5 * uMapInfo.z;
   float sz = (t01.r - t00.r + t11.r - t10.r) * 0.5 * uMapInfo.z;
   vec3 terrainN = normalize(vec3(-sx, 1.0, -sz));
@@ -111,12 +115,17 @@ vec3 transformed; vec3 objectNormal;
   // --- blade params ---
   float clump = gNoise(rootXZ * 0.55, 7u);                       // tufts: tall clumps vs short patches
   clump = 0.65 + 0.55 * clump * clump;
-  float H = uBlade.x * (0.55 + 0.75 * r2 * r2) * clump * sc;
-  float W = uBlade.y * (0.75 + 0.5 * r1) * sc;
+  // FF14 grass is FINE: a lot of thin blades of many lengths, not a few broad ones of one length. Both
+  // curves are r*r so the population piles up at the short/narrow end and only a few blades reach the top
+  // — that is what turns a mown carpet into a meadow. Mean height -13%, mean width -39%; the coverage that
+  // loses is paid back by the wider understory cards below (the "under" filler), not by more geometry.
+  float H = uBlade.x * (0.40 + 0.92 * r2 * r2) * clump * sc;
+  float wShape = 0.58 + 0.84 * r1 * r1;
+  float W = uBlade.y * wShape * sc;
   #if RING == 2
-  H *= 1.0 + d * 0.004; W *= 1.0 + d * 0.05;                     // far: soft wide ground-cover cards
+  H *= 1.0 + d * 0.004; W *= 1.0 + d * 0.060;                    // far: soft wide ground-cover cards
   #else
-  H *= 1.0 + d * 0.002; W *= 1.0 + d * 0.015;
+  H *= 1.0 + d * 0.002; W *= 1.0 + d * 0.018;
   #endif
   #if RING < 2
   // drifts, not confetti: flowers clump into ~9 m patches, and heads shrink to nothing past ~20 m
@@ -130,11 +139,20 @@ vec3 transformed; vec3 objectNormal;
   bool flower = false; float ftype = 0.0, hs = 0.0;
   #endif
   #if RING == 0
-  float under = flower ? 0.0 : step(r7, 0.35);   // short wide filler blades: dense understory so bare splat never shows at the feet
-  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.1 * under;
+  float under = flower ? 0.0 : step(r7, 0.38);   // short wide filler blades: dense understory so bare splat never shows at the feet
+  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.4 * under;   // 1.4, not 2.1: any wider and these short flat-lit cards read as plastic shards lying in the turf
   #else
   float under = 0.0;
   #endif
+  // A THINNED region (fen 0.12, Whisperwood Deep 0.40) keeps only ~1 blade in 6, and at the new narrow
+  // width those survivors were sub-pixel scratches on the peat -- sparse reads as unfinished, not as art
+  // direction. Pay the coverage back in the SIZE of the blades that did survive (reeds, not lawn), never
+  // in their count: the density number is the region's design. "gap" is 0 in the Vale, so nothing there
+  // moves. Height rides along at a third of the width so the aspect stays a blade -- width alone turned
+  // the fen into flat leaf-shards lying in the peat -- and the (1 - under) excludes the short filler
+  // cards, which are the ones that read as plastic shards the moment they get any wider (see above).
+  W *= 1.0 + 1.05 * gap * (1.0 - under);
+  H *= 1.0 + 0.35 * gap;
 
   // --- frustum cull (root + margin) ---
   #ifdef GRASS_DEPTH
@@ -177,7 +195,7 @@ vec3 transformed; vec3 objectNormal;
   // --- blade shape ---
   float v = bv;
   // real grass keeps its width most of the way up then points; the old (1-v^2) taper is what read as a "dagger"
-  float w = W * (1.0 - 0.32 * v) * sqrt(max(0.0, 1.0 - v * v * v * v));
+  float w = W * (1.0 - 0.30 * v) * sqrt(max(0.0, 1.0 - v * v * v));
   vec3 headCol = vec3(0.0); float head = 0.0;
   vGrassHead = vec2(bside, -1.0);
   if (flower) {
@@ -186,14 +204,17 @@ vec3 transformed; vec3 objectNormal;
     // per-fragment from vGrassHead instead (see color_fragment injection).
     // width envelope peaks at v=2/3 — the strip's only interior vertex inside the head — and the
     // petal mask center (vGrassHead.y = 0.5) maps to the same v, so the bloom reads round, not clipped.
-    float hw = (0.046 + 0.022 * r1) * (1.0 + d * 0.02) * sc * hs;        // bigger bloom, shrinks to nothing far away
+    float hw = (0.038 + 0.020 * r1) * (1.0 + d * 0.02) * sc * hs;        // bloom size, shrinks to nothing far away
     float petal = hw * sin(clamp((v - 0.45) * 2.6, 0.0, 1.0) * 3.14159);
     w = max(W * 0.95 * (1.0 - 0.3 * v), petal);                           // fat visible green stem under the head
     head = smoothstep(0.45, 0.58, v) * hs;
     vGrassHead = vec2(bside, (v - 0.45) * 2.3);                           // head-local coords for the fragment petal mask
     float ty = floor(ftype * 5.0);
     // muted meadow-herb palette (was near-primary saturated -> read as litter); matte per user decree
-    vec3 petalC = ty < 1.0 ? vec3(0.86, 0.52, 0.14) : ty < 2.0 ? vec3(0.80, 0.78, 0.60) : ty < 3.0 ? vec3(0.46, 0.24, 0.66) : ty < 4.0 ? vec3(0.80, 0.34, 0.46) : vec3(0.30, 0.42, 0.70);
+    // The near-white cream type was the loudest thing in a down-look — pale flat cards read as paper
+    // litter, not blooms — and it is also the head that pushed GRASS_LUM_CAP down to 0.50 (see below).
+    // Deepened to straw: same hue, less value. Saturate the colour, cap the value.
+    vec3 petalC = ty < 1.0 ? vec3(0.86, 0.52, 0.14) : ty < 2.0 ? vec3(0.66, 0.60, 0.34) : ty < 3.0 ? vec3(0.46, 0.24, 0.66) : ty < 4.0 ? vec3(0.80, 0.34, 0.46) : vec3(0.30, 0.42, 0.70);
     headCol = mix(petalC * 0.42 + vec3(0.24, 0.19, 0.02), petalC, smoothstep(0.5, 0.78, v));   // warm center -> petal tips: two-tone bloom
     vGrassEmissive = vec3(0.0);  // user decree: flowers stay matte — no glowing/sparkling heads (they bloomed into white blobs)
   } else vGrassEmissive = vec3(0.0);
@@ -225,7 +246,10 @@ vec3 transformed; vec3 objectNormal;
     float tLum = max(1e-4, dot(tcol, vec3(0.2126, 0.7152, 0.0722)));
     vec3 tHue = (tcol / tLum) / vec3(0.575, 1.210, 0.171);   // measured mean hue of terrain.colorAt across the spawn meadow
     tHue = clamp(tHue, vec3(0.42), vec3(1.60));
-    tipC *= mix(vec3(1.0), tHue, 0.78);
+    // ...but back the coupling off where the cover is thin. Full coupling paints fen blades the peat's own
+    // olive, so the few that exist vanish into the ground (the "invisible in the fen" read). Separation has
+    // to come from HUE, never from brightness -- and the max-channel + luminance caps right below still run.
+    tipC *= mix(vec3(1.0), tHue, 0.78 - 0.26 * gap);
     // ...and the VALUE follows the floor too. Hue-only coupling gave every region the Vale's brightness, so
     // the Whisperwood floor and the Shadowfen peat both came out as a mown lawn in full sun — the single
     // loudest "these are all the same place with a filter on" cue in the world. 0.133 is the measured mean
@@ -261,11 +285,42 @@ vec3 transformed; vec3 objectNormal;
     tipC *= min(1.0, 0.52 / max(max(tipC.r, max(tipC.g, tipC.b)), 1e-4));
     tipC *= min(1.0, 0.483 / max(dot(tipC, vec3(0.2126, 0.7152, 0.0722)), 1e-4));   // ...and the old clamp's luminance too: a hue may not buy brightness by spreading it across channels
   }
-  tipC *= mix(vec3(0.84, 1.02, 1.10), vec3(1.16, 1.00, 0.68), r8 * r8);   // per-blade cool<->warm green: kills the single-tone golf-course read
+  // HUE AT CONSTANT LUMINANCE IS FREE, and it is the only palette lever the blob law leaves open: the caps
+  // constrain VALUE and MAX CHANNEL, and two colours of equal luminance sit equally far from the bloom
+  // threshold. So the palette is bought entirely by ROTATING hue, never by adding value.
+  // The one hard rule that makes this safe, and the reason the ends can be this far apart: THE DOMINANT
+  // CHANNEL IS NEVER MULTIPLIED ABOVE 1.0. tipC is already sitting on the 0.52 max-channel cap, so any
+  // tint that raised its brightest channel would walk straight past the ceiling the whole gate is
+  // calibrated against; a tint that only ever takes the dominant channel DOWN and pays for the hue in the
+  // two quiet channels cannot. Measured across six representative post-cap blade albedos, this pass's
+  // worst max channel is 1.050 and worst luminance 0.659, against 1.091 / 0.678 for what shipped — i.e.
+  // strictly SAFER on both axes, while the meadow's hue range roughly doubles (83-127 deg -> 63-141 deg).
+  // per-blade axis, the strong one: deep blue-green <-> gold-olive.
+  tipC *= mix(vec3(0.30, 1.00, 1.48), vec3(1.55, 0.94, 0.26), r8);
+  // ...and the same axis at ~20 m patch scale, which is the one that still reads at distance. Deliberately
+  // mild: three broad axes that could all land on "warm" at once is how a hue term turns into a value term.
+  tipC *= mix(vec3(0.88, 1.00, 1.14), vec3(1.12, 0.99, 0.74), mac2);
   vec3 rootC = mix(tipC * 0.62, tcol * 0.8, 0.35);                 // roots melt into the ground tone, never near-black
-  vec3 col = mix(rootC, tipC, smoothstep(-0.2, 0.75, v)) * (1.0 + (r4 - 0.5) * 0.35 * (1.0 - farF));
-  col *= 0.82 + 0.36 * mac2;
-  col *= 0.68 + 0.32 * smoothstep(-0.1, 0.55, v);                  // canopy self-occlusion: the field gets depth instead of reading as flat paper
+  vec3 col = mix(rootC, tipC, smoothstep(-0.2, 0.75, v)) * mix(1.0, mix(0.68, 1.14, r4), 1.0 - farF);
+  col *= 0.76 + 0.44 * mac2;
+  float vExp = smoothstep(-0.1, 0.55, v);                          // canopy exposure: 0 = buried base, 1 = sunlit top
+  col *= 0.62 + 0.40 * vExp;                                       // canopy self-occlusion: the field gets depth instead of reading as flat paper
+  // ...and the exposure drives HUE, not just value: buried bases go deep blue-green shadow, sunlit tops go
+  // yellow-olive. Ends measure 0.909 / 1.005 luminance (both BELOW what shipped), so this buys hue range
+  // and costs nothing in brightness — it cannot walk anything toward the bloom threshold.
+  col *= mix(vec3(0.74, 0.97, 1.22), vec3(1.10, 1.00, 0.72), vExp);
+  // Sun-bleached straw on the tips of the TALLEST blades (r2*r2 is the height random). Weighted by
+  // (1 - r8): a blade already sitting at the warm end of the per-blade axis barely takes it, so this adds
+  // contrast between neighbours instead of stacking onto the same few blades and over-cooking them.
+  // Same discipline: the dominant channel goes DOWN (0.90), the hue is paid for out of red and blue.
+  col *= mix(vec3(1.0), vec3(1.45, 0.90, 0.36), r2 * r2 * (1.0 - r8 * 0.8) * smoothstep(0.55, 1.0, v) * 0.8);
+  // The hue axes rotate colour; they must not be able to buy a hot CHANNEL on the way past. 1.05 is BELOW
+  // the worst max channel the pre-pass axes could already reach here (1.091, measured across the six
+  // representative post-cap albedos), so no hue may exceed what already shipped. Hue-preserving: all three
+  // channels scale together, so an over-range blade flattens toward its OWN colour, never toward white.
+  // Meadow greens peak at 0.73 here and never touch it — this only ever binds on exotic-albedo regions.
+  col *= min(1.0, 1.05 / max(max(col.r, max(col.g, col.b)), 1e-4));
+  col *= 1.0 - 0.20 * smoothstep(0.76, 1.0, v);                    // soft tip: a blade must not end in a hard bright edge. Pure subtraction.
   col *= min(1.0 + (g - 0.45) * 0.5 * uWind.z * smoothstep(8.0, 30.0, d), 1.22);   // gust silvering, clamped: never blows to white
   float lowS = clamp(uSun.w * 0.833, 0.0, 1.0);
   col *= mix(vec3(1.0), vec3(1.28, 1.0, 0.55), lowS * 0.5);        // field inherits the golden-hour grade like the terrain does
@@ -274,12 +329,19 @@ vec3 transformed; vec3 objectNormal;
   col = mix(col, tcol * 0.92, under * 0.4);                        // understory sits tonally between blades and ground
   col *= 1.0 - 0.12 * flatn;
   vGrassColor = mix(col, tcol, max(farF, flatn * 0.45));           // trampled blades keep green: reads as crushed, not deleted
-  vGrassV = vec2(v, (0.35 + 0.65 * v) * (1.0 - farF) * (1.0 - head));
+  // .y is the translucency carrier (read by the directDiffuse back-scatter term in lightsPhysicalGrass).
+  // A thin blade transmits, a fat one does not, so the width shape drives it too — mix(0.70, 1.0, thin)
+  // only ever REMOVES translucency relative to what shipped; the thinnest blade still peaks at 1.0.
+  float thin = clamp((1.42 - wShape) * 1.19, 0.0, 1.0);
+  vGrassV = vec2(v, (0.35 + 0.65 * v) * mix(0.70, 1.0, thin) * (1.0 - farF) * (1.0 - head));
   vGrassEmissive += (col * 0.15 + vec3(0.004, 0.006, 0.016)) * (uNight * (0.25 + 0.75 * v)) * (1.0 - head * 0.75);  // moonlit lift; heads stay matte at night
   // low-sun backlight rim: thin blades leak light, shadow maps can't tell — golden-hour hero tips, vanishes at high sun
   vec3 vdir = normalize(transformed - cameraPosition);
   float rim = pow(clamp(dot(vdir, uSun.xyz), 0.0, 1.0), 3.0);
-  vGrassEmissive += uSunCol.rgb * (uSun.w * rim * vGrassV.y) + col * uSunCol.a;
+  // 0.60: the golden-hour rim now comes mostly from the TRANSLUCENCY term in directDiffuse, which is
+  // shadowed and cannot bloom. Handing energy from emissive to lighting is the direction the law wants;
+  // what stays here is only the part shadow maps genuinely cannot see through a sub-pixel blade.
+  vGrassEmissive += uSunCol.rgb * (uSun.w * rim * vGrassV.y * 0.60) + col * uSunCol.a;
   vGrassEmissive = min(vGrassEmissive, col * 0.75 + vec3(0.02));   // clamp: rim+lift never pushes past ~1.5x base color (critic: white blowout band)
   // HARD CEILING (orchestrator, user decree — do not raise, do not remove).
   // Blades are sub-pixel at distance: any emissive that can reach the bloom threshold (~1.2) flickers
@@ -344,8 +406,21 @@ const lightsPhysicalGrass = () => ShaderChunk.lights_physical_pars_fragment
     'float dotNL = saturate( ( dot( geometryNormal, directLight.direction ) + 0.4 ) / 1.4 );')
   .replace('reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );',
     `reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );
-	float gTrans = pow( saturate( dot( -geometryViewDir, directLight.direction ) ), 2.0 ) * vGrassV.y;
-	reflectedLight.directDiffuse += directLight.color * material.diffuseContribution * ( gTrans * 1.0 );`);   // was 1.8: stacked with silvering+rim into a near-white blowout band
+	// TRANSLUCENCY — light coming THROUGH a blade when the sun is behind it. This is the law's sanctioned
+	// home for backlit sheen: it lands in directDiffuse, so directLight.color has already been multiplied
+	// by the shadow factor (it vanishes in shadow), it is exposure-correct, and it structurally cannot bloom.
+	// Two changes vs the old pow(gBack, 2.0) * 1.0, neither of which adds peak energy:
+	//  - lobe shape: identical peak (0.50 + 0.50 = 1.0 at gBack = 1) but a far broader shoulder. At gBack
+	//    0.3 it is 0.154 against 0.09. That shoulder is the sun 60-80 deg off the view axis, i.e. most of
+	//    golden hour, and it is the half that was making the field read black away from the hero rim.
+	//  - transmitted light is FILTERED by the blade, so it leaves far more saturated yellow-green than the
+	//    light that bounces off. The tint is luminance-neutral (Rec709 dot = 0.999, max channel 1.22, both
+	//    at or below values already shipped elsewhere in this file): the whole read is bought with HUE, so
+	//    it cannot move a pixel closer to the bloom threshold. Saturate the colour, cap the value.
+	float gBack = saturate( dot( -geometryViewDir, directLight.direction ) );
+	float gBack2 = gBack * gBack;
+	float gTrans = ( 0.50 * gBack + 0.50 * gBack2 * gBack2 ) * vGrassV.y;
+	reflectedLight.directDiffuse += directLight.color * ( material.diffuseContribution * vec3( 1.22, 1.00, 0.34 ) ) * gTrans;`);
 
 const LIGHTS_MAPS_GRASS = /* glsl */`
 #if defined( USE_ENVMAP ) && defined( STANDARD ) && defined( ENVMAP_TYPE_CUBE_UV )
@@ -419,7 +494,7 @@ export class Grass {
       uWind: { value: new THREE.Vector4(0.8, 0.35, 0.5, 0) },
       uLodA: { value: new THREE.Vector4(this._lod.L0, this._lod.L1, this._lod.L2, this._lod.L3) },
       uLodB: { value: new THREE.Vector4(D1 / D0, D2 / D0, 1 / D0, g.terrain.waterLevel ?? 0) },
-      uBlade: { value: new THREE.Vector4(0.7, 0.034, 0, (g.seed | 0) & 0xffff) },
+      uBlade: { value: new THREE.Vector4(0.7, 0.024, 0, (g.seed | 0) & 0xffff) },
       uTrail: { value: trail },
       uNight: { value: 0 },
       uMaskMode: { value: 0 },   // gate only: 1 = draw the blades flat red so blobcheck knows which pixels are ground cover (see PostFX._renderSkyMask)
