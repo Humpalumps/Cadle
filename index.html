@@ -15,18 +15,6 @@
 <link rel="preload" as="image" href="/assets/intro/chair_leather.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/poster_crystal.jpg" crossorigin />
 <link rel="preload" as="image" href="/assets/intro/poster_ruins.jpg" crossorigin />
-<script>
-/* The body model is the biggest thing on the loading screen's critical path and buildStage() does not
-   reach it for ~350 ms (intro textures, room and chair all build first), so the download starts here,
-   during HTML parse, and stage.js awaits the promise. This replaces a <link rel="preload" as="fetch">:
-   that preload never matched the loader's request ("credentials mode does not match") and the browser
-   downloaded all 443 KB twice on every cold load. One request, ~340 ms earlier, no matching rules. */
-window.__guyGlb = fetch('/assets/intro/guy.glb').then((r) => {
-  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
-  return r.arrayBuffer();
-});
-window.__guyGlb.catch(() => {});   // a handler now, so the failure is not an unhandledrejection
-</script>
 <style>
 /* Boot splash: deliberately EMPTY — just the ground colour, painted before any JS so the page is never
    white. The cinematic intro (src/ui/Intro.js) is the loading screen and it removes this on its first

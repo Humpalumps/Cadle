@@ -138,7 +138,7 @@ export class Intro {
 
     this._buildDom();                                  // BEFORE the awaits below: the bar has to exist at t=0
     mark('dom');
-    this.stage = await buildStage({ seed: g.seed, guyBuf: g.guyBuf || null });
+    this.stage = await buildStage({ seed: g.seed });
     mark('stage');
     this._makeScreenCanvas();
     this.stage.setScreenTexture(this.screenTex);
