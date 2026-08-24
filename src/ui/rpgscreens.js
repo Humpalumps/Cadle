@@ -619,187 +619,110 @@ const seg = (items, cur, act) => `<div class="seg">${items.map(([k, l]) =>
     aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
 
 /**
- * THE PAPER DOLL — a hooded wayfarer, drawn not fetched (inline SVG: filled cloth and gold-edged
- * plate, in the house style). Decoration only: it sits BEHIND the slots at pointer-events:none so it can never
- * eat a drop, and the slots stay big enough to hit. viewBox is fixed and the SVG stretches, so the
- * figure tracks whatever height the doll column ends up with on a short viewport.
+ * THE PAPER DOLL — an anatomical silhouette, drawn not fetched (inline SVG, house palette), with
+ * every slot ANCHORED TO THE BODY PART IT EQUIPS.
+ *
+ * The old version laid the slots out on a uniform CSS grid and stretched a separate SVG behind it.
+ * Nothing related the two, so they only lined up by luck — and they did not: the helm plate sat on
+ * the chest, the cuirass on the hips, every slot one band off its anatomy. The fix is structural,
+ * not a tuning pass: the figure keeps its own aspect ratio (no more preserveAspectRatio="none"
+ * squash) and every slot is positioned FROM a point in the figure's viewBox, so the two scale
+ * together and cannot drift apart at a different window size.
  */
-// The viewBox is authored at the grid's own proportions (4 rows of slots) and stretched with
-// preserveAspectRatio="none" ON PURPOSE: the head has to land inside the helm cell and the hands
-// inside the weapon cells at every window size, and a figure that keeps its aspect ratio would
-// drift off the slots the moment the column changed width. Every limb is placed against a row:
-// head ~row 1, shoulders/cloak row 2, hands row 3 (the two weapon cells), shins row 4.
-// The viewBox is authored at the grid's own proportions and stretched with preserveAspectRatio
-// ="none" ON PURPOSE: the head has to land in the helm cell and the hands in the weapon cells at
-// every window size, and a figure that kept its aspect ratio would slide off them the moment the
-// column changed width. The grid reserves a strip above row 1 and below row 4 that holds no slot,
-// which is where the crown of the hood and the boots live — a figure whose every part is behind an
-// opaque plate is not a figure, it is wallpaper.
-// The wayfarer is drawn as SOLID FORM, not line-work: filled cloth with gradients, gold-edged
-// armour over it, a face lost in the hood with two aether glints. A 1px outline of a person reads
-// as an engineering schematic next to painted item icons — volume is the whole difference.
-//
-// The horizontal stretch is real and it is not constant: the doll column is a fixed ~267 px at
-// every window, while the grid's HEIGHT rides --pdi (≈419 px at 1080p, ≈302 px at 720p). So the
-// same viewBox is squashed ~1.45x at 1080p and ~2.0x at 720p. The figure is therefore authored
-// NARROW — the body spans ~76 of the 210 units — so it lands slim at 1080p and stocky at 720p
-// instead of being a mushroom at one of them. The CLOAK is the part allowed to flare to the full
-// width: a cloak that sweeps wide is a cloak, so the stretch reads as drama rather than damage,
-// and it is what puts painted colour under the outer slot columns.
-// ponytail: one authored width split between two aspect ratios, upgrade path is a second nested
-// <svg preserveAspectRatio="meet"> for the body if a third breakpoint ever lands between them.
-const FIGURE = `<svg class="pdfig" viewBox="0 0 210 477" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-  <defs>
-    <linearGradient id="pdCk" x1=".08" y1="0" x2=".92" y2=".62">
-      <stop offset="0" stop-color="#3b3180"/><stop offset=".34" stop-color="#2c2366"/>
-      <stop offset=".72" stop-color="#282054"/><stop offset="1" stop-color="#241c4c"/></linearGradient>
-    <linearGradient id="pdLn" x1=".1" y1="0" x2=".9" y2="1">
-      <stop offset="0" stop-color="#5b3a86"/><stop offset=".6" stop-color="#331d55"/>
-      <stop offset="1" stop-color="#150a26"/></linearGradient>
-    <linearGradient id="pdRb" x1=".1" y1="0" x2=".92" y2=".9">
-      <stop offset="0" stop-color="#7e6ccb"/><stop offset=".42" stop-color="#4b3b92"/>
-      <stop offset="1" stop-color="#241a52"/></linearGradient>
-    <linearGradient id="pdAr" x1=".18" y1="0" x2=".85" y2="1">
-      <stop offset="0" stop-color="#241b4e"/><stop offset=".5" stop-color="#120d2c"/>
-      <stop offset="1" stop-color="#06040d"/></linearGradient>
-    <linearGradient id="pdHo" x1=".12" y1="0" x2=".92" y2=".9">
-      <stop offset="0" stop-color="#7c69cf"/><stop offset=".36" stop-color="#3a2c7c"/>
-      <stop offset="1" stop-color="#120c30"/></linearGradient>
-    <linearGradient id="pdAu" x1=".06" y1="0" x2=".82" y2="1">
-      <stop offset="0" stop-color="#fdf3d2"/><stop offset=".24" stop-color="#dcc281"/>
-      <stop offset=".6" stop-color="#966c1f"/><stop offset="1" stop-color="#4a340f"/></linearGradient>
-    <linearGradient id="pdAd" x1=".2" y1="0" x2=".85" y2="1">
-      <stop offset="0" stop-color="#a98d52"/><stop offset=".48" stop-color="#6d4a15"/>
-      <stop offset="1" stop-color="#2e1f08"/></linearGradient>
-    <radialGradient id="pdFc" cx=".5" cy=".32" r=".72">
-      <stop offset="0" stop-color="#030208"/><stop offset=".62" stop-color="#070513"/>
-      <stop offset="1" stop-color="#1c1246"/></radialGradient>
-    <!-- eyes: a glint, not a headlamp. Two hot dots in a black cowl is a wraith; this is the guy
-         the player IS. Peak is roughly a third of what it was and it never reaches white. -->
-    <radialGradient id="pdEy" cx=".5" cy=".45" r=".55">
-      <stop offset="0" stop-color="#cfeaff" stop-opacity=".52"/>
-      <stop offset=".45" stop-color="#8fd8ff" stop-opacity=".28"/>
-      <stop offset="1" stop-color="#7c5bd6" stop-opacity="0"/></radialGradient>
-    <!-- skin under the cowl: enough to say "a face is in there", not enough to leave the shadow -->
-    <radialGradient id="pdSk" cx=".5" cy=".44" r=".62">
-      <stop offset="0" stop-color="#c39a76" stop-opacity=".30"/>
-      <stop offset=".58" stop-color="#6d4c3b" stop-opacity=".16"/>
-      <stop offset="1" stop-color="#6d4c3b" stop-opacity="0"/></radialGradient>
-    <radialGradient id="pdGm" cx=".4" cy=".32" r=".72">
-      <stop offset="0" stop-color="#e8f8ff"/><stop offset=".42" stop-color="#8fd8ff"/>
-      <stop offset="1" stop-color="#4b2fa2"/></radialGradient>
-    <radialGradient id="pdSh" cx=".5" cy=".5" r=".5">
-      <stop offset="0" stop-color="#000" stop-opacity=".62"/>
-      <stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-  </defs>
-  <g stroke-linecap="round" stroke-linejoin="round">
-    <ellipse cx="105" cy="470" rx="58" ry="9" fill="url(#pdSh)"/>
-    <!-- CLOAK. An A-line: narrow at the shoulders, wide at the hem. That taper IS the silhouette —
-         a cloak with parallel sides reads as a slab, which is exactly how the wireframe failed.
-         Open at the front so the robe stands in the parting; the darkest value in the figure. -->
-    <path fill="url(#pdCk)" d="M105 82c-19 0-33 8-37 26-8 62-16 154-20 248-2 38-3 68-2 92l32 4c0-48 1-114 3-174 2-70 4-140 6-170l18-14 18 14c2 30 4 100 6 170 2 60 3 126 3 174l32-4c1-24 0-54-2-92-4-94-12-186-20-248-4-18-18-26-37-26Z"/>
-    <path fill="url(#pdLn)" d="M87 110c-2 30-4 100-6 170-2 60-3 126-3 174l11 1c0-48 1-114 3-174 2-69 4-138 6-168ZM123 110c2 30 4 100 6 170 2 60 3 126 3 174l-11 1c0-48-1-114-3-174-2-69-4-138-6-168Z"/>
-    <path fill="rgba(250,236,196,.14)" d="M68 108c-8 62-16 154-20 248-2 38-3 68-2 92l7 1c-1-24 0-54 2-92 4-93 12-184 20-245Z"/>
-    <path fill="none" stroke="rgba(216,189,122,.32)" stroke-width="1.5" d="M68 108c-8 62-16 154-20 248-2 38-3 68-2 92M142 108c8 62 16 154 20 248 2 38 3 68 2 92"/>
-    <path fill="none" stroke="rgba(0,0,0,.34)" stroke-width="1.5" d="M62 168c-6 62-11 154-13 232-1 26-1 46 0 62M148 168c6 62 11 154 13 232 1 26 1 46 0 62"/>
-    <path fill="none" stroke="rgba(216,189,122,.42)" stroke-width="2" d="m46 444 32 4M164 444l-32 4"/>
-    <path fill="none" stroke="rgba(143,216,255,.24)" stroke-width="2.4" d="M142 108c8 62 16 154 20 248 2 38 3 68 2 92"/>
-    <!-- LEGS + GREAVES + BOOTS. The boots live in the foot-room row, the one band below every plate. -->
-    <path fill="url(#pdAr)" d="M89 322c-2 36-3 82-2 122h16c1-40 1-86 1-122ZM121 322c2 36 3 82 2 122h-16c-1-40-1-86-1-122Z"/>
-    <path fill="url(#pdAd)" d="M88 372h15l-1 52H88ZM122 372h-15l1 52h14Z"/>
-    <path fill="none" stroke="rgba(250,236,196,.28)" stroke-width="1.2" d="M89 386h13M108 386h13"/>
-    <path fill="url(#pdAu)" d="M85 438h19v24c0 7-4 10-11 10H77c-5 0-6-5-3-9l11-9ZM125 438h-19v24c0 7 4 10 11 10h16c5 0 6-5 3-9l-11-9Z"/>
-    <path fill="none" stroke="rgba(58,38,11,.55)" stroke-width="1.3" d="M85 452h19M106 452h19"/>
-    <!-- ARMS -> GAUNTLET CUFF -> FISTS. They are the reason the two weapon plates read as HELD
-         rather than as two buttons parked beside a bell.
-         Registered by arithmetic, not by eye: the grid puts the weapon cell at viewBox x < 57
-         (720p is the tighter of the two) / y 265..350, and rows 3 and 4 both carry an opaque-ish
-         plate in the outer columns, so the ONE band where an outstretched arm is unobstructed at
-         BOTH sizes is y 256..265 — the row-gap directly above the weapon plate. That is where the
-         bright gold cuff sits; the fist below it is deliberately behind the plate, which is what
-         "in his hand" looks like. The upper arm gets its own clear run through the row-2 band
-         (y 73..163, outer columns empty), which is where the limb actually reads as a limb.
-         Sleeve (robe value) -> cuff (dark + lit gold facet) -> glove: layered fills, no outlines,
-         same technique as the robe. Front-facing and symmetric on purpose — preserveAspectRatio
-         ="none" over two aspect ratios means an asymmetric stance walks off its own slots.
-         ponytail: hands are ~80% occluded by the weapon plate's own glass, upgrade path is
-         per-cell plate alpha if the doll ever gets a dedicated weapon-slot skin. -->
-    <path fill="url(#pdRb)" stroke="rgba(0,0,0,.5)" stroke-width="1.3" d="M84 96C74 95 66 99 63 106 57 122 53 136 50 150 46 168 44 185 43 200 41 216 40 231 39 243L53 244C54 231 55 216 57 200 58 185 61 168 65 150 68 136 72 122 78 108 81 101 87 97 92 96ZM126 96C136 95 144 99 147 106 153 122 157 136 160 150 164 168 166 185 167 200 169 216 170 231 171 243L157 244C156 231 155 216 153 200 152 185 149 168 145 150 142 136 138 122 132 108 129 101 123 97 118 96Z"/>
-    <path fill="rgba(250,236,196,.15)" d="M84 96c-10-1-18 3-21 10-5 14-9 28-12 42l5 1c3-14 7-27 12-40 3-7 8-11 15-12ZM126 96c10-1 18 3 21 10 5 14 9 28 12 42l-5 1c-3-14-7-27-12-40-3-7-8-11-15-12Z"/>
-    <!-- the vambrace: its bright band is centred on y 250..266, the ONE stripe the plates leave
-         open at both sizes, so the arm visibly enters the weapon cell instead of just ending. -->
-    <path fill="url(#pdAd)" d="M39 238h14l1 12H38ZM171 238h-14l-1 12h16Z"/>
-    <path fill="url(#pdAu)" d="M36 249h20l1 17H35ZM174 249h-20l-1 17h22Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.55)" stroke-width="1.2" d="M38 258h16M172 258h-16"/>
-    <!-- the fist is INSIDE the weapon cell and therefore behind its glass. Drawn in the gold
-         family, not the near-black one, purely so it survives ~75% plate opacity as a readable
-         ghost — a black glove there is a black rectangle behind a black rectangle. -->
-    <path fill="url(#pdAd)" stroke="rgba(250,236,196,.30)" stroke-width="1.2" d="M34 264h18c2 0 4 2 4 5l-1 16c0 8-5 13-12 13h-5c-6 0-10-5-10-12l-1-17c0-3 2-5 5-5ZM176 264h-18c-2 0-4 2-4 5l1 16c0 8 5 13 12 13h5c6 0 10-5 10-12l1-17c0-3-2-5-5-5Z"/>
-    <path fill="url(#pdAu)" d="M30 268h24l-1 8H30ZM180 268h-24l1 8h23Z"/>
-    <path fill="url(#pdAd)" stroke="rgba(250,236,196,.22)" stroke-width="1" d="M53 271c4 2 5 6 3 9-2 3-5 3-7 1ZM157 271c-4 2-5 6-3 9 2 3 5 3 7 1Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.3" d="M30 279h23M32 288h19M180 279h-23M178 288h-19"/>
-    <circle cx="41" cy="284" r="2.6" fill="#8fd8ff" opacity=".6"/>
-    <circle cx="169" cy="284" r="2.6" fill="#8fd8ff" opacity=".6"/>
-    <!-- ROBE. Two full values lighter than the cloak: value, not outline, separates the layers. -->
-    <path fill="url(#pdRb)" stroke="rgba(0,0,0,.55)" stroke-width="1.6" d="M105 74c-11 0-17 7-19 19l-4 74c-2 28-1 54 3 76h40c4-22 5-48 3-76l-4-74c-2-12-8-19-19-19Z"/>
-    <!-- CUIRASS: darkest plate, brightest edge. The one place the eye lands on the torso. -->
-    <path fill="url(#pdAr)" stroke="url(#pdAu)" stroke-width="1.7" d="M105 88c-7 0-12 5-14 14l-3 60c-1 24 1 44 5 56h24c4-12 6-32 5-56l-3-60c-2-9-7-14-14-14Z"/>
-    <path fill="none" stroke="url(#pdAu)" stroke-width="1.8" d="m92 162 13 15 13-15"/>
-    <path fill="none" stroke="rgba(216,189,122,.5)" stroke-width="1.3" d="M90 199c5 4 10 6 15 6s10-2 15-6M91 216c5 4 9 5 14 5s9-1 14-5"/>
-    <circle cx="105" cy="185" r="6.6" fill="url(#pdGm)"/>
-    <circle cx="105" cy="185" r="6.6" fill="none" stroke="url(#pdAu)" stroke-width="1.4"/>
-    <path fill="none" stroke="rgba(216,189,122,.55)" stroke-width="1.2" d="M105 175v-6M105 201v-6M95 185h-6M121 185h-6"/>
-    <!-- MANTLE across the shoulders, then FACETED PAULDRONS on top: angular plates with a lit
-         top facet and a dark under-edge. Rounded blobs read as fruit, not armour. -->
-    <path fill="url(#pdCk)" d="M105 66c-15 0-27 7-32 18-2 5 2 9 7 7 8-4 16-6 25-6s17 2 25 6c5 2 9-2 7-7-5-11-17-18-32-18Z"/>
-    <path fill="none" stroke="rgba(216,189,122,.45)" stroke-width="1.3" d="M75 87c9-5 19-8 30-8s21 3 30 8"/>
-    <path fill="url(#pdAd)" d="M84 74 64 79l-8 17 4 11 20-7 10-11Z"/>
-    <path fill="url(#pdAu)" d="M84 74 64 79l-5 13 20-6 9-8Z"/>
-    <path fill="url(#pdAd)" d="m126 74 20 5 8 17-4 11-20-7-10-11Z"/>
-    <path fill="url(#pdAd)" d="m126 74 20 5 5 13-20-6-9-8Z" opacity=".55"/>
-    <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.4" d="m56 96 4 11 20-7M154 96l-4 11-20-7"/>
-    <!-- BELT + BUCKLE: they land in the gap between the arm row and the weapon row, one of the four
-         bands where nothing is on top of the figure, so they are drawn to be seen. -->
-    <path fill="url(#pdAu)" d="M82 240h46l-2 24H84Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.2" d="M84 252h42"/>
-    <path fill="#0e0922" stroke="url(#pdAu)" stroke-width="1.5" d="m105 242 10 10-10 10-10-10Z"/>
-    <circle cx="105" cy="252" r="2.8" fill="#8fd8ff" opacity=".85"/>
-    <!-- TABARD, hem pointed into the next open band -->
-    <path fill="url(#pdCk)" stroke="rgba(0,0,0,.45)" stroke-width="1.2" d="M85 262h40l5 68-25 18-25-18Z"/>
-    <path fill="none" stroke="url(#pdAu)" stroke-width="2" d="m80 330 25 18 25-18"/>
-    <path fill="rgba(216,189,122,.32)" d="M105 276c-5 9-5 21 0 30 5-9 5-21 0-30Z"/>
-    <!-- HOOD last: the crown row is the ONLY band with no plate over it, so this is the part that
-         has to carry the character. Face in shadow, two aether glints, a lit cowl edge. -->
-    <path fill="url(#pdHo)" d="M105 4c-9 0-14 6-16 16-2 10-2 19-4 29-2 12-4 22-7 31 8 5 17 7 27 7s19-2 27-7c-3-9-5-19-7-31-2-10-2-19-4-29-2-10-7-16-16-16Z"/>
-    <path fill="none" stroke="rgba(0,0,0,.34)" stroke-width="1.4" d="M89 44c-1 12-3 22-6 31M121 44c1 12 3 22 6 31"/>
-    <path fill="url(#pdFc)" d="M105 16c-8 0-13 7-13 18 0 12 6 21 13 21s13-9 13-21c0-11-5-18-13-18Z"/>
-    <path fill="none" stroke="rgba(0,0,0,.42)" stroke-width="2.4" d="M88 27c6-6 11-9 17-9s11 3 17 9"/>
-    <path fill="none" stroke="rgba(250,236,196,.66)" stroke-width="1.7" d="M92 34c0-11 5-18 13-18s13 7 13 18"/>
-    <path fill="none" stroke="rgba(250,236,196,.38)" stroke-width="2" d="M105 6c-9 1-14 11-15 24-1 14-3 30-6 44"/>
-    <path fill="none" stroke="rgba(143,216,255,.26)" stroke-width="2" d="M105 6c9 1 14 11 15 24 1 14 3 30 6 44"/>
-    <!-- a face, dimly: cheek/jaw plane, brows, two soft glints, nose, mouth. Order matters — the
-         skin plane goes UNDER the features so the features are shadow on skin, not marks on void. -->
-    <ellipse cx="105" cy="38" rx="12.5" ry="15" fill="url(#pdSk)"/>
-    <path fill="none" stroke="rgba(9,6,20,.45)" stroke-width="1.6" d="M96.5 30c2.4-1.5 4.6-1.5 7 0M113.5 30c-2.4-1.5-4.6-1.5-7 0"/>
-    <ellipse cx="99.8" cy="35" rx="2.9" ry="2.5" fill="url(#pdEy)"/>
-    <ellipse cx="110.2" cy="35" rx="2.9" ry="2.5" fill="url(#pdEy)"/>
-    <path fill="none" stroke="rgba(9,6,20,.4)" stroke-width="1.2" d="M96.9 34.4c1.9-1.7 3.9-1.7 5.8 0M113.1 34.4c-1.9-1.7-3.9-1.7-5.8 0"/>
-    <path fill="none" stroke="rgba(9,6,20,.32)" stroke-width="1.2" d="M105 35v6l-2.4 2"/>
-    <path fill="none" stroke="rgba(9,6,20,.30)" stroke-width="1.3" d="M101.4 48c2.4 1.3 4.8 1.3 7.2 0"/>
-  </g></svg>`;
+// The figure box: `.pdgrid` is `--pdh` tall and the SVG is `--pdw = --pdh * 0.47` wide, centred.
+// 0.47 against the drawing's own 200/480 = 0.4167 is a deliberate 12% broadening — it is CONSTANT
+// at every window size (both derive from --pdh), which is the whole point: one figure, one shape,
+// no per-breakpoint tuning. Anything in viewBox units therefore maps to the grid by
+//     x -> calc(50% + (vx/200 - 0.5) * var(--pdw))      y -> calc(vy/480 * var(--pdh))
+// and that arithmetic is the ONLY thing that positions a slot. See DOLL_POS.
+const VBW = 200, VBH = 480;
 
-// Where each slot sits ON THE BODY. Named cells, not indices — the slot LIST comes from
-// progression and may gain a second weapon; anything not named here lands in the spare row, so a
-// new slot appears on the doll instead of disappearing from it. Rows 1 and 6 hold no slot: they
-// are the head-room and the foot-room the drawing needs.
-const DOLL_CELL = { head: '2/2/3/3', cloak: '3/1/4/2', arms: '3/3/4/4', chest: '4/2/5/3', legs: '5/2/6/3' };
-const HAND_CELL = ['4/1/5/2', '4/3/5/4'];
+// A SILHOUETTE, not a mannequin and not a character (user reference, 2026-08-24): athletic adult
+// male, front-facing, standing at ease. Bald rounded head with a real jaw, short neck into sloped
+// traps, deltoid caps, a genuine V to a narrow waist, arms hanging CLEAR of the ribs with a slight
+// elbow bend, quads and calves with a knee break, short boots with a sole line. One flat fill —
+// all the readability is in the outline, which is why the contours are worth the path data and an
+// internal shading pass would be wasted. House palette rather than the reference's pure black:
+// deep blue-violet body, ONE cool 1.4-unit edge light so it separates from the panel, and the gold
+// haft in each fist as the only warm accent.
+//
+// Landmarks (viewBox units) — these ARE the anchors below, do not re-derive them:
+//   crown 16 · chin 95 · neck 95..113 · shoulder cap (52,130) · sternum (100,168)
+//   waist y 224 (58 wide) · hips y 260 · crotch 296 · forearm (157,205) · fist centre (40,310)
+//   knee 370 · shin 400 · ankle 446 · sole 474
+// THE FIGURE IS THE USER'S OWN SILHOUETTE (supplied 2026-08-24), not a drawing of one.
+// public/assets/ui/doll.png - an athletic adult male, front-facing, already alpha-transparent
+// (no keying needed: background alpha 0, figure solid). Cropped to its bounding box, 386x1003.
+//
+// It is applied as a CSS MASK rather than an <img> so the alpha gives us the shape while the house
+// gradient gives us the colour - the source art is pure black, and an <img> would either stay black
+// or need a filter chain to fake a tint. A mask keeps one asset usable in any palette.
+//
+// Precedent for a UI PNG: public/assets/ui/items/*.png already load straight into these screens.
+// The earlier hand-drawn SVG stays as `FIGURE_FALLBACK` below and renders if the asset is missing,
+// the same way every game.assets accessor degrades rather than leaving a hole.
+//
+// ANATOMY, MEASURED off the alpha channel by row-scanning the silhouette's width profile - these
+// fractions ARE the anchors in DOLL_POS, do not re-derive them by eye:
+//   crown .025 | head widest .075 | neck pinch .125 (65px, narrowest above the waist)
+//   shoulders .19 (span jumps 197->259 in one step) | chest .28 (arms still fused to the torso)
+//   armpit .30 (the row where the scan goes from 1 run to 3 - arms clear the ribs here)
+//   forearms .44 | hands .525 (6 runs = individual fingers) | legs part .575 (back to 2 runs)
+//   knee .65 | shin .80 | feet .95-1.0
+const FIGURE = `<div class="pdfig" aria-hidden="true"></div>`;
+
+// WHERE EACH SLOT SITS ON THE BODY. `a` is the anatomical anchor in viewBox units — the point the
+// slot equips — and `y` is where the plate's own centre goes (they differ only where a plate would
+// otherwise fall off the box). `col` is which of the three plate columns it hangs in: a 84-px plate
+// cannot sit ON a 20-px shin without burying it, so the parts wide enough to carry a plate (head,
+// sternum, shins) take the centre column and the plate sits directly on them, while the parts that
+// are not (shoulder, forearm) take an outboard column and get a CONNECTOR LINE back to the anchor —
+// which is what a real MMO doll does, and it keeps both the plate and the anatomy visible.
+// Nothing here is a row index: add a slot and it lands on its body part, not in the next free cell.
+const DOLL_POS = {
+  // `ay` is the ANATOMY (measured off the silhouette's alpha, do not move it). `y` is where the
+  // PLATE hangs; the leader joins the two when they differ. They are separate numbers because a
+  // plate is ~66 viewBox units tall and a real shoulder sits only 55 below the skull, so two plates
+  // in one column need ~70 units of `y` between them or they overlap.
+  //
+  // HELM SITS ON THE HEAD (user, asked twice). It does cover the skull - a plate is wider than a
+  // head at this scale and there is no room above the crown to float it, the figure starts 12 units
+  // from the top. That was the reason it was parked off to one side with a leader, and the reason
+  // was aesthetic while the request is explicit, so the request wins. When a helm is equipped its
+  // icon is what you see there, which is the correct read anyway.
+  //
+  // Column budget: 3 columns, 7 slots, every pair in a column >= 90 units apart.
+  //   col -1 : cloak 130, weaponA 250
+  //   col  0 : head 36, chest 134, legs 384
+  //   col +1 : arms 160, weaponB 252
+  head:  { col: 0,  ax: 100, ay:  36, y:  36 },   // .075 ON the skull, centred
+  cloak: { col: -1, ax: 46,  ay:  91, y: 130 },   // .19  left deltoid, plate dropped to clear it
+  chest: { col: 0,  ax: 100, ay: 134, y: 134 },   // .28  sternum, NOT the belly
+  arms:  { col: 1,  ax: 178, ay: 211, y: 160 },   // .44  right forearm, plate lifted to clear WEAPON 2
+  legs:  { col: 0,  ax: 100, ay: 384, y: 384 },   // .80  shins, below the knee break
+};
+const HAND_POS = [{ col: -1, ax: 16, ay: 252, y: 252 }, { col: 1, ax: 184, ay: 252, y: 252 }];
+
+const kx = (ax) => ((ax / VBW) - 0.5).toFixed(4);
+const ky = (ay) => (ay / VBH).toFixed(4);
+const COLX = ['left:calc(50% - var(--pdsw)/2)', 'left:auto;right:0'];
+const slotStyle = (p) => `${p.col < 0 ? 'left:0' : COLX[p.col]};top:calc(${ky(p.y)}*var(--pdh))`;
+/** The short leader from an outboard plate back to the body part it names. Width is computed, not
+ *  authored, so it shrinks to nothing the moment the anchor falls inside the plate (which it does
+ *  for the hands at 1080p) — a connector that is not needed simply is not drawn. */
+function dollLink(p) {
+  if (!p.col) return '';                       // centre column: the plate is already on the part
+  const k = kx(p.ax), t = `top:calc(${ky(p.ay)}*var(--pdh))`;
+  return p.col < 0
+    ? `<i class="pdlk" style="left:var(--pdsw);width:calc(50% + (${k})*var(--pdw) - var(--pdsw));${t}"></i>`
+    : `<i class="pdlk r" style="left:calc(50% + (${k})*var(--pdw));width:calc(50% - (${k})*var(--pdw) - var(--pdsw));${t}"></i>`;
+}
 
 function dollCells(ctx) {
   const hands = weaponSlots(ctx);
   const cells = {};
-  hands.forEach((s, i) => { cells[s] = HAND_CELL[i] || null; });
-  for (const s of eqSlots(ctx)) if (!(s in cells)) cells[s] = DOLL_CELL[s] || null;
+  hands.forEach((s, i) => { cells[s] = HAND_POS[i] || null; });
+  for (const s of eqSlots(ctx)) if (!(s in cells)) cells[s] = DOLL_POS[s] || null;
   return cells;
 }
 
@@ -809,7 +732,7 @@ function dollCells(ctx) {
  * which keeps the old one-click "show me what else goes here" flow and makes click-then-click-a-slot
  * work without a second hit target crammed into 60 px.
  */
-function dollBodySlot(ctx, sl, cell) {
+function dollBodySlot(ctx, sl, css) {
   const eq = ctx.rpg.equipped || {};
   const it = eq[sl], r = it ? rarOf(ctx, it.rarity) : null, g = slotGain(ctx, sl);
   // "where does this go" is answered BEFORE any drag: whatever the bag is showing you — the
@@ -825,7 +748,7 @@ function dollBodySlot(ctx, sl, cell) {
   // than the other legal one — "here are your options, here is the one I would take"
   const pick = ok && bestSlotFor(ctx, sel) === sl;
   return `<button class="pdslot ${it ? '' : 'empty'} ${on ? 'on' : ''} ${held ? 'held' : ''} ${ok ? (it ? 'ok' : 'okfree') : ''} ${pick ? 'okpick' : ''}"
-    style="grid-area:${cell};${r ? `--r:${rarCss(r.color)}` : ''}"
+    style="${css}${r ? `;--r:${rarCss(r.color)}` : ''}"
     data-act="slotjump" data-id="${sl}" data-slot="${sl}" data-nav="worn" aria-pressed="${on}"
     title="${esc(ok ? 'put ' + sel.name + ' here' : it ? it.name + (held ? ' — in your hands now' : '') + ' — click for what else fits' : 'empty — click for what fits')}">
     ${held ? '<span class="hd">in hand</span>' : ''}
@@ -843,8 +766,8 @@ function paperDoll(ctx) {
   const st = ctx.rpg.stats || {};
   return `<div class="pdoll" role="group" aria-label="What you are wearing">
     <div class="pdhd"><span>Worn</span><b>${n0(st.power)}<u>power</u></b></div>
-    <div class="pdgrid">${FIGURE}${placed.map((s) => dollBodySlot(ctx, s, cells[s])).join('')}</div>
-    ${spare.length ? `<div class="pdspare">${spare.map((s) => dollBodySlot(ctx, s, 'auto')).join('')}</div>` : ''}
+    <div class="pdgrid">${FIGURE}${placed.map((s) => dollLink(cells[s])).join('')}${placed.map((s) => dollBodySlot(ctx, s, slotStyle(cells[s]))).join('')}</div>
+    ${spare.length ? `<div class="pdspare">${spare.map((s) => dollBodySlot(ctx, s, '')).join('')}</div>` : ''}
     <p class="pdhint">Drag a find from the bag onto the figure — or pick it and click a slot.</p>
   </div>`;
 }

@@ -46,6 +46,13 @@ LUM_BRIGHT = 212      # luminance 0..255 counted as "glowing". Calibrated agains
                       # 214-218 at some hours. That is why the shape rules (MIN_THICK, MAX_ASPECT) and the
                       # ground-cover mask exist — the brightness bar alone cannot separate a lit blade from
                       # a blob, and raising it would blind the detector to the actual bug.
+MIN_LOCAL_CONTRAST = 25   # a BRIGHT cluster must be this much brighter than the ground around it.
+                      # Measured: a real blob on grass sits 70-110 above its surround; the pale sunlit
+                      # sand that used to false-positive sits 0-5. 25 is generous in both directions.
+                      # This is what lets LUM_BRIGHT stay where it is - the alternative was raising the
+                      # bar until the sand stopped firing, which would have blinded the detector on
+                      # darker ground where the real bug lives. Applies to BRIGHT only; FLASH already
+                      # compares two frames, so it is a contrast test by construction.
 MIN_AREA   = 12       # px at 960-wide; smaller than this is a speck, not a blob
 MAX_ASPECT = 6        # bright bbox w:h beyond this is a strip (horizon/water), not a blob
 MIN_THICK  = 4        # px: a blob has THICKNESS. A 11x3 sliver is a lit blade edge, not a bloom ball —
@@ -120,7 +127,39 @@ def load_mask(path, w, h):
                 if x == 0 or x + 1 >= w or y == 0 or y + 1 >= h or                    not (prev[row+x-1] and prev[row+x+1] and prev[row-w+x] and prev[row+w+x]): grass[row + x] = 0
     return sky, grass
 
-def clusters(flags, w, h, min_area, im=None, max_aspect=None, sky=None):
+def local_contrast(L, w, h, bbox):
+    """How much brighter is this cluster than the ground OUTSIDE its own halo?
+
+    THE CASE THIS EXISTS FOR. A bloom ball is bright RELATIVE TO ITS SURROUNDINGS - that is what
+    bloom does, it smears a sub-pixel emitter into something that stands out. Uniformly bright
+    ground is not. The BRIGHT test is an absolute luminance bar, so on the Sundered Spire's pale
+    sunlit sand it fired on the terrain itself: a 32 px cluster at rgb (223,219,210), thick enough
+    and small enough to clear every shape rule, masks present so not the truncation case either.
+    Cropping the pixels showed sand and tan reed blades, nothing emissive. Raising LUM_BRIGHT to
+    hide it would blind the detector on darker ground, which is the trade this project has refused
+    before. Local contrast separates the two directly.
+
+    THE GAP IS LOAD-BEARING, and the selftest caught me shipping it without one. A blob has a soft
+    SKIRT well outside the thresholded core - the selftest's own brush paints out to 2x its radius.
+    A ring sampled tight against the bbox sits inside that skirt, measures the blob against itself,
+    returns ~0, and silently swallows the very thing this file exists to catch. So: skip a gap
+    scaled to the cluster, then sample a band beyond it.
+    """
+    x0, y0, x1, y1 = bbox
+    bw, bh = x1 - x0 + 1, y1 - y0 + 1
+    gap = max(8, max(bw, bh))          # clear the halo: it extends about one bbox beyond the core
+    band = 10
+    inner, ring = [], []
+    for y in range(max(0, y0 - gap - band), min(h, y1 + gap + band + 1)):
+        for x in range(max(0, x0 - gap - band), min(w, x1 + gap + band + 1)):
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                inner.append(L[y * w + x])
+            elif x < x0 - gap or x > x1 + gap or y < y0 - gap or y > y1 + gap:
+                ring.append(L[y * w + x])
+    if len(ring) < 40 or not inner: return 999      # frame edge: no clean surround, keep the finding
+    return sum(inner) / len(inner) - sum(ring) / len(ring)
+
+def clusters(flags, w, h, min_area, im=None, max_aspect=None, sky=None, lum=None):
     seen = bytearray(w*h); out = []
     px = im.load() if im else None
     for i in range(w*h):
@@ -144,6 +183,9 @@ def clusters(flags, w, h, min_area, im=None, max_aspect=None, sky=None):
                 bw, bh = x1-x0+1, y1-y0+1
                 if max_aspect and max(bw,bh) > max_aspect * min(bw,bh): continue
                 if max_aspect and min(bw,bh) < MIN_THICK: continue      # a sliver, not a ball
+                # BRIGHT test only (max_aspect is its marker): must stand out from its surround.
+                if max_aspect and lum is not None:
+                    if local_contrast(lum, w, h, [x0,y0,x1,y1]) < MIN_LOCAL_CONTRAST: continue
                 out.append({'px': n, 'bbox': [x0,y0,x1,y1], 'rgb': (rs//n, gs//n, bs//n) if px else None})
     return sorted(out, key=lambda c: -c['px'])
 
@@ -170,7 +212,7 @@ def selftest(frame):
     print(f'[selftest] {name} {w}x{h}, mask: {"present" if sky else "MISSING (checking full frame)"}, '
           f'grass pixels: {sum(grass) if grass else "n/a"}')
     bm = lambda LL: [1 if v >= LUM_BRIGHT and (grass is None or grass[i]) else 0 for i, v in enumerate(LL)]
-    base = clusters(bm(L), w, h, MIN_AREA, im, MAX_ASPECT, sky)
+    base = clusters(bm(L), w, h, MIN_AREA, im, MAX_ASPECT, sky, L)
     px = im.load()
     def ball(cx, cy, rad, col):
         # flat-ish core with a soft skirt: that is the shape bloom actually smears a blob into, and it is
@@ -184,18 +226,43 @@ def selftest(frame):
                 px[x, y] = tuple(min(255, int(o[i]*(1-a) + col[i]*a)) for i in range(3))
     # Two blobs ON THE BLADES — one washed white, one saturated violet (the two historical flavours).
     # Centres are picked from the grass mask itself, so the test exercises the rule that actually ships.
+    # Pick centres where the ground-cover mask is genuinely DENSE, not merely non-zero. Picking the
+    # first masked pixel on a fixed scanline made this test frame-lucky: on captures where that row
+    # is sparse blades against open ground, the painted ball straddles mostly-unmasked pixels, never
+    # forms a cluster under the eroded mask, and the selftest reports a swallowed blob that the code
+    # never had a chance to catch. That failure reproduced identically on the UNMODIFIED file, i.e.
+    # it was the frame, not the rule - which is exactly the kind of false alarm that teaches people
+    # to distrust their own guard. Score a neighbourhood and take the densest.
     spots = []
     if grass:
-        for frac in (0.62, 0.80):
+        R = 14
+        for frac in (0.55, 0.78):
             y = int(h * frac)
-            row = [x for x in range(w // 8, w - w // 8) if grass[y * w + x]]
-            if row: spots.append((row[len(row) // 3], y))
-    while len(spots) < 2: spots.append((w // 3 if not spots else 2 * w // 3, int(h * 0.74)))
+            best, bestn = None, 0
+            for x in range(w // 8, w - w // 8, 6):
+                n = 0
+                for yy in range(max(0, y - R), min(h, y + R), 2):
+                    for xx in range(max(0, x - R), min(w, x + R), 2):
+                        if grass[yy * w + xx]: n += 1
+                if n > bestn: bestn, best = n, x
+            # demand a real thicket: below this the ball cannot form a cluster and the test is
+            # measuring the capture, not the detector.
+            if best is not None and bestn >= 60: spots.append((best, y))
+    # A frame-level floor as well as a per-spot one. Measured: captures that support this test carry
+    # ~119k masked ground pixels; the one that kept "failing" carries 38k, and the paint lands on
+    # sparse blades over open ground where no cluster can form. Refusing to run is the honest answer -
+    # a test that reports FAIL when it simply had nothing to paint on is a test people learn to ignore.
+    total_grass = sum(grass) if grass else 0
+    if len(spots) < 2 or total_grass < 60000:
+        print(f'[selftest] SKIP: only {total_grass} masked ground pixels in this frame (need 60000+ '
+              'and two dense patches). The test would be measuring the capture, not the detector - '
+              'pick a frame with real ground cover in it.')
+        return 0
     ball(spots[0][0], spots[0][1], 10, (255, 252, 245))
     ball(spots[1][0], spots[1][1], 11, (238, 214, 255))
     print(f'[selftest] painted at {spots[0]} and {spots[1]}')
     L2, _, _ = lum_map(im)
-    found = clusters(bm(L2), w, h, MIN_AREA, im, MAX_ASPECT, sky)
+    found = clusters(bm(L2), w, h, MIN_AREA, im, MAX_ASPECT, sky, L2)
     new = len(found) - len(base)
     print(f'[selftest] clean -> {len(base)} cluster(s); +2 painted ground blobs -> {len(found)}')
     for c in found[:4]: print(f'           px={c["px"]:5d} bbox={c["bbox"]} rgb={c["rgb"]}')
@@ -241,7 +308,7 @@ def main():
         # BRIGHT is the ground-cover rule (user decree): only blades. FLASH stays whole-frame, because a
         # thing that IGNITES between two 100 ms frames is a bug wherever it is, and props do not do it.
         bmask = [1 if v >= LUM_BRIGHT and (grass is None or grass[i]) else 0 for i, v in enumerate(L)]
-        bright = clusters(bmask, w, h, MIN_AREA, im, MAX_ASPECT, sky)
+        bright = clusters(bmask, w, h, MIN_AREA, im, MAX_ASPECT, sky, L)
         if bright:
             report[name] = {'bright': bright[:6]}
             top = bright[0]

@@ -25,11 +25,31 @@
 // "MAKE THEM EASIER TO SEE" (user, 2026-08-23), WITHOUT touching brightness: the Vale's grass
 // got denser/finer and the bricks (rest height 0.22 m, grass blades ~0.62 m) were sitting under
 // it. Fixed with the levers CLAUDE.md ranks ABOVE brightness — silhouette, height, a ground
-// decal, hue — none of which touch emissiveIntensity: brickGeometry() is 1.4x bigger, HOVER_H
-// lifts the rest height to 0.48 m, brickRingGeometry()/brickRingMaterial() draw an unlit albedo
-// ring under each brick (cannot bloom — no emissive, no toneMapped:false), and `special`'s hue
-// moved off blue-violet (it fought both the aether crystals and two of loot's own beam colours)
-// onto a teal nothing else in the palette claims.
+// decal, hue — none of which touch emissiveIntensity: HOVER_H lifts the rest height to 0.48 m,
+// brickRingGeometry()/brickRingMaterial() draw an unlit albedo ring under each brick (cannot
+// bloom — no emissive, no toneMapped:false), and `special`'s hue moved off blue-violet (it
+// fought both the aether crystals and two of loot's own beam colours) onto a teal nothing else
+// in the palette claims. That work stands, unchanged, below.
+//
+// "MAKE THEM LOOK LIKE AMMUNITION, NOT CARDBOARD BOXES" (user, 2026-08-24): the brick used to be
+// four flat boxes (body/spine/two caps) in ONE flat-emissive material — a toy block. Same rule
+// applies here as everywhere else in this file: get the richness from silhouette and material
+// CONTRAST, not from brightness.
+//   * caseGeometry() is now a chamfered (octagonal-prism) case with gold end-brackets, a gold
+//     strap and a 3-prong gold claw socket, vertex-coloured so dark body and gold trim are ONE
+//     draw call. It carries NO emissive at all — the glow budget moved entirely onto the core,
+//     which is smaller than the old whole-crate glow, not bigger.
+//   * lightCoreGeometry()/specialCoreGeometry() are the "contents" nested in the claw socket —
+//     a fanned bundle of shell casings for light, one faceted crystal for special. Same family
+//     (same case, same socket), different contents, which is also the whole point of the two
+//     kinds existing. Both still use the exact emissiveIntensity (0.5) and colours the old single
+//     material used — visibility is unchanged, only the area carrying it shrank.
+//   * The ground ring used to be one continuous RingGeometry, which reads as a broken arc once
+//     dense grass occludes part of it. Replaced with 4 short reticle arcs with deliberate gaps
+//     (brickRingGeometry()) — a target-lock mark that is SUPPOSED to be segmented, so grass
+//     occlusion can no longer make it look "broken".
+//   * Body is now ONE shared InstancedMesh for both kinds (same case for light and special —
+//     only the core differs), so the geometry got richer but draw calls only went 4 -> 5.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { enemyTier } from './droptable.js';
@@ -57,31 +77,112 @@ const PICK_R = 1.6;            // m — walk over it, no E press, no nameplate
 const TOAST_GAP = 4;           // s between HUD pickup lines, so a firefight is not a wall of text
 
 // ------------------------------------------------------------------ mesh
-// ONE geometry and TWO materials for the whole population, drawn as two InstancedMeshes —
-// two draw calls for up to 24 bricks, and zero per-drop allocation.
-let group = null, inst = null, geo = null, ringInst = null;
+// ONE shared "case" InstancedMesh for both kinds (light and special are the same case, only
+// the contents in the claw socket differ) + one emissive "core" InstancedMesh per kind + one
+// ground-ring InstancedMesh per kind. 5 draw calls total for up to 24 bricks (was 4), zero
+// per-drop allocation — geometry got richer, draw-call count barely moved.
+let group = null, bodyInst = null, coreInst = null, ringInst = null;
+let caseGeo = null, ringGeo = null, lightCoreGeo = null, specialCoreGeo = null;
 
-function brickGeometry() {
-  if (geo) return geo;
-  // a flat crate with a raised spine: reads as "a thing you scoop up", not as a floating cube.
-  // 1.4x the original (Vale grass got denser/finer and buried the old one) — silhouette only,
-  // no gameplay change: PICK_R and the physics below are untouched.
-  const body = new THREE.BoxGeometry(0.48, 0.22, 0.30);
-  const spine = new THREE.BoxGeometry(0.34, 0.08, 0.14); spine.translate(0, 0.14, 0);
-  const capA = new THREE.BoxGeometry(0.06, 0.28, 0.36); capA.translate(0.24, 0, 0);
-  const capB = capA.clone(); capB.translate(-0.48, 0, 0);
-  geo = mergeGeometries([body, spine, capA, capB], false);
-  geo.computeVertexNormals();
-  return geo;
+// geometry helpers — same tiny transform-then-build pattern dropmesh.js uses for its item
+// shapes, scoped locally since ammo.js and dropmesh.js are different owners.
+function xf(g, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
+  if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); if (rz) g.rotateZ(rz);
+  if (x || y || z) g.translate(x, y, z);
+  return g;
+}
+const boxg = (w, h, d, ...a) => xf(new THREE.BoxGeometry(w, h, d), ...a);
+const cylg = (rt, rb, h, s, ...a) => xf(new THREE.CylinderGeometry(rt, rb, h, s), ...a);
+const coneg = (r, h, s, ...a) => xf(new THREE.ConeGeometry(r, h, s), ...a);
+const torg = (r, t, ...a) => xf(new THREE.TorusGeometry(r, t, 4, 10), ...a);
+
+// paints a flat per-vertex albedo onto a geometry so several parts with different colours can
+// merge into ONE draw call (MeshStandardMaterial multiplies base colour by vertex colour; base
+// colour is left white so the vertex colour IS the final albedo, unmodulated).
+function tint(g, hex) {
+  const c = new THREE.Color(hex);
+  const n = g.attributes.position.count;
+  const a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return g;
+}
+
+const CASE_DARK = 0x241d17;   // dark leather/gunmetal body
+const CASE_GOLD = 0xcf9a3d;   // ornate gold trim, per the house style
+
+// The shared case: a chamfered (octagonal-prism) body instead of a sharp-edged crate, gold end
+// brackets (like case latches), a gold strap across the top, and a 3-prong claw socket the
+// contents nest in. No emissive anywhere in this geometry — the glow budget lives entirely in
+// the core (below), which is the CLAUDE.md-mandated move: richness from silhouette and material
+// contrast (dark body vs gold trim, vertex-coloured), never from brightness.
+function caseGeometry() {
+  if (caseGeo) return caseGeo;
+  const slab = new THREE.CylinderGeometry(0.20, 0.20, 0.18, 8);
+  slab.rotateY(Math.PI / 8);              // flats to the cardinal sides, not a vertex — reads
+  slab.scale(1.2, 1, 0.78);               // as a chamfered box, not a diamond. ~0.48x0.18x0.31,
+  tint(slab, CASE_DARK);                  // the same footprint the old box crate had.
+
+  const bracketA = boxg(0.07, 0.17, 0.33, 0.235, 0, 0); tint(bracketA, CASE_GOLD);
+  const bracketB = boxg(0.07, 0.17, 0.33, -0.235, 0, 0); tint(bracketB, CASE_GOLD);
+  const strap = boxg(0.30, 0.05, 0.17, 0, 0.115, 0); tint(strap, CASE_GOLD);
+  const socket = torg(0.085, 0.016, 0, 0.135, 0, -Math.PI / 2); tint(socket, CASE_GOLD);
+
+  const claws = [];
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const claw = boxg(0.018, 0.10, 0.018, 0, 0.05, 0, 0.35, a, 0);
+    claw.translate(Math.sin(a) * 0.075, 0.135, Math.cos(a) * 0.075);
+    tint(claw, CASE_GOLD);
+    claws.push(claw);
+  }
+
+  caseGeo = mergeGeometries([slab, bracketA, bracketB, strap, socket, ...claws], false);
+  caseGeo.computeVertexNormals();
+  return caseGeo;
+}
+
+// light "contents": a fanned bundle of 3 shell casings sitting in the claw socket — reads as
+// ammunition at a glance, distinct from the crystal below while sharing the same case/socket.
+function lightCoreGeometry() {
+  if (lightCoreGeo) return lightCoreGeo;
+  const R = 0.045, baseY = 0.14, dy = [0, 0.014, -0.008];
+  const parts = [];
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.3;
+    const x = Math.sin(a) * R, z = Math.cos(a) * R;
+    parts.push(cylg(0.026, 0.026, 0.12, 6, x, baseY + 0.06 + dy[i], z));
+    parts.push(coneg(0.026, 0.045, 6, x, baseY + 0.1425 + dy[i], z));
+  }
+  lightCoreGeo = mergeGeometries(parts, false);
+  lightCoreGeo.computeVertexNormals();
+  return lightCoreGeo;
+}
+
+// special "contents": one faceted crystal in the same socket — same family (same case), a
+// different, single, saturated payload instead of a bundle.
+function specialCoreGeometry() {
+  if (specialCoreGeo) return specialCoreGeo;
+  specialCoreGeo = new THREE.OctahedronGeometry(0.078, 0);
+  specialCoreGeo.scale(1, 1.4, 1);
+  specialCoreGeo.translate(0, 0.14 + 0.09, 0);
+  return specialCoreGeo;
 }
 
 // Ground decal ring — the classic "findable without a brighter blob" fix (CLAUDE.md's ARCHITECTURAL
 // LAW): flat, unlit, on the terrain, never above the item, so it cannot bloom no matter how it is
-// tuned. One extra InstancedMesh pair (2 more draw calls, 4 total for the whole population).
-let ringGeo = null;
+// tuned. Was one continuous ring, which dense Vale grass chops into a "broken arc" look from most
+// angles; now it is 4 short reticle arcs with DELIBERATE gaps, so grass occlusion reads as the
+// mark's own design instead of a rendering artefact. Same InstancedMesh pair as before (2 draw
+// calls for both kinds combined).
 function brickRingGeometry() {
   if (ringGeo) return ringGeo;
-  ringGeo = new THREE.RingGeometry(0.30, 0.46, 20).rotateX(-Math.PI / 2);
+  const gap = 0.55, seg = Math.PI / 2 - gap;
+  const arcs = [];
+  for (let i = 0; i < 4; i++) {
+    arcs.push(new THREE.RingGeometry(0.30, 0.44, 6, 1, i * (Math.PI / 2) + gap / 2, seg));
+  }
+  ringGeo = mergeGeometries(arcs, false).rotateX(-Math.PI / 2);
   return ringGeo;
 }
 
@@ -97,7 +198,17 @@ const MATS = {
 // ground decal accent, one shade lighter than the brick's own emissive so ring and crate read as one object
 const RING_COL = { light: 0xffb238, special: 0x4becd6 };
 
-function brickMaterial(kind) {
+// The shared case body: vertex-coloured (dark/gold), no emissive at all — a plain PBR surface
+// whose only job is silhouette and material contrast.
+function caseMaterial() {
+  return new THREE.MeshStandardMaterial({
+    vertexColors: true, color: 0xffffff, roughness: 0.62, metalness: 0.28, flatShading: true,
+  });
+}
+
+// The core (contents): same colours/intensity the old single whole-crate material used, just
+// applied to a much smaller area now that the case itself carries none of the glow.
+function coreMaterial(kind) {
   const m = MATS[kind];
   return new THREE.MeshStandardMaterial({
     color: m.color, emissive: m.emissive,
@@ -136,7 +247,8 @@ const _p = new THREE.Vector3();
 const _one = new THREE.Vector3(1, 1, 1);
 const _qid = new THREE.Quaternion();   // identity — the ring geometry is pre-rotated flat, never spun
 const KINDS = ['light', 'special'];
-const _n = { light: 0, special: 0 };   // per-kind instance cursor, reused every frame
+let _nb = 0;                           // combined body cursor — one shared InstancedMesh, both kinds
+const _n = { light: 0, special: 0 };   // per-kind core instance cursor, reused every frame
 const _rn = { light: 0, special: 0 };  // same, for the ground-ring instances
 
 // ------------------------------------------------------------------ weapons access
@@ -243,18 +355,27 @@ export function init(ctx) {
   group.name = 'rpg-ammo';
   ctx.scene.add(group);
 
-  const g = brickGeometry(), rg = brickRingGeometry();
-  inst = {}; ringInst = {};
+  // shared case body — ONE InstancedMesh for both kinds, capacity MAX_BRICKS since it carries
+  // every live brick regardless of kind (per-instance positions move every frame, so the shared
+  // bounding sphere would be a lie; 24 sub-metre cases are not worth a re-fit each frame)
+  bodyInst = new THREE.InstancedMesh(caseGeometry(), caseMaterial(), MAX_BRICKS);
+  bodyInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bodyInst.frustumCulled = false;
+  bodyInst.castShadow = false; bodyInst.receiveShadow = false;
+  bodyInst.count = 0;
+  group.add(bodyInst);
+
+  const coreGeoOf = { light: lightCoreGeometry(), special: specialCoreGeometry() };
+  const rg = brickRingGeometry();
+  coreInst = {}; ringInst = {};
   for (const kind of KINDS) {
-    const im = new THREE.InstancedMesh(g, brickMaterial(kind), MAX_BRICKS);
-    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    // per-instance positions move every frame, so the shared bounding sphere would be a lie;
-    // 24 sub-metre boxes are not worth a re-fit each frame
-    im.frustumCulled = false;
-    im.castShadow = false; im.receiveShadow = false;
-    im.count = 0;
-    group.add(im);
-    inst[kind] = im;
+    const cm = new THREE.InstancedMesh(coreGeoOf[kind], coreMaterial(kind), MAX_BRICKS);
+    cm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    cm.frustumCulled = false;
+    cm.castShadow = false; cm.receiveShadow = false;
+    cm.count = 0;
+    group.add(cm);
+    coreInst[kind] = cm;
 
     // ground decal ring, same pool/cap, its own draw call (flat + unlit, cannot fight the brick's
     // depth or z-fight the terrain the way stacking it INTO the brick material would)
@@ -276,10 +397,11 @@ export function init(ctx) {
 }
 
 export function update(ctx, dt) {
-  if (!inst) return;
+  if (!coreInst) return;
   const p = ctx.player.position;
   const t = ctx.time;
-  _n.light = _n.special = 0;    // hoisted: update() must not allocate
+  _nb = 0;                       // hoisted: update() must not allocate
+  _n.light = _n.special = 0;
   _rn.light = _rn.special = 0;
 
   for (let i = 0; i < pool.length; i++) {
@@ -314,12 +436,14 @@ export function update(ctx, dt) {
       continue;
     }
 
-    // spin + bob, written straight into the instance matrix — no per-brick Object3D
+    // spin + bob, written straight into the instance matrix — no per-brick Object3D. The case
+    // and its core share this exact transform (the core is rigidly nested in the claw socket).
     _e.set(0.2, b.spin * t + b.phase, 0.12);
     _q.setFromEuler(_e);
     _p.set(b.pos.x, b.pos.y + Math.sin(t * 2.2 + b.phase) * 0.06, b.pos.z);
     _m4.compose(_p, _q, _one);
-    inst[b.kind].setMatrixAt(_n[b.kind]++, _m4);
+    bodyInst.setMatrixAt(_nb++, _m4);
+    coreInst[b.kind].setMatrixAt(_n[b.kind]++, _m4);
 
     // ground ring, flat at the cached landing height — only once grounded (freefall is a few
     // frames and a ring tracking a falling brick would just be visual noise)
@@ -330,10 +454,12 @@ export function update(ctx, dt) {
     }
   }
 
+  if (bodyInst.count !== _nb) bodyInst.count = _nb;
+  bodyInst.instanceMatrix.needsUpdate = true;
   for (const kind of KINDS) {
-    const im = inst[kind];
-    if (im.count !== _n[kind]) im.count = _n[kind];
-    im.instanceMatrix.needsUpdate = true;
+    const cm = coreInst[kind];
+    if (cm.count !== _n[kind]) cm.count = _n[kind];
+    cm.instanceMatrix.needsUpdate = true;
     const rim = ringInst[kind];
     if (rim.count !== _rn[kind]) rim.count = _rn[kind];
     rim.instanceMatrix.needsUpdate = true;
@@ -355,7 +481,8 @@ export function state(ctx) {
 /** Clear the field — respawn, fast travel, a gate resetting between passes. */
 export function clearBricks() {
   for (const b of pool) b.live = false;
-  if (inst) for (const kind of KINDS) { inst[kind].count = 0; ringInst[kind].count = 0; }
+  if (bodyInst) bodyInst.count = 0;
+  if (coreInst) for (const kind of KINDS) { coreInst[kind].count = 0; ringInst[kind].count = 0; }
 }
 
 // One runnable check for the branch that matters: the dry-guard must fire, and a special
@@ -374,5 +501,18 @@ export function selfTest() {
   refill(ctx, 'special');
   if (wp.slots[0].reserve !== 0) throw new Error('special brick fed a primary');
   if (wp.slots[1].reserve !== 7) throw new Error('special brick did not feed the sniper');
+
+  // geometry sanity — mergeGeometries() returns null (not a throw) on an attribute mismatch, and
+  // a null .computeVertexNormals() call throws a TypeError far from the actual cause; this catches
+  // it here with a clear message instead of a stack trace from inside three's merge helper.
+  const parts = {
+    case: caseGeometry(), lightCore: lightCoreGeometry(),
+    specialCore: specialCoreGeometry(), ring: brickRingGeometry(),
+  };
+  for (const [name, g] of Object.entries(parts)) {
+    if (!g || !g.attributes.position || g.attributes.position.count < 8) {
+      throw new Error(`ammo geometry '${name}' failed to build (merge attribute mismatch?)`);
+    }
+  }
   return true;
 }

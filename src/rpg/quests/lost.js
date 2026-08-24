@@ -12,7 +12,7 @@ export default [
       done: 'Four stones down and the ring is already leaning. Whatever this was voting on, it is about to be decided by attrition.',
     },
     objectives: [{ type: 'kill', enemy: 'sentinel', name: 'the sentinels of the ring', count: 16, where: 'lost' }],
-    reward: { xp: 18000, glimmer: 2000, tier: 'legendary', kind: 'weapon',
+    reward: { xp: 21780, glimmer: 2000, tier: 'legendary', kind: 'weapon',
       choices: [
         { tier: 'legendary', kind: 'weapon', archetype: 'sniper', element: 'void' },
         { tier: 'legendary', kind: 'weapon', archetype: 'handcannon', element: 'kinetic' },
@@ -32,7 +32,7 @@ export default [
       { type: 'kill', enemy: 'golem', name: 'the wall that walks', count: 10, where: 'lost' },
       { type: 'collect', item: 'rampart-keystone', name: 'Rampart Keystones', count: 4, from: ['golem'], chance: 0.5 },
     ],
-    reward: { xp: 19000, glimmer: 2100, tier: 'rare',
+    reward: { xp: 22990, glimmer: 2100, tier: 'rare',
       choices: [
         { tier: 'rare', kind: 'weapon', archetype: 'pulse', element: 'void' },
         { tier: 'rare', kind: 'weapon', archetype: 'shotgun', element: 'kinetic' },
@@ -49,7 +49,7 @@ export default [
       done: 'The line is shorter. You are still outside it. That is the entire achievement and it is not a small one.',
     },
     objectives: [{ type: 'kill', enemy: 'wraith', name: 'the ones who came before', count: 18, where: 'lost' }],
-    reward: { xp: 21000, glimmer: 2300, tier: 'legendary', kind: 'armour',
+    reward: { xp: 25410, glimmer: 2300, tier: 'legendary', kind: 'armour',
       choices: [
         { tier: 'legendary', kind: 'weapon', archetype: 'fusion', element: 'void' },
         { tier: 'legendary', kind: 'weapon', archetype: 'scout', element: 'kinetic' },
@@ -69,7 +69,7 @@ export default [
       { type: 'reach', poi: 'The Convergence', r: 50, text: 'Enter the ring at the Convergence' },
       { type: 'slay', enemy: 'archon', name: 'the Archon of the Convergence', tag: 'lost-archon', where: 'lost' },
     ],
-    reward: { xp: 28000, glimmer: 4000, tier: 'exotic', kind: 'weapon',
+    reward: { xp: 33880, glimmer: 4000, tier: 'exotic', kind: 'weapon',
       choices: [
         { tier: 'exotic', kind: 'weapon', archetype: 'beam', element: 'void' },
         { tier: 'exotic', kind: 'weapon', archetype: 'autorifle', element: 'kinetic' },
@@ -88,7 +88,7 @@ export default [
       done: 'Two schools that never got out of this ring. Nobody living knows their names. Now two of us do.',
     },
     objectives: [{ type: 'collect', item: 'unnamed-shard', name: 'Shards of an Unnamed School', count: 10, from: ['sentinel', 'wraith', 'golem'], chance: 0.4 }],
-    reward: { xp: 15500, glimmer: 1700, tier: 'rare',
+    reward: { xp: 18755, glimmer: 1700, tier: 'rare',
       choices: [
         { tier: 'rare', kind: 'weapon', archetype: 'sniper', element: 'kinetic' },
         { tier: 'rare', kind: 'armour', slot: 'arms', set: 'glasswright' },
@@ -104,7 +104,7 @@ export default [
       done: 'It made it to the stones and steadied. Small, stubborn, and further from home than anything else in this ring.',
     },
     objectives: [{ type: 'escort', from: 'lost', to: 'The Convergence', r: 50, text: 'Walk the Elderheart light in to the Convergence' }],
-    reward: { xp: 15908, glimmer: 1750, tier: 'legendary', kind: 'armour',
+    reward: { xp: 19249, glimmer: 1750, tier: 'legendary', kind: 'armour',
       choices: [
         { tier: 'legendary', kind: 'weapon', archetype: 'pulse', element: 'void' },
         { tier: 'legendary', kind: 'armour', slot: 'chest', set: 'wyrmsworn' },
