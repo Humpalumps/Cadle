@@ -20,18 +20,64 @@ import { OUTER } from '../world/Biomes.js';
  *   2-bone IK (rig.js), head tracking, tails, wing flaps, telegraphs, stagger, collapse + dissolve on death.
  * AI: perception (radius + fov + LOS via combat.rayWorld, pack alert, gunfire within 22 m alerts), steering on terrain (heightAt, slope limit,
  *   water avoidance, collider push-out, separation), melee wind-up/lunge, ranged band + strafing, slam = combat.explode + shockwave + camera shake.
- * Spawning: spawn(type, pos, { level, yaw }) -> enemy (cap 40: if full, the farthest camp enemy is recycled); populate() places camps per the
- *   CLAUDE.md layout (meadow wisps, Sundered Spire ruins + Warden, Whisperwood edge, crystal fields); slots respawn 45 s (boss 180 s) after death
- *   when the player is > 50 m away. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond; shadows < 45 m).
+ * Spawning: spawn(type, pos, { level, yaw, elite, name, questTag }) -> enemy (cap MAX_ALIVE: if full, the farthest camp enemy is recycled);
+ *   `elite: true` scales HP/dmg/xp and gives a distinguishing gold tint + size bump (see ELITE_* in Enemy.js) for slay-a-mini-boss quest
+ *   objectives — `enemy.elite === true`, optional `enemy.questTag`. populate() places camps per the CLAUDE.md layout (meadow wisps, Sundered
+ *   Spire ruins + Warden, Whisperwood edge, crystal fields) plus, per outer region: 3 camps (heart + two satellites ~140 m off the region
+ *   bearing) and 2 roaming packs of the region's common trash type wandering the gap between them; slots respawn 45-60 s (boss/mini-boss 180 s)
+ *   after death when the player is > 50 m away. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond;
+ *   shadows < 25 m); anim + AI-tick + uniform-upkeep rates are further crowd-scaled (1.5x > 16 alive, 2x > 32, 3x > 48 alive).
  * API: spawn(type, pos, opts), list (alive), all (alive + dying), clear(), populate(), warm() (one sleeping instance of every type in the pools, so boot compiles their shaders), types (defs), killAll(), lineup(pos?) (one of each type in a
- *   row facing the player, passive), passive (bool: nobody aggroes), nearest(pos, r), count(type?), stats()
+ *   row facing the player, passive), passive (bool: nobody aggroes), nearest(pos, r), count(type?), stats(),
+ *   spawnFriendly(type, from, {to, hp, tag, name}) -> handle (escort guide: reuses `type`'s body, no new creature;
+ *   scaled up + tinted GUIDE_COLOR so it doesn't read as another wisp, and a world-tracked HUD nameplate +
+ *   health bar via hud.showGuide — see HUD.js). Straight lerp route via
+ *   terrain.heightAt, friendly team so player fire can't hit it but hostile AI still aggroes it — see Enemy.js's
+ *   `_threat` resolution. despawnFriendly(handle) (abandon; optional-chained by callers, but skipping it leaves
+ *   a stray wisp standing forever — also the one hud.hideGuide() call site, so every exit path clears the HUD)
  * Events: 'enemy:spawn' {enemy}, 'enemy:death' {enemy, killer}, 'enemy:attack' {enemy, kind}, 'enemy:stagger' {enemy}, 'enemy:shieldbreak' {enemy},
- *   'enemy:phase' {enemy, phase}
+ *   'enemy:phase' {enemy, phase}, 'quest:guide' {id (the `tag` passed to spawnFriendly), alive, arrived} — fired once on the guide's
+ *   death (alive:false) or on reaching `to` (arrived:true), never both
  */
-const MAX_ALIVE = 40;
+// MAX_ALIVE 40 -> 72. MEASURED, on a quiet box, by the orchestrator (2026-08-23), and the number
+// that matters is the CONTROL: the same route re-run with this constant set back to 40.
+//   uncapped, --route combat, q=high, http://127.0.0.1:5174/, no orphaned headless browsers
+//   cap 40  mean 7.23 ms  p95 10.0  p99 79.0  max 823  spikes 138
+//   cap 72  mean 7.24 ms  p95  9.2  p99 74.5  max 692  spikes 142
+// The raise costs 0.01 ms of mean and is slightly BETTER on p95/p99/max — i.e. free, and the LOD
+// ladder above is what paid for it. The uncapped p99 misses the CLAUDE.md budget at BOTH caps, so
+// that miss is pre-existing (see HANDOVER 5.1: q=high has no GPU headroom) and is not this change.
+// With vsync on — what a player actually feels — every combat phase holds 60 fps: mean 16.6-16.8 ms,
+// p99 19-23 ms, zero spikes in most phases.
+// Raise this further only with the same control in hand: measure the new cap AND the current one on
+// the same quiet box, or you are measuring the weather.
+const MAX_ALIVE = 72;
 const r6 = (r) => Math.min(2.2, r * 0.32);   // hazard puff scale
 const STREAM = 300;      // m: camps outside this radius are not populated (and get recycled when the cap is tight)
 const _v = new THREE.Vector3(), _c = new THREE.Vector3();
+// escort guide: warm peach/apricot. Reworked from an earlier green pick (2026-08-23 review) — green loses
+// against the actual world, not against other creatures: the Vale is a green MEADOW and Whisperwood is a
+// green FOREST, and the guide walks through both, so a green guide was camouflage against 90% of the pixels
+// on screen for the entire escort. Colliding with the ENVIRONMENT matters far more than colliding with any
+// one hostile's palette, because the environment is always on screen and everything else is not. Warm
+// peach/apricot separates from grass/foliage (green) by hue, from snow (Frostveil) by warmth, from ash
+// (Infernal) and peat (Shadowfen) by value, and from water (Sunken) by hue — the universal case across every
+// biome an escort can run through, not just the one it was designed against. Biased toward rose/peach rather
+// than pure gold specifically so it still doesn't read as the elite's tint (0xd9a53a, ELITE_TINT in Enemy.js)
+// even though that collision is minor in practice (a large humanoid with a red boss bar vs. a small floating
+// wisp with a green HUD plate — they don't actually get confused). Colour only, `def.glow` (0.85 for wisp) is
+// left untouched — already under the 1.1 ceiling tools/invariants.mjs enforces, so this can never cross the
+// bloom threshold. Blob law: saturate the colour, cap the intensity — never the other way round.
+const GUIDE_COLOR = new THREE.Color(0xffb37a);
+const GUIDE_SCALE = 1.7;   // bigger than even an elite (1.35x, see ELITE_SCALE_MUL in Enemy.js) — the one
+                           // friendly silhouette in the world has to read as unmistakably not-hostile at range
+const GUIDE_SPEED = 3.2;   // m/s: a walk, not a sprint — the player has to stay with it
+// ponytail: no ground-marker pulse (a periodic vfx 'ring' at its feet was tried and cut — it measurably
+// flashed a ground-cover pixel cluster past the blob threshold in tools/blobcheck.py, the exact bug the
+// ARCHITECTURAL LAW exists to prevent). Findability instead comes from silhouette (GUIDE_SCALE), colour
+// (GUIDE_COLOR + trail), and the HUD nameplate (HUD.js showGuide/hideGuide) — all off the ground-cover
+// blob path entirely. Upgrade path if a ground cue is still wanted: a static (non-flashing) decal texture
+// under the feet, not a particle burst — ask whoever owns VFX.js/Grass.js for a ground-cover-safe primitive.
 
 export class Enemies {
   constructor(game) {
@@ -43,6 +89,7 @@ export class Enemies {
     this.animCtx = { eye: new THREE.Vector3(), heightAt: this.heightAt };
     this._tmp = new THREE.Vector3(); this._lodD = 0;
     this.hazards = [];      // lingering ground patches left by signature slams (see addHazard)
+    this.friendly = null;   // the one escort guide, if any — see spawnFriendly(); NOT in list/all (see there)
   }
   init() {
     const t0 = performance.now();
@@ -52,7 +99,7 @@ export class Enemies {
     this.warm();   // AFTER populate: the home camps consume from the pools, so warming first left the six home types with no spare
     this.game.events.on('weapon:fire', () => this._noise(this.game.player.position, 22));
     this.game.events.on('combat:explosion', (e) => { if (e?.owner === this.game.player || e?.owner?.kind === 'player') this._noise(e.point, 30); });
-    this.game.events.on('player:respawn', () => { for (const e of this.list) { e.alert = false; } });
+    this.game.events.on('player:respawn', () => { for (const e of this.list) { e.alert = false; } if (this.friendly) this.despawnFriendly(this.friendly); });
     if (this.game.debug) console.log(`[enemies] assets built in ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
@@ -145,6 +192,82 @@ export class Enemies {
     return e;
   }
 
+  // ------------------------------------------------------------------ escort guide (quest system)
+  /**
+   * Spawn the one escort guide: reuses `type`'s existing body/Enemy class (no new creature, no new art) on a
+   * straight lerp route from `from` to `opts.to` at a walking pace — deliberately not a companion AI. Friendly:
+   * target.team is flipped to 'player' so Combat's existing hostility check (same team = not hostile) blocks
+   * the player's own fire, while hostile enemies (team 'enemy') still see it as a valid target — see Enemy.js
+   * `_perceive`'s `combat.nearest(..., 'player')` threat resolution, which now returns whichever of {player,
+   * guide} is nearer. Kept OUT of `list`/`all`: it never competes for MAX_ALIVE and gets its own tiny per-frame
+   * tick (_updateFriendly) instead of the full AI update (it has no AI — a lerp needs none).
+   * Exactly one at a time: a second call despawns the first. Returns the handle (truthy) or null if `to`/the
+   * type is missing. `opts`: { to:{x,z}, hp, tag, name }. `tag` comes back verbatim as `id` on every
+   * 'quest:guide' event. `name` (default 'Wayfinder') is what the HUD frame and nameplate read — deliberately
+   * not `def.name` ("Aether Wisp" etc.), which is literally the hostile creature's own name.
+   * Visuals + HUD: scaled up (GUIDE_SCALE), tinted/emissive GUIDE_COLOR, a denser same-coloured ambient trail
+   * (re-attached here — Enemy.spawn() already started one in whatever random hostile hue the palette rolled),
+   * and a world-tracked HUD nameplate + health bar (hud.showGuide) so the player always knows it's alive and
+   * how hurt it is — see HUD.js.
+   */
+  spawnFriendly(type, from, opts = {}) {
+    if (this.friendly) this.despawnFriendly(this.friendly);
+    const def = DEFS[type]; if (!def || !opts.to) return null;
+    const pool = this.pools[type]; let e = pool.pop();
+    if (!e) { e = new Enemy(this, type, this.assets[type]); this.game.scene.add(e.root); }
+    _v.set(from.x, from.y ?? 0, from.z);
+    e.spawn(_v, { level: 1, isGuide: true, name: opts.name ?? 'Wayfinder' });
+    e.target.team = 'player';
+    if (opts.hp) { e.maxHealth = e.health = e.target.maxHealth = e.target.health = opts.hp; }
+    e.glowColor.set(GUIDE_COLOR); e.u.uEmissive.value.set(GUIDE_COLOR); e.u.uTint.value.set(GUIDE_COLOR);   // friendly hue, same capped def.glow
+    e.root.scale.setScalar((def.scale ?? 1) * GUIDE_SCALE);
+    e._trail?.stop?.(); e._trail = this.game.vfx?.attach?.('trail', e, { rate: 26, color: GUIDE_COLOR.getHex(), scale: 1.1, until: () => e.alive });   // overrides the random hostile-hued trail Enemy.spawn() just started
+    const to = new THREE.Vector3(opts.to.x, 0, opts.to.z); to.y = this.heightAt(to.x, to.z) + (def.hover ?? 0);
+    const f = { enemy: e, to, arrived: false, tag: opts.tag ?? null };
+    this.friendly = f;
+    this.game.hud?.showGuide?.(e);
+    return f;
+  }
+  /** Abandon the escort: cleanup only, no 'quest:guide' event (that's for a real death/arrival). Skipping this
+   *  call (it's optional-chained by design) leaves the wisp standing at wherever it got to, forever. */
+  despawnFriendly(handle) {
+    if (!handle || handle !== this.friendly) return;
+    this.friendly = null;
+    this.game.hud?.hideGuide?.();   // single hook for all three exits: this call, _killFriendly (death) and player:respawn all route through here
+    const e = handle.enemy; e.isGuide = false; e.root.scale.setScalar(e.def.scale ?? 1); e.sleep(); this.pools[e.type].push(e);
+  }
+  /** called from Enemy._guideDamage when the guide's HP hits 0 — the quest-visible death. */
+  _killFriendly(enemy) {
+    const f = this.friendly; if (!f || f.enemy !== enemy) return;
+    this.game.events.emit('quest:guide', { id: f.tag, alive: false, arrived: false });
+    this.despawnFriendly(f);
+  }
+  /** the guide's entire "AI": lerp toward `to` along the ground, then stop. No think/perceive/steer — those
+   *  are for creatures that fight; this one just walks and can be shot (see Enemy.js isGuide/_guideDamage). */
+  _updateFriendly(dt, t) {
+    const f = this.friendly; if (!f) return;
+    const e = f.enemy;
+    const dx = f.to.x - e.position.x, dz = f.to.z - e.position.z, d = Math.hypot(dx, dz);
+    if (d > 1) {
+      const k = Math.min(1, GUIDE_SPEED * dt / d);
+      e.position.x += dx * k; e.position.z += dz * k;
+      e.position.y = this.heightAt(e.position.x, e.position.z) + (e.def.hover ?? 0);
+      e.yaw = Math.atan2(dx, dz); e.center.copy(e.position);
+      e.root.position.copy(e.position); e.root.rotation.set(0, e.yaw, 0);
+    } else if (!f.arrived) {
+      f.arrived = true;
+      this.game.events.emit('quest:guide', { id: f.tag, alive: true, arrived: true });
+      // job done: disappear cleanly, same as death/explicit despawn (also clears the HUD frame — see
+      // despawnFriendly). quest.js's own cleanup on quest completion still calls despawnFriendly too; that's
+      // a harmless no-op second call (it early-returns once `this.friendly` no longer matches the handle) —
+      // without THIS call nothing despawns it at all until quest completion, which can be well after arrival
+      // (the objective just needs a bump), leaving a "Guide" standing there forever with a live HUD frame.
+      this.despawnFriendly(f);
+      return;
+    }
+    e._animate(dt, t); e._sync(dt, t, 0);   // visual life only (bob/pulse) — lod 0: it's the only one, full quality is free
+  }
+
   // ------------------------------------------------------------------ world population (CLAUDE.md layout)
   populate() {
     this.clear(); this.camps.length = 0;
@@ -163,13 +286,41 @@ export class Enemies {
     camp('forest-east', 75, -192, 32, 3, [['hound', 2, 4, 26], ['wisp', 2, 6, 28], ['drake', 1, 0, 8]]);
     camp('crystal-north', 262, -25, 36, 2, [['hound', 2, 6, 30], ['wisp', 4, 6, 34]]);                               // crystal fields
     camp('crystal-south', 256, 88, 36, 4, [['golem', 1, 2, 12], ['wisp', 2, 8, 30], ['hound', 1, 8, 30], ['drake', 1, 0, 8]]);
-    // --- the nine outer regions: roster + level band come from Biomes.js, one camp each.
+    // --- the nine outer regions: roster + level band come from Biomes.js. 3 camps each — the heart plus
+    // two satellites ~140 m off the region's own bearing (tangentially, i.e. sideways: never toward a
+    // neighbour) — so a region has fights spread through it instead of one fight parked on the centre.
+    // Per-type membership is x1.6 vs. the original single-camp roster, split 50/25/25 across heart/sat/sat
+    // (rounding drifts a bit high, not low — never ships under the brief's x1.6). A boss/mini-boss entry
+    // (count 1, e.g. the Archon) is not split: splitting a 1-count slot across camps makes no sense, so it
+    // stays on the heart only, unscaled. Two roaming packs of the region's most common trash type wander the
+    // gap between heart and each satellite — reuses the exact same camp/slot/respawn/wander machinery with a
+    // wide radius, not a new AI system, so "the space between camps is not empty" costs zero new code paths.
+    // EXCEPTION: Whisperwood (forest) is held at its ORIGINAL single-camp roster, unscaled. The view south
+    // out of it is already 4.4-4.9 M tris against the 4 M budget (HANDOVER 5.9) — it gets no extra mobs
+    // until that is fixed by whoever owns tree density; density work here must not make that worse.
     for (const b of OUTER) {
       const [lo, hi] = b.level;
-      camp(b.short, b.cx, b.cz, 120, Math.round((lo + hi) / 2), b.enemies, {
-        respawn: b.id === 'lost' ? 180 : 60,
-        levelOf: (type) => (DEFS[type].boss ? hi : lo + Math.floor(this.rnd() * (hi - lo + 1))),
-      });
+      const midLevel = Math.round((lo + hi) / 2);
+      const respawn = b.id === 'lost' ? 180 : 60;
+      const levelOf = (type) => (DEFS[type].boss ? hi : lo + Math.floor(this.rnd() * (hi - lo + 1)));
+      if (b.id === 'forest') { camp(b.short, b.cx, b.cz, 120, midLevel, b.enemies, { respawn, levelOf }); continue; }
+      const px = -Math.sin(b.bearing), pz = Math.cos(b.bearing);   // tangent to the bearing
+      const centers = [
+        { name: b.short, cx: b.cx, cz: b.cz, share: 0.5 },
+        { name: b.short + '-e1', cx: b.cx + px * 140, cz: b.cz + pz * 140, share: 0.25 },
+        { name: b.short + '-e2', cx: b.cx - px * 140, cz: b.cz - pz * 140, share: 0.25 },
+      ];
+      for (const c of centers) {
+        const roster = b.enemies
+          .map(([type, n, r0, r1]) => [type, DEFS[type].boss ? (c.share === 0.5 ? n : 0) : Math.round(n * 1.6 * c.share), r0, r1])
+          .filter(([, n]) => n > 0);
+        if (roster.length) camp(c.name, c.cx, c.cz, 120, midLevel, roster, { respawn, levelOf });
+      }
+      const roamType = b.enemies.find(([t]) => !DEFS[t].boss)?.[0] ?? b.enemies[0][0];
+      for (let i = 0; i < 2; i++) {
+        const sat = centers[1 + i];
+        camp(b.short + '-roam' + i, (b.cx + sat.cx) / 2, (b.cz + sat.cz) / 2, 80, midLevel, [[roamType, i === 0 ? 3 : 2, 0, 80]], { respawn, levelOf });
+      }
     }
     // Only the home region is populated up front — the rest stream in as the player travels (see update).
     for (const c of this.camps) for (const s of c.slots) if (s.pos.lengthSq() < 340 * 340) this._spawnSlot(c, s);
@@ -222,9 +373,10 @@ export class Enemies {
     this.dayGlow = 1 + 2.4 * Math.max(0, g.sky?.sunDir?.y ?? 0);
     const shadows = g.quality !== 'low';
     const frame = this.frame = (this.frame ?? 0) + 1;
-    // crowd LOD: a full field (40) halves anim/sync tick rates before the CPU budget blows. 72 Hz bone posing at
+    // crowd LOD: a full field halves/thirds anim tick rates before the CPU budget blows (extended for the
+    // higher density cap — 1.5x above 16, 2x/"halved" above 32, 3x/"thirded" above 48). 72 Hz bone posing at
     // 144 fps is invisible; motion integration + the standoff ring stay per-frame so nothing pops or clips.
-    const n = this.all.length; this.crowd = n > 26 ? 2 : n > 16 ? 1.5 : 1;
+    const n = this.all.length; this.crowd = n > 48 ? 3 : n > 32 ? 2 : n > 16 ? 1.5 : 1;
     for (let i = this.all.length - 1; i >= 0; i--) {
       const e = this.all[i];
       const dx = e.position.x - cam.x, dy = e.position.y - cam.y, dz = e.position.z - cam.z;
@@ -239,6 +391,7 @@ export class Enemies {
       e.update(dt, t, lod, frame, d2);
     }
     if (this.hazards.length) this._updateHazards(dt, t);
+    if (this.friendly) this._updateFriendly(dt, t);
     // respawns (cheap scan, 4x a second)
     this._respT = (this._respT ?? 0) + dt;
     if (this._respT > 0.25) {

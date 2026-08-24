@@ -291,3 +291,4 @@ export { BIOME_DEFS };
 
 export const LEVEL_HP = (base, level) => Math.round(base * (1 + 0.22 * (level - 1)));
 export const LEVEL_DMG = (base, level) => Math.round(base * (1 + 0.12 * (level - 1)));
+export const LEVEL_XP = (base, level) => Math.round(base * (1 + 0.16 * (level - 1)));
