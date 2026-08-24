@@ -210,7 +210,9 @@ if (props) {
     fail('src/render/Renderer.js lost compileForComposer (or its bound scratch target) — shader warmup silently compiles the wrong colorspace and every program relinks during play');
   }
   for (const f of [['src', 'main.js'], ['src', 'player', 'Weapons.js'], ['src', 'player', 'Abilities.js'], ['src', 'world', 'EZTrees.js'], ['src', 'world', 'Terrain.js']]) {
-    const src = read(join(...f));
+    // Strip line comments before testing: these files DOCUMENT this bug at length, so a naive substring
+    // test flags the prose explaining it. (It did, the moment the explanation was written.)
+    const src = read(join(...f)).replace(/\/\/[^\r\n]*/g, '');
     if (src.includes('renderer.compile(') || src.includes('.renderer.compile(') || src.includes('compileAsync(')) {
       fail(f.join('/') + " calls renderer.compile() directly - use compileForComposer(), or it builds the srgb twin the renderer never uses and the real program links mid-play (see src/render/Renderer.js)");
     }
