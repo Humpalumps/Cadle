@@ -312,9 +312,11 @@ export const SCREEN_CSS = `
   background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
 
 /* ---- THE PAPER DOLL -----------------------------------------------------------------------
-   A wayfarer drawn in gold line-work with the slots sitting ON the body: helm on the head, a
-   weapon in each hand, cuirass on the torso, greaves on the shins. The figure is behind the slots
-   and pointer-events:none — the SLOTS are the interface, the drawing is the room they stand in. */
+   A wayfarer in cloth and gold-edged plate with the slots sitting ON the body: helm on the head,
+   mantle and gauntlets at the shoulders, cuirass on the torso, greaves on the shins, and a weapon
+   at each hip with a fist closed on its haft above it. The figure is behind the slots and
+   pointer-events:none — the SLOTS are the interface, the drawing is the room they stand in.
+   Layout runs bottom-heavy on purpose: the row the hands live in carries no plate. */
 #ui .pdoll{position:relative;border:1px solid var(--line);border-radius:10px;padding:9px 9px 8px;
   background:radial-gradient(ellipse at 50% 20%,rgba(216,189,122,.10),rgba(255,255,255,.014) 68%)}
 #ui .pdhd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px;
@@ -369,9 +371,11 @@ export const SCREEN_CSS = `
    The plate is deliberately TRANSLUCENT: the wayfarer is behind it, and a plate you cannot see
    him through is the reason he used to read as wallpaper. */
 #ui .pdslot{position:relative;z-index:1;min-width:0;width:100%;max-width:84px;justify-self:center;appearance:none;-webkit-appearance:none;cursor:pointer;
-  /* .80 hid the wayfarer's gauntlets completely — the two cells the whole doll is about were the
-     only ones you could not see him through. .74 is the most glass this can give up before the
-     item name stops sitting cleanly on it; hover/on/drag states still go opaque on top of it. */
+  /* .74 is the most glass this can give up before the item name stops sitting cleanly on it;
+     hover/on/drag states still go opaque on top of it. It is NOT what makes the hands readable —
+     the hands are readable because the weapon cells moved to row 5 and left row 4's outer columns
+     unplated (see DOLL_CELL/HAND_CELL in rpgscreens.js). Lowering it further to chase the figure
+     would only buy a ghost, and would cost the one thing every slot has to keep: its name. */
   --plate:rgba(11,9,24,.74);--plate2:rgba(7,5,17,.55);--brk:rgba(216,189,122,.44);
   display:grid;justify-items:center;align-content:start;gap:2px;padding:6px 4px 5px;
   border:1px solid color-mix(in srgb,var(--r,#d8bd7a) 30%,rgba(216,189,122,.20));

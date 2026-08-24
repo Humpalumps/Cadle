@@ -710,36 +710,60 @@ const FIGURE = `<svg class="pdfig" viewBox="0 0 210 477" preserveAspectRatio="no
     <path fill="none" stroke="rgba(250,236,196,.28)" stroke-width="1.2" d="M89 386h13M108 386h13"/>
     <path fill="url(#pdAu)" d="M85 438h19v24c0 7-4 10-11 10H77c-5 0-6-5-3-9l11-9ZM125 438h-19v24c0 7 4 10 11 10h16c5 0 6-5 3-9l-11-9Z"/>
     <path fill="none" stroke="rgba(58,38,11,.55)" stroke-width="1.3" d="M85 452h19M106 452h19"/>
-    <!-- ARMS -> GAUNTLET CUFF -> FISTS. They are the reason the two weapon plates read as HELD
-         rather than as two buttons parked beside a bell.
-         Registered by arithmetic, not by eye: the grid puts the weapon cell at viewBox x < 57
-         (720p is the tighter of the two) / y 265..350, and rows 3 and 4 both carry an opaque-ish
-         plate in the outer columns, so the ONE band where an outstretched arm is unobstructed at
-         BOTH sizes is y 256..265 — the row-gap directly above the weapon plate. That is where the
-         bright gold cuff sits; the fist below it is deliberately behind the plate, which is what
-         "in his hand" looks like. The upper arm gets its own clear run through the row-2 band
-         (y 73..163, outer columns empty), which is where the limb actually reads as a limb.
-         Sleeve (robe value) -> cuff (dark + lit gold facet) -> glove: layered fills, no outlines,
-         same technique as the robe. Front-facing and symmetric on purpose — preserveAspectRatio
-         ="none" over two aspect ratios means an asymmetric stance walks off its own slots.
-         ponytail: hands are ~80% occluded by the weapon plate's own glass, upgrade path is
-         per-cell plate alpha if the doll ever gets a dedicated weapon-slot skin. -->
+    <!-- ARMS -> VAMBRACE -> FIST CLOSED ON A HAFT. This is the idea the whole doll exists to
+         express, so it is placed by arithmetic, not by eye. Measured cell bands (viewBox units,
+         both window sizes at once — the union is what has to be clear):
+             row 3 outer  y 166..256   cloak / gauntlet plates   -> forearm passes BEHIND them
+             row 4 outer  y 263..351   NOTHING (HAND_CELL moved down to row 5)
+             row 4 middle x 62..148    cuirass plate             -> stay outboard of x 62
+             row 5 outer  y 359..448   the two weapon plates
+         So the hand band is y 263..351 at x < 62: eighty-four units of unobstructed drawing,
+         against the ten-unit row-gap the hands used to share with the weapon plate's own glass.
+         That is why the weapon cells moved instead of the plate going transparent — and it is
+         also where hands actually hang, at the hip, with the weapon at the thigh below them.
+         Read, top to bottom: sleeve -> dark vambrace -> lit gold cuff -> a wrapped haft whose
+         POMMEL shows above the fist and whose shaft runs out below it into the weapon plate,
+         with the fist painted over the middle of it. A hand with a haft through it is a grip;
+         a hand next to a box is two buttons and a bell.
+         Front-facing and symmetric on purpose — preserveAspectRatio="none" over two aspect
+         ratios means an asymmetric stance walks off its own slots. -->
     <path fill="url(#pdRb)" stroke="rgba(0,0,0,.5)" stroke-width="1.3" d="M84 96C74 95 66 99 63 106 57 122 53 136 50 150 46 168 44 185 43 200 41 216 40 231 39 243L53 244C54 231 55 216 57 200 58 185 61 168 65 150 68 136 72 122 78 108 81 101 87 97 92 96ZM126 96C136 95 144 99 147 106 153 122 157 136 160 150 164 168 166 185 167 200 169 216 170 231 171 243L157 244C156 231 155 216 153 200 152 185 149 168 145 150 142 136 138 122 132 108 129 101 123 97 118 96Z"/>
     <path fill="rgba(250,236,196,.15)" d="M84 96c-10-1-18 3-21 10-5 14-9 28-12 42l5 1c3-14 7-27 12-40 3-7 8-11 15-12ZM126 96c10-1 18 3 21 10 5 14 9 28 12 42l-5 1c-3-14-7-27-12-40-3-7-8-11-15-12Z"/>
-    <!-- the vambrace: its bright band is centred on y 250..266, the ONE stripe the plates leave
-         open at both sizes, so the arm visibly enters the weapon cell instead of just ending. -->
-    <path fill="url(#pdAd)" d="M39 238h14l1 12H38ZM171 238h-14l-1 12h16Z"/>
-    <path fill="url(#pdAu)" d="M36 249h20l1 17H35ZM174 249h-20l-1 17h22Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.55)" stroke-width="1.2" d="M38 258h16M172 258h-16"/>
-    <!-- the fist is INSIDE the weapon cell and therefore behind its glass. Drawn in the gold
-         family, not the near-black one, purely so it survives ~75% plate opacity as a readable
-         ghost — a black glove there is a black rectangle behind a black rectangle. -->
-    <path fill="url(#pdAd)" stroke="rgba(250,236,196,.30)" stroke-width="1.2" d="M34 264h18c2 0 4 2 4 5l-1 16c0 8-5 13-12 13h-5c-6 0-10-5-10-12l-1-17c0-3 2-5 5-5ZM176 264h-18c-2 0-4 2-4 5l1 16c0 8 5 13 12 13h5c6 0 10-5 10-12l1-17c0-3-2-5-5-5Z"/>
-    <path fill="url(#pdAu)" d="M30 268h24l-1 8H30ZM180 268h-24l1 8h23Z"/>
-    <path fill="url(#pdAd)" stroke="rgba(250,236,196,.22)" stroke-width="1" d="M53 271c4 2 5 6 3 9-2 3-5 3-7 1ZM157 271c-4 2-5 6-3 9 2 3 5 3 7 1Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.3" d="M30 279h23M32 288h19M180 279h-23M178 288h-19"/>
-    <circle cx="41" cy="284" r="2.6" fill="#8fd8ff" opacity=".6"/>
-    <circle cx="169" cy="284" r="2.6" fill="#8fd8ff" opacity=".6"/>
+    <!-- vambrace: dark leather over the forearm, ending at the wrist above the belt line -->
+    <path fill="url(#pdAr)" d="M38 230h16l-2 30H36ZM172 230h-16l2 30h16Z"/>
+    <path fill="rgba(250,236,196,.13)" d="M38 230h6l-1 30h-6ZM172 230h-6l1 30h6Z"/>
+    <!-- gold cuff: the brightest thing on the limb, and the eye's handrail from shoulder to fist -->
+    <path fill="url(#pdAd)" d="M34 234h26l-1 8H35ZM176 234h-26l1 8h25Z"/>
+    <path fill="url(#pdAu)" d="M33 238h28l-1 20H34ZM177 238h-28l1 20h26Z"/>
+    <path fill="none" stroke="rgba(46,30,8,.55)" stroke-width="1.2" d="M35 249h24M175 249h-24"/>
+    <circle cx="47" cy="248" r="2.4" fill="#8fd8ff" opacity=".7"/>
+    <circle cx="163" cy="248" r="2.4" fill="#8fd8ff" opacity=".7"/>
+    <!-- THE HAFT, drawn BEFORE the hand so the hand closes over it. It is the LIGHT value here and
+         the glove is the dark one: four near-black fingers banded across a lit bronze shaft is what
+         makes this read as a grip rather than as a gold brick. Pommel above the knuckles, ferrule
+         below the little finger, and the shaft runs past y 351 into the weapon plate — the thing
+         and its slot are one object. -->
+    <path fill="url(#pdAd)" d="M37 258h18l-1 14H38ZM173 258h-18l1 14h16Z"/>
+    <path fill="url(#pdAu)" d="M37 258h18l-1 5H38ZM173 258h-18l1 5h16Z"/>
+    <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.2" d="M38 271h16M172 271h-16"/>
+    <path fill="url(#pdAd)" d="M39 268h14l-3 98h-8ZM171 268h-14l3 98h8Z"/>
+    <path fill="rgba(250,236,196,.22)" d="M39 268h4l-2 98h-3ZM171 268h-4l2 98h3Z"/>
+    <path fill="rgba(20,12,3,.45)" d="M49 268h4l-2 98h-3ZM161 268h-4l2 98h3Z"/>
+    <path fill="url(#pdAu)" d="M36 322h20l-1 10H37ZM174 322h-20l1 10h18Z"/>
+    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.2" d="M39 342h13M39 352h12M171 342h-13M171 352h-12"/>
+    <!-- THE FIST: four fingers wrapped round the shaft, thumb laid diagonally over them. Bars, not
+         one block — the 1.5-unit gaps let the lit shaft through and that is what reads as knuckles.
+         x 27..61 keeps the hand clear of the cuirass plate (x 62) at BOTH window sizes; y 274..321
+         sits it mid-band with room above for the pommel and below for the ferrule. -->
+    <g fill="url(#pdAr)" stroke="url(#pdAu)" stroke-width="1.2">
+      <rect x="27" y="274" width="34" height="12" rx="5"/><rect x="149" y="274" width="34" height="12" rx="5"/>
+      <rect x="28" y="287.5" width="33" height="11" rx="5"/><rect x="149" y="287.5" width="33" height="11" rx="5"/>
+      <rect x="29" y="300" width="32" height="11" rx="5"/><rect x="149" y="300" width="32" height="11" rx="5"/>
+      <rect x="30" y="312.5" width="30" height="10" rx="5"/><rect x="150" y="312.5" width="30" height="10" rx="5"/>
+      <path d="M57 275c3 0 5 2 4 5l-3 15c-1 3-3 5-6 4l-5-1c-3-1-4-3-3-6l4-13c1-3 3-4 6-4Z"/>
+      <path d="M153 275c-3 0-5 2-4 5l3 15c1 3 3 5 6 4l5-1c3-1 4-3 3-6l-4-13c-1-3-3-4-6-4Z"/>
+    </g>
+    <path fill="rgba(250,236,196,.16)" d="M29 275h30v3H29ZM181 275h-30v3h30Z"/>
     <!-- ROBE. Two full values lighter than the cloak: value, not outline, separates the layers. -->
     <path fill="url(#pdRb)" stroke="rgba(0,0,0,.55)" stroke-width="1.6" d="M105 74c-11 0-17 7-19 19l-4 74c-2 28-1 54 3 76h40c4-22 5-48 3-76l-4-74c-2-12-8-19-19-19Z"/>
     <!-- CUIRASS: darkest plate, brightest edge. The one place the eye lands on the torso. -->
@@ -792,8 +816,13 @@ const FIGURE = `<svg class="pdfig" viewBox="0 0 210 477" preserveAspectRatio="no
 // progression and may gain a second weapon; anything not named here lands in the spare row, so a
 // new slot appears on the doll instead of disappearing from it. Rows 1 and 6 hold no slot: they
 // are the head-room and the foot-room the drawing needs.
+// The two weapon cells sit in ROW 5, not row 4, and that is load-bearing rather than cosmetic:
+// row 4's outer columns then hold no plate at all, which is the only place on this grid where a
+// hand can be drawn at full strength at BOTH window sizes (see the arm comment in FIGURE for the
+// measured bands). It also puts them where a person's hands and weapons actually are — hip and
+// thigh — instead of beside the ribs. Row 4 outer is now deliberately empty; do not fill it.
 const DOLL_CELL = { head: '2/2/3/3', cloak: '3/1/4/2', arms: '3/3/4/4', chest: '4/2/5/3', legs: '5/2/6/3' };
-const HAND_CELL = ['4/1/5/2', '4/3/5/4'];
+const HAND_CELL = ['5/1/6/2', '5/3/6/4'];
 
 function dollCells(ctx) {
   const hands = weaponSlots(ctx);
