@@ -209,7 +209,21 @@ export class Weapons {
     this.game.audio?.play?.('reload'); this.game.events.emit('weapon:reload', { weapon: w });
   }
   addAmmo(slot, n) { const w = this.slots[slot]; if (w) w.reserve = Math.min(w.maxReserve, w.reserve + n); }
-  give(id, slot = this.index) { if (!DEFS[id]) return null; const w = this._make(id); this.slots[slot] = w; if (slot === this.index) this._equip(slot, true); return w; }
+  // Picking up a new gun must not refund — or confiscate — the ammo you were carrying. `_make()`
+  // returns a factory-fresh slot at `def.reserve`, so a bare give() silently RESET the reserve on
+  // every weapon swap: walk over a loot drop at 100/110 and you were handed back 60/110, while a
+  // player who had run dry got a free top-up. That second half masked a broken ammo economy — a
+  // "kills refill you" test passed on the give(), not on any pickup. Carry the reserve across,
+  // clamped to the new gun's ceiling, and let the ammo bricks be the only thing that refills you.
+  give(id, slot = this.index) {
+    if (!DEFS[id]) return null;
+    const prev = this.slots[slot];
+    const w = this._make(id);
+    if (prev) w.reserve = Math.min(w.maxReserve, prev.reserve);
+    this.slots[slot] = w;
+    if (slot === this.index) this._equip(slot, true);
+    return w;
+  }
   setAds(on) { this.adsOn = !!on; this._adsToggled = !!on; }
   // stow/hide the whole viewmodel (Abilities takes over the hands during the super). Also blocks firing while hidden.
   /** Armored gauntlet for the ability gestures — same parts + materials as the weapon hands. { group, open, fist } */

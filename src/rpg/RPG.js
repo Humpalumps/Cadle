@@ -14,9 +14,11 @@
  */
 import * as prog from './progression.js';
 import * as loot from './loot.js';
+import * as ammo from './ammo.js';
 import * as save from './save.js';
-import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMOUR, describe, shortLabel, ARMOUR_SLOTS } from './items.js';
+import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMOUR, describe, shortLabel, ARMOUR_SLOTS, makeQuestItem } from './items.js';
 import { reserveNames } from './names.js';
+import { compareAgainstLoadout, WEAPON_SLOTS, SLOT_LABELS, defaultSlotFor } from './compare.js';
 import { Screens } from '../ui/Screens.js';
 import { OpeningQuest } from './quest.js';
 import { LANDMARKS as BIOME_LANDMARKS } from '../world/Biomes.js';
@@ -68,7 +70,16 @@ export class RPG {
     };
     const hud = {
       toast: (t, o) => g.hud?.toast?.(t, o),
-      prompt: (t) => { self._promptSet = true; g.hud?.prompt?.(t); },
+      // Forward opts. This adapter silently DROPPED a second argument, so a caller wanting a second
+      // key hint on the prompt had no way to express it — loot.js worked around it by folding the
+      // second key into the text with a U+0001 sentinel (PROMPT_SEP). That workaround still works and
+      // is fine; this just means the next caller does not have to invent one too.
+      prompt: (t, o) => { self._promptSet = true; g.hud?.prompt?.(t, o); },
+      // World-anchored nameplates for legendary+ drops. This passthrough did not exist, and loot.js's
+      // nameplate() guards with `if (!ctx.hud.marker) return` inside a try/catch — so the feature has
+      // silently done nothing for the whole life of the project and no error was ever raised. The
+      // swallowing catch is why: a missing API that throws gets fixed, one that no-ops does not.
+      marker: (o) => g.hud?.marker?.(o),
     };
     const world = {
       get size() { return g.terrain?.size ?? 1024; },
@@ -77,6 +88,13 @@ export class RPG {
       landmarks: LANDMARKS,
     };
     const ai = { get enemies() { return (g.enemies?.all ?? []).filter((e) => e.alive); } };
+    // The live Weapons system. ctx published no route to it, which meant ammo.js could roll bricks,
+    // draw them and pick them up while never adding a single round to a reserve — the ammo economy
+    // would have looked finished and done nothing. Getter, not a snapshot: slots are rebuilt on give().
+    const weapons = { get slots() { return g.player?.weapons?.slots ?? []; },
+                      get current() { return g.player?.weapons?.current ?? null; },
+                      addAmmo: (i, n) => g.player?.weapons?.addAmmo?.(i, n),
+                      reload: () => g.player?.weapons?.reload?.() };
     // the armoury the loot rolls against: real Cadle weapon defs, so an equipped roll
     // always names a gun that exists ("nothing here may name a gun that does not exist")
     const defs = g.player?.weapons?.defs ?? {};
@@ -92,10 +110,14 @@ export class RPG {
       // magazine, crit and reload come from the item, so two drops of the same archetype feel
       // different in the hands (the "loot matters" contract). weaponMul stays 1 — stats are
       // applied directly instead of as a hidden multiplier, so the HUD ammo/sheet agree.
-      equip: (i) => {
+      // `slotIndex` is which of the two live gun slots this goes into. Passing it through to
+      // give() is the whole fix: give(id, slot) defaults slot to the gun currently in hand, so
+      // equipping from the inventory used to overwrite whatever you were holding.
+      equip: (i, slotIndex, rollIn) => {
         const a = archetypes[i]; if (!a) return;
-        const w = g.player.weapons?.give?.(a.id);
-        const roll = ctx.weapon.roll;
+        const si = typeof slotIndex === 'number' ? slotIndex : (g.player.weapons?.index ?? 0);
+        const w = g.player.weapons?.give?.(a.id, si);
+        const roll = rollIn || ctx.weapon.roll;
         if (w && roll && roll.archetype === a.id) {
           w.damage = roll.damage;
           w.rpm = roll.rpm;
@@ -109,19 +131,39 @@ export class RPG {
     };
     const ctx = this.ctx = {
       events: g.events, scene: g.scene,
+      // Audio route. Loot and ammo pickups were both silent because ctx published no way to reach
+      // the sound system — the most frequent reward in the game made no noise at all.
+      get audio() { return g.audio; },
       get time() { return g.time; },
-      player, input, hud, world, ai, weapon, combat, rpg: {},
+      player, input, hud, world, ai, weapon, weapons, combat, rpg: {},
     };
 
     // ---------- compose the ported surface (mirrors the source project's rpg/index.js) ----------
     const R = ctx.rpg;
     R.stats = {};
     R.addXp = (n) => prog.addXp(ctx, n);
-    R.equip = (item) => prog.equip(ctx, item);
+    R.equip = (item, slot) => prog.equip(ctx, item, slot);
+    // What the UI hovers an item against: BOTH guns for a weapon, the worn piece for armour.
+    R.compare = (item) => compareAgainstLoadout(item, prog.state.equipped);
+    R.weaponSlots = WEAPON_SLOTS; R.slotLabels = SLOT_LABELS;
+    R.heldSlot = () => prog.heldSlot();                      // 'weaponA' | 'weaponB'
+    R.slotFor = (item) => defaultSlotFor(item, prog.state.equipped, prog.heldSlot());
     R.dropLoot = (position, tier, opts) => loot.dropLoot(ctx, position, tier, opts);
     R.rollTier = (luck) => loot.rollTier(luck != null ? luck : (R.stats.luck || 0));
     R.pickup = (d) => loot.pickupNearest(ctx, d);
     R.activeDrops = loot.activeDrops; R.clearDrops = loot.clearDrops; R.lootCounts = loot.counts; R.pity = loot.pity;
+    R.resetTable = loot.resetTable;
+    // ammo economy — bricks off kills, and the dry-guard that makes running out a lull, not a dead end
+    R.ammo = () => ammo.state(ctx);
+    R.ammoDrop = (kind, pos) => ammo.drop(ctx, kind, pos);
+    R.clearBricks = ammo.clearBricks;
+    // quest rewards pay glimmer; prog.grant existed but was never mirrored onto R, so every
+    // quest's reward.glimmer would have silently paid nothing.
+    R.grant = (amounts) => prog.grant(ctx, amounts);
+    R.addItem = (item) => prog.addItem(ctx, item);   // quest reward claims; do not push to R.inventory directly
+    R.rollItem = (tier, opts) => loot.rollItem?.(ctx, tier, opts);   // roll without dropping (quest reward candidates)
+    R.makeQuestItem = (id, name, opts) => makeQuestItem(id, name, opts);
+    R.dropQuestItem = (position, itemId, name, opts) => loot.dropQuestItem?.(ctx, position, itemId, name, opts);
     R.skillTree = prog.skillTree;
     R.spendPoint = (id) => prog.spendPoint(ctx, id);
     R.upgrade = (id) => prog.upgrade(ctx, id);
@@ -137,6 +179,7 @@ export class RPG {
 
     prog.init(ctx);
     loot.init(ctx);
+    ammo.init(ctx);
 
     // ---------- load ----------
     const d = save.read();
@@ -147,13 +190,16 @@ export class RPG {
     }
     if (loaded) {
       const eq = prog.state.equipped;
-      reserveNames([...prog.state.inventory, eq.weapon, ...ARMOUR_SLOTS.map((s) => eq[s])].filter(Boolean).map((x) => x.name));
+      reserveNames([...prog.state.inventory, ...[...WEAPON_SLOTS, ...ARMOUR_SLOTS].map((s) => eq[s])].filter(Boolean).map((x) => x.name));
     }
     if (!loaded || !prog.state.equipped.weapon) ctx.rpg._giveStarter();
     prog.refresh(ctx);
 
     // ---------- hooks into the rest of the game ----------
-    g.events.on('enemy:death', (e) => { R.addXp(e?.enemy?.def?.xp ?? 10); });
+    // `enemy.xp` is the LEVEL-SCALED value Enemy.spawn() computes (defs.LEVEL_XP), not the flat
+    // `def.xp` base. Reading the base is what made a level-44 Void Horror pay the same 280 as its
+    // level-34 twin, which on its own put the 1->50 curve thousands of kills out of reach.
+    g.events.on('enemy:death', (e) => { const en = e?.enemy; R.addXp(en?.xp ?? en?.def?.xp ?? 10); });
     // player-outgoing damage rides gear quality: wrap the two combat entry points once
     const mul = () => (R.stats.damageMul || 1) * (R.weaponMul || 1);
     for (const fn of ['hitscan', 'explode']) {
@@ -173,10 +219,15 @@ export class RPG {
     // ---------- convenience mirrors on game.rpg ----------
     this.stats = R.stats;
     this.addXp = R.addXp; this.dropLoot = R.dropLoot; this.pickup = R.pickup; this.equip = R.equip;
+    this.compare = R.compare; this.weaponSlots = WEAPON_SLOTS;
     // activeDrops/clearDrops were wired onto R but never onto the instance, so game.rpg.activeDrops was undefined.
     // The opening quest uses it to check whether its reward is still on the ground — seeing nothing, it re-dropped
     // a legendary every 5 s for the whole of beat 3.
     this.activeDrops = R.activeDrops; this.clearDrops = R.clearDrops;
+    this.ammo = R.ammo; this.clearBricks = R.clearBricks; this.grant = R.grant; this.dropQuestItem = R.dropQuestItem;
+    this.ammoDrop = R.ammoDrop;   // was reachable only via game.rpg.ctx.rpg.ammoDrop, unlike its siblings
+
+    g.events.on('player:respawn', () => { try { ammo.clearBricks(); } catch (e) {} });
 
     this.screens = new Screens(g, ctx);
     this.quest = new OpeningQuest(g, R);
@@ -188,6 +239,7 @@ export class RPG {
     this._promptSet = false;
     prog.update(ctx, dt);
     loot.update(ctx, dt);
+    ammo.update(ctx, dt);
     // the loot prompt is re-asserted every frame it applies; clear the HUD line when it stops
     if (!this._promptSet && this._promptWas) this.game.hud?.prompt?.(null);
     this._promptWas = this._promptSet;

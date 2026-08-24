@@ -6,6 +6,7 @@ import {
   RARITY, rarityOf, STAT_KEYS, ARMOUR_SETS, ARMOUR_SLOTS, CONSUMABLES,
   makeWeapon, makeArmour, weaponStats, restat, describe,
 } from './items.js';
+import { WEAPON_SLOTS, defaultSlotFor } from './compare.js';   // slot vocabulary + pick-a-slot policy (pure)
 
 // ------------------------------------------------------------------ curve
 export const MAX_LEVEL = 50;
@@ -41,9 +42,26 @@ const tf = (s) => clamp(s / 10, 0, 10);
 const toast = (ctx, t, o) => { try { ctx.hud && ctx.hud.toast && ctx.hud.toast(t, o); } catch (e) {} };
 
 // ------------------------------------------------------------------ state
+// The player carries TWO live guns (Weapons.slots[0], [1] — HUD digits 1 and 2). `equipped`
+// names both: weaponA/weaponB map 1:1 onto those indices. `equipped.weapon` survives as a
+// NON-ENUMERABLE accessor for the gun currently IN HAND — everything that used to mean "the
+// weapon" (derive's critMul/weaponTags, loot's drop verdict, the character sheet) means the
+// held one, and being non-enumerable keeps it out of JSON.stringify, so a save writes the two
+// real slots and not a duplicate of one of them.
+function blankEquipped() {
+  const e = { weaponA: null, weaponB: null, head: null, arms: null, chest: null, legs: null, cloak: null };
+  Object.defineProperty(e, 'weapon', {
+    enumerable: false, configurable: true,
+    get: () => e[WEAPON_SLOTS[S.held]] || e.weaponA || e.weaponB || null,
+    set: (v) => { e[WEAPON_SLOTS[S.held]] = v; },
+  });
+  return e;
+}
+
 const S = {
   level: 1, xp: 0, points: 0, skills: {},
-  inventory: [], equipped: { weapon: null, head: null, arms: null, chest: null, legs: null, cloak: null },
+  held: 0,                        // index into WEAPON_SLOTS: which gun is in hand right now
+  inventory: [], equipped: blankEquipped(),
   currencies: { glimmer: 0, emberdust: 0, relicShard: 0 },
   consumables: { draught: 2, tonic: 0, charm: 0 },
   overshield: 0, overshieldT: 0, luckCharges: 0,
@@ -183,7 +201,7 @@ function applyBonus(b, s, mods) {
 }
 
 export function powerLevel() {
-  const gear = [S.equipped.weapon, ...ARMOUR_SLOTS.map(x => S.equipped[x])].filter(Boolean);
+  const gear = [...WEAPON_SLOTS, ...ARMOUR_SLOTS].map(x => S.equipped[x]).filter(Boolean);
   if (!gear.length) return S.level * 8;
   return Math.round(gear.reduce((a, g) => a + (g.power || 0), 0) / gear.length);
 }
@@ -200,45 +218,98 @@ function baselineDamage(ctx, w) {
   return (a && a.damage) || (w.base && w.base.damage) || 1;
 }
 
-function applyWeapon(ctx, w) {
-  if (!ctx.weapon) ctx.weapon = {};
-  if (!w) { ctx.rpg.weaponMul = 1; return; }
+// One published roll per weapon slot, so combat gets the right numbers for the right gun.
+// ctx.weapon.roll stays the HELD one (what the character sheet and the damage hook read).
+const ROLLS = [null, null];
+
+function rollFor(ctx, w) {
+  if (!w) return null;
   const s = w.stats || weaponStats(w);
-  ctx.rpg.weaponMul = clamp(s.damage / baselineDamage(ctx, w), 0.6, 3);
-  ctx.weapon.roll = {
+  const mul = clamp(s.damage / baselineDamage(ctx, w), 0.6, 3);
+  return {
     name: w.name, rarity: w.rarity, element: w.element, archetype: w.archetype,
     archetypeLabel: w.archetypeLabel, power: w.power, upgrades: w.upgrades,
     damage: s.damage, rpm: s.rpm, mag: s.mag, range: s.range,
     stability: s.stability, handling: s.handling, critMul: s.critMul,
     perks: (w.perks || []).map(p => ({ name: p.name, desc: p.desc })), tags: s.tags,
-    mul: ctx.rpg.weaponMul, item: w,
+    mul, item: w,
   };
+}
+
+// Publish the held slot's roll onto the surfaces that only ever wanted "the gun you're using".
+// It deliberately does NOT touch weaponMul: combat applies a roll's numbers straight onto the
+// gun and drives weaponMul back to 1, so re-deriving a multiplier on every 1/2 keypress would
+// double-count the roll's damage.
+function syncHeld(ctx) {
+  if (!ctx.weapon) ctx.weapon = {};
+  ctx.weapon.roll = ROLLS[S.held];
+}
+
+// `si` is the WEAPON SLOT INDEX (0 or 1) this roll belongs in. It is passed to combat, and from
+// there to weapons.give(id, slot), DELIBERATELY: give()'s slot parameter defaults to the gun in
+// your hands, so letting it default is exactly how equipping from the inventory used to destroy
+// whichever weapon happened to be out.
+function applyWeapon(ctx, w, si) {
+  if (!ctx.weapon) ctx.weapon = {};
+  ROLLS[si] = rollFor(ctx, w);
+  syncHeld(ctx);
+  if (!w) { if (si === S.held) ctx.rpg.weaponMul = 1; return; }
+  ctx.rpg.weaponMul = ROLLS[si].mul;   // combat.equip drives this back to 1 when it applies the roll directly
   // if combat can hand us the matching gun from its armoury, take it: equipping a rolled
-  // Hand Cannon should put a hand cannon in your hands.
+  // Hand Cannon should put a hand cannon in that slot.
   try {
     const list = ctx.combat && ctx.combat.weapons;
     if (list && ctx.combat.equip) {
       const i = list.findIndex(x => x.model === w.archetype || x.id === w.archetype);
-      if (i >= 0) ctx.combat.equip(i);
+      if (i >= 0) ctx.combat.equip(i, si, ROLLS[si]);
     }
   } catch (e) {}
 }
 
-export function equip(ctx, item) {
+// Which gun the player actually has out, straight from the live Weapons system.
+export function heldSlot() { return WEAPON_SLOTS[S.held]; }
+function readHeld(ctx) {
+  const W = ctx.weapons;
+  const cur = W && W.current, list = (W && W.slots) || [];
+  const i = cur ? list.indexOf(cur) : -1;
+  return i >= 0 ? Math.min(i, WEAPON_SLOTS.length - 1) : S.held;
+}
+
+/**
+ * equip(ctx, item, slot?) -> boolean
+ *
+ * `slot` only means anything for weapons: 'weaponA' | 'weaponB' | 0 | 1 — WHICH of the two guns
+ * this one replaces. Armour ignores it and uses item.slot. ('weapon' is accepted and resolves to
+ * the gun in hand, for old call sites that meant exactly that.)
+ *
+ * When the caller does not say (auto-equip on pickup, quest rewards), the rule is fixed and
+ * stated here, because a SILENT choice is the bug this replaced: fill an empty weapon slot
+ * first; otherwise replace the WEAKER of the two by power; on a tie keep the gun currently in
+ * your hands and take the other one. It never blindly overwrites the gun you are holding.
+ */
+export function equip(ctx, item, slot) {
   if (!item) return false;
   const it = typeof item === 'string' ? S.inventory.find(x => x.id === item) : item;
   if (!it) return false;
-  const slot = it.kind === 'weapon' ? 'weapon' : it.slot;
-  if (!(slot in S.equipped)) return false;
-  const prev = S.equipped[slot];
+  if (it.kind === 'quest' || it.equippable === false) return false;   // nothing wields a quest token
+  let target;
+  if (it.kind === 'weapon') {
+    target = typeof slot === 'number' ? WEAPON_SLOTS[slot] : (slot === 'weapon' ? heldSlot() : slot);
+    if (!WEAPON_SLOTS.includes(target)) target = defaultSlotFor(it, S.equipped, heldSlot());
+  } else {
+    target = it.slot;
+  }
+  if (!target || !(target in S.equipped)) return false;
+  const prev = S.equipped[target];
   if (prev && prev.id === it.id) return true;
   const i = S.inventory.indexOf(it);
   if (i >= 0) S.inventory.splice(i, 1);
   if (prev) S.inventory.push(prev);
-  S.equipped[slot] = it;
+  S.equipped[target] = it;
   derive(ctx);
-  if (slot === 'weapon') applyWeapon(ctx, it);
-  ctx.events.emit('rpg:equipped', { item: it, slot });
+  const wi = WEAPON_SLOTS.indexOf(target);
+  if (wi >= 0) applyWeapon(ctx, it, wi);
+  ctx.events.emit('rpg:equipped', { item: it, slot: target });
   toast(ctx, 'EQUIPPED — ' + it.name);
   return true;
 }
@@ -254,6 +325,8 @@ export function dismantle(ctx, item) {
   const it = typeof item === 'string' ? S.inventory.find(x => x.id === item) : item;
   const i = S.inventory.indexOf(it);
   if (i < 0) return false;
+  // Shredding the thing a quest told you to fetch, for 40 glimmer, is a support ticket.
+  if (it.kind === 'quest' || it.noDismantle) return false;
   S.inventory.splice(i, 1);
   const r = rarityOf(it.rarity);
   grant(ctx, { glimmer: Math.round(40 * r.mult * r.mult), emberdust: r.key === 'legendary' || r.key === 'exotic' ? 2 : 1, relicShard: r.key === 'exotic' ? 1 : 0 });
@@ -277,7 +350,7 @@ function afford(cost) {
 function spend(cost) { for (const k in cost) S.currencies[k] -= cost[k]; }
 
 const findAny = (id) => S.inventory.find(x => x.id === id)
-  || [S.equipped.weapon, ...ARMOUR_SLOTS.map(s => S.equipped[s])].find(x => x && x.id === id);
+  || [...WEAPON_SLOTS, ...ARMOUR_SLOTS].map(s => S.equipped[s]).find(x => x && x.id === id);
 
 // upgrade: raw power on the thing you already like
 export function upgrade(ctx, id) {
@@ -393,7 +466,7 @@ export function addXp(ctx, n) {
 
 export function refresh(ctx) {
   derive(ctx);
-  applyWeapon(ctx, S.equipped.weapon);
+  WEAPON_SLOTS.forEach((k, i) => applyWeapon(ctx, S.equipped[k], i));
   ctx.rpg.level = S.level; ctx.rpg.xp = S.xp; ctx.rpg.next = xpToNext(S.level);
   ctx.rpg.points = S.points; ctx.rpg.skills = S.skills;
   ctx.rpg.inventory = S.inventory; ctx.rpg.equipped = S.equipped;
@@ -425,10 +498,13 @@ export function init(ctx) {
   });
 
   // starter kit, only on a brand new save (index.js clears it if a save loaded)
+  // Two guns, matching DEFAULT_SLOTS in weapons/defs.js — the RPG's starting loadout has to be
+  // the loadout the player is actually holding, or weapon 2 reads as empty until the first drop.
   ctx.rpg._giveStarter = () => {
-    const w = makeWeapon('common', 10, { archetype: 'handcannon', name: 'Dawnbreak Oath' });
-    addItem(ctx, w);
-    equip(ctx, w);
+    const a = makeWeapon('common', 10, { archetype: 'handcannon', name: 'Dawnbreak Oath' });
+    const b = makeWeapon('common', 10, { archetype: 'autorifle', name: 'Vale Chorus' });
+    addItem(ctx, a); equip(ctx, a, 'weaponA');
+    addItem(ctx, b); equip(ctx, b, 'weaponB');
     addItem(ctx, makeArmour('common', 10, { slot: 'chest', set: 'pilgrim' }));
   };
 }
@@ -441,6 +517,12 @@ export function init(ctx) {
 const DASH_SPEED = 15.5;
 
 export function update(ctx, dt) {
+  // critMul / weaponTags / ctx.weapon.roll describe THE GUN IN HAND, so pressing 1 or 2 has to
+  // move them. One integer compare a frame; derive() runs only on the frame you actually swap.
+  // Ahead of the player/input guard on purpose: which gun is out does not depend on either.
+  const h = readHeld(ctx);
+  if (h !== S.held) { S.held = h; syncHeld(ctx); derive(ctx); }
+
   const p = ctx.player, inp = ctx.input;
   if (!p || !inp) return;
 
@@ -516,12 +598,17 @@ export function deserialize(ctx, d) {
   S.skills = {};
   if (d.skills && typeof d.skills === 'object') for (const k in d.skills) if (SKILLS[k]) S.skills[k] = 1;
   S.inventory = Array.isArray(d.inventory) ? d.inventory.filter(validItem).map(restat) : [];
-  S.equipped = { weapon: null, head: null, arms: null, chest: null, legs: null, cloak: null };
+  S.equipped = blankEquipped();
   if (d.equipped && typeof d.equipped === 'object') {
-    for (const slot in S.equipped) {
+    for (const slot in S.equipped) {          // enumerable only: the `weapon` accessor is skipped
       const it = d.equipped[slot];
       if (validItem(it)) S.equipped[slot] = restat(it);
     }
+    // MIGRATION: saves written before the loadout had two slots carry a single `equipped.weapon`.
+    // Dropping it would log the player back in disarmed, so it becomes weapon 1 when that slot
+    // is free. Everything else about a v1 payload is unchanged, so the save VERSION stays put.
+    const legacy = d.equipped.weapon;
+    if (!S.equipped.weaponA && validItem(legacy)) S.equipped.weaponA = restat(legacy);
   }
   for (const k in S.currencies) S.currencies[k] = Math.max(0, +((d.currencies || {})[k]) || 0);
   for (const k in S.consumables) S.consumables[k] = Math.max(0, +((d.consumables || {})[k]) || 0);
@@ -531,6 +618,10 @@ export function deserialize(ctx, d) {
 
 function validItem(it) {
   if (!it || typeof it !== 'object') return false;
+  // Quest items are a third kind: no stats, no perks, no rarity roll, they just stack. They were
+  // being silently dropped on every save load because this gate only knew about weapons and armour,
+  // which would have meant "collect 5 shards" quietly resetting whenever the player reloaded.
+  if (it.kind === 'quest') return typeof it.name === 'string' && typeof it.count === 'number' && it.count >= 0;
   if (it.kind !== 'weapon' && it.kind !== 'armour') return false;
   if (typeof it.name !== 'string' || !RARITY[it.rarity]) return false;
   if (it.kind === 'weapon' && (!it.base || typeof it.base.damage !== 'number')) return false;
