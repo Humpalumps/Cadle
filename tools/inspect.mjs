@@ -131,6 +131,14 @@ async function verifyServedTree() {
   if (process.env.CADLE_SKIP_TREECHECK) return;
   const { readFileSync } = await import('node:fs');
   const probes = ['src/main.js', 'src/core/Game.js', 'src/render/PostFX.js'];
+  // Probe off the ORIGIN, not the raw --url. A caller passing a url that already carries a query
+  // (`http://host:5174/?auto=1&q=low`) produced `.../?auto=1&q=low/src/main.js`; the dev server's SPA
+  // fallback answers that 200 with index.html, every probe "mismatches", and the guard cries WRONG
+  // TREE at a server that is serving exactly the right code. A guard that false-positives is worse
+  // than no guard - this one taught an agent to run with CADLE_SKIP_TREECHECK, after which none of
+  // its captures could be trusted. Strip query and hash here, once; page navigation still uses `base`.
+  const u = new URL(base);
+  const origin = u.origin + u.pathname.replace(/\/$/, '');
   const bad = [];
   for (const rel of probes) {
     let local;
@@ -142,18 +150,22 @@ async function verifyServedTree() {
     if (!marker) continue;
     let served;
     try {
-      // Build the probe off the ORIGIN, not the raw --url. A caller passing a url that already
-      // carries a query (`http://host:5174/?auto=1`) produced `.../?auto=1/src/main.js`, which the
-      // dev server answers with index.html for every probe - so all three "mismatch" and the guard
-      // cries WRONG TREE on a perfectly correct tree. A guard that false-positives is worse than no
-      // guard: it taught one agent to run with CADLE_SKIP_TREECHECK, and its captures then could not
-      // be trusted at all. Strip query and hash before probing.
-      const origin = new URL(base).origin + new URL(base).pathname.replace(/\/$/, '');
       const r = await fetch(`${origin}/${rel}`);
       if (!r.ok) { bad.push(`${rel}: server returned ${r.status}`); continue; }
       served = await r.text();
     } catch (e) { bad.push(`${rel}: ${e.message}`); continue; }
-    if (!served.includes(marker)) bad.push(`${rel}: served copy does not match the one on disk here`);
+    // Distinguish "the server handed back HTML" from "this is a JS module whose contents differ".
+    // A dev server's SPA fallback answers an unresolvable path with index.html, which contains no
+    // marker and therefore looks exactly like a wrong tree. That is how this guard misfired: the
+    // probe URL was malformed, every file came back as the app shell, and the message said "wrong
+    // tree" when the truth was "I asked for the wrong thing". A guardrail that cannot tell those
+    // apart teaches people to disable it, which is what happened. Name the difference.
+    if (/^\s*<(?:!doctype|html)/i.test(served)) {
+      bad.push(`${rel}: server returned HTML, not a JS module - it fell through to the SPA fallback, `
+             + `which usually means the probe URL is wrong rather than the tree. Probed: ${origin}/${rel}`);
+    } else if (!served.includes(marker)) {
+      bad.push(`${rel}: served a JS module, but its contents differ from the copy on disk here`);
+    }
   }
   if (bad.length) {
     console.error('');
@@ -161,6 +173,11 @@ async function verifyServedTree() {
     console.error(`[inspect] ${base} is not serving this working directory:`);
     for (const b of bad) console.error('  - ' + b);
     console.error('[inspect] Every number and screenshot from this run would describe code that is not here.');
+    if (bad.every((b) => b.includes('returned HTML'))) {
+      console.error('[inspect] NOTE: every probe came back as HTML, so this is very likely a BAD PROBE URL,');
+      console.error('[inspect] not a wrong tree. Check the --url you passed. If the tree is genuinely right,');
+      console.error('[inspect] this is a bug in the guard itself - fix it rather than skipping it.');
+    }
     console.error('[inspect] Start a dev server in THIS directory on a free port and pass --url / CADLE_URL,');
     console.error('[inspect] or set CADLE_SKIP_TREECHECK=1 if you really mean to measure another tree.');
     console.error('');
