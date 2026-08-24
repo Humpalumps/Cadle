@@ -619,197 +619,118 @@ const seg = (items, cur, act) => `<div class="seg">${items.map(([k, l]) =>
     aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
 
 /**
- * THE PAPER DOLL — a hooded wayfarer, drawn not fetched (inline SVG: filled cloth and gold-edged
- * plate, in the house style). Decoration only: it sits BEHIND the slots at pointer-events:none so it can never
+ * THE PAPER DOLL — a plain mannequin figure, drawn not fetched (inline SVG, house palette).
+ * Decoration only: it sits BEHIND the slots at pointer-events:none so it can never
  * eat a drop, and the slots stay big enough to hit. viewBox is fixed and the SVG stretches, so the
  * figure tracks whatever height the doll column ends up with on a short viewport.
  */
-// The viewBox is authored at the grid's own proportions (4 rows of slots) and stretched with
-// preserveAspectRatio="none" ON PURPOSE: the head has to land inside the helm cell and the hands
-// inside the weapon cells at every window size, and a figure that keeps its aspect ratio would
-// drift off the slots the moment the column changed width. Every limb is placed against a row:
-// head ~row 1, shoulders/cloak row 2, hands row 3 (the two weapon cells), shins row 4.
+// A MANNEQUIN, not a character (user decision 2026-08-24 — the hooded wayfarer's cowl read as a
+// turban, and a character competes with the gear it is supposed to display). Head, neck, shoulders,
+// arms, torso, hips, legs. No hood, no robe, no face. Two values of the house blue-violet, a cool
+// 1.4-unit edge light so it separates from the panel, and exactly one warm accent: the haft in each
+// fist. The gear is the subject; the body is the frame, so the body recedes.
+//
 // The viewBox is authored at the grid's own proportions and stretched with preserveAspectRatio
 // ="none" ON PURPOSE: the head has to land in the helm cell and the hands in the weapon cells at
 // every window size, and a figure that kept its aspect ratio would slide off them the moment the
-// column changed width. The grid reserves a strip above row 1 and below row 4 that holds no slot,
-// which is where the crown of the hood and the boots live — a figure whose every part is behind an
+// column changed width. The grid reserves a strip above row 1 and below row 5 that holds no slot —
+// that is where the crown of the head and the feet live. A figure whose every part is behind an
 // opaque plate is not a figure, it is wallpaper.
-// The wayfarer is drawn as SOLID FORM, not line-work: filled cloth with gradients, gold-edged
-// armour over it, a face lost in the hood with two aether glints. A 1px outline of a person reads
-// as an engineering schematic next to painted item icons — volume is the whole difference.
 //
-// The horizontal stretch is real and it is not constant: the doll column is a fixed ~267 px at
-// every window, while the grid's HEIGHT rides --pdi (≈419 px at 1080p, ≈302 px at 720p). So the
-// same viewBox is squashed ~1.45x at 1080p and ~2.0x at 720p. The figure is therefore authored
-// NARROW — the body spans ~76 of the 210 units — so it lands slim at 1080p and stocky at 720p
-// instead of being a mushroom at one of them. The CLOAK is the part allowed to flare to the full
-// width: a cloak that sweeps wide is a cloak, so the stretch reads as drama rather than damage,
-// and it is what puts painted colour under the outer slot columns.
+// Measured cell bands (viewBox units, BOTH window sizes at once — the union is what has to be
+// clear; re-measured 2026-08-24 and unchanged):
+//     row 1        y   6..60    head-room, NO plate            -> the head
+//     row 2        y  69..157   helm plate, middle column only -> shoulders + upper arms show
+//                               outboard of it
+//     row 3 outer  y 166..254   cloak / gauntlet plates        -> the forearms pass BEHIND them
+//     row 4 outer  y 263..351   NOTHING (HAND_CELL is row 5)   -> the hands, at full strength
+//     row 4 middle x  62..148   cuirass plate                  -> hands stay outboard of x 62
+//     row 5        y 359..448   weapon plates + greaves plate  -> only the haft shows
+//     row 6        y 457..471   foot-room, NO plate            -> the feet
+// So the figure is a stack of four visible bands. Nothing is drawn to be admired between them.
+//
+// The arms are held in a gentle A-pose, and that is arithmetic rather than taste: the hands must
+// centre on the weapon cells at x 44 / 166 while the shoulders sit at x 66 / 144, so the limbs
+// must splay ~24 units on the way down. Front-facing and symmetric — preserveAspectRatio="none"
+// over two aspect ratios means an asymmetric stance walks off its own slots.
+//
+// The horizontal stretch is real: the doll column is a fixed ~267 px at every window while the
+// grid's HEIGHT rides --pdi, so the same viewBox is squashed ~1.33x at 1080p and ~1.44x at 720p
+// (.pdfig's width clamp is what keeps those two close — see screencss.js). The figure is therefore
+// authored NARROW: the head is 30 units wide and lands ~41 px, the shoulders 78 units and land
+// ~104 px, which is the 1:2.5 head-to-shoulder a standing person actually has.
 // ponytail: one authored width split between two aspect ratios, upgrade path is a second nested
 // <svg preserveAspectRatio="meet"> for the body if a third breakpoint ever lands between them.
 const FIGURE = `<svg class="pdfig" viewBox="0 0 210 477" preserveAspectRatio="none" aria-hidden="true" focusable="false">
   <defs>
-    <linearGradient id="pdCk" x1=".08" y1="0" x2=".92" y2=".62">
-      <stop offset="0" stop-color="#3b3180"/><stop offset=".34" stop-color="#2c2366"/>
-      <stop offset=".72" stop-color="#282054"/><stop offset="1" stop-color="#241c4c"/></linearGradient>
-    <linearGradient id="pdLn" x1=".1" y1="0" x2=".9" y2="1">
-      <stop offset="0" stop-color="#5b3a86"/><stop offset=".6" stop-color="#331d55"/>
-      <stop offset="1" stop-color="#150a26"/></linearGradient>
-    <linearGradient id="pdRb" x1=".1" y1="0" x2=".92" y2=".9">
-      <stop offset="0" stop-color="#7e6ccb"/><stop offset=".42" stop-color="#4b3b92"/>
-      <stop offset="1" stop-color="#241a52"/></linearGradient>
-    <linearGradient id="pdAr" x1=".18" y1="0" x2=".85" y2="1">
-      <stop offset="0" stop-color="#241b4e"/><stop offset=".5" stop-color="#120d2c"/>
-      <stop offset="1" stop-color="#06040d"/></linearGradient>
-    <linearGradient id="pdHo" x1=".12" y1="0" x2=".92" y2=".9">
-      <stop offset="0" stop-color="#7c69cf"/><stop offset=".36" stop-color="#3a2c7c"/>
-      <stop offset="1" stop-color="#120c30"/></linearGradient>
+    <linearGradient id="pdBd" x1="0" y1="0" x2=".22" y2="1">
+      <stop offset="0" stop-color="#40357e"/><stop offset=".46" stop-color="#29225c"/>
+      <stop offset="1" stop-color="#191340"/></linearGradient>
+    <linearGradient id="pdLb" x1="0" y1="0" x2=".3" y2="1">
+      <stop offset="0" stop-color="#302868"/><stop offset=".5" stop-color="#1e1848"/>
+      <stop offset="1" stop-color="#130f32"/></linearGradient>
     <linearGradient id="pdAu" x1=".06" y1="0" x2=".82" y2="1">
       <stop offset="0" stop-color="#fdf3d2"/><stop offset=".24" stop-color="#dcc281"/>
       <stop offset=".6" stop-color="#966c1f"/><stop offset="1" stop-color="#4a340f"/></linearGradient>
     <linearGradient id="pdAd" x1=".2" y1="0" x2=".85" y2="1">
       <stop offset="0" stop-color="#a98d52"/><stop offset=".48" stop-color="#6d4a15"/>
       <stop offset="1" stop-color="#2e1f08"/></linearGradient>
-    <radialGradient id="pdFc" cx=".5" cy=".32" r=".72">
-      <stop offset="0" stop-color="#030208"/><stop offset=".62" stop-color="#070513"/>
-      <stop offset="1" stop-color="#1c1246"/></radialGradient>
-    <!-- eyes: a glint, not a headlamp. Two hot dots in a black cowl is a wraith; this is the guy
-         the player IS. Peak is roughly a third of what it was and it never reaches white. -->
-    <radialGradient id="pdEy" cx=".5" cy=".45" r=".55">
-      <stop offset="0" stop-color="#cfeaff" stop-opacity=".52"/>
-      <stop offset=".45" stop-color="#8fd8ff" stop-opacity=".28"/>
-      <stop offset="1" stop-color="#7c5bd6" stop-opacity="0"/></radialGradient>
-    <!-- skin under the cowl: enough to say "a face is in there", not enough to leave the shadow -->
-    <radialGradient id="pdSk" cx=".5" cy=".44" r=".62">
-      <stop offset="0" stop-color="#c39a76" stop-opacity=".30"/>
-      <stop offset=".58" stop-color="#6d4c3b" stop-opacity=".16"/>
-      <stop offset="1" stop-color="#6d4c3b" stop-opacity="0"/></radialGradient>
-    <radialGradient id="pdGm" cx=".4" cy=".32" r=".72">
-      <stop offset="0" stop-color="#e8f8ff"/><stop offset=".42" stop-color="#8fd8ff"/>
-      <stop offset="1" stop-color="#4b2fa2"/></radialGradient>
     <radialGradient id="pdSh" cx=".5" cy=".5" r=".5">
       <stop offset="0" stop-color="#000" stop-opacity=".62"/>
       <stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
   </defs>
-  <g stroke-linecap="round" stroke-linejoin="round">
-    <ellipse cx="105" cy="470" rx="58" ry="9" fill="url(#pdSh)"/>
-    <!-- CLOAK. An A-line: narrow at the shoulders, wide at the hem. That taper IS the silhouette —
-         a cloak with parallel sides reads as a slab, which is exactly how the wireframe failed.
-         Open at the front so the robe stands in the parting; the darkest value in the figure. -->
-    <path fill="url(#pdCk)" d="M105 82c-19 0-33 8-37 26-8 62-16 154-20 248-2 38-3 68-2 92l32 4c0-48 1-114 3-174 2-70 4-140 6-170l18-14 18 14c2 30 4 100 6 170 2 60 3 126 3 174l32-4c1-24 0-54-2-92-4-94-12-186-20-248-4-18-18-26-37-26Z"/>
-    <path fill="url(#pdLn)" d="M87 110c-2 30-4 100-6 170-2 60-3 126-3 174l11 1c0-48 1-114 3-174 2-69 4-138 6-168ZM123 110c2 30 4 100 6 170 2 60 3 126 3 174l-11 1c0-48-1-114-3-174-2-69-4-138-6-168Z"/>
-    <path fill="rgba(250,236,196,.14)" d="M68 108c-8 62-16 154-20 248-2 38-3 68-2 92l7 1c-1-24 0-54 2-92 4-93 12-184 20-245Z"/>
-    <path fill="none" stroke="rgba(216,189,122,.32)" stroke-width="1.5" d="M68 108c-8 62-16 154-20 248-2 38-3 68-2 92M142 108c8 62 16 154 20 248 2 38 3 68 2 92"/>
-    <path fill="none" stroke="rgba(0,0,0,.34)" stroke-width="1.5" d="M62 168c-6 62-11 154-13 232-1 26-1 46 0 62M148 168c6 62 11 154 13 232 1 26 1 46 0 62"/>
-    <path fill="none" stroke="rgba(216,189,122,.42)" stroke-width="2" d="m46 444 32 4M164 444l-32 4"/>
-    <path fill="none" stroke="rgba(143,216,255,.24)" stroke-width="2.4" d="M142 108c8 62 16 154 20 248 2 38 3 68 2 92"/>
-    <!-- LEGS + GREAVES + BOOTS. The boots live in the foot-room row, the one band below every plate. -->
-    <path fill="url(#pdAr)" d="M89 322c-2 36-3 82-2 122h16c1-40 1-86 1-122ZM121 322c2 36 3 82 2 122h-16c-1-40-1-86-1-122Z"/>
-    <path fill="url(#pdAd)" d="M88 372h15l-1 52H88ZM122 372h-15l1 52h14Z"/>
-    <path fill="none" stroke="rgba(250,236,196,.28)" stroke-width="1.2" d="M89 386h13M108 386h13"/>
-    <path fill="url(#pdAu)" d="M85 438h19v24c0 7-4 10-11 10H77c-5 0-6-5-3-9l11-9ZM125 438h-19v24c0 7 4 10 11 10h16c5 0 6-5 3-9l-11-9Z"/>
-    <path fill="none" stroke="rgba(58,38,11,.55)" stroke-width="1.3" d="M85 452h19M106 452h19"/>
-    <!-- ARMS -> VAMBRACE -> FIST CLOSED ON A HAFT. This is the idea the whole doll exists to
-         express, so it is placed by arithmetic, not by eye. Measured cell bands (viewBox units,
-         both window sizes at once — the union is what has to be clear):
-             row 3 outer  y 166..256   cloak / gauntlet plates   -> forearm passes BEHIND them
-             row 4 outer  y 263..351   NOTHING (HAND_CELL moved down to row 5)
-             row 4 middle x 62..148    cuirass plate             -> stay outboard of x 62
-             row 5 outer  y 359..448   the two weapon plates
-         So the hand band is y 263..351 at x < 62: eighty-four units of unobstructed drawing,
-         against the ten-unit row-gap the hands used to share with the weapon plate's own glass.
-         That is why the weapon cells moved instead of the plate going transparent — and it is
-         also where hands actually hang, at the hip, with the weapon at the thigh below them.
-         Read, top to bottom: sleeve -> dark vambrace -> lit gold cuff -> a wrapped haft whose
-         POMMEL shows above the fist and whose shaft runs out below it into the weapon plate,
-         with the fist painted over the middle of it. A hand with a haft through it is a grip;
-         a hand next to a box is two buttons and a bell.
-         Front-facing and symmetric on purpose — preserveAspectRatio="none" over two aspect
-         ratios means an asymmetric stance walks off its own slots. -->
-    <path fill="url(#pdRb)" stroke="rgba(0,0,0,.5)" stroke-width="1.3" d="M84 96C74 95 66 99 63 106 57 122 53 136 50 150 46 168 44 185 43 200 41 216 40 231 39 243L53 244C54 231 55 216 57 200 58 185 61 168 65 150 68 136 72 122 78 108 81 101 87 97 92 96ZM126 96C136 95 144 99 147 106 153 122 157 136 160 150 164 168 166 185 167 200 169 216 170 231 171 243L157 244C156 231 155 216 153 200 152 185 149 168 145 150 142 136 138 122 132 108 129 101 123 97 118 96Z"/>
-    <path fill="rgba(250,236,196,.15)" d="M84 96c-10-1-18 3-21 10-5 14-9 28-12 42l5 1c3-14 7-27 12-40 3-7 8-11 15-12ZM126 96c10-1 18 3 21 10 5 14 9 28 12 42l-5 1c-3-14-7-27-12-40-3-7-8-11-15-12Z"/>
-    <!-- vambrace: dark leather over the forearm, ending at the wrist above the belt line -->
-    <path fill="url(#pdAr)" d="M38 230h16l-2 30H36ZM172 230h-16l2 30h16Z"/>
-    <path fill="rgba(250,236,196,.13)" d="M38 230h6l-1 30h-6ZM172 230h-6l1 30h6Z"/>
-    <!-- gold cuff: the brightest thing on the limb, and the eye's handrail from shoulder to fist -->
-    <path fill="url(#pdAd)" d="M34 234h26l-1 8H35ZM176 234h-26l1 8h25Z"/>
-    <path fill="url(#pdAu)" d="M33 238h28l-1 20H34ZM177 238h-28l1 20h26Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.55)" stroke-width="1.2" d="M35 249h24M175 249h-24"/>
-    <circle cx="47" cy="248" r="2.4" fill="#8fd8ff" opacity=".7"/>
-    <circle cx="163" cy="248" r="2.4" fill="#8fd8ff" opacity=".7"/>
-    <!-- THE HAFT, drawn BEFORE the hand so the hand closes over it. It is the LIGHT value here and
-         the glove is the dark one: four near-black fingers banded across a lit bronze shaft is what
-         makes this read as a grip rather than as a gold brick. Pommel above the knuckles, ferrule
-         below the little finger, and the shaft runs past y 351 into the weapon plate — the thing
-         and its slot are one object. -->
-    <path fill="url(#pdAd)" d="M37 258h18l-1 14H38ZM173 258h-18l1 14h16Z"/>
-    <path fill="url(#pdAu)" d="M37 258h18l-1 5H38ZM173 258h-18l1 5h16Z"/>
-    <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.2" d="M38 271h16M172 271h-16"/>
-    <path fill="url(#pdAd)" d="M39 268h14l-3 98h-8ZM171 268h-14l3 98h8Z"/>
-    <path fill="rgba(250,236,196,.22)" d="M39 268h4l-2 98h-3ZM171 268h-4l2 98h3Z"/>
-    <path fill="rgba(20,12,3,.45)" d="M49 268h4l-2 98h-3ZM161 268h-4l2 98h3Z"/>
-    <path fill="url(#pdAu)" d="M36 322h20l-1 10H37ZM174 322h-20l1 10h18Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.2" d="M39 342h13M39 352h12M171 342h-13M171 352h-12"/>
-    <!-- THE FIST: four fingers wrapped round the shaft, thumb laid diagonally over them. Bars, not
-         one block — the 1.5-unit gaps let the lit shaft through and that is what reads as knuckles.
-         x 27..61 keeps the hand clear of the cuirass plate (x 62) at BOTH window sizes; y 274..321
-         sits it mid-band with room above for the pommel and below for the ferrule. -->
-    <g fill="url(#pdAr)" stroke="url(#pdAu)" stroke-width="1.2">
-      <rect x="27" y="274" width="34" height="12" rx="5"/><rect x="149" y="274" width="34" height="12" rx="5"/>
-      <rect x="28" y="287.5" width="33" height="11" rx="5"/><rect x="149" y="287.5" width="33" height="11" rx="5"/>
-      <rect x="29" y="300" width="32" height="11" rx="5"/><rect x="149" y="300" width="32" height="11" rx="5"/>
-      <rect x="30" y="312.5" width="30" height="10" rx="5"/><rect x="150" y="312.5" width="30" height="10" rx="5"/>
-      <path d="M57 275c3 0 5 2 4 5l-3 15c-1 3-3 5-6 4l-5-1c-3-1-4-3-3-6l4-13c1-3 3-4 6-4Z"/>
-      <path d="M153 275c-3 0-5 2-4 5l3 15c1 3 3 5 6 4l5-1c3-1 4-3 3-6l-4-13c-1-3-3-4-6-4Z"/>
-    </g>
-    <path fill="rgba(250,236,196,.16)" d="M29 275h30v3H29ZM181 275h-30v3h30Z"/>
-    <!-- ROBE. Two full values lighter than the cloak: value, not outline, separates the layers. -->
-    <path fill="url(#pdRb)" stroke="rgba(0,0,0,.55)" stroke-width="1.6" d="M105 74c-11 0-17 7-19 19l-4 74c-2 28-1 54 3 76h40c4-22 5-48 3-76l-4-74c-2-12-8-19-19-19Z"/>
-    <!-- CUIRASS: darkest plate, brightest edge. The one place the eye lands on the torso. -->
-    <path fill="url(#pdAr)" stroke="url(#pdAu)" stroke-width="1.7" d="M105 88c-7 0-12 5-14 14l-3 60c-1 24 1 44 5 56h24c4-12 6-32 5-56l-3-60c-2-9-7-14-14-14Z"/>
-    <path fill="none" stroke="url(#pdAu)" stroke-width="1.8" d="m92 162 13 15 13-15"/>
-    <path fill="none" stroke="rgba(216,189,122,.5)" stroke-width="1.3" d="M90 199c5 4 10 6 15 6s10-2 15-6M91 216c5 4 9 5 14 5s9-1 14-5"/>
-    <circle cx="105" cy="185" r="6.6" fill="url(#pdGm)"/>
-    <circle cx="105" cy="185" r="6.6" fill="none" stroke="url(#pdAu)" stroke-width="1.4"/>
-    <path fill="none" stroke="rgba(216,189,122,.55)" stroke-width="1.2" d="M105 175v-6M105 201v-6M95 185h-6M121 185h-6"/>
-    <!-- MANTLE across the shoulders, then FACETED PAULDRONS on top: angular plates with a lit
-         top facet and a dark under-edge. Rounded blobs read as fruit, not armour. -->
-    <path fill="url(#pdCk)" d="M105 66c-15 0-27 7-32 18-2 5 2 9 7 7 8-4 16-6 25-6s17 2 25 6c5 2 9-2 7-7-5-11-17-18-32-18Z"/>
-    <path fill="none" stroke="rgba(216,189,122,.45)" stroke-width="1.3" d="M75 87c9-5 19-8 30-8s21 3 30 8"/>
-    <path fill="url(#pdAd)" d="M84 74 64 79l-8 17 4 11 20-7 10-11Z"/>
-    <path fill="url(#pdAu)" d="M84 74 64 79l-5 13 20-6 9-8Z"/>
-    <path fill="url(#pdAd)" d="m126 74 20 5 8 17-4 11-20-7-10-11Z"/>
-    <path fill="url(#pdAd)" d="m126 74 20 5 5 13-20-6-9-8Z" opacity=".55"/>
-    <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.4" d="m56 96 4 11 20-7M154 96l-4 11-20-7"/>
-    <!-- BELT + BUCKLE: they land in the gap between the arm row and the weapon row, one of the four
-         bands where nothing is on top of the figure, so they are drawn to be seen. -->
-    <path fill="url(#pdAu)" d="M82 240h46l-2 24H84Z"/>
-    <path fill="none" stroke="rgba(46,30,8,.5)" stroke-width="1.2" d="M84 252h42"/>
-    <path fill="#0e0922" stroke="url(#pdAu)" stroke-width="1.5" d="m105 242 10 10-10 10-10-10Z"/>
-    <circle cx="105" cy="252" r="2.8" fill="#8fd8ff" opacity=".85"/>
-    <!-- TABARD, hem pointed into the next open band -->
-    <path fill="url(#pdCk)" stroke="rgba(0,0,0,.45)" stroke-width="1.2" d="M85 262h40l5 68-25 18-25-18Z"/>
-    <path fill="none" stroke="url(#pdAu)" stroke-width="2" d="m80 330 25 18 25-18"/>
-    <path fill="rgba(216,189,122,.32)" d="M105 276c-5 9-5 21 0 30 5-9 5-21 0-30Z"/>
-    <!-- HOOD last: the crown row is the ONLY band with no plate over it, so this is the part that
-         has to carry the character. Face in shadow, two aether glints, a lit cowl edge. -->
-    <path fill="url(#pdHo)" d="M105 4c-9 0-14 6-16 16-2 10-2 19-4 29-2 12-4 22-7 31 8 5 17 7 27 7s19-2 27-7c-3-9-5-19-7-31-2-10-2-19-4-29-2-10-7-16-16-16Z"/>
-    <path fill="none" stroke="rgba(0,0,0,.34)" stroke-width="1.4" d="M89 44c-1 12-3 22-6 31M121 44c1 12 3 22 6 31"/>
-    <path fill="url(#pdFc)" d="M105 16c-8 0-13 7-13 18 0 12 6 21 13 21s13-9 13-21c0-11-5-18-13-18Z"/>
-    <path fill="none" stroke="rgba(0,0,0,.42)" stroke-width="2.4" d="M88 27c6-6 11-9 17-9s11 3 17 9"/>
-    <path fill="none" stroke="rgba(250,236,196,.66)" stroke-width="1.7" d="M92 34c0-11 5-18 13-18s13 7 13 18"/>
-    <path fill="none" stroke="rgba(250,236,196,.38)" stroke-width="2" d="M105 6c-9 1-14 11-15 24-1 14-3 30-6 44"/>
-    <path fill="none" stroke="rgba(143,216,255,.26)" stroke-width="2" d="M105 6c9 1 14 11 15 24 1 14 3 30 6 44"/>
-    <!-- a face, dimly: cheek/jaw plane, brows, two soft glints, nose, mouth. Order matters — the
-         skin plane goes UNDER the features so the features are shadow on skin, not marks on void. -->
-    <ellipse cx="105" cy="38" rx="12.5" ry="15" fill="url(#pdSk)"/>
-    <path fill="none" stroke="rgba(9,6,20,.45)" stroke-width="1.6" d="M96.5 30c2.4-1.5 4.6-1.5 7 0M113.5 30c-2.4-1.5-4.6-1.5-7 0"/>
-    <ellipse cx="99.8" cy="35" rx="2.9" ry="2.5" fill="url(#pdEy)"/>
-    <ellipse cx="110.2" cy="35" rx="2.9" ry="2.5" fill="url(#pdEy)"/>
-    <path fill="none" stroke="rgba(9,6,20,.4)" stroke-width="1.2" d="M96.9 34.4c1.9-1.7 3.9-1.7 5.8 0M113.1 34.4c-1.9-1.7-3.9-1.7-5.8 0"/>
-    <path fill="none" stroke="rgba(9,6,20,.32)" stroke-width="1.2" d="M105 35v6l-2.4 2"/>
-    <path fill="none" stroke="rgba(9,6,20,.30)" stroke-width="1.3" d="M101.4 48c2.4 1.3 4.8 1.3 7.2 0"/>
+  <ellipse cx="105" cy="470" rx="58" ry="9" fill="url(#pdSh)"/>
+  <!-- the one warm accent below the waist: a contact line so the figure stands on something -->
+  <path fill="none" stroke="rgba(216,189,122,.20)" stroke-width="1.6" d="M76 470h58"/>
+  <!-- The body. One stroke on the group is the edge light — symmetric, so it reads as ambient
+       separation from the panel rather than a key light the rest of the screen does not have.
+       Draw order is depth order: legs and arms first, torso over their joints, head last. -->
+  <g stroke="rgba(150,180,250,.20)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+    <!-- LEGS. Behind the greaves plate for all of row 5, so what actually reads is the 12-unit gap
+         between them in the row-gap band and the feet in row 6. Thigh 21 units, ankle 12. -->
+    <path fill="url(#pdLb)" d="M82 286C79 316 81 348 85 382 83 404 85 428 88 452L99 452C99 428 98 404 98 382 99 348 101 316 102 288ZM128 286C131 316 129 348 125 382 127 404 125 428 122 452L111 452C111 428 112 404 112 382 111 348 109 316 108 288Z"/>
+    <!-- FEET in the lighter body value: row 6 is the last band and it sits on the drop shadow, so a
+         foot painted in the limb value disappears into it. -->
+    <path fill="url(#pdBd)" d="M88 448h13v14c0 5-3 8-8 8H80c-4 0-5-4-2-7l10-9ZM122 448h-13v14c0 5 3 8 8 8h13c4 0 5-4 2-7l-10-9Z"/>
+    <!-- ARMS, deltoid to wrist, 14 units through the forearm. The A-pose is the whole reason the
+         figure reads as a person: the limb touches the ribs at the armpit (y ~110) and is 28 units
+         clear of them by the hip, so there is a WEDGE OF BACKGROUND between arm and torso. Without
+         it the arms fuse to the chest and the silhouette is one flat-topped slab — which is
+         exactly how the first cut of this failed, and it is not fixable by shading. -->
+    <path fill="url(#pdLb)" d="M78 90C62 96 56 106 54 120 50 150 46 180 43 210 41 232 39 254 38 274L52 274C53 254 55 232 57 210 60 180 64 150 68 120 70 106 76 96 90 92ZM132 90C148 96 154 106 156 120 160 150 164 180 167 210 169 232 171 254 172 274L158 274C157 254 155 232 153 210 150 180 146 150 142 120 140 106 134 96 120 92Z"/>
+    <!-- NECK, then TORSO over it: a long sloped trapezius (a horizontal shoulder line is what made
+         the first cut read as a fridge), ribs, a real waist, hips. The chest is only 52 units so
+         the deltoids carry the shoulder width. Everything below y 263 is behind the cuirass plate
+         at both window sizes, so from there down it is drawn for silhouette only. -->
+    <path fill="url(#pdLb)" d="M97 54h16l3 30H94Z"/>
+    <path fill="url(#pdBd)" d="M105 72C96 72 89 76 84 84 81 90 79 96 79 104 80 130 81 165 82 200 83 218 84 230 84 242 80 256 77 268 78 282 80 294 84 301 90 305L120 305C126 301 130 294 132 282 133 268 130 256 126 242 126 230 127 218 128 200 129 165 130 130 131 104 131 96 129 90 126 84 121 76 114 72 105 72Z"/>
+    <!-- HEAD: a plain ovoid, 32 units wide so it lands ~41 px against a ~114 px shoulder line —
+         the 1:2.8 a standing person has. No face: the moment it gets one it stops being a
+         mannequin and starts being somebody, which is the thing this replaced. -->
+    <path fill="url(#pdBd)" d="M105 6c-10 0-16 10-16 26 0 18 7 32 16 32s16-14 16-32c0-16-6-26-16-26Z"/>
+  </g>
+  <!-- THE HAFT, drawn BEFORE the hand so the hand closes over it. It is the LIGHT value and the
+       glove is the dark one: four dark fingers banded across a lit shaft is what reads as a grip
+       rather than as a gold brick. Pommel above the knuckles, shaft running past y 351 into the
+       weapon plate below — the thing and its slot are one object. Geometry unchanged from the
+       pass that introduced it; only the palette follows the new figure. -->
+  <path fill="url(#pdAd)" d="M37 258h18l-1 14H38ZM173 258h-18l1 14h16Z"/>
+  <path fill="url(#pdAu)" d="M37 258h18l-1 5H38ZM173 258h-18l1 5h16Z"/>
+  <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.2" d="M38 271h16M172 271h-16"/>
+  <path fill="url(#pdAd)" d="M39 268h14l-3 98h-8ZM171 268h-14l3 98h8Z"/>
+  <path fill="rgba(250,236,196,.22)" d="M39 268h4l-2 98h-3ZM171 268h-4l2 98h3Z"/>
+  <path fill="rgba(20,12,3,.45)" d="M49 268h4l-2 98h-3ZM161 268h-4l2 98h3Z"/>
+  <!-- THE FIST: four fingers wrapped round the shaft, thumb laid diagonally over them. Bars, not
+       one block — the 1.5-unit gaps let the lit shaft through and that is what reads as knuckles.
+       x 27..61 keeps the hand clear of the cuirass plate (x 62) at BOTH window sizes; y 274..321
+       sits it mid-band with room above for the pommel and below for the shaft. -->
+  <g fill="url(#pdLb)" stroke="rgba(216,189,122,.42)" stroke-width="1.1" stroke-linejoin="round">
+    <rect x="27" y="274" width="34" height="12" rx="5"/><rect x="149" y="274" width="34" height="12" rx="5"/>
+    <rect x="28" y="287.5" width="33" height="11" rx="5"/><rect x="149" y="287.5" width="33" height="11" rx="5"/>
+    <rect x="29" y="300" width="32" height="11" rx="5"/><rect x="149" y="300" width="32" height="11" rx="5"/>
+    <rect x="30" y="312.5" width="30" height="10" rx="5"/><rect x="150" y="312.5" width="30" height="10" rx="5"/>
+    <path d="M57 275c3 0 5 2 4 5l-3 15c-1 3-3 5-6 4l-5-1c-3-1-4-3-3-6l4-13c1-3 3-4 6-4Z"/>
+    <path d="M153 275c-3 0-5 2-4 5l3 15c1 3 3 5 6 4l5-1c3-1 4-3 3-6l-4-13c-1-3-3-4-6-4Z"/>
   </g></svg>`;
 
 // Where each slot sits ON THE BODY. Named cells, not indices — the slot LIST comes from

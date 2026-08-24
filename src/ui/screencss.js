@@ -312,7 +312,7 @@ export const SCREEN_CSS = `
   background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
 
 /* ---- THE PAPER DOLL -----------------------------------------------------------------------
-   A wayfarer in cloth and gold-edged plate with the slots sitting ON the body: helm on the head,
+   A plain mannequin figure with the slots sitting ON the body: helm on the head,
    mantle and gauntlets at the shoulders, cuirass on the torso, greaves on the shins, and a weapon
    at each hip with a fist closed on its haft above it. The figure is behind the slots and
    pointer-events:none — the SLOTS are the interface, the drawing is the room they stand in.
@@ -326,19 +326,19 @@ export const SCREEN_CSS = `
 #ui .pdhd b u{margin-left:5px;text-decoration:none;font:400 8px/1 var(--serif);letter-spacing:.24em;
   text-transform:uppercase;color:var(--textdim)}
 /* row-gap is doing real work: it is the space the drawn figure shows THROUGH. Close the rows up
-   and the slots tile over the wayfarer and he vanishes, which is how this reads as six buttons
+   and the slots tile over the figure and it vanishes, which is how this reads as six buttons
    in a box instead of a person you are dressing. */
 /* ONE knob: --pdi (the icon plate) drives the plate, the head-room row, the foot-room row and the
    row gaps together. The drawn figure is stretched onto this grid, so its head only stays in the
    helm cell and its hands in the weapon cells while those four keep their RATIO — tuning them
-   independently per breakpoint is what slid the wayfarer off his own slots. */
+   independently per breakpoint is what slid the figure off its own slots. */
 /* sized off the VIEWPORT height, not off breakpoints: the panel is 93vh, so the doll has to be
    too or it hangs below the fold at every size the tiers did not name (1600x900 was exactly
    that). One clamp replaces three guesses. */
 #ui .pdoll{--pdi:clamp(21px,3.1vh,29px)}
-/* the head row is the ONE band with no plate over it, so it is the only place the wayfarer's face
-   can live. 1.36 gave him 39 px at 1080p and 30 px at 720p — a hood that small is a smudge. 1.78
-   buys the crown and the eyes; it is the same single knob, so every other row moves with it. */
+/* the head row is the ONE band with no plate over it, so it is the only place the head can live.
+   1.36 gave 39 px at 1080p and 30 px at 720p — a head that small is a smudge. 1.78 buys a head at
+   readable scale; it is the same single knob, so every other row moves with it. */
 #ui .pdgrid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
   grid-template-rows:calc(var(--pdi)*1.78) repeat(4,auto) calc(var(--pdi)*0.45);
   column-gap:4px;row-gap:calc(var(--pdi)*0.30);
@@ -368,8 +368,8 @@ export const SCREEN_CSS = `
    — never through the background shorthand, because the shorthand would wipe the eight gradient
    layers that draw the corner brackets. Gold corner brackets in CSS, no image, no pseudo-element:
    ::before and ::after are already spent on the "▸ goes here" chip and the legality ring.
-   The plate is deliberately TRANSLUCENT: the wayfarer is behind it, and a plate you cannot see
-   him through is the reason he used to read as wallpaper. */
+   The plate is deliberately TRANSLUCENT: the figure is behind it, and a plate you cannot see
+   it through is the reason he used to read as wallpaper. */
 #ui .pdslot{position:relative;z-index:1;min-width:0;width:100%;max-width:84px;justify-self:center;appearance:none;-webkit-appearance:none;cursor:pointer;
   /* .74 is the most glass this can give up before the item name stops sitting cleanly on it;
      hover/on/drag states still go opaque on top of it. It is NOT what makes the hands readable —
