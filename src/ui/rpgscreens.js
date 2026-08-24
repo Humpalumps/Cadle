@@ -650,82 +650,26 @@ const VBW = 200, VBH = 480;
 //   crown 16 · chin 95 · neck 95..113 · shoulder cap (52,130) · sternum (100,168)
 //   waist y 224 (58 wide) · hips y 260 · crotch 296 · forearm (157,205) · fist centre (40,310)
 //   knee 370 · shin 400 · ankle 446 · sole 474
-const FIGURE = `<svg class="pdfig" viewBox="0 0 ${VBW} ${VBH}" aria-hidden="true" focusable="false">
-  <defs>
-    <!-- FLAT, deliberately: the reference is one solid colour and every read comes from the
-         contour, so a gradient with any real range turns the wedge between arm and ribs into two
-         near-equal darks and the silhouette closes up. A 12% top-to-bottom fall is all it gets. -->
-    <linearGradient id="pdBd" x1="0" y1="0" x2=".1" y2="1">
-      <stop offset="0" stop-color="#5b4cae"/><stop offset=".55" stop-color="#4e4199"/>
-      <stop offset="1" stop-color="#42367f"/></linearGradient>
-    <linearGradient id="pdLb" x1="0" y1="0" x2=".3" y2="1">
-      <stop offset="0" stop-color="#302868"/><stop offset=".5" stop-color="#1e1848"/>
-      <stop offset="1" stop-color="#130f32"/></linearGradient>
-    <linearGradient id="pdAu" x1=".06" y1="0" x2=".82" y2="1">
-      <stop offset="0" stop-color="#fdf3d2"/><stop offset=".24" stop-color="#dcc281"/>
-      <stop offset=".6" stop-color="#966c1f"/><stop offset="1" stop-color="#4a340f"/></linearGradient>
-    <linearGradient id="pdAd" x1=".2" y1="0" x2=".85" y2="1">
-      <stop offset="0" stop-color="#a98d52"/><stop offset=".48" stop-color="#6d4a15"/>
-      <stop offset="1" stop-color="#2e1f08"/></linearGradient>
-    <radialGradient id="pdSh" cx=".5" cy=".5" r=".5">
-      <stop offset="0" stop-color="#000" stop-opacity=".62"/>
-      <stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-  </defs>
-  <ellipse cx="100" cy="472" rx="52" ry="9" fill="url(#pdSh)"/>
-  <path fill="none" stroke="rgba(216,189,122,.20)" stroke-width="1.6" d="M72 475h56"/>
-  <!-- ONE fill for the whole body: the reference is a flat solid and every read comes from the
-       contour. The stroke is the single cool edge light — symmetric, so it says "separated from
-       the panel" rather than inventing a key light the rest of the screen does not have. -->
-  <g fill="url(#pdBd)" stroke="rgba(168,196,255,.42)" stroke-width="1.5"
-     stroke-linejoin="round" stroke-linecap="round">
-    <!-- LEGS first (draw order is depth order): quad belly 28 wide at y 340, the knee break pinching
-         to 16 at y 378, calf belly back out to 26 at y 408, ankle 10. The shin is where the greaves
-         plate lands, so that stretch of contour is the one that has to survive being sat on. -->
-    <path d="M70 300C65 314 64 326 65 340 66 356 68 366 70 378 64 390 60 396 60 408 60 424 66 438 72 450L82 450C83 438 85 424 86 408 86 396 86 388 86 378 86 366 88 352 92 332 95 316 97 306 98 300Z"/>
-    <path d="M130 300C135 314 136 326 135 340 134 356 132 366 130 378 136 390 140 396 140 408 140 424 134 438 128 450L118 450C117 438 115 424 114 408 114 396 114 388 114 378 114 366 112 352 108 332 105 316 103 306 102 300Z"/>
-    <!-- SHORT BOOTS, the last band. They sit on the drop shadow, so the sole is a drawn line rather
-         than a value change that would sink straight into it. -->
-    <path d="M71 444h12c0 10 3 16 6 22 3 6 1 10-5 10H60c-6 0-8-4-6-10 4-8 12-14 17-22Z"/>
-    <path d="M129 444h-12c0 10-3 16-6 22-3 6-1 10 5 10h24c6 0 8-4 6-10-4-8-12-14-17-22Z"/>
-    <!-- ARMS: deltoid cap 24 wide at y 152, 23 through the upper arm, 16 at the wrist. The arm fuses with the ribs at the armpit (y ~180) and is
-         16-29 units clear of them from the elbow down, so a WEDGE OF BACKGROUND opens all the way
-         to the fist. That wedge is the whole reason the V reads — without it shoulders and ribs are
-         one slab and no amount of shading recovers it, which is how the first cut of this failed. -->
-    <path d="M60 122C46 128 35 137 32 152 29 167 28 180 28 196 27 214 26 230 26 246 26 264 26 280 28 298L44 298C44 282 44 266 45 250 45 234 46 218 47 202 49 186 52 170 55 154 57 142 58 130 60 122Z"/>
-    <path d="M140 122C154 128 165 137 168 152 171 167 172 180 172 196 173 214 174 230 174 246 174 264 174 280 172 298L156 298C156 282 156 266 155 250 155 234 154 218 153 202 151 186 148 170 145 154 143 142 142 130 140 122Z"/>
-    <!-- TORSO: a real NECK column (x 87..113) before the trapezius starts sloping at y 112 — a head
-         sitting straight on the shoulders was the other half of why the old one read as a shop
-         dummy. Then the deltoid yoke 98 wide at y 158, lats closing to a 44-wide waist at y 236,
-         hips flaring back to 66. 98 into 44 is the V the reference is built on. -->
-    <path d="M88 84C88 96 88 106 86 112 75 118 63 124 57 134 53 142 51 150 51 158 53 178 58 200 65 216 70 224 77 228 78 236 76 248 70 258 67 272 66 286 67 294 70 300L130 300C133 294 134 286 133 272 130 258 124 248 122 236 123 228 130 224 135 216 142 200 147 178 149 158 149 150 147 142 143 134 137 124 125 118 114 112 112 106 112 96 112 84Z"/>
-    <!-- HEAD: bald, 48 wide against a 98-wide shoulder yoke (the ~1:1.9 a standing man has), with a
-         real jaw line closing to a 16-unit chin. No face: a face makes him somebody, and the gear
-         is the subject. -->
-    <path d="M100 13C87 13 76 26 76 46 76 58 78 68 82 76 85 82 88 86 93 89 96 91 98 92 100 92 102 92 104 91 107 89 112 86 115 82 118 76 122 68 124 58 124 46 124 26 113 13 100 13Z"/>
-  </g>
-  <!-- the sole line: drawn, not shaded, so it survives the drop shadow under the boot -->
-  <path fill="none" stroke="rgba(10,7,24,.8)" stroke-width="1.6" d="M55 467h32M145 467h-32"/>
-  <!-- THE HAFT, drawn BEFORE the fist so the fingers close over it. Haft is the LIGHT value and the
-       glove the dark one: dark finger bars banded across a lit shaft is what reads as a grip rather
-       than as a gold brick. The shaft runs past the fist into the weapon plate below — the thing
-       and its slot are one object. -->
-  <path fill="url(#pdAd)" d="M27 280h18l-1 14H28ZM173 280h-18l1 14h16Z"/>
-  <path fill="url(#pdAu)" d="M27 280h18l-1 5H28ZM173 280h-18l1 5h16Z"/>
-  <path fill="none" stroke="rgba(22,14,4,.6)" stroke-width="1.2" d="M28 293h16M172 293h-16"/>
-  <path fill="url(#pdAd)" d="M29 290h14l-3 88h-8ZM171 290h-14l3 88h8Z"/>
-  <path fill="rgba(250,236,196,.22)" d="M29 290h4l-2 88h-3ZM171 290h-4l2 88h3Z"/>
-  <path fill="rgba(20,12,3,.45)" d="M39 290h4l-2 88h-3ZM161 290h-4l2 88h3Z"/>
-  <!-- THE FIST: four fingers wrapped round the shaft, thumb laid diagonally across them.
-       Individually visible, as bars rather than one block — the 1.5-unit gaps let the lit shaft
-       through and that is what reads as knuckles instead of a mitten. -->
-  <g fill="url(#pdLb)" stroke="rgba(216,189,122,.42)" stroke-width="1.1" stroke-linejoin="round">
-    <rect x="21" y="300" width="30" height="11" rx="5"/><rect x="149" y="300" width="30" height="11" rx="5"/>
-    <rect x="22" y="312.5" width="29" height="10" rx="5"/><rect x="149" y="312.5" width="29" height="10" rx="5"/>
-    <rect x="23" y="324" width="28" height="10" rx="5"/><rect x="149" y="324" width="28" height="10" rx="5"/>
-    <rect x="24" y="335.5" width="26" height="9" rx="4"/><rect x="150" y="335.5" width="26" height="9" rx="4"/>
-    <path d="M47 301c3 0 5 2 4 5l-3 15c-1 3-3 5-6 4l-5-1c-3-1-4-3-3-6l4-13c1-3 3-4 6-4Z"/>
-    <path d="M153 301c-3 0-5 2-4 5l3 15c1 3 3 5 6 4l5-1c3-1 4-3 3-6l-4-13c-1-3-3-4-6-4Z"/>
-  </g></svg>`;
+// THE FIGURE IS THE USER'S OWN SILHOUETTE (supplied 2026-08-24), not a drawing of one.
+// public/assets/ui/doll.png - an athletic adult male, front-facing, already alpha-transparent
+// (no keying needed: background alpha 0, figure solid). Cropped to its bounding box, 386x1003.
+//
+// It is applied as a CSS MASK rather than an <img> so the alpha gives us the shape while the house
+// gradient gives us the colour - the source art is pure black, and an <img> would either stay black
+// or need a filter chain to fake a tint. A mask keeps one asset usable in any palette.
+//
+// Precedent for a UI PNG: public/assets/ui/items/*.png already load straight into these screens.
+// The earlier hand-drawn SVG stays as `FIGURE_FALLBACK` below and renders if the asset is missing,
+// the same way every game.assets accessor degrades rather than leaving a hole.
+//
+// ANATOMY, MEASURED off the alpha channel by row-scanning the silhouette's width profile - these
+// fractions ARE the anchors in DOLL_POS, do not re-derive them by eye:
+//   crown .025 | head widest .075 | neck pinch .125 (65px, narrowest above the waist)
+//   shoulders .19 (span jumps 197->259 in one step) | chest .28 (arms still fused to the torso)
+//   armpit .30 (the row where the scan goes from 1 run to 3 - arms clear the ribs here)
+//   forearms .44 | hands .525 (6 runs = individual fingers) | legs part .575 (back to 2 runs)
+//   knee .65 | shin .80 | feet .95-1.0
+const FIGURE = `<div class="pdfig" aria-hidden="true"></div>`;
 
 // WHERE EACH SLOT SITS ON THE BODY. `a` is the anatomical anchor in viewBox units — the point the
 // slot equips — and `y` is where the plate's own centre goes (they differ only where a plate would
@@ -736,21 +680,25 @@ const FIGURE = `<svg class="pdfig" viewBox="0 0 ${VBW} ${VBH}" aria-hidden="true
 // which is what a real MMO doll does, and it keeps both the plate and the anatomy visible.
 // Nothing here is a row index: add a slot and it lands on its body part, not in the next free cell.
 const DOLL_POS = {
-  // The head is 50 units wide and a plate is 85 px — a plate centred on it would hide it entirely,
-  // and a doll where you cannot see the head is the thing this replaced. So HELM steps one column
-  // aside at exactly the head's height and points at the temple, which is what every shipped MMO
-  // doll does with a part too small to wear a plate. The head stays whole; the leader says where
-  // the helm goes. Same reasoning for the shoulder and the forearm below. The sternum and the
-  // shins are wide enough to carry a plate directly, so those two sit ON the body, centred.
-  head:  { col: -1, ax: 75, ay:  44, y:  52 },   // -> the skull, from the left temple
-  cloak: { col: -1, ax: 40, ay: 150, y: 150 },   // -> the left deltoid cap / upper back
-  chest: { col: 0, ax: 100, ay: 180, y: 180 },   // the sternum — NOT the belly
-  arms:  { col: 1, ax: 161, ay: 212, y: 212 },   // -> the right forearm, above the fist
-  legs:  { col: 0, ax: 100, ay: 406, y: 406 },   // the shins, below the knee break
+  // `ay` is the ANATOMY (measured, do not move it). `y` is where the PLATE hangs, and the leader
+  // line joins the two. They are separate numbers on purpose: a plate is ~66 viewBox units tall, so
+  // two plates in one column need ~70 units between their `y` values or they overlap - which is
+  // exactly what HELM/CLOAK and GAUNTLETS/WEAPON 2 did on the first pass, because the shoulder is
+  // genuinely only 55 units below the skull on a real body. The anatomy is not negotiable; the
+  // plate slides and the leader absorbs the difference.
+  //
+  // Column budget: 3 columns x 7 slots, so each column carries at most 3 and every pair in a column
+  // is >= 90 units apart.
+  //   col -1 : head 40, cloak 130, weaponA 250
+  //   col  0 : chest 134, legs 384
+  //   col +1 : arms 160, weaponB 252
+  head:  { col: -1, ax: 76,  ay:  36, y:  40 },   // .075 skull, plate to the left of the temple
+  cloak: { col: -1, ax: 46,  ay:  91, y: 130 },   // .19  left deltoid, plate dropped to clear HELM
+  chest: { col: 0,  ax: 100, ay: 134, y: 134 },   // .28  sternum, wide enough to wear the plate
+  arms:  { col: 1,  ax: 178, ay: 211, y: 160 },   // .44  right forearm, plate lifted to clear WEAPON 2
+  legs:  { col: 0,  ax: 100, ay: 384, y: 384 },   // .80  shins, below the knee break
 };
-// The hands. Both plates centre on the fist itself, so the haft drawn in the fist runs down into
-// the plate — the relationship the old row-5 placement already got right, kept by construction now.
-const HAND_POS = [{ col: -1, ax: 36, ay: 320, y: 320 }, { col: 1, ax: 164, ay: 320, y: 320 }];
+const HAND_POS = [{ col: -1, ax: 16, ay: 252, y: 252 }, { col: 1, ax: 184, ay: 252, y: 252 }];
 
 const kx = (ax) => ((ax / VBW) - 0.5).toFixed(4);
 const ky = (ay) => (ay / VBH).toFixed(4);

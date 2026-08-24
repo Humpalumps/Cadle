@@ -344,7 +344,7 @@ export const SCREEN_CSS = `
    PROPORTIONS constant instead of squashing him 1.33x at 1080p and 1.44x at 720p. */
 #ui .pdgrid{position:relative;
   --pdh:calc(var(--pdi)*7.73 + 220px);
-  --pdw:min(100%,calc(var(--pdh)*0.47));
+  --pdw:min(100%,calc(var(--pdh)*0.385));   /* 386/1003 - the supplied silhouette's true aspect */
   --pdsw:calc((100% - 12px)/3);
   height:var(--pdh);
   /* the room he stands in: aether rising off the floor, a cold key behind the shoulders, and a
@@ -361,8 +361,15 @@ export const SCREEN_CSS = `
 /* The figure fills the box's HEIGHT and takes its width from that height, so it keeps one shape at
    every window size. Every slot is placed from this same box (see --pdw above), which is the whole
    reason the plates now land on the anatomy instead of near it. */
+/* The silhouette is the user's own PNG (public/assets/ui/doll.png), applied as a MASK so the alpha
+   gives the shape and the gradient below gives the colour. The source is pure black; an <img> would
+   stay black or need a filter chain to fake a tint, whereas a mask keeps one asset usable in any
+   palette and costs nothing. -webkit- prefix stays for Safari, which still needs it. */
 #ui .pdfig{position:absolute;top:0;left:50%;transform:translateX(-50%);
   width:var(--pdw);height:100%;
+  background:linear-gradient(163deg,#6353c4 0%,#5546a6 46%,#453889 78%,#3a2f74 100%);
+  -webkit-mask:url('/assets/ui/doll.png') no-repeat center/contain;
+  mask:url('/assets/ui/doll.png') no-repeat center/contain;
   z-index:0;pointer-events:none;overflow:visible;
   /* TIGHT shadows only. A 14-px aether glow used to fill the wedge between arm and ribs and the gap
      between the legs, which flattened the whole silhouette into one slab — the contour IS the
