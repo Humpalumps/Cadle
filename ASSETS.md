@@ -16,7 +16,7 @@ Policy: see CLAUDE.md "Non-negotiable conventions". Need something? Put `ASSET A
 
 **Usage: `game.assets.tex('<key>')`** (keys = filename without extension; glyphs = `glyph1`/`glyph2`). Preloaded + GPU-uploaded before any system init — never load asset files yourself. sRGB, repeat-wrap, aniso 8 already set (leaf_card/glyphs are clamped). Derive normal/roughness procedurally (height-from-luma or noise) — only albedo is generated. Blend with your procedural detail/macro variation; do not drop macro variation.
 
-## Intro loading screen — `public/assets/intro/` (790 KB total: 7 x 512 px JPG + one model)
+## Intro loading screen — `public/assets/intro/` (293 KB total: 7 x 512 px JPG, NO model)
 
 The ONE set that does **not** go through `game.assets`: the intro (`src/ui/Intro.js` / `src/ui/intro/stage.js`) is
 on screen *while* `game.assets` is still preloading the 29 MB main set, so it loads these itself, in
@@ -33,17 +33,32 @@ fallback working, because `tex.<name>` is `null` when a file is missing.
 | `rug_indigo.jpg` | `rug` | the rug; deep indigo wool with a gold geometric motif, seamless |
 | `poster_crystal.jpg` | `posterCrystal` | portrait wall print (352×528) — aether crystal on a plinth, gold filigree border |
 | `poster_ruins.jpg` | `posterRuins` | landscape wall print (528×352) — ruins under an aurora |
-| `guy.glb` | — | **the seated character himself** (495 KB, 21k tris). Generated: Magnific `images_generate` (isolated back view, seated, arms forward) -> `models3d_generate` **trellis-2 at resolution 1536** (tripo auto-rigs people into a T-pose and loses the seated pose — trellis keeps it). Then, offline: textures downscaled 2048 -> 896 WebP q78 with `scratchpad/shrink_glb.py` (gltf-transform's own image pipeline is broken on this machine — vips 'colourspace: parameter space not set'), then `npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt --simplify true --simplify-error 0.003 --texture-compress false`. 4.53 MB -> 495 KB. Loaded in `stage.js` with `GLTFLoader` + `MeshoptDecoder` (a ~30 KB module bundled from `three/addons`, no side files to host), and `<link rel="preload">`ed from index.html so the fetch starts during HTML parse. |
 
 Tiling textures arrive with `RepeatWrapping`, sRGB and aniso 8 set. They are **shared between modules** —
 `clone()` before touching `.repeat`, and dispose your clones.
 
-`guy.glb` IS awaited before the first frame, but with a 900 ms deadline (`Promise.race`): at 495 KB and
-preloaded he lands in well under that, and whichever body wins the race is the only one the player ever
-sees. Showing the procedural stand-in first and cross-fading read as two different characters popping
-between poses. If he misses the deadline the procedural body in `character.js` is used instead. Placement is
-`GUY_FIT` in `stage.js` (height/x/y/z/rotY), live-tunable from the harness with `__intro.stage.fitGuy({...})`.
-`character.js` still owns the **chair**, the idle timing and the `setSuck` pose hooks.
+**The seated character is 100% procedural** (`src/ui/intro/character.js`) — there is no model file on this
+path any more. He used to be `guy.glb` (495 KB, 21k tris, Magnific -> trellis-2, meshopt-compressed),
+awaited before the first frame with a 900 ms deadline and `<link rel="preload">`ed from index.html, with
+`character.js`'s own body hidden behind him.
+
+Removed 2026-08-24 after rebuilding the procedural body against `docs/intro-ref/hoodie-back-ref.jpg` with
+the img2threejs GLB-mediated v2 track (the rendered GLB as structural baseline; its topology and materials
+were never copied). What the swap bought:
+
+* **the animation back.** The GLB had `skinCount 0, animationCount 0` — one rigid mesh. The two-bone IK
+  arms, the breathing idle and the `setSuck()` reach in `character.js` were all dead while it was on
+  screen, and its placement (`GUY_FIT`/`GUY_CHAIR`) had to be solved against the desk *by eye* for the
+  same reason.
+* **495 KB off the intro's critical path**, plus the `GLTFLoader` + `MeshoptDecoder` imports, the
+  `<head>` preload and the whole `guyBuf` hand-off through `IntroHost` -> `introWorker` -> `Intro`.
+* **a garment that is actually charcoal.** Measured on the shipped frame, the procedural garment's lit
+  back is sRGB (70,71,73) — channel spread 3 against `character.js`'s own stated target of < 15, where
+  the previous value measured 45-48. The GLB rendered khaki-beige under the same lights.
+
+Per-region agreement with the GLB baseline (img2threejs `compare_region_passes.py`, six passes, camera
+correction group applied): garment silhouette IoU 0.952, depth 0.934, normal 0.933, beauty 0.886.
+Hair is the weakest region (0.376) and is the one open defect — see the note at `M.hair` in character.js.
 
 Art reference (not shipped, dev only): `docs/intro-ref/hoodie-back-ref.jpg` (the character, clean back view),
 `docs/intro-ref/desk-back-{1,2}.jpg` (the full shot). Builders judge their work against these.
@@ -118,25 +133,25 @@ the cracks between plates). **Re-measure if either texture is replaced.**
 | `tex/bark.jpg` | Vegetation trunk material | 2k seamless, vertical ridges + moss |
 | `tex/leaf_card.png` | Vegetation canopy leaf cards | 1024 RGBA alpha cutout, lush painterly cluster |
 | `tex/glyph-ring-1.jpg`, `tex/glyph-ring-2.jpg` | Props rune rings, VFX sigils, abilities rift | pale-gold line art on black — load as additive map (black = transparent with AdditiveBlending) |
-| `concepts/aetheryte.jpg` | source concept | floating crystal + gold filigree (GLB generating) |
-| `concepts/column.jpg` | source concept | broken rune column (GLB generating) |
-| `concepts/handcannon.jpg` | source concept | ornate gunmetal+gold revolver (GLB generating) |
 
-## Models — `public/assets/models/` (GLB, ~3 MB each, decimated + quantized: handcannon 57k / aetheryte 38k / column 31k tris)
+## Models — none. The game is 100% procedural geometry.
 
-| file | for | notes |
-|---|---|---|
-| `aetheryte.glb` | Props: THE aetheryte landmark crystal (replace/augment procedural one at (0,-28)) | floating faceted crystal + gold filigree band + orbiting shards; scale to ~12 m tall; add your own emissive boost + rune rings + plinth |
-| `column.glb` | Props: Sundered Spire ruins columns (instance several, vary rotation/scale/burial) | broken rune column with gold inlay; register colliders |
-| `handcannon.glb` | Weapons: hand cannon viewmodel base | 57k tris, ornate gunmetal+gold revolver; attach muzzle/sight nodes yourself, add emissive accents |
+Three GLBs (`aetheryte` 38k tris / `column` 31k / `handcannon` 57k, 7.9 MB) were generated in the first
+asset batch and **never wired up** — every system had already built the same object procedurally
+(`Props.js` `_buildAetheryte`, `weapons/models.js` `BUILDERS`), so `game.assets.model()` was never called
+by anything. They still cost a fetch, a synchronous `GLTFLoader.parse` and 5.4 MB of GPU texture upload on
+every boot: **688 ms, 52% of the whole asset preload phase, for zero draw calls.** Deleted 2026-08-24
+along with `Assets.MODELS`, the model-parse loop and the `model()` accessor.
 
-Usage: `game.assets.model('aetheryte')` (already loaded + textures GPU-uploaded) — **clone the scene AND its materials** before mutating (`scene.clone(true)` + clone materials); never edit the cached original. Materials arrive as MeshStandardMaterial — patch with your onBeforeCompile (CSM/fog) as usual; textures are large (up to 4k) — set `texture.anisotropy = 8` and consider `renderer.initTexture` at load to avoid first-view hitch.
+**If you want a GLB, the bar is: it must be in the frame, and it must beat what code can build.**
+The one model that passes is the intro's, and it is not in this manifest because the intro does not go
+through `game.assets` — see the intro section above. Before asking for a mesh asset, build it procedurally
+first; that is the house style (`Props.js`, `weapons/models.js`, `intro/character.js` are all zero-asset).
 
 ## Requested / planned next batch
 - Tree impostor sheets (octahedral bake happens in-engine — see TECHNIQUES.md #6)
 - HUD filigree corners/frames
 - Footsteps per surface, reload foley, ability whooshes, ambient wind/bird/cricket loops
-- More GLBs on ASSET ASK (enemy statues, lanterns, monoliths...)
 
 
 ## Voice cast — RETIRED 2026-08-23 (quests are written, never spoken)

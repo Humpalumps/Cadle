@@ -37,7 +37,6 @@ self.onmessage = async (e) => {
         auto: false,
         size: m.size,
       };
-      host.guyBuf = m.guyBuf || null;      // shipped from the main thread's <head> preload
       intro = new Intro(host);
       intro.onArmed = () => self.postMessage({ type: 'armed' });
       intro.onHandover = () => self.postMessage({ type: 'handover' });

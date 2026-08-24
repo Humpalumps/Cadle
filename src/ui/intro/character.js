@@ -8,8 +8,8 @@
 //   dolly (0.98, 1.96, 2.28) -> (1.14, 1.82, 1.86) looking at ~(0.06, 1.13, -0.48), 38 deg vFOV.
 //   NOTE (2026-08-22): the visible BODY is now a generated GLB loaded by stage.js; the body in this
 //   file is the fallback for when that download fails. The CHAIR here is always the one on screen.
-//   The HOODIE_TINT derivation further down was measured against an older, dimmer lighting rig — the
-//   number may still be right but do not re-derive it from that recipe; re-measure against stage.js.
+//   HOODIE_TINT was re-derived against the CURRENT stage.js rig on 2026-08-24 by the two-sweep
+//   method documented at the constant. Re-measure, never eyeball, and paste your numbers.
 //   The camera sits at +X, which is his RIGHT: everything that has to read — the hood bunch, the
 //   hair silhouette, the shoulder seam, the sleeve — must be visible over his RIGHT shoulder, or
 //   it may as well not exist. Judge every change from that camera, never from straight behind.
@@ -226,10 +226,32 @@ export function buildCharacter({ rng, tex }) {
   //   the 10-25 % target. The lightness problem was never the diffuse level, it was the sheen rims and
   //   the blue gain, and both of those are fixed above. Move THIS if the value is wrong again — never a
   //   flat brightness multiplier, which just re-tips the hue one way or the other.
-  const HOODIE_TINT = new THREE.Color(0.78, 1.76, 3.28);
+  // ---------------------------------------------------------------------------------------------
+  // RE-DERIVED 2026-08-24 with the same twelve-point live-sweep method the paragraph above prescribes.
+  // The method was right; the ANSWER had drifted, because every previous pass tuned the blue ratio
+  // alone and left green pinned to it. Two sweeps, driven from an {eval} step and measured off the
+  // rendered frame at three fixed garment points:
+  //   sweep 1 (blue ratio x overall level) reproduced the shipped value at ratio 4.21: lit back
+  //           sRGB (67, 74, 112) -- SPREAD 45 against this file's own stated target of "spread < 15",
+  //           and 0.76 of the monitor panel, i.e. the garment was the co-brightest mass in the frame;
+  //   sweep 2 (green ratio x blue ratio, level fixed) found the residual was GREEN-deficient, not
+  //           blue-excessive, which is what tying g to b had been hiding all along.
+  // Winner, and what is set below -- ratio (1, 2.00, 1.95) at 0.70 of the old level:
+  //   lit back   sRGB (69, 70, 72)  spread  3   (was 45)   inside the 60-95 target band
+  //   shoulder   sRGB (38, 39, 40)  spread  2   (was 33)
+  //   sleeve     sRGB (52, 54, 52)  spread  2   (was 36)
+  //   0.64 of the monitor panel (was 0.76) -- he now reads as a dark mass against a lit screen, which
+  //   is also the plate's relationship: charcoal fleece at sRGB 55 against a 201 backdrop.
+  // NOTE the blue ratio came DOWN from 4.21 to 1.95. The old comment's premise -- that only a strong
+  // per-channel inverse can cancel the warm key -- was only ever half the picture: the monitor is a
+  // 0x9b8bff RectAreaLight whose own ratio is (1, 0.81, 3.1), and a 4.21x blue albedo MULTIPLIES it.
+  // Balancing green instead lets blue fall back, which fixes the key AND stops the violet blowout,
+  // and it is why this lands at spread 3 where a decade of blue-only tuning bottomed out around 27.
+  // If you change this, re-run BOTH sweeps and paste the numbers. Do not move it on a screenshot.
+  const HOODIE_TINT = new THREE.Color(0.823, 1.646, 1.605);
   const hoodieMat = (extra) => mk(THREE.MeshPhysicalMaterial, {
     // fallback (no map): the same balanced albedo baked as a plain colour, so `tex === null` still reads grey
-    color: knit ? HOODIE_TINT.clone() : new THREE.Color(0.058, 0.134, 0.276),
+    color: knit ? HOODIE_TINT.clone() : new THREE.Color(0.066, 0.132, 0.129),
     map: knit,
     // was 0.9 — at hero distance a knit that fine is sub-pixel, and a hard bump only sharpened the
     // grazing-angle terminator into noise. Halved: it still breaks the cloth up, it no longer sparkles.
@@ -259,15 +281,15 @@ export function buildCharacter({ rng, tex }) {
     // Do not flatten these back together, and do not make the flap DARKER than the torso (tried: it just
     // reads as a stain on his back, not as a garment layer).
     hoodiePanel: hoodieMat({    // hem roll of the hood + cuffs + waist hem
-      color: knit ? tintX(1.24) : new THREE.Color(0.072, 0.166, 0.342),
+      color: knit ? tintX(1.24) : new THREE.Color(0.082, 0.164, 0.160),
     }),
     hoodFlap: hoodieMat({       // the hood's drape, lying down his back
-      color: knit ? tintX(1.15) : new THREE.Color(0.067, 0.154, 0.317),
+      color: knit ? tintX(1.15) : new THREE.Color(0.076, 0.152, 0.148),
     }),
     // Brushed fleece lining in the mouth of the collar: the lightest cloth on him, ~1.6x the hoodie's
     // outgoing value, matte, never emissive and never near white. White-balanced the same way as the
     // garment (see HOODIE_TINT) — a warm-grey albedo under this warm key is what made the old hood khaki.
-    hoodLining: mk(THREE.MeshStandardMaterial, { color: new THREE.Color(0.093, 0.214, 0.442), roughness: 0.99 }),
+    hoodLining: mk(THREE.MeshStandardMaterial, { color: new THREE.Color(0.106, 0.212, 0.207), roughness: 0.99 }),
     string: mk(THREE.MeshStandardMaterial, { color: 0xa39c8c, roughness: 0.9 }),
     // SKIN: in both desk references the hands are the least conspicuous thing in frame. Desaturated,
     // darker than "flesh tone", matte (clearcoat on skin at this scale reads as wet plastic).
@@ -276,20 +298,39 @@ export function buildCharacter({ rng, tex }) {
       sheen: 0.22, sheenColor: new THREE.Color(0x9aa0b2), sheenRoughness: 0.95,
     }),
     hair: mk(THREE.MeshPhysicalMaterial, {
-      // honest dark warm brown. The reference plate's hair IS warm under this key — that is correct,
-      // not a white-balance error, and the previous out-of-gamut blue albedo is what made it read as
-      // a cracked ceramic helmet.
+      // Honest dark warm brown: the plate's hair IS warm under this key, and a FULL white-balance
+      // correction here was tried before and read as a cracked ceramic helmet. But the shipped value had
+      // over-corrected the other way -- a masked read of the hero frame gave rendered sRGB (68, 32, 23),
+      // ratio (1, 0.47, 0.34), against the plate's crown at (67, 58, 53), ratio (1, 0.87, 0.79). That is
+      // not "warm", that is orange. Albedo nudged from (64,51,42) to (64,74,71) to land the RENDER around
+      // (1, 0.70, 0.60): still clearly warmer than the plate, no longer a traffic cone. Deliberately a
+      // partial correction -- going all the way to the plate ratio is what produced the ceramic helmet.
+      // WRITTEN AS LINEAR, like every other float colour in this file. THREE.Color(float,float,float)
+      // is taken as-is in the working (linear) space, while 0xRRGGBB is converted FROM sRGB. Pasting
+      // sRGB/255 values into the float form makes them ~5x too bright: the first attempt at this
+      // correction rendered the hair at sRGB 163 before the conversion was put back in.
       // roughness 0.74 -> 0.84 and sheen 0.35 -> 0.20: at hero distance the broad specular lobe of the
       // old values pooled across the whole mass and read as moulded plastic. Matte, the individual locks
       // separate on their own shading instead of being washed together by one highlight.
-      color: new THREE.Color(0x40332a), roughness: 0.84, metalness: 0.0,
-      sheen: 0.20, sheenRoughness: 0.92, sheenColor: new THREE.Color(0x6d6055), // soft strand rim, no emissive
+      color: new THREE.Color(0.0513, 0.0685, 0.0630), roughness: 0.84, metalness: 0.0,
+      // sheen 0.20 -> 0.12 with the lock count going 42 -> 66. Sheen peaks at GRAZING angles, so its
+      // cost scales with how many silhouette EDGES the mass has, not with its area: at 66 thin locks the
+      // same 0.20 put a pale rim on half again as many strands and the mass read sandy-blonde even though
+      // a masked sample barely moved (73,53,44 against 71,51,44 before). Cutting sheen fixes the rims and
+      // leaves the albedo -- and with it the lock-to-lock shading that separates them -- untouched.
+      sheen: 0.12, sheenRoughness: 0.92, sheenColor: new THREE.Color(0x6d6055), // soft strand rim, no emissive
     }),
     phone: mk(THREE.MeshStandardMaterial, { color: 0x15151a, roughness: 0.48, metalness: 0.25 }),
     cushion: mk(THREE.MeshStandardMaterial, { color: 0x1d1d24, roughness: 0.95 }),
     accent: mk(THREE.MeshStandardMaterial, {
       color: 0x2a2140, roughness: 0.5, metalness: 0.0,
-      emissive: new THREE.Color(0x7c5bd6), emissiveIntensity: 0.45, // saturated violet, capped: never white, never > 0.6
+      // 0.45 -> 0.18. At 0.45 a masked read of the hero frame made this 4 mm ring the highest-value
+      // element on the whole character - brighter than the monitor's reflection on his shoulder - and it
+      // is the first thing the eye lands on. The reference plate has no glowing ring at all, so the only
+      // question is how much accent the design wants, not whether to match a photo. 0.18 keeps it a
+      // legible violet detail on the cup and stops it competing with his silhouette. Ceiling stays 0.6;
+      // saturate the colour, cap the intensity.
+      emissive: new THREE.Color(0x7c5bd6), emissiveIntensity: 0.18,
     }),
     cable: mk(THREE.MeshStandardMaterial, { color: 0x1a1a20, roughness: 0.6 }),
     pants: mk(THREE.MeshStandardMaterial, { color: 0x2a2f3a, roughness: 0.95, roughnessMap: fabric }),
@@ -383,7 +424,12 @@ export function buildCharacter({ rng, tex }) {
       [0.96, 0.170, 0.132],
       [1.00, 0.108, 0.100],
     ];
-    const g = new THREE.CylinderGeometry(1, 1, 1, 40, 30, false);
+    // 40x30 -> 56x48. The fold field below runs up to 17 cycles in u (the hem stack) and 6 in a; at 30
+    // height segments that is under two segments per cycle, so the folds ALIASED into broad angular
+    // plateaus and the back rendered as pale camo blotches with polygonal edges. Nothing about the fold
+    // maths was wrong -- it was being sampled below Nyquist. 56x48 puts ~2.8 segments on the tightest
+    // cycle and the blotches become cloth. Costs 2.4k -> 5.4k tris on a body that is alone on screen.
+    const g = new THREE.CylinderGeometry(1, 1, 1, 56, 48, false);
     deform(g, (v) => {
       const u = v.y + 0.5;
       const [hw, hd] = prof(table, u);
@@ -409,11 +455,15 @@ export function buildCharacter({ rng, tex }) {
       const side = Math.exp(-Math.pow(Math.sin(a) / 0.10, 2));                           // a = 0 and PI = +-X
       v.x *= 1 - 0.030 * side * smooth(0.05, 0.30, u);
       v.z *= 1 - 0.030 * side * smooth(0.05, 0.30, u);
-      // armhole: a deep set-in-sleeve trench arcing over the shoulder. This is the single line that
-      // stops the arm and the body reading as one continuous bag from the hero camera.
-      const arm = Math.exp(-Math.pow((u - 0.80) / 0.16, 2)) * Math.exp(-Math.pow(Math.sin(a) / 0.55, 2));
-      v.x *= 1 - 0.105 * arm;
-      v.z *= 1 - 0.080 * arm;
+      // ARMHOLE. Was a 10.5 % radial trench, justified as "the single line that stops the arm and the
+      // body reading as one continuous bag". But the plate is a DROP SHOULDER: the sleeve leaves the
+      // body as one continuous surface and the seam is a stitch line that SHADES, it never breaks the
+      // silhouette. At 0.105 the rendered shoulder had a hard notch in outline and the arm read as a
+      // separate tube pushed into a bag - the exact opposite of an oversized hoodie. Cut to a seam
+      // (0.032/0.026) and narrowed, so it still catches a shadow without cutting the outline.
+      const arm = Math.exp(-Math.pow((u - 0.80) / 0.13, 2)) * Math.exp(-Math.pow(Math.sin(a) / 0.48, 2));
+      v.x *= 1 - 0.032 * arm;
+      v.z *= 1 - 0.026 * arm;
       // hem: the ribbed waistband pulls the drape in
       v.x *= 1 - 0.10 * smooth(0.10, 0.0, u);
       v.z *= 1 - 0.10 * smooth(0.10, 0.0, u);
@@ -466,8 +516,11 @@ export function buildCharacter({ rng, tex }) {
     //    was. `ang` is the angle after the arc is spun into place: sin(ang) = 1 at the nape, -1 at the
     //    throat. The gathers are shallow (0.10/0.30 rather than 0.22/0.50) because a hem gathers, a
     //    cushion bulges.
+    //    RADIUS/TUBE re-measured 2026-08-24 off the plate: the roll spans 227 px (-> 0.234 m, radius
+    //    0.117) and is 45 px thick (-> 0.046 m, tube 0.023). It was 0.104/0.030 — too small a ring
+    //    wearing too fat a tube, which is precisely the "thinner than the neck it rings" rule inverted.
     const ARC = Math.PI * 1.30, SPIN = Math.PI * 0.5 - ARC * 0.5;
-    const roll = new THREE.TorusGeometry(0.104, 0.030, 12, 44, ARC);
+    const roll = new THREE.TorusGeometry(0.117, 0.024, 12, 44, ARC);
     deform(roll, (v) => {
       const ang = Math.atan2(v.y, v.x) + SPIN;
       const back = smooth(-0.25, 1.0, Math.sin(ang));
@@ -482,18 +535,31 @@ export function buildCharacter({ rng, tex }) {
     roll.rotateZ(SPIN);
     roll.rotateX(Math.PI * 0.5 - 0.60);   // tipped further back: the mouth opens UP at the camera
     roll.rotateY(0.055);                  // ...and off-axis, like cloth that was shrugged off, not sewn on
-    roll.translate(0.004, 0.601, 0.040);
+    roll.translate(0.004, 0.589, 0.040);
     parts.push(roll);
 
     // 2) THE DRAPE. `t` runs 0 at the mouth to 1 at the hanging point; `prof` gives (halfWidth, halfDepth)
     //    at that height, so the outline is authored as a real garment pattern instead of an ellipsoid.
-    //    SIZE — measured off hoodie-back-ref.jpg, not guessed, because the first attempt at this drape
-    //    made it 32 cm across and it read as a CAPE, a flat plate laid over the shoulders with a knife
-    //    edge. In the plate the hood spans 255 px against a 605 px shoulder width (42 %) and is 31 % of
-    //    that width tall. Our shoulders are 0.46 m, so the hood is ~0.20 m across and ~0.15 m tall, i.e.
-    //    barely wider than its own mouth — a down hood sits in the MIDDLE of the upper back, it does not
-    //    reach the shoulder seams. It reads because of the value step and the shadow gap under the hem
-    //    roll, never because it is big. Depth is 3 cm at the fattest: doubled fleece, nothing more.
+    //
+    //    SIZE — RE-MEASURED 2026-08-24, and the previous numbers here were wrong. The old comment said
+    //    "the hood spans 255 px against a 605 px shoulder width (42 %)", which took the DRAPE ALONE as
+    //    the numerator and the ARM SPAN as the denominator. 605 px is the span at y~580 with both arms
+    //    abducted; the actual shoulder line measures 452-485 px. A silhouette scan of the plate (rows
+    //    every 20 px, threshold luma < 170) gives the hood mass 314-384 px across against a 452 px
+    //    shoulder — 69-85 %, not 42 %. Built to the old ratio the hood came out a tall narrow LEAF
+    //    hanging in the middle of his back; from the hero camera it read as a travel pillow with a
+    //    tumour, which is the failure the paragraph above was trying to avoid and accidentally caused.
+    //
+    //    WHAT THE PLATE ACTUALLY SHOWS (see the ruled crop recipe at the bottom of this file): a broad
+    //    triangular COWL. It is already near full width immediately under the roll, bulges slightly at
+    //    a third of the way down, and converges to a rounded point between the blades. Wide and SHALLOW,
+    //    not narrow and tall. Converted at 1.032 mm/px (our 0.418 m torso against the plate's 405 px):
+    //      widest       320 px -> 0.330 m  (half 0.165)
+    //      top, at roll 250 px -> 0.258 m  (half 0.129)
+    //      height       160 px -> 0.165 m
+    //    Depth stays ~3 cm at the fattest: doubled fleece, nothing more. Wide does NOT mean a cape —
+    //    the cape failure was a flat plate with a knife edge, and what prevents it is the thin section
+    //    plus the rr^3 edge taper below, never keeping the outline small.
     //    The top of the profile is NOT pinched to a stalk: the drape's sides continue down from the sides
     //    of the mouth, so at t=0 it is already three quarters of the hem roll's width. Pinched, it read
     //    as a separate green blob floating on his back with the collar hovering above it (measured with a
@@ -502,13 +568,13 @@ export function buildCharacter({ rng, tex }) {
     //    garment). Same reason for the -0.22 tilt below: the drape has to lean back as it descends or its
     //    top separates from the roll's back edge.
     const drape = [
-      [0.00, 0.076, 0.018],   // hangs straight off the sides of the mouth
-      [0.15, 0.100, 0.028],
-      [0.35, 0.117, 0.032],   // widest across the upper back
-      [0.58, 0.112, 0.030],
-      [0.78, 0.092, 0.023],
-      [0.92, 0.062, 0.015],
-      [1.00, 0.034, 0.009],   // soft point between the shoulder blades
+      [0.00, 0.129, 0.019],   // already near full width: the roll IS the top of the hood
+      [0.15, 0.150, 0.029],
+      [0.35, 0.165, 0.034],   // widest across the upper back
+      [0.55, 0.152, 0.032],
+      [0.75, 0.116, 0.026],
+      [0.90, 0.070, 0.016],
+      [1.00, 0.030, 0.008],   // soft point between the shoulder blades
     ];
     const flap = [];
     const bag = new THREE.SphereGeometry(1, 40, 28);
@@ -520,25 +586,27 @@ export function buildCharacter({ rng, tex }) {
       // the OUTLINE itself wanders — a straight side edge is what made it look die-cut
       const hw = hw0 * (1 + 0.075 * Math.sin(t * 7.3 + 1.4) + 0.045 * Math.sin(t * 13.0));
       // soft folds, and an ASYMMETRIC one running diagonally across the left of the drape
+      // fold frequencies that key off v.x are scaled by 0.117/0.165 with the widened profile, so the
+      // folds stay the same SIZE in metres instead of stretching out with the pattern
       const fold = 1
         + 0.058 * crease(a * 3.0 + v.y * 3.4, 0.55)
         + 0.040 * crease(v.y * 7.0 + a * 1.4 + 1.1, 0.60)
-        + 0.034 * crease(v.x * 22.0 - v.y * 5.0, 0.5) * smooth(0.0, -0.5, v.x);
+        + 0.034 * crease(v.x * 15.6 - v.y * 5.0, 0.5) * smooth(0.0, -0.5, v.x);
       const yy = v.y;
       v.x *= hw * fold;
       // CLOTH EDGE, not a sphere horizon: the section thins toward the rim. rr^3 rather than rr^4 —
       // a quartic collapses over the last few percent and gives the edge a hard terminator.
       v.z *= hd * fold * (1 - 0.66 * Math.pow(rr, 3));
-      v.y = yy * 0.108;
-      v.z -= 0.030 * Math.pow(Math.abs(v.x) / 0.117, 2);  // wraps around the curve of the back
+      v.y = yy * 0.062;                                   // 0.124 m tall: wide and SHALLOW, see the table
+      v.z -= 0.030 * Math.pow(Math.abs(v.x) / 0.165, 2);  // wraps around the curve of the back
       v.x += 0.016 * t * t;                               // hangs off-axis toward the camera side
       v.y -= 0.018 * smooth(0.0, -0.9, yy);               // the point droops away from the body
       // IRREGULAR LOWER EDGE: scallop the hem so it is a soft broken line, never a drawn arc
-      v.y -= (0.010 + 0.007 * Math.sin(v.x * 62.0 + 2.2)) * smooth(0.52, 1.0, t) * (0.5 + 0.5 * Math.sin(v.x * 36.0));
+      v.y -= (0.010 + 0.007 * Math.sin(v.x * 44.0 + 2.2)) * smooth(0.52, 1.0, t) * (0.5 + 0.5 * Math.sin(v.x * 25.5));
       // UNDERCUT: the top of the drape tucks IN under the hem roll. That gap is the hood's shadow line.
       v.z -= 0.022 * smooth(0.62, 1.0, yy);
     });
-    flap.push(xf(bag, 0.002, 0.532, 0.150, -0.22, 0, -0.05));
+    flap.push(xf(bag, 0.002, 0.505, 0.163, -0.22, 0, -0.05));
 
     // 3) the centre fold — one soft ridge, set OFF the midline, so it is folded cloth and not a pillow
     const fold2 = new THREE.SphereGeometry(1, 22, 16);
@@ -548,10 +616,11 @@ export function buildCharacter({ rng, tex }) {
       // wide and shallow, NOT a spindle: at 0.028 x 0.082 x 0.017 it stood 13 mm proud of the drape and
       // silhouetted from straight behind as a pointed leaf stuck to his back. A fold in lying cloth is a
       // broad soft swell — it should shade, never outline.
-      v.x *= 0.040 * (1 - 0.45 * t);
-      v.y *= 0.062; v.z *= 0.010 * (1 - 0.70 * Math.pow(rr, 3));
+      // scaled with the widened/shortened drape (x *1.41, y *0.76) so it stays the same RELATIVE swell
+      v.x *= 0.056 * (1 - 0.45 * t);
+      v.y *= 0.047; v.z *= 0.010 * (1 - 0.70 * Math.pow(rr, 3));
     });
-    flap.push(xf(fold2, -0.012, 0.545, 0.170, -0.22, 0, -0.10));
+    flap.push(xf(fold2, -0.012, 0.518, 0.181, -0.22, 0, -0.10));
 
     // TWO meshes, not one: the hem roll is the lighter doubled-fleece panel, the drape sits between it
     // and the torso. That value step is what makes "where the hood ends and the back begins" visible.
@@ -564,8 +633,10 @@ export function buildCharacter({ rng, tex }) {
     // roll, so that is what this is: the same arc as the roll, one ring-radius inboard and offset a
     // centimetre along the mouth's own normal so it clears the roll instead of hiding inside it.
     const lin = [];
+    //    Widened with the roll (0.096 -> 0.108) and thickened (0.014 -> 0.019): in the plate the napped
+    //    lining is a broad pale patch filling the mouth, roughly 150 px across, not a hairline.
     const LARC = Math.PI * 0.92, LSPIN = Math.PI * 0.5 - LARC * 0.5;
-    const cres = new THREE.TorusGeometry(0.096, 0.014, 8, 28, LARC);
+    const cres = new THREE.TorusGeometry(0.108, 0.019, 8, 28, LARC);
     deform(cres, (v) => {
       const a = Math.atan2(v.y, v.x);
       v.z *= 0.68 * (1 + 0.16 * crease(a * 6.0, 0.45));  // brushed fleece, gathered
@@ -577,7 +648,7 @@ export function buildCharacter({ rng, tex }) {
     // inside the ring is hidden by the neck and the nape, anything outside it reads as a second roll;
     // riding the mouth-facing side of the hem is the one place a camera looking DOWN at him can see it,
     // and it is what "the lining just showing" looks like on the plate.
-    cres.translate(0.004, 0.622, 0.025);
+    cres.translate(0.004, 0.614, 0.028);
     lin.push(cres);
     mesh(lin, M.hoodLining, torso, 'hoodLining');
   }
@@ -712,17 +783,23 @@ export function buildCharacter({ rng, tex }) {
     // sat AT or just under the scalp surface, so the outline was the shell and the locks were surface
     // detail. 1.045/1.115/1.185 against the shrunk shells puts the outer layer ~9 mm proud of a 100 mm
     // skull — enough that individual locks own the silhouette and light gets in between them.
+    // COUNT/WIDTH re-tuned 2026-08-24 against the plate. 42 locks at 18-22 mm read as chunky tubes with
+    // a scalloped fringe -- a bowl cut with teeth -- where the plate is a shaggy mop of FINE separated
+    // strands. The img2threejs region comparison scored hair lowest of every region (0.376 silhouette
+    // IoU, 0.326 semantic). More locks, thinner: 66 at 12-15 mm. Lock COUNT is what buys strand read;
+    // widening them to cover scalp is the move that produced the helmet in the first place (the shells
+    // underneath are what stop scalp showing through, which is exactly why they exist).
     const LAYERS = [
-      { k: 1.045, n: 16, w: 0.022, len: 1.00 },
-      { k: 1.115, n: 14, w: 0.020, len: 0.80 },
-      { k: 1.185, n: 12, w: 0.018, len: 0.60 },
+      { k: 1.045, n: 26, w: 0.0150, len: 1.00 },
+      { k: 1.115, n: 22, w: 0.0135, len: 0.80 },
+      { k: 1.185, n: 18, w: 0.0120, len: 0.60 },
     ];
     // FIVE STRAYS. Scruffy is not "more variance everywhere" — an evenly noisy mass still averages into a
     // bob. What reads as messy is a handful of locks that leave the mass: longer than their neighbours,
     // lifted off the skull so light gets under them, and drifted sideways so they cross the outline. They
     // are chosen by running index, so the seed decides WHERE they land but there are always five.
     const STRAY = new Set();
-    while (STRAY.size < 5) STRAY.add(Math.floor(R() * 42));
+    while (STRAY.size < 8) STRAY.add(Math.floor(R() * 66));   // 5/42 -> 8/66: same stray DENSITY
     let li2 = 0;
     for (let li = 0; li < LAYERS.length; li++) {
       const L = LAYERS[li];

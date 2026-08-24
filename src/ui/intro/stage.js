@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mulberry32 } from '../../core/Noise.js';
 import { makeCanvas, loadTexture } from './env.js';
 
@@ -69,58 +67,16 @@ async function loadIntroTextures() {
   return out;
 }
 
-// Optional generated body (Magnific/Tripo, see ASSETS.md). When present it REPLACES the procedural
-// body from character.js — that module still supplies the chair, the idle timing and the suck pose hooks.
-// Missing file => the procedural body stays. Tunable live from the harness via stage.fitGuy(...).
-const GUY_URL = '/assets/intro/guy.glb';
-// Solved against the desk and the chair by eye in intro.html (__intro.stage.fitGuy / setChair), not
-// derived: he is one rigid mesh, so "hands on the desk" and "back in the chair" are a placement problem.
-const GUY_FIT = { height: 1.46, x: -0.15, y: 0.0, z: -0.12, rotY: Math.PI, rotZ: 0 };
-const GUY_CHAIR = [-0.15, 0, 0.12];        // character.js measured the chair against its own body
-// z 0.04 -> 0.12: the generated body is a rigid mesh fitted by eye against a procedural chair, and at
-// 0.04 the chair sat far enough forward that its back panel cut through his shoulder blades and the
-// armrest through his thigh. Solved with stage.setChair() live, then baked: 0.18 reads as perched off
-// the seat, 0.12 puts the backrest behind him and clears the armrest.
-
-async function loadGuy(preloaded = null) {
-  try {
-    // meshopt-compressed (4.5 MB -> 1.3 MB); the decoder is a ~30 KB module bundled with the app, no
-    // side files to host. Compressed offline with: npx @gltf-transform/cli optimize in.glb out.glb
-    //   --compress meshopt --simplify true --simplify-error 0.002 --texture-compress false
-    // The BYTES come from the inline <script> in index.html, which kicks the fetch off during HTML parse
-    // (~5 ms) instead of here (~350 ms, behind the intro textures and the room/chair build). It used to be
-    // a <link rel="preload" as="fetch"> reused by a fetch() here, but the preload never matched — Chrome
-    // logged "credentials mode does not match" and downloaded all 443 KB a second time, every cold load.
-    // The fallback keeps intro.html (which has no such script) working.
-    const buf = await (preloaded ?? globalThis.__guyGlb ?? fetch(GUY_URL).then((r) => {
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      return r.arrayBuffer();
-    }));
-    const tB = performance.now();
-    const loader = new GLTFLoader();
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.parseAsync(buf, '');
-    console.info(`[intro] body: bytes at ${Math.round(tB)} ms, parsed at ${Math.round(performance.now())} ms`);
-    return gltf.scene;
-  } catch (e) { console.warn('[intro] generated body unavailable:', e?.message); return null; }
-}
-
-/** scale/park a raw generated mesh so it sits on the floor at the seat, facing the monitor */
-function fitGuy(g, f) {
-  g.scale.setScalar(1); g.position.set(0, 0, 0); g.rotation.set(0, f.rotY, f.rotZ || 0);
-  g.updateMatrixWorld(true);
-  const b = new THREE.Box3().setFromObject(g);
-  const size = b.getSize(new THREE.Vector3());
-  const k = f.height / Math.max(size.y, 1e-4);
-  g.scale.setScalar(k);
-  g.updateMatrixWorld(true);
-  const b2 = new THREE.Box3().setFromObject(g);
-  const c = b2.getCenter(new THREE.Vector3());
-  g.position.set(f.x - c.x, f.y - b2.min.y, f.z - c.z);
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  g.updateMatrixWorld(true);
-  return g;
-}
+// THE BODY IS PROCEDURAL. There is no model file and no loader on this path (2026-08-24).
+// It used to load /assets/intro/guy.glb (495 KB, 21k tris) and hide character.js's body behind it. That
+// GLB was a rigid one-piece mesh fitted to the chair BY EYE, which is why this file used to carry
+// GUY_FIT/GUY_CHAIR/fitGuy/setChair at all — none of it is needed by a body authored in the same world
+// coordinates as the desk. The procedural body was rebuilt against docs/intro-ref/hoodie-back-ref.jpg
+// (see the measurement notes in character.js: hood cowl, drop shoulder, garment white balance) and now
+// beats the GLB on every feature, so the file, the GLTFLoader + MeshoptDecoder imports, the <head>
+// preload in index.html and the guyBuf hand-off through IntroHost/introWorker are all gone.
+// It also gets the animation back: the GLB was one rigid mesh, so the two-bone IK arms, the breathing
+// idle and the setSuck() reach in character.js were all dead while it was on screen.
 
 const smoothstep = (x) => { x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); };
 
@@ -130,7 +86,7 @@ function greyBoxScreen() {
   return m;
 }
 
-export async function buildStage({ seed = 7, withRoom = true, withCharacter = true, guyBuf = null } = {}) {
+export async function buildStage({ seed = 7, withRoom = true, withCharacter = true } = {}) {
   RectAreaLightUniformsLib.init();
   const t0 = performance.now();
 
@@ -146,7 +102,6 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   const rng = mulberry32(seed);
   // Kicked off BEFORE the awaits below: meshopt decode and the two embedded WebP images (createImageBitmap,
   // off-thread) then overlap the texture load and the room/chair build instead of queueing behind them.
-  const guyReady = withCharacter ? loadGuy(guyBuf) : Promise.resolve(null);
   const tex = await loadIntroTextures();
   // import.meta.glob rather than a static import: the room/character modules are optional by design, and
   // a bare `import './room.js'` makes their absence a build error instead of a missing prop.
@@ -166,7 +121,6 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   // empty chair for a moment beats a dark page. There is only ever ONE body — the procedural one in
   // character.js is hidden up front and only comes back if this download fails — so
   // this can fade in without the two-characters-popping problem the cross-fade used to have.
-  let guy = null, guyHolder = null, guyFade = -1;
   if (!room) {                                            // stand-in so the shot still composes
     const g = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: 0x23242e, roughness: 0.9 });
@@ -367,55 +321,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     }
   });
 
-  let guyBaseY = 0, chairHolder = null;
-  if (character?.body) character.body.visible = false;     // one body only; restored below if the load fails
-  guyReady.then((g) => {
-    if (!g) {
-      console.warn('[intro] generated body unavailable — falling back to the procedural one');
-      if (character?.body) character.body.visible = true;
-      bindSuck(character?.body || null);
-      return;
-    }
-    guy = g;
-    // the pivot overwrites its child's quaternion, so the model goes inside a holder and the HOLDER is
-    // what gets re-parented — otherwise the fitted rotation/scale dies the moment the pivot binds
-    guyHolder = new THREE.Group();
-    guyHolder.add(guy);
-    fitGuy(guy, GUY_FIT);
-    guyBaseY = guy.position.y;
-    // The only lights that reach his back are warm, so a neutral albedo renders khaki — measured against
-    // the reference plate the garment was 10x too saturated. A gentle in-gamut cool tint, not a hack.
-    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.color?.setRGB(0.88, 0.95, 1.08); });
-    scene.add(guyHolder);
-    if (character?.body) character.body.visible = false;               // one body only, never a swap
-    if (character?.chair) {
-      // Do NOT write character.chair.position here: character.js's setSuck() rewrites it from its own
-      // CHAIR_PIVOT constant on every call, so the chair silently snaps back and he ends up sitting
-      // beside it. Offset a parent group instead — the module keeps full control of the local transform.
-      const base = character.chair.position.clone();
-      const holder = new THREE.Group();
-      holder.position.set(GUY_CHAIR[0] - base.x, GUY_CHAIR[1] - base.y, GUY_CHAIR[2] - base.z);
-      (character.group ?? scene).add(holder);
-      holder.add(character.chair);
-      chairHolder = holder;
-    }
-    // The cross-fade is for a LATE body only. dt is clamped to 50 ms upstream (Intro._frame) so a 0.4 s
-    // fade costs 8 RENDERED frames — and during boot those frames are seconds apart (material compiles,
-    // then the world build on the same thread). He now parses at ~300 ms against a first paint at ~2 s,
-    // so fading him would show a semi-transparent body with the chair and desk visible through it for
-    // several seconds: the "silhouette in the chair" bug. Arrive before the first frame => arrive solid.
-    // He ALWAYS arrives solid. The cross-fade is gone, not conditioned: it was written to cover a body
-    // that landed after the room, but every version of "fade him in" has shipped as the silhouette bug —
-    // dt is clamped upstream so a 0.4 s fade costs 8 RENDERED frames, and during boot those frames are
-    // seconds apart. In the worker he is always later than the intro's own first frame, so the condition
-    // added in 66e6dfd stopped saving us. A body that pops in is a beat; a see-through body is a bug.
-    guy.traverse((o) => { const m = o.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) { mm.transparent = true; mm.opacity = 1; } });
-    guyFade = -1;
-    void painted;
-    bindSuck(guyHolder);
-    api.guy = guy;
-  });
-  // (api.guy is assigned below once the object literal exists)
+  bindSuck(character?.body || null);
 
   // ---------------------------------------------------------------- state
   let suck = 0, screenBoost = 1, screenDim = 1, dolly = 0, camFree = false, clipOn = false, lightsFull = true;
@@ -424,7 +330,7 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
   let orbitYaw = 0, orbitTarget = LOOK_B.clone();
 
   const api = {
-    scene, camera, room, character, guy: null, guyReady, screen, screenMat, screenUI, screenUIMat, rect, spot, stream, tex,
+    scene, camera, room, character, screen, screenMat, screenUI, screenUIMat, rect, spot, stream, tex,
     buildMs: 0,
 
     /** @param dim grade the backdrop down (a menu backdrop is never shown at full exposure — the title
@@ -465,15 +371,6 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
       painted = true;
       room?.update?.(t);
       character?.update?.(t);
-      if (guyFade >= 0 && guyFade < 1) {                  // he landed after the first frame; ease him in
-        guyFade = Math.min(1, guyFade + dt / 0.4);
-        const o = guyFade;
-        guy.traverse((n) => { const m = n.material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.opacity = o; });
-      }
-      if (guy && suck < 0.001) {                          // the generated body has no rig — breathe it
-        guy.position.y = guyBaseY + Math.sin(t * 1.35) * 0.006;
-        guy.rotation.z = GUY_FIT.rotZ + Math.sin(t * 0.41) * 0.004;
-      }
       // idle: a very slow push-in with a hair of handheld float. Never fast enough to read as movement,
       // just enough that the frame is never dead.
       if (!camFree) {
@@ -557,21 +454,6 @@ export async function buildStage({ seed = 7, withRoom = true, withCharacter = tr
     get lightsFull() { return lightsFull; },
 
     setCameraFree(v) { camFree = v; },
-    /** harness: move the chair under him (character.js measured it against the procedural body) */
-    setChair(x, y, z) {
-      if (!chairHolder || !character?.chair) return false;
-      const base = new THREE.Vector3(...GUY_CHAIR).sub(chairHolder.position);   // recover the module's own base
-      chairHolder.position.set(x - base.x, y - base.y, z - base.z);
-      return true;
-    },
-    /** harness: re-park the generated body, e.g. fitGuy({height:1.34, x:0, y:0, z:0.3, rotY:0}) */
-    fitGuy(f) {
-      if (!guy) return null;
-      Object.assign(GUY_FIT, f || {});
-      fitGuy(guy, GUY_FIT);
-      guyBaseY = guy.position.y;
-      return { ...GUY_FIT };
-    },
     orbit(dYaw) { orbitYaw += dYaw; },                    // preview only
 
     dispose() {

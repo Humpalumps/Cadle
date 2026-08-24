@@ -34,6 +34,7 @@ const stage = await buildStage({
 });
 stage.camera.aspect = innerWidth / innerHeight; stage.camera.updateProjectionMatrix();
 
+
 // placeholder "game on the monitor" so the screen is not blank while iterating
 const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 576;
 {
@@ -77,6 +78,21 @@ loop();
 
 window.__intro = {
   stage,
+  // dev-only handles. The img2threejs v2 render-fidelity track has to capture alpha-silhouette,
+  // semantic-id, depth, normal and roughness passes, and those must NOT go through bloom/vignette/ACES
+  // or the flat ID colours come back tone-mapped and stop being keyable. Exposed here rather than in
+  // src/ so nothing in the shipped app depends on it.
+  renderer, composer, THREE,
+  /** Enable/disable the post stack (pass 0 is RenderPass, pass 1 is the effect stack).
+   *  RenderPass must be promoted to renderToScreen when the effect pass goes away: EffectComposer only
+   *  blits the LAST ENABLED pass, so merely disabling the effects leaves nothing writing to the canvas
+   *  and the preview freezes on the previous frame. (That cost a whole set of diagnostic captures which
+   *  all came back as identical beauty frames.) */
+  post: (on) => {
+    composer.passes.forEach((p, i) => { if (i > 0) p.enabled = !!on; });
+    composer.passes[0].renderToScreen = !on;
+    return on;
+  },
   orbit: (d) => {   // works whether the camera is on its own path or parked by cam()
     const c = stage.camera, tx = 0, ty = 1.06, tz = -0.7;
     const dx = c.position.x - tx, dz = c.position.z - tz;

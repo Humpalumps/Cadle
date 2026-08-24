@@ -1024,9 +1024,17 @@ over the live world. On click he is pulled head-first into the monitor and the g
   add lights or effects, re-measure — marks are logged as `[intro] boot ms:`.
 - Preload hints only work if the credentials mode matches (three's `TextureLoader` sets
   `crossOrigin='anonymous'`); get it wrong and every asset downloads twice.
-- The character is a generated GLB that streams in and fades up; the procedural body in `character.js` is the
-  fallback and still supplies the chair. Placement is `GUY_FIT` in `stage.js` — tune live with
-  `__intro.stage.fitGuy({…})` on `intro.html` and paste the result back.
+- The character is **fully procedural** (`character.js`) — no model file, no loader, no placement constants.
+  The generated `guy.glb` was removed 2026-08-24; with it went `GUY_FIT`/`GUY_CHAIR`/`fitGuy`/`setChair` in
+  `stage.js`, the `<head>` preload in `index.html` and the `guyBuf` hand-off through `IntroHost` ->
+  `introWorker` -> `Intro`. There is nothing to tune live any more: the body is authored directly in the
+  room's coordinates, which is precisely what the GLB could not be (one rigid mesh, fitted by eye).
+  It also restores the animation — the GLB had `skinCount 0`, so the two-bone IK arms, the breathing idle
+  and the `setSuck()` reach were all dead while it was on screen.
+  `intro.html` gained two dev-only handles for this work and they are worth knowing about:
+  `__intro.renderer` / `__intro.composer`, and `__intro.post(on)` which toggles the effect stack **and**
+  promotes `RenderPass` to `renderToScreen` — without that promotion the composer blits nothing and the
+  preview silently freezes on the previous frame, which will quietly ruin any diagnostic capture.
 - `?auto=1` skips the intro entirely, so the harness sees what it always saw. `?auto=1&intro=1` runs it and
   auto-plays; `&introhold=1` holds it for screenshots (needs `--noready`). `__game.intro.seek(t)` freezes the
   transition at an absolute time. **The gate must wait for the game to be running before its click** — the

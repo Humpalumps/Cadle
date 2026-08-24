@@ -73,16 +73,10 @@ export class IntroHost {
     const off = this.canvas.transferControlToOffscreen();
     this.worker = new Worker(new URL('./intro/introWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this._onMessage(e.data || {});
-    // Hand over the body's bytes. index.html starts that fetch during HTML parse, but window.__guyGlb
-    // lives on THIS thread — without passing it the worker re-fetches from scratch and he lands late.
-    let guyBuf = null;
-    try { guyBuf = await Promise.race([globalThis.__guyGlb, new Promise((r) => setTimeout(() => r(null), 2500))]); }
-    catch (e) { guyBuf = null; }
     const transfer = [off];
-    if (guyBuf) transfer.push(guyBuf);              // zero-copy; this thread does not need it again
     this.worker.postMessage({
       type: 'init', canvas: off, size: { w: this.canvas.width, h: this.canvas.height },
-      params: String(this.host.params || ''), seed: this.host.seed, guyBuf,
+      params: String(this.host.params || ''), seed: this.host.seed,
     }, transfer);
 
     this._onWinClick = () => this._click();
