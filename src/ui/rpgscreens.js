@@ -680,21 +680,24 @@ const FIGURE = `<div class="pdfig" aria-hidden="true"></div>`;
 // which is what a real MMO doll does, and it keeps both the plate and the anatomy visible.
 // Nothing here is a row index: add a slot and it lands on its body part, not in the next free cell.
 const DOLL_POS = {
-  // `ay` is the ANATOMY (measured, do not move it). `y` is where the PLATE hangs, and the leader
-  // line joins the two. They are separate numbers on purpose: a plate is ~66 viewBox units tall, so
-  // two plates in one column need ~70 units between their `y` values or they overlap - which is
-  // exactly what HELM/CLOAK and GAUNTLETS/WEAPON 2 did on the first pass, because the shoulder is
-  // genuinely only 55 units below the skull on a real body. The anatomy is not negotiable; the
-  // plate slides and the leader absorbs the difference.
+  // `ay` is the ANATOMY (measured off the silhouette's alpha, do not move it). `y` is where the
+  // PLATE hangs; the leader joins the two when they differ. They are separate numbers because a
+  // plate is ~66 viewBox units tall and a real shoulder sits only 55 below the skull, so two plates
+  // in one column need ~70 units of `y` between them or they overlap.
   //
-  // Column budget: 3 columns x 7 slots, so each column carries at most 3 and every pair in a column
-  // is >= 90 units apart.
-  //   col -1 : head 40, cloak 130, weaponA 250
-  //   col  0 : chest 134, legs 384
+  // HELM SITS ON THE HEAD (user, asked twice). It does cover the skull - a plate is wider than a
+  // head at this scale and there is no room above the crown to float it, the figure starts 12 units
+  // from the top. That was the reason it was parked off to one side with a leader, and the reason
+  // was aesthetic while the request is explicit, so the request wins. When a helm is equipped its
+  // icon is what you see there, which is the correct read anyway.
+  //
+  // Column budget: 3 columns, 7 slots, every pair in a column >= 90 units apart.
+  //   col -1 : cloak 130, weaponA 250
+  //   col  0 : head 36, chest 134, legs 384
   //   col +1 : arms 160, weaponB 252
-  head:  { col: -1, ax: 76,  ay:  36, y:  40 },   // .075 skull, plate to the left of the temple
-  cloak: { col: -1, ax: 46,  ay:  91, y: 130 },   // .19  left deltoid, plate dropped to clear HELM
-  chest: { col: 0,  ax: 100, ay: 134, y: 134 },   // .28  sternum, wide enough to wear the plate
+  head:  { col: 0,  ax: 100, ay:  36, y:  36 },   // .075 ON the skull, centred
+  cloak: { col: -1, ax: 46,  ay:  91, y: 130 },   // .19  left deltoid, plate dropped to clear it
+  chest: { col: 0,  ax: 100, ay: 134, y: 134 },   // .28  sternum, NOT the belly
   arms:  { col: 1,  ax: 178, ay: 211, y: 160 },   // .44  right forearm, plate lifted to clear WEAPON 2
   legs:  { col: 0,  ax: 100, ay: 384, y: 384 },   // .80  shins, below the knee break
 };

@@ -391,6 +391,15 @@ export const SCREEN_CSS = `
 /* On the figure a slot is placed by its ANCHOR, not by a cell: left/right/centre column comes from
    DOLL_POS.col and the vertical centre from the anchor's viewBox y. --ty:-50% is what makes the top
    offset mean "the plate's centre sits here", so the plate lands on the body part rather than beside it. */
+/* THE HELM PLATE IS SEE-THROUGH. It sits centred ON the skull (user asked twice), and a plate is
+   wider than a head at this scale, so at the normal .74 it hid the head completely and the figure
+   read as decapitated. Parking it off to one side with a leader was the previous answer and the
+   user rejected it. So the plate stays where it belongs and gets out of its own way instead: the
+   skull reads through it, and once a helm IS equipped its icon is the thing you see there, which
+   is the correct read anyway. Only the head slot - every other plate covers torso or limb, which
+   are wide enough to spare the pixels. */
+#ui .pdgrid .pdslot[data-slot="head"]{--plate:rgba(11,9,24,.34);--plate2:rgba(7,5,17,.20)}
+#ui .pdgrid .pdslot[data-slot="head"]:hover,#ui .pdgrid .pdslot[data-slot="head"].on{--plate:rgba(34,27,64,.62);--plate2:rgba(18,14,38,.46)}
 #ui .pdgrid .pdslot{position:absolute;--ty:-50%;width:var(--pdsw);max-width:none}
 #ui .pdspare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px}
 #ui .pdhint{margin:8px 0 0;text-align:center;font:italic 400 10.5px/1.45 var(--serif);
