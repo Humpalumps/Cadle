@@ -127,6 +127,13 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #boss .bsh { background: linear-gradient(180deg, #d5f0ff, #6fc4f2); opacity: 0.9; }
 #boss s { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--gold-dim); text-decoration: none; }
 
+/* ---------- escort guide frame (world-tracked: HUD.js sets left/top via transform every frame, not CSS —
+   the player is usually walking beside it, not staring down the crosshair like #tgt/#boss) ---------- */
+#guide { position: absolute; left: 0; top: 0; width: 200px; opacity: 0; transition: opacity 0.15s; text-align: center; }
+#guide .gname { font: 500 14px var(--serif); font-variant: small-caps; letter-spacing: 0.14em; color: #bdf5c8; text-shadow: 0 0 10px rgba(95,217,126,0.55), 0 1px 4px rgba(0,0,0,0.95); margin-bottom: 4px; }
+#guide .bar { height: 6px; width: 100%; border-color: rgba(95,217,126,0.45); }
+#guide .gfill { background: linear-gradient(180deg, #c9ffd2, #5fd97e 55%, #2f8c47); box-shadow: 0 0 8px rgba(95,217,126,0.55); }
+
 /* ---------- notify / toasts / prompt / pickups / quest ---------- */
 #notify { position: absolute; left: 0; right: 0; top: 27%; text-align: center; opacity: 0; pointer-events: none; }
 #notify h2 { margin: 0; font: 400 44px var(--serif); font-variant: small-caps; letter-spacing: 0.3em; color: var(--gold-hi); text-shadow: 0 0 24px rgba(216,189,122,0.55), 0 2px 6px rgba(0,0,0,0.9); }
@@ -153,7 +160,17 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #quest { position: absolute; right: 26px; top: 236px; width: 258px; text-align: right; }
 #quest .qt { font: 500 15px var(--serif); font-variant: small-caps; letter-spacing: 0.13em; color: var(--gold-hi); text-shadow: 0 1px 4px #000; }
 #quest .qt::before { content: '◆ '; color: var(--gold); font-size: 10px; }
-#quest .qo { margin-top: 3px; font: 400 12.5px var(--serif); color: rgba(235,228,210,0.84); text-shadow: 0 1px 3px #000; letter-spacing: 0.04em; }
+/* multi-objective tracker: one line per objective, readable in peripheral vision at a glance —
+   gold marker + counter while active, a soft aether check + strike-through the instant it is done. */
+#quest .qlist { margin-top: 5px; display: flex; flex-direction: column; gap: 3px; }
+#quest .qo-line { display: flex; align-items: baseline; gap: 6px; font: 400 12.5px var(--serif); color: rgba(235,228,210,0.84); text-shadow: 0 1px 3px #000; letter-spacing: 0.03em; }
+#quest .qo-line .qmark { flex: none; width: 11px; text-align: center; font-style: normal; color: var(--gold); }
+#quest .qo-line .qtx { flex: 1; text-align: right; }
+#quest .qo-line .qc { flex: none; font-variant-numeric: tabular-nums; color: var(--gold-hi); font-size: 11.5px; }
+#quest .qo-line.done { opacity: 0.6; }
+#quest .qo-line.done .qmark { color: var(--aether); }
+#quest .qo-line.done .qtx { text-decoration: line-through; color: rgba(220,228,205,0.7); }
+#quest .qothers { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(216,189,122,0.16); font: 400 10.5px var(--serif); letter-spacing: 0.03em; color: rgba(210,200,175,0.58); text-shadow: 0 1px 3px #000; }
 
 /* ---------- minimap (top-right) ---------- */
 #minimap { position: absolute; right: 26px; top: 26px; width: 164px; height: 164px; }
@@ -412,6 +429,10 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #boss .bname { letter-spacing: .24em; text-indent: .24em; }
 /* shield reads as a rail UNDER the health, not a blue block painted over its left third */
 #boss .bsh, #tgt .tsh { top: auto; bottom: 0; height: 3px; border-radius: 0 0 3px 3px; }
+
+/* ---- escort guide frame ---- */
+#guide .bar { height: 8px; border-radius: 4px; background: linear-gradient(180deg, rgba(8,6,16,.92), rgba(14,26,18,.9)); box-shadow: inset 0 2px 5px rgba(0,0,0,.85), 0 0 16px rgba(95,217,126,.16); }
+#guide .gname { letter-spacing: .18em; }
 
 /* ---- start hint: same kit, spring entrance ---- */
 #start.strip { padding-bottom: 15vh; gap: 12px; }   /* clear of the ability row and the ammo block */
