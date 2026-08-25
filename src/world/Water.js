@@ -10,11 +10,20 @@ import { mulberry32 } from '../core/Noise.js';
  *  - Refraction: framebuffer grab of the opaque scene (copyFramebufferToTexture) distorted by the normal, per-channel depth absorption
  *    (turquoise shallows -> deep blue), caustic dapple on the bed. Depth comes from a baked terrain-height texture (no scene depth needed).
  *  - Shoreline foam + soft depth edge, GGX sun glitter (sky.sunDir/sunColor) and moon glitter at night, Fresnel, FogExp2.
+ *  - From below: real air interface — Snell's window (refracted sky/grab, sun glow) + total internal reflection
+ *    outside it, then the surface sinks into per-biome water-volume fog with distance (~40-60 m visibility,
+ *    denser with depth). Air fog never applies under the surface.
+ *  - Infernal lava skin: lava_crust albedo, plates stretched+scrolled along the channel's downhill direction,
+ *    ember glow in the cracks (saturated, hue-preserving luma cap — never a white blob), 1-tap crust parallax.
+ *  - Shadowfen: opaque peat murk (extinction < 1 m), dark olive mirror, oily still surface, duckweed scum
+ *    patches (instanced matte cards) hugging the shores.
  * API (stable):
  *   water.level                       y of the flat water plane (= terrain.waterLevel)
  *   water.isWater(x, z)               terrain below water level here?
  *   water.heightAt(x, z)              animated surface height (level + wave displacement), for splashes/buoyancy
  *   water.submergedDepth(pos) / (x, y, z)  meters below the surface (0 when dry)
+ *   water.underwater()                {submerged, depth, fogColor:THREE.Color, fogDensity} — one source of truth
+ *                                     for Sky/PostFX underwater grading (fogColor/Density match the surface shader)
  *   water.mesh, water.material, water.reflectionEnabled, water.setQuality('low'|'medium'|'high')
  *   water.excludeFromReflection(obj) / includeInReflection(obj)   hide expensive objects from the reflection pass
  *   water.debug = 0|1|2|3|4|5   shader debug view (reflection / refraction grab / depth / foam / normal)
@@ -30,9 +39,12 @@ const QP = {  // refl = reflection res scale, everyN = render reflection every N
 };
 // hidden from the planar reflection pass (vertex/CPU-heavy, visually negligible in a half-res distorted mirror)
 const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees
-// per-biome water look: shallow tint, deep tint, per-channel absorption (higher = light dies sooner)
+// per-biome water look: shallow tint, deep tint, per-channel absorption (higher = light dies sooner).
+// Optional keys: rt = reflection tint, rgh = roughness, det = detail-normal strength, fm = foam multiplier
+// (white lace reads wrong on a peat bog) — all lerped by biome weight.
 const WATER_LOOK = {
-  shadowfen: { sh: [0.052, 0.098, 0.040], dp: [0.010, 0.024, 0.010], ab: [2.60, 1.15, 2.80] },   // peat murk, almost no visibility
+  // peat murk: extinction inside ~0.5 m, green-black body, dark olive mirror, oily still surface (wave-1 critic)
+  shadowfen: { sh: [0.040, 0.062, 0.030], dp: [0.006, 0.011, 0.004], ab: [7.50, 4.80, 8.50], rt: [0.40, 0.46, 0.38], rgh: 0.155, det: 0.16, fm: 0.25 },
   sunken:    { sh: [0.018, 0.205, 0.300], dp: [0.002, 0.016, 0.072], ab: [1.55, 0.36, 0.12] },   // open ocean: blue goes deep
   tundra:    { sh: [0.075, 0.215, 0.310], dp: [0.008, 0.045, 0.115], ab: [1.45, 0.55, 0.26] },   // meltwater under ice
   void:      { sh: [0.030, 0.020, 0.075], dp: [0.004, 0.002, 0.020], ab: [2.20, 2.40, 1.30] },
@@ -81,11 +93,12 @@ void main() {
 const FRAG = /* glsl */`
 #define PI 3.14159265
 uniform sampler2D uHeight; uniform sampler2D uNormal; uniform sampler2D uReflect; uniform sampler2D uGrab;
+uniform sampler2D uLavaTex; uniform float uHasLavaTex;
 uniform float uInvSize; uniform float uHeightOffset; uniform mat4 uReflMatrix; uniform float uHasReflect; uniform float uHasGrab; uniform vec2 uGrabSize;
 uniform vec3 uSunDir; uniform vec3 uSunRad; uniform vec3 uMoonDir; uniform vec3 uMoonRad;
 uniform vec3 uSkyColor; uniform vec3 uHorizonColor; uniform vec3 uAmbient; uniform vec3 uFogColor; uniform vec3 uFogParams; // density, near, far (near<far -> linear fog)
 uniform float uTime; uniform float uLava; uniform float uCamBelow; uniform float uDetail; uniform float uRough; uniform float uDistort; uniform float uReflDistort;
-uniform float uSpecMax; uniform float uSumAmp; uniform float uLevel; uniform vec3 uReflTint;
+uniform float uSpecMax; uniform float uSumAmp; uniform float uLevel; uniform vec3 uReflTint; uniform float uFoamMul;
 uniform vec3 uShallow; uniform vec3 uDeep; uniform vec3 uAbsorb; uniform float uFoamDepth; uniform float uDebug; uniform float uNight;
 varying vec3 vWorld; varying vec3 vGN; varying float vViewZ; varying float vCrest;
 
@@ -139,6 +152,13 @@ void main() {
     d += (n3.rg * 2.0 - 1.0) * 0.35 * hqNear;
   }
 #endif
+  // far swell octave: past ~100 m the fine layers are averaged away by str's distance falloff and the sea
+  // collapsed into a texture-less band — one large-scale fetch keeps micro-contrast out to the far shore
+  float farW = smoothstep(90.0, 260.0, dist) * (1.0 - smoothstep(600.0, 900.0, dist));
+  if (farW > 0.0) {
+    vec4 nf = texture2D(uNormal, p * 0.012 + vec2(0.011, -0.008) * t);
+    d += (nf.rg * 2.0 - 1.0) * 1.3 * farW;
+  }
   vec3 n = normalize(vec3(vGN.x - d.x * str, vGN.y, vGN.z - d.y * str));
   if (uCamBelow > 0.5) n = -n;
   float NdotV = max(dot(n, V), 0.0);
@@ -157,9 +177,11 @@ void main() {
   float sss = pow(max(dot(uSunDir, V), 0.0), 3.0) * (1.0 - NdotV) * (0.5 + 0.5 * clamp(vCrest / uSumAmp, -1.0, 1.0));
   scatter += uShallow * uSunRad * sss * 0.35 * day;
 
-  // ---- refraction: framebuffer grab + per-channel absorption along the refracted path ----
+  // ---- refraction: framebuffer grab + per-channel absorption along the refracted path.
+  //      From below the path is the CAMERA->SURFACE distance (that is the water the ray actually crosses),
+  //      which is what gives the near=bright / far=absorbed gradient the flat old constant path could not ----
   vec3 R = refract(-V, n, 0.75);
-  float path = (uCamBelow > 0.5) ? max(uLevel - cameraPosition.y, 0.0) * 1.5 : d0 / max(0.12, -R.y);
+  float path = (uCamBelow > 0.5) ? dist : d0 / max(0.12, -R.y);
   vec3 T = exp(-uAbsorb * path);
   vec2 suv = gl_FragCoord.xy / uGrabSize + n.xz * uDistort * clamp(d0, 0.0, 1.0) / (1.0 + dist * 0.02);
   vec3 grab = texture2D(uGrab, clamp(suv, 0.001, 0.999)).rgb;
@@ -184,10 +206,22 @@ void main() {
   float rbias = clamp(dist * 0.004, 0.15, 0.7) + (1.0 - NdotV) * 0.35;   // grazing bias, trimmed: the old 1.2 cap blurred the far shore into mush
   vec3 skyR = skyGrad(reflect(-V, n)) * 0.92;
   float noRefl = 1.0 - step(0.5, uHasReflect);   // q=low (and the first frames): the flat sky gradient is the only mirror we have
-  // tint that fallback toward the lake body — untinted, grazing Fresnel painted the whole midday far field a flat milky horizon sheet
-  skyR = mix(skyR, skyR * (uShallow * 1.9 + 0.42), noRefl);
-  float redge = smoothstep(0.0, 0.045, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
-  vec3 refl = (uHasReflect > 0.5 && uCamBelow < 0.5) ? mix(skyR, texture2D(uReflect, clamp(ruv, 0.001, 0.999), rbias).rgb, redge) : ((uCamBelow > 0.5) ? scatter : skyR);
+  // tint the gradient fallback toward the lake body ALWAYS (0.7 weight, not just on noRefl): untinted it painted the
+  // midday far field a flat milky sheet on q=low AND smeared a pale vertical column wherever the RT edge fade used it
+  // (the waterline band artifact) — partial weight keeps the golden-hour horizon warmth alive in the fallback
+  skyR = mix(skyR, skyR * (uShallow * 1.9 + 0.42), 0.7);
+  float redge = smoothstep(0.0, 0.075, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
+  vec3 refl;
+  if (uHasReflect > 0.5 && uCamBelow < 0.5) {
+    // grazing views magnify the half-res RT: hard silhouettes (trunks, dunes) turned into stair-stepped blocks.
+    // Mip bias alone can't fix an LOD-0 magnification, so smear 3 taps vertically — the axis planar mirrors
+    // stretch along — with a width that grows toward grazing and vanishes head-on.
+    float roff = (1.0 - NdotV) * 0.0045;
+    vec3 rtex = (texture2D(uReflect, clamp(ruv, 0.001, 0.999), rbias).rgb
+               + texture2D(uReflect, clamp(ruv + vec2(0.0, roff), 0.001, 0.999), rbias).rgb
+               + texture2D(uReflect, clamp(ruv - vec2(0.0, roff), 0.001, 0.999), rbias).rgb) * (1.0 / 3.0);
+    refl = mix(skyR, rtex, redge);
+  } else refl = (uCamBelow > 0.5) ? scatter : skyR;
   refl *= uReflTint;
   // hue-preserving cap (same trick as the moon trail below): at grazing angles the mirror carries the whole
   // bright sky, which reads as a washed milky-white sheet at distance — worst at q=low where the flat
@@ -216,9 +250,29 @@ void main() {
   vec3 mspec = uMoonRad * (ggx(n, V, uMoonDir, rough) * 0.8 + mtrail * 0.9 * gw);
   spec += mspec / (1.0 + dot(mspec, LUMA) * 0.55);   // hue-preserving cap: per-pixel sparkle survives, the trail can never flatten into a white sheet
 
+  vec3 col;
+  if (uCamBelow > 0.5) {
+    // ---- FROM BELOW: a real air interface, not a tinted sheet. Inside Snell's window the sky/above-world
+    //      refracts through (grab when we have it) with a soft sun glow; outside the critical angle the
+    //      interface is a total internal mirror of the dark water body. Then the whole surface sinks into
+    //      per-biome water-volume fog with distance — the "visibility ~50 m" read, denser the deeper you are.
+    float k = 1.0 - 1.7778 * (1.0 - NdotV * NdotV);                    // eta^2 = 1.333^2 water->air; k <= 0 -> TIR
+    float cosT = sqrt(max(k, 0.0));
+    float Fw = (k <= 0.0) ? 1.0 : 0.02 + 0.98 * pow(1.0 - cosT, 5.0); // Schlick on the transmitted angle -> 1 at the critical angle
+    vec3 Rw = normalize(1.3333 * (-V) + (1.3333 * NdotV - cosT) * n);  // refracted view ray into the air (n points camera-side)
+    vec3 window = mix(skyGrad(Rw) * 0.92, grab, uHasGrab) * T + scatter * (1.0 - T);
+    float sunW = pow(max(dot(Rw, uSunDir), 0.0), 40.0);
+    vec3 sunGlow = uSunRad * sunW * 0.55 * T;                          // absorbed with distance like everything else
+    sunGlow /= (1.0 + dot(sunGlow, LUMA));                             // hue-preserving cap: a glow through the window, never a white ball
+    col = mix(window + sunGlow, scatter * 0.85, Fw);
+    float camD = max(uLevel - cameraPosition.y, 0.0);
+    float kW = 0.050 * (0.55 + 0.30 * dot(uAbsorb, vec3(0.3333))) * (1.0 + camD * 0.035);
+    vec3 farCol = uDeep * light * exp(-uAbsorb * camD * 0.22);         // per-channel: blue survives -> deep blue-black falloff
+    col = mix(col, farCol, 1.0 - exp(-kW * dist));
+  } else {
   // night water reads more mirror-like: lift the reflection weight so moon/aurora/star sky sits on the whole surface
   float Fr = min(F * (1.0 + uNight * 1.2) + uNight * 0.03, 1.0 - noRefl * 0.3);   // no real mirror -> never a full-Fresnel white sheet
-  vec3 col = mix(refr, refl, Fr) + spec;
+  col = mix(refr, refl, Fr) + spec;
   col += uAmbient * uNight * (0.05 + 0.3 * pow(1.0 - NdotV, 3.0));   // ambient sheen: night lake never falls to featureless black
 #ifdef WATER_HQ
   // star-glint twinkle everywhere at night (not just the moon azimuth): sparse product threshold of two scrolling height layers
@@ -226,46 +280,93 @@ void main() {
   // flat magnitude: the old 1/(1+dist) falloff drew a bright blue disc centred on the player. Only fade far, where it aliases.
   col += vec3(0.6, 0.75, 1.0) * (star * star * uNight * 1.15 * hqNear);   // hqNear, not its own falloff: n3 stops being fetched at 130 m, so the twinkle has to be gone by then or it pops off
 #endif
+  }
 
   // ---- shoreline foam: a pixel-crisp lace line hugging every contact isoline (fwidth-normalised width, noise-wobbled, breathing)
   //      + a couple of broken wash fronts creeping up the shelf + sparse crest lace. Never a blanket over the whole shelf ----
-  float fp = n2.a * 0.6 + texture2D(uNormal, p * 0.07 + vec2(-0.02, 0.035) * t).b * 0.7;
+  // rotate + domain-warp the foam noise (it was sampled straight on the tile grid: at 100+ m only the tile's
+  // lowest frequency survived the mips, which drew one bright clump per 14 m repeat = the "dashed line" shore)
+  vec2 pf = mat2(0.31, -0.95, 0.95, 0.31) * p * 1.014 + (n1.rg * 2.0 - 1.0) * 1.4;
+  float fp = n2.a * 0.6 + texture2D(uNormal, pf * 0.07 + vec2(-0.02, 0.035) * t).b * 0.7;
   float iso = d0 + (fp - 0.62) * 0.07 + 0.035 * sin(t * 1.3 + fp * 9.0);      // wobbled + breathing contact isoline
   // band width = max(~6 screen px, 9 cm of depth), capped at 55 cm: a hairline at distance, a believable wash at your
-  // feet, and never the whole shelf even where the bed is nearly flat
-  float bandW = clamp(fwD * 6.0, 0.09, 0.55);
+  // feet, and never the whole shelf even where the bed is nearly flat. Far shores thin toward a soft bright
+  // edge instead of holding a uniform 55 cm skirt (the island wore it like a white collar).
+  float distF = smoothstep(60.0, 200.0, dist);
+  float bandW = clamp(fwD * 6.0, 0.09, 0.55) * (1.0 - 0.65 * distF);
   float lace = texture2D(uNormal, p * 0.31 + vec2(0.05, -0.04) * t).b;
   float holes = 0.25 + 0.75 * smoothstep(0.12, 0.58, lace * 0.6 + fp * 0.4);  // lace texture: bright clumps + gaps, never fully solid
+  holes = mix(holes, 0.8, distF);                                             // far away the clump/gap pattern is sub-pixel: read as a soft continuous lace, not dashes
   float foam = (1.0 - smoothstep(0.0, bandW, iso)) * holes;                   // the contact lace (land side is clipped by the shore alpha)
   float arc = smoothstep(0.10, 0.03, abs(fract(iso * 2.2 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
   foam += arc * smoothstep(0.75, 0.15, iso) * smoothstep(0.5, 0.82, fp) * 0.5 * (1.0 - smoothstep(60.0, 170.0, dist));
   // sparse wave-crest lace in open water. 0.30/0.45 put a white cap on roughly a third of the lake at any
   // instant and read as soap suds from the shore; a lake this calm should only lace the sharpest crests.
   foam += smoothstep(0.62, 0.92, vCrest / uSumAmp) * smoothstep(0.62, 0.88, fp) * 0.16;
-  foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
+  foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
   vec3 foamCol = vec3(0.8) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
   col = mix(col, foamCol, foam);
 
-  // ---- fog (matches three's FogExp2 / Fog on view depth) ----
+  // ---- fog (matches three's FogExp2 / Fog on view depth). AIR fog — it never applies under the surface:
+  //      the below branch already sank the surface into its own water-volume fog ----
   float fog = (uFogParams.z > uFogParams.y) ? smoothstep(uFogParams.y, uFogParams.z, vViewZ) : 1.0 - exp(-uFogParams.x * uFogParams.x * vViewZ * vViewZ);
-  col = mix(col, uFogColor, fog);
+  col = mix(col, uFogColor, fog * (1.0 - uCamBelow));
 
   float alpha = smoothstep(0.0, 0.045, depth);                                  // knife-edge shore: water identity survives at 2 cm depth
   // no grab -> alpha-blend fallback: opacity from absorption, but Fresnel sheen + foam always survive (never a bare bed)
   float cover = clamp(1.0 - dot(T, vec3(0.3333)), 0.0, 1.0);
   alpha *= mix(clamp(cover + F * 2.5 + foam + 0.25, 0.0, 1.0) * 0.95, 1.0, uHasGrab);
   alpha = max(alpha, foam * smoothstep(0.0, 0.02, depth));                      // the contact lace survives the shore alpha ramp
-  if (uCamBelow > 0.5) alpha = 0.85;
-  // Lava. The Infernal channels are the same water surface wearing a molten skin: a scrolling crust of
-  // dark basalt with incandescent cracks between the plates. ARCHITECTURAL LAW — the hot colour is a deep
-  // SATURATED orange whose value stays under 1, so it tone-maps as fire instead of clipping into a white blob.
+  // from below the interface is optically closed (TIR mirror / absorbed window) — it only stays a little
+  // translucent in the first arm's length of submergence so ducking under is not a hard cut
+  if (uCamBelow > 0.5) alpha = mix(0.88, 1.0, smoothstep(0.2, 1.0, max(uLevel - cameraPosition.y, 0.0)));
+  // Lava. The Infernal channels are the same water surface wearing a molten skin: dark basalt crust plates
+  // riding on incandescent flow, glow in the CRACKS between the plates, everything advected downhill along
+  // the channel. ARCHITECTURAL LAW — the hot colour is a deep SATURATED orange, hue-preserving-capped in
+  // luminance, so it tone-maps as fire instead of clipping into a white blob.
   if (uLava > 0.001) {
-    vec2 lu = vWorld.xz * 0.021 + vec2(uTime * 0.0055, uTime * -0.0035);
-    float a1 = texture2D(uNormal, lu).b, a2 = texture2D(uNormal, lu * 3.1 - uTime * 0.006).b;
-    float crust = smoothstep(0.40, 0.80, a1 * 0.65 + a2 * 0.35);
-    vec3 hot = vec3(0.95, 0.21, 0.020) * (0.50 + 0.50 * (1.0 - crust));
-    vec3 skin = vec3(0.055, 0.030, 0.024) * (0.55 + 0.85 * a2);
-    col = mix(col, mix(hot, skin, crust), uLava);
+    // flow direction = downhill of the baked bed (the channels are carved below waterLevel): two cheap gradient taps
+    float e = 4.0 * uInvSize;
+    vec2 huv = vWorld.xz * uInvSize + 0.5 + uHeightOffset;
+    vec2 gb = vec2(texture2D(uHeight, huv + vec2(e, 0.0)).r - texture2D(uHeight, huv - vec2(e, 0.0)).r,
+                   texture2D(uHeight, huv + vec2(0.0, e)).r - texture2D(uHeight, huv - vec2(0.0, e)).r);
+    vec2 fd = normalize(gb + vec2(1e-4, 3e-4));                       // +x of the flow frame runs downhill
+    vec3 lcol;
+    if (uHasLavaTex > 0.5) {
+      // Flow-map ping-pong advection. NO rotated UV frame: a frame that follows the downhill direction has a
+      // singularity wherever the flow converges (every pool centre), which rendered the whole surface as a
+      // hypnotic radial vortex (wave-2 probe). The plates keep a stable world-space grid; two phase-offset
+      // copies drift along the local flow and crossfade so neither phase's reset is ever visible. The pair is
+      // also nudged apart along the flow, so their blend motion-blurs the cracks into directional streaks.
+      vec3 t2 = texture2D(uLavaTex, vWorld.xz * 0.016).rgb;             // macro octave: static, breaks the pool into fields
+      float hgt = dot(t2, vec3(0.5, 0.35, 0.15));
+      vec2 po = V.xz * 0.06 * (0.35 - hgt * 0.7);                       // 1-tap parallax: crust plates ride above the glow
+      float ph1 = fract(uTime * 0.125), ph2 = fract(ph1 + 0.5);
+      float bl = abs(ph1 * 2.0 - 1.0);
+      vec2 base = vWorld.xz * 0.05 + po;
+      vec3 ta = texture2D(uLavaTex, base - fd * 0.14 * (ph1 - 0.5)).rgb;
+      vec3 tb = texture2D(uLavaTex, base - fd * (0.14 * (ph2 - 0.5) + 0.02)).rgb;
+      vec3 t1 = mix(ta, tb, bl);
+      float lfar = smoothstep(35.0, 150.0, dist);
+      t1 = mix(t1, t2, lfar * 0.7);                                     // fine plates alias into sparkle at distance: hand over to the macro field
+      float emA = smoothstep(0.16, 0.60, ta.r - ta.b * 0.55), emB = smoothstep(0.16, 0.60, tb.r - tb.b * 0.55);
+      float ember = max(mix(emA, emB, bl), 0.6 * max(emA, emB));        // max of the flow-offset pair elongates the glow along the flow
+      float pulse = 0.82 + 0.18 * sin(uTime * 0.9 + (t2.r + hgt) * 12.0) * (1.0 - lfar);
+      vec3 crustCol = t1 * vec3(0.34, 0.31, 0.30) * (0.50 + 0.50 * t2.r + 0.35 * t2.g);   // matte basalt plates, warmed faintly by the field below
+      vec3 hot = vec3(1.10, 0.29, 0.024) * (0.50 + 0.55 * t1.r) * pulse * (0.70 + 0.55 * smoothstep(0.20, 0.65, t2.r - t2.b * 0.5));
+      float hl = dot(hot, LUMA);
+      hot *= min(1.0, 0.50 / max(hl, 1e-4));                          // hue-preserving luma cap: saturate the colour, cap the intensity
+      lcol = mix(crustCol, hot, ember);
+    } else {
+      // no asset -> the old procedural skin (accessor returned null; keep the fallback per the assets law)
+      vec2 lu = vWorld.xz * 0.021 + vec2(uTime * 0.0055, uTime * -0.0035);
+      float a1 = texture2D(uNormal, lu).b, a2 = texture2D(uNormal, lu * 3.1 - uTime * 0.006).b;
+      float crust = smoothstep(0.40, 0.80, a1 * 0.65 + a2 * 0.35);
+      vec3 hot = vec3(0.95, 0.21, 0.020) * (0.50 + 0.50 * (1.0 - crust));
+      vec3 skin = vec3(0.055, 0.030, 0.024) * (0.55 + 0.85 * a2);
+      lcol = mix(hot, skin, crust);
+    }
+    col = mix(col, lcol, uLava);
     alpha = mix(alpha, 1.0, uLava);
   }
   if (uDebug > 0.5) {   // 1 reflection, 2 refraction grab, 3 depth, 4 foam, 5 normal
@@ -349,10 +450,17 @@ export class Water {
       uLava: { value: 0 },
       uDetail: { value: 0.36 }, uRough: { value: 0.075 }, uDistort: { value: 0.026 }, uReflDistort: { value: 0.026 }, uSpecMax: { value: 6.0 }, uReflTint: { value: new THREE.Color(0.94, 0.97, 1.0) },
       uShallow: { value: new THREE.Color(0.035, 0.27, 0.32) }, uDeep: { value: new THREE.Color(0.006, 0.038, 0.105) },
-      uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uDebug: { value: 0 }, uNight: { value: 0 },
+      uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uFoamMul: { value: 1 }, uDebug: { value: 0 }, uNight: { value: 0 },
+      uLavaTex: { value: null }, uHasLavaTex: { value: 0 },
     };
+    const lavaTex = game.assets?.tex?.('lava_crust');
+    u.uLavaTex.value = lavaTex ?? this.normalTex;   // something bound either way; uHasLavaTex picks the path
+    u.uHasLavaTex.value = lavaTex ? 1 : 0;
     // Mirrormere's tuned look is the base; the biome water presets below are lerped in by biome weight.
-    this._baseWater = { sh: u.uShallow.value.clone(), dp: u.uDeep.value.clone(), ab: u.uAbsorb.value.clone() };
+    this._baseWater = {
+      sh: u.uShallow.value.clone(), dp: u.uDeep.value.clone(), ab: u.uAbsorb.value.clone(),
+      rt: u.uReflTint.value.clone(), rgh: u.uRough.value, det: u.uDetail.value,
+    };
     this.material = new THREE.ShaderMaterial({
       uniforms: u, vertexShader: VERT, fragmentShader: FRAG, defines: this.qp.hq ? { WATER_HQ: 1 } : {},
       transparent: true, depthWrite: true, side: THREE.DoubleSide, fog: false, lights: false,
@@ -364,6 +472,63 @@ export class Water {
     this.mesh.onBeforeRender = (renderer, scene, camera) => this._onBeforeRender(renderer, scene, camera);
     this.mesh.visible = this.hasWater;
     game.scene.add(this.mesh);
+    this._buildScum();
+  }
+
+  // Shadowfen duckweed/scum: matte card patches hugging the shore shallows (wave-1 critic: peat murk needs a
+  // choked surface, not open glass). One InstancedMesh, ~2 tris per card, one draw call, deterministic.
+  _buildScum() {
+    const g = this.game, tex = g.assets?.tex?.('card_moss');
+    if (!tex || !g.terrain?.biomeAt) return;   // no asset / no biome query -> skip quietly (procedural fen still reads via the murk water)
+    const rnd = mulberry32(g.seed + 40917);
+    const S = g.terrain.size, half = S / 2;
+    // scan for fen shore-shallow cells (16 m grid), then cluster cards on a deterministic subset
+    const cand = [];
+    for (let z = -half + 8; z < half; z += 16) for (let x = -half + 8; x < half; x += 16) {
+      if (g.terrain.biomeAt(x, z) !== 'shadowfen') continue;
+      const d = this.level - this._bed(x, z);
+      if (d > 0.06 && d < 0.85) cand.push(x, z);
+    }
+    if (!cand.length) return;
+    const seeds = [];
+    for (let tries = 0; tries < 400 && seeds.length < 26; tries++) {
+      const i = (rnd() * (cand.length / 2)) | 0, x = cand[i * 2], z = cand[i * 2 + 1];
+      if (seeds.every((s) => (s[0] - x) ** 2 + (s[1] - z) ** 2 > 18 * 18)) seeds.push([x, z]);
+    }
+    const mats = [];
+    const q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    let cx = 0, cz = 0;
+    for (const [sx, sz] of seeds) {
+      const nCards = 4 + (rnd() * 5) | 0;
+      for (let k = 0; k < nCards; k++) {
+        const x = sx + (rnd() - 0.5) * 11, z = sz + (rnd() - 0.5) * 11;
+        const d = this.level - this._bed(x, z);
+        if (d < 0.04 || d > 1.0) continue;   // stay in the damped shallows: waves are ~flat there, cards can float statically
+        e.set(-Math.PI / 2, rnd() * Math.PI * 2, 0, 'YXZ'); q.setFromEuler(e);
+        v.set(x, this.level + 0.045 + rnd() * 0.03, z);   // ponytail: static float height; upgrade = bob with water.heightAt in a vertex shader
+        sc.set(1.2 + rnd() * 1.8, 1.2 + rnd() * 1.8, 1);
+        mats.push(new THREE.Matrix4().compose(v, q, sc));
+        cx += x; cz += z;
+      }
+    }
+    if (!mats.length) return;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 1.0, metalness: 0, side: THREE.DoubleSide, color: new THREE.Color(0.42, 0.47, 0.24) });
+    const mesh = new THREE.InstancedMesh(geo, mat, mats.length);
+    const col = new THREE.Color();
+    for (let i = 0; i < mats.length; i++) {
+      mesh.setMatrixAt(i, mats[i]);
+      mesh.setColorAt(i, col.setHSL(0.22 + rnd() * 0.06, 0.40 + rnd() * 0.15, 0.30 + rnd() * 0.18));   // olive-green variation, always matte
+    }
+    cx /= mats.length; cz /= mats.length;
+    let r2 = 0;
+    for (const m of mats) { const dx = m.elements[12] - cx, dz = m.elements[14] - cz; r2 = Math.max(r2, dx * dx + dz * dz); }
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, this.level, cz), Math.sqrt(r2) + 4);
+    mesh.name = 'water-scum'; mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = true;
+    mesh.raycast = () => {};
+    this._noReflect.add(mesh);   // never re-rendered into the half-res mirror
+    this.scum = mesh;
+    g.scene.add(mesh);
   }
 
   // terrain height (relative to the water level) baked into a half-float texture: depth/foam/caustics/shore edge per pixel, no scene depth needed
@@ -382,15 +547,26 @@ export class Water {
     }
     const data = new Uint16Array(R * R); const toH = THREE.DataUtils.toHalfFloat;
     let minX = 1e9, minZ = 1e9, maxX = -1e9, maxZ = -1e9, n = 0;
+    // wet-texel bins -> per-basin bounding spheres for _waterOnScreen. The old proxy was ONE hardcoded
+    // Mirrormere sphere, so the mirror + refraction grab never ran in any of the nine outer biomes — the
+    // sunken sea rendered its flat fallback forever (wave-1 "flat mint cutout").
+    const BIN = 128, NB = Math.ceil(S / BIN), bins = new Map();
     for (let j = 0; j < R; j++) {
       const z = reuse ? j - R / 2 : -S / 2 + (j + 0.5) * S / R;
       for (let i = 0; i < R; i++) {
         const x = reuse ? i - R / 2 : -S / 2 + (i + 0.5) * S / R;
         const h = (reuse ? hg[j * R + i] : terrain.heightAt(x, z)) - L + (terrain.dryAt ? terrain.dryAt(x, z) * 300 : 0);
         data[j * R + i] = toH(Math.max(-60, Math.min(60, h)));
-        if (h < 0.6) { n++; if (x < minX) minX = x; if (x > maxX) maxX = x; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z; }
+        if (h < 0.6) {
+          n++; if (x < minX) minX = x; if (x > maxX) maxX = x; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+          const key = Math.floor((x + S / 2) / BIN) * (NB + 1) + Math.floor((z + S / 2) / BIN);
+          let b = bins.get(key); if (!b) bins.set(key, b = [1e9, 1e9, -1e9, -1e9]);
+          if (x < b[0]) b[0] = x; if (z < b[1]) b[1] = z; if (x > b[2]) b[2] = x; if (z > b[3]) b[3] = z;
+        }
       }
     }
+    this._wetSpheres = [...bins.values()].map(([x0, z0, x1, z1]) =>
+      new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, L, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2 + 25));
     const tex = new THREE.DataTexture(data, R, R, THREE.RedFormat, THREE.HalfFloatType);
     tex.minFilter = tex.magFilter = THREE.LinearFilter; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.generateMipmaps = false; tex.needsUpdate = true;
     this.heightTex = tex;
@@ -472,6 +648,7 @@ export class Water {
   _gradeWater(camera) {
     const u = this.uniforms, base = this._baseWater; if (!base) return;
     u.uShallow.value.copy(base.sh); u.uDeep.value.copy(base.dp); u.uAbsorb.value.copy(base.ab);
+    u.uReflTint.value.copy(base.rt); u.uRough.value = base.rgh; u.uDetail.value = base.det; u.uFoamMul.value = 1;
     const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._wb ??= {});
     u.uLava.value = b && b.id === 'infernal' ? b.w : 0;
     const P = b && b.w > 0.002 ? WATER_LOOK[b.id] : null; if (!P) return;
@@ -479,6 +656,28 @@ export class Water {
     u.uShallow.value.setRGB(base.sh.r + (P.sh[0] - base.sh.r) * w, base.sh.g + (P.sh[1] - base.sh.g) * w, base.sh.b + (P.sh[2] - base.sh.b) * w);
     u.uDeep.value.setRGB(base.dp.r + (P.dp[0] - base.dp.r) * w, base.dp.g + (P.dp[1] - base.dp.g) * w, base.dp.b + (P.dp[2] - base.dp.b) * w);
     u.uAbsorb.value.set(base.ab.x + (P.ab[0] - base.ab.x) * w, base.ab.y + (P.ab[1] - base.ab.y) * w, base.ab.z + (P.ab[2] - base.ab.z) * w);
+    if (P.rt) u.uReflTint.value.setRGB(base.rt.r + (P.rt[0] - base.rt.r) * w, base.rt.g + (P.rt[1] - base.rt.g) * w, base.rt.b + (P.rt[2] - base.rt.b) * w);
+    if (P.rgh !== undefined) u.uRough.value = base.rgh + (P.rgh - base.rgh) * w;
+    if (P.det !== undefined) u.uDetail.value = base.det + (P.det - base.det) * w;
+    if (P.fm !== undefined) u.uFoamMul.value = 1 + (P.fm - 1) * w;
+  }
+
+  /** One source of truth for the underwater medium — Sky (scene fog) and PostFX (full-screen grade) can read
+   *  this so geometry, sky and the water surface agree on what being submerged looks like. Matches the
+   *  surface shader's from-below volume fog: per-biome colour, ~40-60 m visibility, denser with depth. */
+  underwater(camera = this.game.camera) {
+    const out = this._uw ??= { submerged: false, depth: 0, fogColor: new THREE.Color(), fogDensity: 0 };
+    const p = camera.position, d = Math.max(0, this.level - p.y);
+    out.submerged = d > 0 && this.isWater(p.x, p.z);
+    out.depth = out.submerged ? d : 0;
+    const u = this.uniforms;
+    if (!u) { out.fogDensity = 0; return out; }
+    const ab = u.uAbsorb.value, abm = (ab.x + ab.y + ab.z) / 3;
+    // FogExp2 equivalent of the shader's exp(-kW * dist) linear-ish falloff: density = sqrt(kW)/~distance scale
+    const kW = 0.050 * (0.55 + 0.30 * abm) * (1 + out.depth * 0.035);
+    out.fogDensity = out.submerged ? Math.sqrt(kW) * 0.045 : 0;
+    out.fogColor.copy(u.uDeep.value).multiplyScalar(1.6 * Math.exp(-abm * out.depth * 0.22));
+    return out;
   }
 
   _updateUniforms(camera) {
@@ -498,16 +697,18 @@ export class Water {
 
   // Is any actual water plausibly ON SCREEN? The surface mesh follows the camera everywhere, so
   // onBeforeRender fires (and paid for a mirror + a framebuffer grab) even standing in the meadow
-  // with the lake behind you. Proxy: Mirrormere's bounding sphere vs the camera frustum, or the
-  // camera being over/near water. Costs a frustum build every few frames; saves both passes when
-  // false. (perf audit 2026-08-20 lead #1)
+  // with the lake behind you. Proxy: every wet basin's bounding sphere (baked in _bakeHeight — ALL the
+  // basins, not just Mirrormere) vs the camera frustum, or the camera being over/near water. A few dozen
+  // sphere tests per frame; saves both passes when false. (perf audit 2026-08-20 lead #1)
   _waterOnScreen(camera) {
     const p = camera.position;
     if (this.isWater(p.x, p.z) || this.submergedDepth(p) > 0) return true;
-    this._fr ??= new THREE.Frustum(); this._frM ??= new THREE.Matrix4(); this._lakeS ??= new THREE.Sphere(new THREE.Vector3(-170, this.level, -70), 115);
+    const S = this._wetSpheres; if (!S || !S.length) return false;
+    this._fr ??= new THREE.Frustum(); this._frM ??= new THREE.Matrix4();
     this._frM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this._fr.setFromProjectionMatrix(this._frM);
-    return this._fr.intersectsSphere(this._lakeS);
+    for (let i = 0; i < S.length; i++) if (this._fr.intersectsSphere(S[i])) return true;
+    return false;
   }
 
   _onBeforeRender(renderer, scene, camera) {

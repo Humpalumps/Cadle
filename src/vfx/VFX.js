@@ -39,7 +39,7 @@ const AETHER = 0x9f7bff, GOLD = 0xffd27a, DUST = 0x857458, DIRT = 0x4a3a28;
 const QMUL = { low: 0.5, medium: 0.75, high: 1 };
 const EMIT_RATE = { trail: 90, 'spark-trail': 70, slide: 45, aura: 30, charge: 40, 'heal-motes': 22, dust: 6, sparks: 8, 'exp-smoke': 11 };
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
 const NOPTS = {};
 
 export class VFX {
@@ -251,7 +251,7 @@ export class VFX {
       const n = e.normal ?? this._up, s = e.surface;
       const preset = s === 'water' ? 'impact-water' : (s === 'prop' || s === 'rock') ? 'impact-rock' : 'impact-terrain';
       this._emit(preset, e.point, { normal: n, element: e.element });
-      if (s !== 'water') this.decal(e.point, n, { type: 'bullet', size: 0.12 + Math.random() * 0.08 });
+      if (s !== 'water') this.decal(e.point, n, { type: 'bullet', size: 0.16 + Math.random() * 0.1 }); // wave-1 feel audit: 0.12-0.2 m decals read as thin — one notch bigger
     });
     ev.on('combat:explosion', (e) => {
       if (!e?.point) return;
@@ -314,16 +314,21 @@ const PRESETS = {
     // A hand cannon fires every ~0.33 s. A 0.1 s flash means 2 of 3 frames of real firing footage show NOTHING — which is
     // exactly what the noon critique found. So the flash is layered by lifetime: 0.16 s crisp petal -> 0.34 s saturated
     // ember afterglow -> ~0.9 s lit smoke wisp. Something readable is on screen for the whole firing cycle.
-    const b = v.brush, d = o.dir ?? UP, A = v.add, day = v.day, ds = s * (1 + 0.6 * day); // daylight: bigger + hotter or the flash vanishes against a noon sky
-    const sat = _c2.copy(c).offsetHSL(0, 0.35, -0.05);
+    // Wave-1 critique: the old 34x-noon petal cross tone-mapped to a pure white ball on both guns. Same recipe as
+    // impact-enemy now: the hue lives in big saturated low-HDR layers (fringe petal, halo, afterglow), the hot core is
+    // SMALL and capped ~12x, and every white start fades into the deep 'ember' hue (HOT_TINT pulls the start 55% toward
+    // it) — warm ember for kinetic, violet for aether. Noon readability comes from size + the dark backing puff, not HDR.
+    const b = v.brush, d = o.dir ?? UP, A = v.add, day = v.day, ds = s * (1 + 0.6 * day); // daylight: bigger or the flash vanishes against a noon sky
+    const sat = _c2.copy(c).offsetHSL(0, 0.45, -0.07);        // bright saturated element hue
+    const ember = _c3.copy(c).offsetHSL(0, 0.5, -0.2);        // deep ember of the same hue: the fringe/fade-out colour
     // dark backing puff (alpha, 1-2 frames): gives the additive petal contrast at high sun; ~invisible at night
     if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.17).size(0.85 * ds, 1.1 * ds, 1.6).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.46 * day).rot().fade(0, 0.4).burst(2);
-    b.reset(A, p).tex(TEX.FLARE).size(0.98 * ds, 1.18 * ds, 1.3).life(0.16).color(sat, sat).hdr(2.2 + 1.4 * day, 0.9).alpha(0.9).rot().fade(0, 0.25).burst(1);  // saturated element petal BEHIND the core: low HDR keeps the hue through ACES instead of clipping white
-    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.70 * ds, 1.4).life(0.15).color(0xfff6e0, c).hdr(20 + 14 * day, 7).rot().fade(0, 0.3).burst(1);      // crisp petal cross, HDR-hot so it reads at noon
-    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.13).color(0xffffff, c).hdr(11 + 6 * day, 4).rot().fade(0, 0.3).burst(1);        // hot star core
-    b.reset(A, p).tex(TEX.GLOW).size(0.30 * ds, 0.40 * ds, 1.4).life(0.12).color(0xffffff, sat).hdr(4 + 2 * day, 2).alpha(0.7).fade(0, 0.3).burst(1);  // small halo (support layer only)
-    b.reset(A, p).tex(TEX.GLOW).size(0.34 * ds, 0.42 * ds, 0.35).life(0.34).color(sat, sat).hdr(1.6 + 1.2 * day).alpha(0.8).fade(0.02, 0.12).burst(1);  // hot-barrel afterglow, shrinking: the between-shots evidence
-    b.reset(A, p).axis(d).spread(0.24).speed(18 * s, 36 * s).life(0.14, 0.34).size(0.02, 0.042, 0.4).tex(TEX.SPARK).color(0xfff2c0, c).hdr(7 + 5 * day, 2.5).stretch(0.028).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
+    b.reset(A, p).tex(TEX.FLARE).size(1.02 * ds, 1.22 * ds, 1.3).life(0.16).color(ember, ember).hdr(2.4 + 1.4 * day, 0.9).alpha(0.9).rot().fade(0, 0.25).burst(1);  // ember fringe petal: low HDR keeps the hue through ACES — this is the colour read
+    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.70 * ds, 1.4).life(0.15).color(0xffffff, ember).hdr(6 + 2.5 * day, 2.5).rot().fade(0, 0.3).burst(1); // crisp petal cross: capped at impact-enemy's praised core level so it reads as fire, not a white ball
+    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.13).color(0xffffff, ember).hdr(5 + 2 * day, 2).rot().fade(0, 0.3).burst(1);      // warm ember core
+    b.reset(A, p).tex(TEX.GLOW).size(0.30 * ds, 0.40 * ds, 1.4).life(0.12).color(sat, ember).hdr(3 + 1.5 * day, 1.2).alpha(0.7).fade(0, 0.3).burst(1); // small halo (support layer only)
+    b.reset(A, p).tex(TEX.GLOW).size(0.34 * ds, 0.42 * ds, 0.35).life(0.34).color(ember, ember).hdr(1.6 + 1.2 * day).alpha(0.8).fade(0.02, 0.12).burst(1);  // hot-barrel afterglow, shrinking: the between-shots evidence
+    b.reset(A, p).axis(d).spread(0.24).speed(18 * s, 36 * s).life(0.14, 0.34).size(0.02, 0.042, 0.4).tex(TEX.SPARK).color(0xffffff, ember).hdr(5 + 3 * day, 2).stretch(0.028).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
     b.reset(v.alpha, p).axis(d).spread(0.55).speed(1.4, 3.0).life(0.55, 0.95).size(0.22 * ds, 0.34 * ds, 3).tex(TEX.SMOKE).color(0x8c8c90).lit(L(v)).alpha(0.15 + 0.11 * day).rot().spin(2).drag(3).gravity(-0.8).fade(0.12, 0.3).burst(2 * k); // wisp lingers between shots
   },
   'spark-trail'(v, p, o, k, s, c) {
@@ -380,7 +385,10 @@ const PRESETS = {
     b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr(1.5 + 0.5 * day, 0.5).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
     b.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.55 * s, 1.6).life(0.2).color(sat, sat).hdr(2.6 + 1.0 * day, 1.1).alpha(0.9).fade(0, 0.3).burst(1);
     b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(0xffffff, c).hdr(6 + 3 * day, 3).rot().fade(0, 0.3).burst(1);          // small white-hot core only
-    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.034, 0.065, 0.3).tex(TEX.SPARK).color(sat, sat).hdr(4.5 + 1.5 * day, 2).stretch(0.05).gravity(7).drag(2.5).fade(0, 0.5).burst(12 * k);
+    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.04, 0.075, 0.3).tex(TEX.SPARK).color(sat, sat).hdr(4.5 + 1.5 * day, 2).stretch(0.06).gravity(7).drag(2.5).fade(0, 0.5).burst(16 * k);
+    // ember flecks: brief saturated chunks that arc out and die fast — the physical "something broke off" presence the
+    // wave-1 feel audit asked for. Saturated colour at moderate HDR (blob law: hue survives ACES, value never clips).
+    b.reset(v.add, p).axis(n).spread(1.4).speed(2 * s, 6 * s).life(0.25, 0.5).size(0.05, 0.09, 0.5).tex(TEX.STAR).color(sat, sat).hdr(3 + 1 * day, 1.5).rot().spin(6).gravity(10).drag(1.5).fade(0, 0.5).burst(6 * k);
     b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.5, 0.9).size(0.1 * s, 0.18 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(2.6 + 0.9 * day).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
     b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 7).life(0.45).color(sat, sat).hdr(2.4 + 1.0 * day, 0.9).alpha(1).fade(0, 0.18).burst(1);   // saturated ring, big enough to read at 8 m
     if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.22).color(0xffffff, sat).hdr(5 + 2 * day, 2.5).rot().spin(2).fade(0, 0.3).burst(2);

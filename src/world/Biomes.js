@@ -72,7 +72,11 @@ export function weightAt(x, z, k) {
 //                     genuinely darker than the sky above it — smoke, peat reek, void murk. Default 1.
 //   skyVeil           0..1: how much of that air reaches the SKY DOME itself (Sky's DOME_FRAG uVeil).
 //                     Use it where the region is under a ceiling of its own weather — ash, reek, murk —
-//                     and a clean blue noon sky would give the game away. Default 0.
+//                     and a clean blue noon sky would give the game away. Default 0. The veil also
+//                     suppresses stars/aurora (smoke erases point sources first) and dims the sun disc.
+//   glow / glowI      horizon glow band on the sky dome (Sky._gradeFog -> DOME_FRAG uGlow): ember light
+//                     off the Wastes' lava fields, the Isles' gold memory at night. Saturated hue, tiny
+//                     intensity (glowI ≤ 0.3, night-weighted) — a broad band, never a point source.
 //   sun / amb         key light + ambient grade    (render/Lighting.js _gradeBiome) — what makes the
 //                     Wastes read as lit by fire and the Void as lit by almost nothing
 //   grass.d           ground-cover DENSITY          (world/Terrain.js grassAt -> world/Grass.js)
@@ -96,7 +100,7 @@ export const BIOMES = {
   },
   forest: {
     name: 'Whisperwood Deep', short: 'Enchanted Forest', zone: 'forest', level: [5, 11],
-    fog: 0x52806f, fogMul: 1.95, fogLum: 0.66, skyVeil: 0.34, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, mist between the trunks
+    fog: 0x466e64, fogMul: 2.6, fogLum: 0.52, skyVeil: 0.42, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, DEEP teal mist between the trunks — at fogLum 0.66 the haze luminance-matched a midday sky and every far ridge clipped to flat pale mint
     ground: 'forest', grass: { d: 0.40, tint: 0x6f9c7a }, music: 'wood',   // 0.85 was a knee-high LAWN under the canopy; a forest floor is litter, moss and fern (Props KIT.forest), with grass only in the gaps
     enemies: [['sprite', 4, 8, 90], ['treant', 2, 20, 110], ['hound', 3, 12, 100]],
     landmark: 'The Elderheart',
@@ -112,7 +116,10 @@ export const BIOMES = {
   },
   celestial: {
     name: 'Celestial Isles', short: 'Celestial', zone: 'celestial', level: [30, 38],
-    fog: 0xe6dcff, fogMul: 0.60, sun: 0xfff2d0, amb: 1.45,
+    // fog was 0xe6dcff: bubble-gum lavender haze fought the gold identity; pale ivory-gold supports it and
+    // keeps marble value separation at golden hour. amb was 1.45 — at night the floor read near daylight-
+    // bright; 1.22 is still the brightest air in the world by day. glow: soft gold horizon memory after dark.
+    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xfff2d0, amb: 1.22, glow: 0xe0aa50, glowI: 0.12,
     ground: 'stone', grass: { d: 0.05, tint: 0xd8e8c0 }, music: 'choir',
     enemies: [['seraph', 3, 16, 100], ['skyserpent', 2, 30, 120], ['wisp', 4, 14, 110]],
     landmark: 'The Empyrean Gate', float: true,
@@ -121,7 +128,7 @@ export const BIOMES = {
   },
   dragon: {
     name: 'Dragon Peaks', short: 'Dragon Peaks', zone: 'dragon', level: [24, 32],
-    fog: 0x9fa8b6, fogMul: 1.15, sun: 0xf0eeee, amb: 0.95,   // alpine, not desert: a warm key on warm strata is what made the Peaks read as a sandstone mesa
+    fog: 0x9fa8b6, fogMul: 1.15, fogLum: 0.82, sun: 0xf0eeee, amb: 0.95,   // alpine, not desert: a warm key on warm strata is what made the Peaks read as a sandstone mesa. fogLum 0.82: far ranges keep a blue-grey value instead of clipping to fog-white paper
     ground: 'rock', grass: { d: 0.07, tint: 0xa8b090 }, music: 'drums',
     enemies: [['wyvern', 3, 30, 130], ['forgeknight', 3, 14, 100], ['golem', 2, 20, 110]],
     landmark: 'Kharaz-Dun Gate',
@@ -129,7 +136,10 @@ export const BIOMES = {
   },
   infernal: {
     name: 'Infernal Wastes', short: 'Infernal', zone: 'infernal', level: [18, 25],
-    fog: 0x4a1f11, fogMul: 1.85, fogLum: 0.26, skyVeil: 0.72, sun: 0xffd2b0, amb: 0.62,   // Burning Steppes: black rock, red cracks, smoke you look through
+    fog: 0x5c4636, fogMul: 1.85, fogLum: 0.30, skyVeil: 0.88, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
+    // fog was 0x4a1f11 (saturated red-brown): through the 0.72 veil it MIXED with the blue zenith into candy
+    // pink — the smoke has to be warm grey-brown and near-total (0.88) to read as a ceiling, not a tint.
+    // glow: ember-orange horizon band after dark (capped, saturated — the lava fields lighting the smoke).
     // The key was 0xff8a3c — linear (1.00, 0.25, 0.05), i.e. it multiplies almost all the green and blue out
     // of whatever it touches, so charcoal ground rendered as saturated (80, 11, 17) RED and the region read
     // as Mars, not Burning Steppes. Amber keeps the firelight and lets the rock stay rock; the RED belongs
@@ -152,7 +162,10 @@ export const BIOMES = {
   },
   shadowfen: {
     name: 'Shadowfen', short: 'Shadowfen', zone: 'shadowfen', level: [15, 22],
-    fog: 0x4e5c4a, fogMul: 2.4, fogLum: 0.42, skyVeil: 0.62, sun: 0x9ab488, amb: 0.50,
+    // At 13:00 the fen still read as a cheerful alpine lake: fogMul 2.4 left 2 km sightlines, fogLum 0.42 kept
+    // the haze bright, skyVeil 0.62 left a third of the blue dome + white cumulus. 3.2/0.32/0.85 chokes noon
+    // visibility to ~300 m under a bruised olive ceiling. amb 0.50 -> 0.42: the world-dimmest daylight.
+    fog: 0x4c5844, fogMul: 3.2, fogLum: 0.32, skyVeil: 0.85, sun: 0x9cb47e, amb: 0.42,
     ground: 'muck', grass: { d: 0.12, tint: 0x5e6f3e }, music: 'fen',   // the fen's ground cover is REEDS (Props KIT.shadowfen), not lawn: at 0.22 a quarter of the blades still survive at full height and the region read as a green hillside
     enemies: [['wraith', 4, 14, 105], ['bogwitch', 2, 20, 110], ['hound', 3, 16, 110]],
     landmark: 'The Hagstone',
@@ -161,7 +174,7 @@ export const BIOMES = {
   },
   sunken: {
     name: 'The Sunken Kingdom', short: 'Sunken Kingdom', zone: 'sunken', level: [20, 28],
-    fog: 0x2e6472, fogMul: 1.7, skyVeil: 0.22, sun: 0x9fdcf0, amb: 0.9,
+    fog: 0x3a6a74, fogMul: 1.7, skyVeil: 0.22, sun: 0x9fdcf0, amb: 0.9,   // fog desaturated a notch from 0x2e6472 so the time-of-day grade (golden hour especially) reads through the constant cyan
     ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, sea: true, music: 'deep',
     enemies: [['drowned', 4, 14, 100], ['leviathan', 2, 40, 130], ['wisp', 3, 20, 110]],
     landmark: 'The Drowned Court',

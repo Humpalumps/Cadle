@@ -460,8 +460,8 @@ void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix)
 
 const DOME_FRAG = /* glsl */`
 uniform sampler2D uLut, uNoise, uClouds;
-uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow;
-uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil;
+uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow, uGlow;
+uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil, uFogD;
 uniform vec2 uTan, uCloudTexel;
 uniform mat3 uStarMat, uCamRot;
 varying vec3 vDir;
@@ -517,10 +517,15 @@ void main() {
   float limb = 1.0 - 0.35 * pow(clamp(ang / discR, 0.0, 1.0), 2.0);
   col += sunDisc * (0.7 * exp(-ang * ang / (2.0 * 0.035 * 0.035)) + 0.12 * exp(-ang / 0.25)) * sunUp;
 
+  // Smoke/reek ceiling (Biomes.skyVeil): point sources and curtains die FIRST under real smoke — long
+  // before the sky colour goes. The gentler 1-v² left a legible starfield and a crisp moon over the
+  // Wastes' 0.88 veil (wave-1 critic: "green aurora + starfield at night ... gives the region away").
+  float pv = clamp(1.0 - uVeil * 1.15, 0.0, 1.0); pv *= pv;
+
   // ---- moon (phase-lit sphere: dark maria + crater mottling; radiance kept under bloom) + glow ----
   if (uMoonDir.y > -0.12) {
     float mum = dot(d, uMoonDir); float angm = acos(clamp(mum, -1.0, 1.0)); float R = 0.026;
-    float mUp = smoothstep(-0.08, 0.05, uMoonDir.y);
+    float mUp = smoothstep(-0.08, 0.05, uMoonDir.y) * pv;
     col += uMoonGlow * (0.50 * exp(-(angm - R) * 30.0) + 0.22 * exp(-angm / 0.30)) * mUp;
     if (angm < R) {
       vec3 t1 = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0))), t2 = cross(uMoonDir, t1);
@@ -535,9 +540,9 @@ void main() {
     }
   }
 
-  // ---- night: stars, milky way, aether aurora ----
+  // ---- night: stars, milky way, aether aurora (all scaled by the veil's pv, same as the moon) ----
   float hzFade = smoothstep(-0.02, 0.18, d.y);
-  if (uStarVis > 0.001) {
+  if (uStarVis * pv > 0.001) {
     vec3 sd = uStarMat * d;
     float clus = texture2D(uNoise, vec2(atan(sd.x, sd.z) * 0.45, sd.y * 0.8) + 0.31).r;
     vec3 st = stars(sd, uPixAng, clus);
@@ -546,9 +551,9 @@ void main() {
     float mwn = texture2D(uNoise, vec2(atan(sd.x, sd.z) * 0.5, sd.y * 0.9) * 1.3).a;
     float mwn2 = texture2D(uNoise, vec2(atan(sd.x, sd.z) * 1.7, sd.y * 2.3) + 0.2).r;
     vec3 mw = mix(vec3(0.20, 0.28, 0.66), vec3(0.42, 0.32, 0.86), mwn2) * band * (0.35 + 0.9 * mwn * mwn) * 0.20;
-    col += (st + mw) * uStarVis * hzFade;
+    col += (st + mw) * uStarVis * hzFade * pv;
   }
-  if (uAurora > 0.001 && d.y > 0.02) {
+  if (uAurora * pv > 0.001 && d.y > 0.02) {
     float az = atan(d.x, -d.z);                                  // 0 = north
     float el = asin(clamp(d.y, 0.0, 1.0));
     vec3 aur = vec3(0.0);
@@ -564,7 +569,7 @@ void main() {
       aur += ac * prof * amp;
     }
     float northW = smoothstep(-0.6, 0.3, -d.z) * 0.94 + 0.06;
-    col += aur * uAurora * 0.30 * northW * smoothstep(0.12, 0.30, d.y);   // keep curtains well clear of the horizon
+    col += aur * uAurora * 0.30 * northW * smoothstep(0.12, 0.30, d.y) * pv;   // keep curtains well clear of the horizon
   }
 
   // ---- clouds: half-res volumetric pass, 4-tap tent upsample (removes the march jitter) ----
@@ -578,6 +583,11 @@ void main() {
                  + texture2D(uClouds, cuv + vec2(o.x, -o.y)) + texture2D(uClouds, cuv + vec2(-o.x, -o.y)));
     }
   }
+  // Under a smoke/reek ceiling (uVeil) the cumulus read must FLIP: not friendly white puffs punching
+  // through, but darker billows hanging under the lit haze — so dim the cloud light with the veil.
+  // The post-composite veil mix below cannot do this: it pulls clouds TOWARD the haze colour, which
+  // leaves anything brighter than the haze reading as white cumulus (the infernal noon giveaway).
+  cl.rgb *= 1.0 - uVeil * 0.72;
   col = col * (1.0 - cl.a) + cl.rgb;
 
   // ---- horizon haze (tinted by the actual sky at that azimuth: amber toward a low sun, cool away) & ground ----
@@ -585,14 +595,28 @@ void main() {
   vec3 hcol = mix(fogCol, lutSky(normalize(vec3(d.x, abs(d.y) + 0.05, d.z))), 0.60) * 0.94;
   col = mix(col, hcol, hz * smoothstep(-0.1, 0.02, d.y));
   col = mix(col, fogCol * (1.0 - 0.28 * smoothstep(0.0, -0.32, d.y)), smoothstep(0.012, -0.03, d.y));
+  // Aerial-perspective MATCH (the mint-cutout fix): FogExp2 paints a distant ridge with fogCol at
+  // 1-exp(-(density*depth)^2), so the dome must converge to the SAME colour at the same rate just above the
+  // horizon — otherwise a fully-fogged ridge reads as a flat paper cutout in the region's haze hue against a
+  // clean blue sky (forest/sunken/dragon crit shots). Path length through the haze layer shrinks with
+  // elevation, so nearer/higher geometry keeps its 2-3 value steps instead of everything clipping to one.
+  // In the Vale fogCol ≈ the horizon ring colour, so this is near-invisible there.
+  float pl = 1500.0 / (1.0 + max(d.y, 0.0) * 26.0);
+  float fmz = 1.0 - exp(-pow(uFogD * pl, 2.0));
+  col = mix(col, fogCol, fmz * smoothstep(-0.10, 0.015, d.y));
   // Region veil (Biomes.skyVeil): smoke / peat reek / void murk that reaches the SKY, not just the aerial
   // perspective. Without it the Wastes and the fen sit under a clean blue noon dome, which is the single
   // loudest "this is a tinted meadow" cue left in those regions. Thickest at the horizon, thinner overhead.
   col = mix(col, fogCol, uVeil * mix(1.0, 0.78, smoothstep(0.0, 0.80, d.y)));
+  // Region horizon glow (Biomes.glow/glowI): ember light off the Wastes' lava fields, the Isles' gold memory
+  // at night. A broad saturated band, intensity premultiplied and capped ≤0.3 — never a point source (blob law).
+  col += uGlow * exp(-max(d.y, 0.0) * 5.5);
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
   if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
-  col += sunDisc * disc * limb * 60.0 * sunUp * (1.0 - cl.a);
+  // the disc dims through a smoke ceiling (uVeil) — an undimmed 60x disc through heavy smoke is a washed-white
+  // ball, exactly the bug the blob decree bans. It does NOT dim with fmz: a low sun must still burn through haze.
+  col += sunDisc * disc * limb * 60.0 * sunUp * (1.0 - cl.a) * (1.0 - uVeil);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -692,7 +716,7 @@ export class Sky {
       uLut: { value: this.lutRT.texture }, uNoise: { value: this.noiseRT.texture }, uClouds: { value: this.cloudRT.texture },
       uShape: { value: this.shapeRT.texture }, uDetail: { value: this.detailRT.texture },
       uSunDir: { value: this.sunDir }, uMoonDir: { value: this.moonDir }, uSunDisc: { value: this.sunDiscColor }, uMoonCol: { value: new THREE.Color() }, uMoonGlow: { value: new THREE.Color() },
-      uFogColor: { value: new THREE.Color().copy(this.fogColor) }, uVeil: { value: 0 }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
+      uFogColor: { value: new THREE.Color().copy(this.fogColor) }, uVeil: { value: 0 }, uFogD: { value: this.fogDensity }, uGlow: { value: new THREE.Color(0, 0, 0) }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
       uCloudAmbTop: { value: new THREE.Color() }, uCloudAmbBot: { value: new THREE.Color() }, uBeltCol: { value: new THREE.Color() },
       uTime: { value: 0 }, uWindT: { value: 0 }, uCamY: { value: 0 }, uCamPos: { value: new THREE.Vector3() },
       uCloudCover: { value: 0.5 }, uCirrusCover: { value: 0.5 }, uHaze: { value: 0.3 }, uAurora: { value: 0 },
@@ -864,6 +888,10 @@ export class Sky {
     // the same air the distance is (in the Vale _fogC === fogColor, so nothing changes there)
     u.uFogColor.value.copy(this._fogC);
     u.uVeil.value = this._veilE ?? 0;
+    u.uFogD.value = this._fogD;   // graded density: the dome's aerial-perspective match mirrors FogExp2 exactly
+    // the physical HDR sun mesh (40x, feeds god rays + bloom) dims through the smoke ceiling like the dome's
+    // disc does — an undimmed mesh through a 0.88 veil is a washed-white ball over the Wastes (blob law)
+    this.sunMat.color.copy(this.sunDiscColor).multiplyScalar(40 * (1 - (this._veilE ?? 0)));
   }
 
   /**
@@ -887,6 +915,18 @@ export class Sky {
     // its smoke ceiling stuck over the Vale for the rest of the session
     const veilT = B ? (B.skyVeil ?? 0) * b.w : 0;
     this._veilE = (this._veilE ?? 0) + (veilT - (this._veilE ?? 0)) * 0.03;
+    // Horizon glow (Biomes.glow/glowI -> DOME_FRAG uGlow). Eased both ways here, same as the veil, so it
+    // cannot stick over a neighbour. Night-weighted: an ember horizon is a night read, a faint one by day.
+    const gU = this.uniforms.uGlow.value;
+    let gr = 0, gg = 0, gb = 0;
+    if (B && B.glow != null) {
+      const gcache = this._glowCache ??= new Map();
+      let gt = gcache.get(b.id);
+      if (!gt) { gt = new THREE.Color(B.glow).convertSRGBToLinear(); gcache.set(b.id, gt); }
+      const s = Math.min(B.glowI ?? 0, 0.3) * b.w * (0.25 + 0.75 * this.night);
+      gr = gt.r * s; gg = gt.g * s; gb = gt.b * s;
+    }
+    gU.r += (gr - gU.r) * 0.03; gU.g += (gg - gU.g) * 0.03; gU.b += (gb - gU.b) * 0.03;
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
     let t = cache.get(b.id);

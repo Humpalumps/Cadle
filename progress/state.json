@@ -1,39 +1,274 @@
 {
  "updated": "2026-08-25 (wave 1 verdicts in)",
- "status": "<b>Wave 1 verdict: every region LOSES the blind test vs Destiny 2.</b> 12 fresh-context critics inspected the live build. The single biggest cross-cutting bug: the shared prop-kit stone material renders as terracotta <i>brick</i> in six regions (Elderheart, celestial ruins, dwarven gate, Lost monoliths, infernal cliffs, void isle undersides). Second: floating isles read as UFO discs. Third: midday atmosphere is cheerful in the cursed regions. Wave 2 launching: ~10 builders on disjoint files + a fresh AI-generated texture set (bark, marble, basalt, voidstone, ice, flagstone...), then fresh critics re-judge each region.",
+ "status": "<b>Wave 1 verdict: every region LOSES the blind test vs Destiny 2.</b> 12 fresh-context critics inspected the live build. The single biggest cross-cutting bug: the shared prop-kit stone material renders as terracotta <i>brick</i> in six regions (Elderheart, celestial ruins, dwarven gate, Lost monoliths, infernal cliffs, void isle undersides). Second: floating isles read as UFO discs. Third: midday atmosphere is cheerful in the cursed regions. Wave 2 running (rescoped: Sunken pivots to above-water waterfalls per user decree): ~10 builders on disjoint files + a fresh AI-generated texture set (bark, marble, basalt, voidstone, ice, flagstone...), then fresh critics re-judge each region.",
  "kpis": [
-  { "label": "wave", "value": "2 — builders" },
-  { "label": "regions at bar", "value": "0 / 10" },
-  { "label": "worst", "value": "forest & sunken 3/10" },
-  { "label": "best", "value": "vale 6.5 (TOSSUP)" },
-  { "label": "Magnific credits", "value": "~7000" }
+  {
+   "label": "wave",
+   "value": "2 — builders"
+  },
+  {
+   "label": "regions at bar",
+   "value": "0 / 10"
+  },
+  {
+   "label": "worst",
+   "value": "forest & sunken 3/10"
+  },
+  {
+   "label": "best",
+   "value": "vale 6.5 (TOSSUP)"
+  },
+  {
+   "label": "Magnific credits (live)",
+   "value": "5539"
+  },
+  {
+   "label": "Tripo credits",
+   "value": "topped up ✓ (3D gen ready for wave 3)"
+  }
  ],
  "pieces": [
-  { "key": "vale", "name": "🌾 The Vale", "files": "Grass, Props", "status": "fixing", "score": 6.5, "verdict": "TOSSUP", "gap": "black grass clumps + crystal clipping at the Aetheryte plaza — polished at 100 m, broken at 10 m", "round": 1 },
-  { "key": "forest", "name": "🌲 Whisperwood Deep", "files": "Vegetation, Props, Terrain, Grass", "status": "fixing", "score": 3, "verdict": "LOSE", "gap": "no forest interior: orchard saplings, 90% open sky overhead; Elderheart is brick masonry", "round": 1 },
-  { "key": "tundra", "name": "❄️ Frostveil Tundra", "files": "Vegetation, Terrain, Props", "status": "fixing", "score": 4.5, "verdict": "LOSE", "gap": "summer-green conifers, zero snow on boughs; Glacier Throne is a grey brick chimney", "round": 1 },
-  { "key": "celestial", "name": "✨ Celestial Isles", "files": "Props, Sky", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "floating isles are brown sombrero hats; Empyrean Gate doesn't exist as a landmark", "round": 1 },
-  { "key": "dragon", "name": "🏔️ Dragon Peaks", "files": "Props, Terrain, Vegetation", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "Kharaz-Dun Gate is a floating brick greybox, not a gate cut into the mountain", "round": 1 },
-  { "key": "infernal", "name": "🔥 Infernal Wastes", "files": "Terrain, Vegetation, Sky, Water", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "reads as friendly pink-sky Mars with living green trees; hellscape only exists from the air", "round": 1 },
-  { "key": "lost", "name": "🏰 The Lost Realm", "files": "Props, Terrain", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "monoliths render as orange patio brick; flagstone blown-out lilac-white", "round": 1 },
-  { "key": "shadowfen", "name": "🌑 Shadowfen", "files": "Sky, Water, Props", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "midday reads as a cheerful mountain lake — the cursed key/haze is not on screen", "round": 1 },
-  { "key": "sunken", "name": "🌊 The Sunken Kingdom", "files": "Water, Props", "status": "fixing", "score": 3, "verdict": "LOSE", "gap": "underwater is flat cyan void: no surface from below, no depth gradient, hoard gold reads grey", "round": 1 },
-  { "key": "void", "name": "🕳️ The Void", "files": "Props, Terrain", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "isles are maroon UFO discs with brick undersides; the abyss has a horizon", "round": 1 },
-  { "key": "feel", "name": "⚔️ Game feel / content", "files": "Weapons, vfx, HUD", "status": "fixing", "score": 6, "verdict": "LOSE", "gap": "ADS is an untextured slab with no sight alignment; zero recoil under sustained fire", "round": 1 },
-  { "key": "physics", "name": "🧱 Collision / placement", "files": "Props placement", "status": "fixing", "score": 6, "verdict": "LOSE", "gap": "kit props hover/bury on slopes; trees through hut roofs; collision sim itself passed", "round": 1 }
+  {
+   "key": "vale",
+   "name": "🌾 The Vale",
+   "files": "Grass, Props",
+   "status": "fixing",
+   "score": 6.5,
+   "verdict": "TOSSUP",
+   "gap": "black grass clumps + crystal clipping at the Aetheryte plaza — polished at 100 m, broken at 10 m",
+   "round": 1
+  },
+  {
+   "key": "forest",
+   "name": "🌲 Whisperwood Deep",
+   "files": "Vegetation, Props, Terrain, Grass",
+   "status": "fixing",
+   "score": 3,
+   "verdict": "LOSE",
+   "gap": "no forest interior: orchard saplings, 90% open sky overhead; Elderheart is brick masonry",
+   "round": 1
+  },
+  {
+   "key": "tundra",
+   "name": "❄️ Frostveil Tundra",
+   "files": "Vegetation, Terrain, Props",
+   "status": "fixing",
+   "score": 4.5,
+   "verdict": "LOSE",
+   "gap": "summer-green conifers, zero snow on boughs; Glacier Throne is a grey brick chimney",
+   "round": 1
+  },
+  {
+   "key": "celestial",
+   "name": "✨ Celestial Isles",
+   "files": "Props, Sky",
+   "status": "fixing",
+   "score": 3.5,
+   "verdict": "LOSE",
+   "gap": "floating isles are brown sombrero hats; Empyrean Gate doesn't exist as a landmark",
+   "round": 1
+  },
+  {
+   "key": "dragon",
+   "name": "🏔️ Dragon Peaks",
+   "files": "Props, Terrain, Vegetation",
+   "status": "fixing",
+   "score": 3.5,
+   "verdict": "LOSE",
+   "gap": "Kharaz-Dun Gate is a floating brick greybox, not a gate cut into the mountain",
+   "round": 1
+  },
+  {
+   "key": "infernal",
+   "name": "🔥 Infernal Wastes",
+   "files": "Terrain, Vegetation, Sky, Water",
+   "status": "fixing",
+   "score": 4,
+   "verdict": "LOSE",
+   "gap": "reads as friendly pink-sky Mars with living green trees; hellscape only exists from the air",
+   "round": 1
+  },
+  {
+   "key": "lost",
+   "name": "🏰 The Lost Realm",
+   "files": "Props, Terrain",
+   "status": "fixing",
+   "score": 3.5,
+   "verdict": "LOSE",
+   "gap": "monoliths render as orange patio brick; flagstone blown-out lilac-white",
+   "round": 1
+  },
+  {
+   "key": "shadowfen",
+   "name": "🌑 Shadowfen",
+   "files": "Sky, Water, Props",
+   "status": "fixing",
+   "score": 4,
+   "verdict": "LOSE",
+   "gap": "midday reads as a cheerful mountain lake — the cursed key/haze is not on screen",
+   "round": 1
+  },
+  {
+   "key": "sunken",
+   "name": "🌊 The Sunken Kingdom (REDESIGN: above-water)",
+   "files": "Water, Props",
+   "status": "todo",
+   "score": 3,
+   "verdict": "LOSE",
+   "gap": "USER DECREE: no underwater area — redesigning to waterfalls/rapids/cascades (wave 3); wave-2 water work rescoped",
+   "round": 1
+  },
+  {
+   "key": "void",
+   "name": "🕳️ The Void",
+   "files": "Props, Terrain",
+   "status": "fixing",
+   "score": 4,
+   "verdict": "LOSE",
+   "gap": "isles are maroon UFO discs with brick undersides; the abyss has a horizon",
+   "round": 1
+  },
+  {
+   "key": "feel",
+   "name": "⚔️ Game feel / content",
+   "files": "Weapons, vfx, HUD",
+   "status": "fixing",
+   "score": 6,
+   "verdict": "LOSE",
+   "gap": "ADS is an untextured slab with no sight alignment; zero recoil under sustained fire",
+   "round": 1
+  },
+  {
+   "key": "physics",
+   "name": "🧱 Collision / placement",
+   "files": "Props placement",
+   "status": "fixing",
+   "score": 6,
+   "verdict": "LOSE",
+   "gap": "kit props hover/bury on slopes; trees through hut roofs; collision sim itself passed",
+   "round": 1
+  }
  ],
  "shots": [
-  { "src": "tools/out/crit1-forest-b/shot-canopy.png", "label": "forest: 90% open sky where a closed canopy should be" },
-  { "src": "tools/out/crit1-celestial-c/shot-isle-under.png", "label": "celestial: isle = sombrero hat with basket-weave underside" },
-  { "src": "tools/out/crit1-infernal/shot-in.png", "label": "infernal: pink-sky Mars with green trees" },
-  { "src": "tools/out/crit1-lost-c/shot-dusk.png", "label": "lost: orange patio-brick monoliths" },
-  { "src": "tools/out/crit1-tundra-b/shot-night-aurora.png", "label": "tundra night aurora — the one thing critics praised" },
-  { "src": "tools/out/crit1-vale-c/shot-night-plaza.png", "label": "vale night plaza — best shot of the sweep" }
+  {
+   "src": "tools/out/crit1-forest-b/shot-canopy.png",
+   "label": "forest: 90% open sky where a closed canopy should be"
+  },
+  {
+   "src": "tools/out/crit1-celestial-c/shot-isle-under.png",
+   "label": "celestial: isle = sombrero hat with basket-weave underside"
+  },
+  {
+   "src": "tools/out/crit1-infernal/shot-in.png",
+   "label": "infernal: pink-sky Mars with green trees"
+  },
+  {
+   "src": "tools/out/crit1-lost-c/shot-dusk.png",
+   "label": "lost: orange patio-brick monoliths"
+  },
+  {
+   "src": "tools/out/crit1-tundra-b/shot-night-aurora.png",
+   "label": "tundra night aurora — the one thing critics praised"
+  },
+  {
+   "src": "tools/out/crit1-vale-c/shot-night-plaza.png",
+   "label": "vale night plaza — best shot of the sweep"
+  }
  ],
  "log": [
+  "2026-08-26 — SESSION CUTOFF IMMINENT (user at 2% of window). Wave-2 workflow may die mid-run again; partial builder edits are COMMITTED as wip. RESTART KIT: fresh session reads HANDOVER + this page, relaunches tools/out/wave2-workflow-script.js via the Workflow tool (builder prompts already tell agents to expect partial edits on disk). Wave 3 (sunken redesign, life/content) starts after wave-2 rechecks pass + gate + Tripo MCP connected (.mcp.json ready, user sets TRIPO_API_KEY env var).",
+  "2026-08-25 — user topped up Tripo credits: 3D model pipeline (image gen -> Tripo GLB -> image2threejs -> procedural Three.js) is cleared for wave-3 hero props. Magnific pool at 5539.",
+  "2026-08-25 — progress page gained a generated-assets gallery: every AI-pipeline asset (textures now; Tripo->image2threejs model renders as wave 3 produces them) appears with a thumbnail + where it's used.",
+  "2026-08-25 — USER DECREE: no underwater area. Sunken Kingdom pivots to above-water waterfalls/rapids/cascades. Wave 2 stopped, rescoped (underwater volume work cut), relaunched. Redesign brief: docs/SUNKEN-REDESIGN-BRIEF.md, executes in wave 3 (terrain kernel + water falls + props re-stage).",
   "2026-08-25 — WAVE 1 COMPLETE: 12 critics, 12 LOSE/TOSSUP. Root causes ranked: (1) shared kit material reads as brick in 6 regions, (2) isle silhouettes, (3) midday atmosphere in cursed regions, (4) no underwater render model, (5) no forest canopy, (6) summer pines in tundra, (7) dead gunfeel in ADS/recoil.",
   "2026-08-25 — black basalt ground albedo generated + made seamless (Moisan periodic decomposition) for the Infernal rebuild.",
   "2026-08-25 — campaign start: wave 1 = blind critic sweep of the live build (12 auditors, serial on the GPU).",
   "2026-08-25 — worktree dev server up on :5179. invariants PASS."
+ ],
+ "assets": [
+  {
+   "src": "tools/out/assetgen/sheet.png",
+   "label": "batch 4 contact sheet — all 19 generations at a glance"
+  },
+  {
+   "src": "public/assets/tex/ash_basalt.jpg",
+   "label": "ash_basalt — Infernal ground (black cracked basalt, seamless)"
+  },
+  {
+   "src": "public/assets/tex/bark_gnarled.jpg",
+   "label": "bark_gnarled — Elderheart + old-growth trunks"
+  },
+  {
+   "src": "public/assets/tex/granite_moss.jpg",
+   "label": "granite_moss — overgrown elven ruins (forest)"
+  },
+  {
+   "src": "public/assets/tex/marble_strata.jpg",
+   "label": "marble_strata — celestial isles + colonnade"
+  },
+  {
+   "src": "public/assets/tex/granite_carved.jpg",
+   "label": "granite_carved — Kharaz-Dun dwarven gate"
+  },
+  {
+   "src": "public/assets/tex/basalt_columnar.jpg",
+   "label": "basalt_columnar — infernal cliffs + cinder cones"
+  },
+  {
+   "src": "public/assets/tex/flagstone_violet.jpg",
+   "label": "flagstone_violet — Lost Realm floor (gold inlay)"
+  },
+  {
+   "src": "public/assets/tex/megalith_violet.jpg",
+   "label": "megalith_violet — Convergence + 16 monoliths + Hagstone"
+  },
+  {
+   "src": "public/assets/tex/voidstone.jpg",
+   "label": "voidstone — void isles + crater walls"
+  },
+  {
+   "src": "public/assets/tex/ice_glacial.jpg",
+   "label": "ice_glacial — frozen lake + Glacier Throne"
+  },
+  {
+   "src": "public/assets/tex/snow_sastrugi.jpg",
+   "label": "snow_sastrugi — tundra ground"
+  },
+  {
+   "src": "public/assets/tex/peat_muck.jpg",
+   "label": "peat_muck — Shadowfen bed"
+  },
+  {
+   "src": "public/assets/tex/lava_crust.jpg",
+   "label": "lava_crust — lava surface (glow capped in-shader)"
+  },
+  {
+   "src": "public/assets/tex/seabed_ripple.jpg",
+   "label": "seabed_ripple — Sunken river/basin bed"
+  },
+  {
+   "src": "public/assets/tex/egg_speckle.jpg",
+   "label": "egg_speckle — dragon nest eggs"
+  },
+  {
+   "src": "public/assets/tex/glove_leather.jpg",
+   "label": "glove_leather — first-person viewmodel hands"
+  },
+  {
+   "src": "public/assets/tex/card_conifer_snow.png",
+   "label": "card_conifer_snow — snow-laden boughs (RGBA)"
+  },
+  {
+   "src": "public/assets/tex/card_fern.png",
+   "label": "card_fern — forest floor ferns (RGBA)"
+  },
+  {
+   "src": "public/assets/tex/card_reed.png",
+   "label": "card_reed — fen reed clumps (RGBA)"
+  },
+  {
+   "src": "public/assets/tex/card_moss.png",
+   "label": "card_moss — hanging moss drapes (RGBA)"
+  }
  ]
 }

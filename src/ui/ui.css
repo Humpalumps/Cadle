@@ -135,7 +135,13 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #guide .gfill { background: linear-gradient(180deg, #c9ffd2, #5fd97e 55%, #2f8c47); box-shadow: 0 0 8px rgba(95,217,126,0.55); }
 
 /* ---------- notify / toasts / prompt / pickups / quest ---------- */
-#notify { position: absolute; left: 0; right: 0; top: 27%; text-align: center; opacity: 0; pointer-events: none; }
+/* soft dark band behind the card: the text is DOM (always on top), but gold-on-bright-aetheryte
+   washed out to unreadable (feel audit) — the scrim guarantees contrast over any world content */
+#notify { position: absolute; left: 0; right: 0; top: 25%; padding: 40px 0 44px; text-align: center; opacity: 0; pointer-events: none;
+  /* radii sized so `transparent 80%` lands INSIDE the box on both axes (0.8 x 58% of box height
+     < the half-height where the box clips) — a taller radius died on the box edge instead, which
+     rendered as a hard-edged grey stripe across the world */
+  background: radial-gradient(ellipse 42% 58% at 50% 50%, rgba(5,7,16,0.60), rgba(5,7,16,0.32) 55%, transparent 80%); }
 #notify h2 { margin: 0; font: 400 44px var(--serif); font-variant: small-caps; letter-spacing: 0.3em; color: var(--gold-hi); text-shadow: 0 0 24px rgba(216,189,122,0.55), 0 2px 6px rgba(0,0,0,0.9); }
 #notify p { margin: 6px 0 0; font: 400 16px var(--serif); font-variant: small-caps; letter-spacing: 0.28em; color: var(--aether); text-shadow: 0 0 12px var(--aether-glow), 0 1px 4px #000; }
 /* third line of the zone card: what this place DOES to you (low gravity, lava, swimming). Sits under the

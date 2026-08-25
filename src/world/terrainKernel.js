@@ -7,7 +7,7 @@
 import { mulberry32, noise2, smoothstep, lerp } from '../core/Noise.js';
 import { ORDER, RR, EDGE, THETA0, STEP, centerOf } from './Biomes.js';
 
-export const LAYERS = 12;    // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro) 8 ash 9 ice 10 muck 11 voidstone
+export const LAYERS = 15;    // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro) 8 ash-basalt 9 sastrugi-snow 10 peat 11 voidstone 12 columnar-basalt(infernal cliffs) 13 violet-flagstone(lost) 14 seabed-sand(sunken)
 
 const ss = smoothstep, mix = lerp, n2 = noise2;
 // unrolled fbm/ridged (same lattice + seed scheme as Noise.js fbm/ridged, no options object => ~2x faster)
@@ -311,8 +311,9 @@ export function layerTex(layer, R, seed) {
       if (d < wd) { wd = d; wid = hashB(wx + 3, wy + 5, 256); }
     }
   };
-  // leaf litter palette: mostly russet/brown, occasional fresh yellow-green
-  const leafC = (w) => w > 0.86 ? [0.30, 0.25, 0.05] : [mix(0.19, 0.40, pm(w * 7.3, 1)), mix(0.095, 0.185, pm(w * 5.1, 1)), mix(0.028, 0.06, pm(w * 3.7, 1))];
+  // leaf litter palette: desaturated russet-olive duff, occasional dull gold. The old bright red-orange
+  // range tiled as "polka-dot confetti" (wave-1 forest verdict) — value range narrowed, hue pulled brown.
+  const leafC = (w) => w > 0.86 ? [0.17, 0.155, 0.045] : [mix(0.115, 0.21, pm(w * 7.3, 1)), mix(0.085, 0.145, pm(w * 5.1, 1)), mix(0.035, 0.06, pm(w * 3.7, 1))];
   let bumpH = null;                                                             // detail layer: bump height field, normals from its finite differences
   if (layer === 7) { bumpH = new Float32Array(R * R); for (let j = 0, k = 0; j < R; j++) for (let i = 0; i < R; i++) bumpH[k++] = fbm((i + 0.5) / R, (j + 0.5) / R, 9, 5); }
   const enc = (c) => { c = c < 0 ? 0 : c > 1 ? 1 : c; return (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255 + 0.5; };
@@ -326,17 +327,20 @@ export function layerTex(layer, R, seed) {
       const streak = mix(st, st2, ss(0.4, 0.6, n3)), hi = ss(0.55, 0.85, streak) * 0.7, dry = ss(0.62, 0.8, n3) * 0.4, sp = ss(0.75, 0.95, vnoise(u + 1.3, v + 1.3, 128)) * 0.07;
       r = mix(mix(mix(0.09, 0.17, n1), 0.38, hi), 0.30, dry) + sp; g = mix(mix(mix(0.20, 0.33, n1), 0.44, hi), 0.36, dry) + sp; b = mix(mix(mix(0.05, 0.07, n1), 0.13, hi), 0.09, dry) + sp;
       h = n1 * 0.5 + streak * 0.5;
-    } else if (layer === 1) {     // forest floor: humus + two passes of crisp elongated leaf litter + moss + twig grit
+    } else if (layer === 1) {     // forest floor: dark humus + LOW-frequency leaf-litter mottling + teal moss + twig grit.
+      // Was two worley passes at 40-64 cells/tile: ~7 cm leaves that alias into repeating orange dots at any
+      // distance ("polka-dot confetti"). Now 16-26 cells (~15-25 cm drifts) with soft edges = mottling, and
+      // the moss is pulled teal so the floor sits in the Whisperwood palette instead of lawn green.
       const n1 = fbm(u, v, 5, 5);
-      r = mix(0.085, 0.165, n1); g = mix(0.060, 0.115, n1); b = mix(0.035, 0.065, n1);       // humus base
-      worley(u + 0.37, v + 0.61, 40, 64);                                                    // under pass: vertical-ish leaves
+      r = mix(0.070, 0.135, n1); g = mix(0.058, 0.110, n1); b = mix(0.038, 0.068, n1);       // humus base, deeper + cooler
+      worley(u + 0.37, v + 0.61, 16, 26);                                                    // under pass: broad litter drifts
       let lh2 = 0, l1 = 0;
-      if (wid > 0.30) { const c = leafC(wid); lh2 = ss(0.44, 0.36, wd) * 0.8; r = mix(r, c[0] * 0.72, lh2); g = mix(g, c[1] * 0.72, lh2); b = mix(b, c[2] * 0.72, lh2); }
-      worley(u, v, 64, 40);                                                                  // over pass: horizontal-ish leaves, sharp edge
-      if (wid > 0.34) { const c = leafC(wid); l1 = ss(0.40, 0.33, wd); r = mix(r, c[0], l1); g = mix(g, c[1], l1); b = mix(b, c[2], l1); }
-      const moss = ss(0.55, 0.75, fbm(u + 2, v + 2, 4, 3)) * 0.7 * (1 - l1);
-      const grit = (vnoise(u, v, 512) - 0.5) * 0.07;
-      r = mix(r, 0.10, moss) + grit; g = mix(g, 0.23, moss) + grit; b = mix(b, 0.065, moss) + grit * 0.6;
+      if (wid > 0.30) { const c = leafC(wid); lh2 = ss(0.52, 0.34, wd) * 0.7; r = mix(r, c[0] * 0.72, lh2); g = mix(g, c[1] * 0.72, lh2); b = mix(b, c[2] * 0.72, lh2); }
+      worley(u, v, 26, 16);                                                                  // over pass: smaller patches, still soft-edged
+      if (wid > 0.38) { const c = leafC(wid); l1 = ss(0.46, 0.30, wd) * 0.85; r = mix(r, c[0], l1); g = mix(g, c[1], l1); b = mix(b, c[2], l1); }
+      const moss = ss(0.50, 0.72, fbm(u + 2, v + 2, 4, 3)) * 0.75 * (1 - l1);
+      const grit = (vnoise(u, v, 512) - 0.5) * 0.06;
+      r = mix(r, 0.062, moss) + grit; g = mix(g, 0.155, moss) + grit; b = mix(b, 0.105, moss) + grit * 0.6;   // teal-moss, not lawn
       h = n1 * 0.4 + Math.max(l1, lh2 * 0.7) * 0.6 + moss * 0.25;
     } else if (layer === 2) {     // dirt: packed earth, sparse crisp pebbles, fine grit, cracks
       const n1 = fbm(u, v, 6, 5); worley(u, v, 34, 34);
@@ -398,12 +402,37 @@ export function layerTex(layer, R, seed) {
       r = mix(r, 0.085, alg); g = mix(g, 0.158, alg); b = mix(b, 0.045, alg);
       r *= 1 - bub * 0.3; g *= 1 - bub * 0.2; b *= 1 - bub * 0.3;
       h = n1 * 0.6 + alg * 0.25 - bub * 0.4;
-    } else {                      // The Void: near-black stone shot through with violet fracture veins
+    } else if (layer === 11) {    // The Void: near-black stone shot through with violet fracture veins
       const n1 = fbm(u, v, 6, 5), vn = ridge(u + 2.3, v + 2.3, 6, 4);
       const vein = ss(0.87, 1.0, vn), grit = (vnoise(u, v, 512) - 0.5) * 0.04;
       const base = mix(0.030, 0.092, n1);
       r = base * 0.95 + vein * 0.16 + grit; g = base * 0.80 + vein * 0.05 + grit * 0.6; b = base * 1.30 + vein * 0.34 + grit;
       h = n1 * 0.7 - vein * 0.4;
+    } else if (layer === 12) {    // columnar basalt (infernal cliffs/cinder cones): near-black vertical columns
+      const n1 = fbm(u, v, 6, 4);
+      const col = ss(-0.6, 0.9, Math.sin(u * 6.2832 * 16 + fbm(u, v * 0.4, 3, 2) * 3.2));    // column faces + shadowed joints
+      const grit = (vnoise(u, v, 400) - 0.5) * 0.04;
+      const base = mix(0.016, 0.052, n1) * (0.70 + 0.55 * col);
+      r = base + grit; g = base * 1.02 + grit; b = base * 1.08 + grit * 0.8;
+      h = col * 0.5 + n1 * 0.5;
+    } else if (layer === 13) {    // Lost Realm: dark violet flagstone, faint gold inlay tracery in the joints
+      const T = 6, py = v * T, idy = Math.floor(py);
+      const px = u * T + (hash(idy, 5, T) > 0.5 ? 0.5 : 0), idx = Math.floor(px), fx = px - idx, fy = py - idy;
+      const hv = hash(idx, idy, T), m = Math.min(Math.min(fx, 1 - fx), Math.min(fy, 1 - fy));
+      const mortar = ss(0.020, 0.007, m + (fbm(u, v, 36, 2) - 0.5) * 0.014), n1 = fbm(u + hv, v + hv, 7, 4);
+      const gold = ss(0.965, 1.0, ridge(u + 4.1, v + 4.1, 5, 3)) * (hashB(idx, idy, T) > 0.45 ? 1 : 0);
+      const grit = (vnoise(u + 0.6, v + 0.2, 400) - 0.5) * 0.05;
+      const base = mix(0.85, 1.25, n1);
+      r = mix(0.052 * base + grit, 0.028, mortar); g = mix(0.038 * base + grit, 0.020, mortar); b = mix(0.088 * base + grit, 0.042, mortar);
+      r = mix(r, 0.42, gold * (1 - mortar) * 0.8); g = mix(g, 0.30, gold * (1 - mortar) * 0.8); b = mix(b, 0.10, gold * (1 - mortar) * 0.8);
+      h = 1 - mortar * 0.4 + (n1 - 0.5) * 0.2;
+    } else {                      // sunken seabed: rippled reef sand, warm tan with cool troughs
+      const n1 = fbm(u, v, 7, 4), hue = fbm(u + 6, v + 6, 2, 3);
+      const rip = Math.sin((u + fbm(u, v, 3, 2) * 0.25 + v * 0.2) * 6.2832 * 14) * 0.7 + Math.sin((v - u * 0.25) * 6.2832 * 7) * 0.3;
+      const rb = 0.90 + 0.10 * rip;
+      const grit = (vnoise(u, v, 300) - 0.5) * 0.08;
+      r = mix(0.34, 0.52, n1) * mix(0.96, 1.06, hue) * rb + grit; g = mix(0.28, 0.44, n1) * mix(0.94, 1.03, hue) * rb + grit; b = mix(0.17, 0.28, n1) * mix(1.0, 1.10, hue) * rb + grit * 0.7;
+      h = 0.5 + rip * 0.3 + (n1 - 0.5) * 0.4;
     }
     out[k] = enc(r); out[k + 1] = enc(g); out[k + 2] = enc(b); out[k + 3] = (h < 0 ? 0 : h > 1 ? 1 : h) * 255;
   }

@@ -128,14 +128,6 @@ export function stamp(ctx) {
   }
 }
 
-const seenAt = (ctx, x, z) => {
-  if (!fog) return false;
-  const size = sizeOf(ctx), half = size / 2, cell = size / FOG_N;
-  const i = clamp(Math.floor((x + half) / cell), 0, FOG_N - 1);
-  const j = clamp(Math.floor((z + half) / cell), 0, FOG_N - 1);
-  return !!fog[j * FOG_N + i];
-};
-
 function fogImage() {
   if (!fogCv) { fogCv = document.createElement('canvas'); fogCv.width = fogCv.height = FOG_N; }
   if (!fogDirty || !fog) return fogCv;
@@ -248,36 +240,33 @@ export function draw(ctx, cv) {
   const k = W / 620;                                    // marker scale, tuned at 620px
   const inView = (x, z, m) => x > f.x0 - m && x < f.x0 + f.vis + m && z > f.z0 - m && z < f.z0 + f.vis + m;
 
-  // ---- landmarks. Undiscovered ones are hollow question marks; unwalked ground shows none.
-  const done = discoveredSet(ctx);
+  // ---- landmarks: always on the sheet and always iconed — a map of anonymous shapes sells no
+  // destination (feel audit). Outer-region landmarks (l.biome) carry their region name and label at
+  // every zoom; the six Vale POIs label from zoom 2 up so their names don't pile onto the home bowl
+  // when the whole world is in frame. (The old fog/quest-discovery gate hid everything for hours.)
   for (const l of (ctx.world.landmarks || ctx.rpg && ctx.rpg.landmarks || [])) {
     const p = l.position || l.pos || l;
     if (typeof p.x !== 'number') continue;
-    const nm = l.name || l.label || l.id;
-    const known = done.has(nm);
-    if (!known && !seenAt(ctx, p.x, p.z)) continue;
     if (!inView(p.x, p.z, 60 / S)) continue;
     const x = toX(p.x), y = toY(p.z);
     g.save(); g.translate(x, y);
-    if (known) {
-      g.rotate(Math.PI / 4);
-      g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1.3 * k;
-      const s = 5 * k;
-      g.fillRect(-s, -s, s * 2, s * 2); g.strokeRect(-s, -s, s * 2, s * 2);
-      g.rotate(-Math.PI / 4);
-      g.font = `${Math.round(12 * k)}px ${'Georgia,serif'}`;
+    g.rotate(Math.PI / 4);
+    g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1.3 * k;
+    const s = 5 * k;
+    g.fillRect(-s, -s, s * 2, s * 2); g.strokeRect(-s, -s, s * 2, s * 2);
+    g.rotate(-Math.PI / 4);
+    if (l.biome || view.zoom >= 2) {
+      const nm = l.name || l.label || l.id;
       g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.font = `${Math.round(12 * k)}px Georgia,serif`;
       g.lineWidth = 3 * k; g.strokeStyle = 'rgba(240,228,198,.85)';
       g.strokeText(nm, 0, -13 * k);
       g.fillStyle = 'rgba(40,30,14,.95)'; g.fillText(nm, 0, -13 * k);
-    } else {
-      g.strokeStyle = 'rgba(80,60,26,.75)'; g.lineWidth = 1.3 * k;
-      g.setLineDash([3 * k, 3 * k]);
-      g.beginPath(); g.arc(0, 0, 6.5 * k, 0, 7); g.stroke();
-      g.setLineDash([]);
-      g.font = `${Math.round(11 * k)}px Georgia,serif`;
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillStyle = 'rgba(80,60,26,.85)'; g.fillText('?', 0, 0.5 * k);
+      if (l.biome) {                              // the region the landmark anchors, small italic
+        g.font = `italic ${Math.round(10 * k)}px Georgia,serif`;
+        g.strokeText(l.biome, 0, 19 * k);
+        g.fillStyle = 'rgba(96,66,28,.92)'; g.fillText(l.biome, 0, 19 * k);
+      }
     }
     g.restore();
   }
@@ -337,16 +326,44 @@ export function draw(ctx, cv) {
 
   rose(g, W, k);
   scaleBar(ctx, g, W, k, S);
+  legend(g, W, k);
 }
 
-function discoveredSet(ctx) {
-  const out = new Set();
-  try {
-    const sq = ctx.rpg && ctx.rpg.sideQuests;
-    if (typeof sq === 'function') for (const s of sq()) if (s.done) out.add(s.place);
-    for (const e of (ctx.rpg && ctx.rpg.lore) || []) if (e && e.place) out.add(e.place);
-  } catch (e) { /* the rpg piece may not be up yet */ }
-  return out;
+// A four-row key, bottom-right (rose owns top-right, scale bar bottom-left): what a diamond, an X,
+// the flag and the chevron each mean. Same glyph functions as the live markers so it cannot drift.
+function legend(g, W, k) {
+  const lh = 16 * k, pad = 8 * k, w = 96 * k, h = pad * 2 + 4 * lh;
+  const x = W - w - 14 * k, y = W - h - 14 * k;
+  g.save();
+  g.fillStyle = 'rgba(240,228,198,.80)'; g.fillRect(x, y, w, h);
+  g.strokeStyle = 'rgba(90,68,32,.8)'; g.lineWidth = 1 * k; g.strokeRect(x, y, w, h);
+  g.font = `${Math.round(10 * k)}px Georgia,serif`;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  const gx = x + pad + 6 * k, tx = x + pad + 16 * k;
+  let cy = y + pad + lh / 2;
+  const label = (t) => { g.fillStyle = 'rgba(50,36,14,.95)'; g.fillText(t, tx, cy); cy += lh; };
+  // you — the chevron
+  g.save(); g.translate(gx, cy); chevron(g, 4.6 * k);
+  g.fillStyle = C.blood; g.fill(); g.strokeStyle = 'rgba(40,20,10,.9)'; g.lineWidth = 0.9 * k; g.stroke();
+  g.restore(); label('you');
+  // landmark — the gold diamond
+  g.save(); g.translate(gx, cy); g.rotate(Math.PI / 4);
+  g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1 * k;
+  g.fillRect(-3.4 * k, -3.4 * k, 6.8 * k, 6.8 * k); g.strokeRect(-3.4 * k, -3.4 * k, 6.8 * k, 6.8 * k);
+  g.restore(); label('landmark');
+  // objective — the waypoint flag (the tracked quest plants it)
+  g.save(); g.translate(gx - 1 * k, cy + 4 * k);
+  g.strokeStyle = 'rgba(40,28,10,.85)'; g.lineWidth = 1.1 * k;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -9 * k); g.stroke();
+  g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6.5 * k, -6.6 * k); g.lineTo(0, -4.2 * k); g.closePath();
+  g.fillStyle = C.goldLt; g.fill(); g.stroke();
+  g.restore(); label('objective');
+  // foe — the saltire
+  g.save(); g.translate(gx, cy); g.lineCap = 'round';
+  g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 3 * k; saltire(g, 3.6 * k); g.stroke();
+  g.strokeStyle = '#5e1a14'; g.lineWidth = 1.4 * k; saltire(g, 3.6 * k); g.stroke();
+  g.restore(); label('foe');
+  g.restore();
 }
 
 function rose(g, W, k) {

@@ -719,7 +719,11 @@ export class HUD {
       setX(this.bossFill, hpv); setX(this.bossSh, typeof r === 'object' ? r?.shield ?? 0 : 0);
     } else if (this._boss) {
       const b = this._boss;
-      const near = b.alive && b.position.distanceToSquared(p.position) < 90 * 90;
+      // engaged, not merely nearby: an idle Warden 40 m away kept the bar pinned for whole
+      // sessions (feel audit). chase/attack/stagger/flee raise it; leashing back to idle/patrol
+      // or death drops it. The distance check stays as the leash-of-last-resort.
+      const near = b.alive && b.state !== 'idle' && b.state !== 'patrol'
+        && b.position.distanceToSquared(p.position) < 90 * 90;
       if (near !== this._bossShown) { this._bossShown = near; this.bossEl.style.opacity = near ? 1 : 0; if (near) this.bossName.textContent = b.name; }
       if (near) { setX(this.bossFill, b.health / b.maxHealth); setX(this.bossSh, b.maxShield ? b.shield / b.maxShield : 0); }
     }
@@ -729,6 +733,13 @@ export class HUD {
     this._slow += dt;
     if (this._slow >= 0.05) {
       this._slow = 0;
+      // the home-camp boss spawns during Enemies.init — BEFORE _bindEvents ran — so the
+      // enemy:spawn listener alone never sees it. Lazy 20 Hz re-find catches it (and any
+      // boss recycled back in by camp streaming) without a per-frame scan.
+      if (!this._boss || !this._boss.alive) {
+        const all = this.game.enemies?.all;
+        if (all) for (let i = 0; i < all.length; i++) if (all[i].alive && all[i].def?.boss) { this._boss = all[i]; break; }
+      }
       const tg = this._findTarget();
       if (tg) { this._tgt = tg; this._tgtUntil = t + 0.6; }
     }

@@ -10,7 +10,10 @@ import { BIOMES } from './Biomes.js';
  * Everything is placed deterministically by biome (CLAUDE.md world layout) on terrain.heightAt and registers
  * colliders in game.world.colliders.
  * Exposes (stable):
- *   vegetation.trees     [{x,y,z,species,scale,r}]  species 0 slender, 1 gnarled, 2 willow (Props uses it for mushrooms)
+ *   vegetation.trees     [{x,y,z,species,scale,r,c?}]  species 0 slender, 1 gnarled, 2 willow (Props uses it for
+ *                        mushrooms), 3 snow conifer (tundra), 4 charred leafless snag (infernal/void), 5 old-growth
+ *                        canopy giant (forest), 6 dark alpine pine (dragon), 7 sparse dead husk (shadowfen).
+ *                        `c` = [r,g,b] leaf tint, present on region-owned trees only (EZTrees reads it).
  *   vegetation.rocks     [{x,y,z,kind,scale}]
  *   vegetation.crystals  [{x,y,z,scale}]
  *   vegetation.lods      InstLOD sets refreshed round-robin (Props pushes its own)
@@ -29,14 +32,19 @@ const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
 // world took the same yellow-green instance jitter, so a Frostveil pine, a Void husk and a Whisperwood oak
 // were the same tree wearing the same leaves. It multiplies the jitter (so the per-instance variation
 // survives) and fades in with the biome weight, exactly like the crystal spires' tint.
+// `og` = share of accepts that become species 5 (old-growth, 25-35 m, huge crown cards — see EZTrees.js);
+// `sMax`/`yMax` = per-biome slope/altitude gates (glacier faces and dragon cliffs must stay bare).
+// p 0.45 -> 0.34 for the forest pays for the old-growth crowns with FEWER instances, not more geometry:
+// each old-growth covers ~4x the sky of a sapling, so the canopy closes while the tri count drops
+// (looking south out of the Whisperwood is the heaviest view in the world — it must not grow).
 const BTREE = {
-  forest:    { p: 0.45, sp: [0, 1], col: [0.62, 1.02, 0.86], gv: 0.72 },   // Ashenvale is a CLOSED canopy. gv 0.62 left grove-shaped clearings the size of a football pitch; raising the grove FLOOR and dropping p keeps the same total tree count (p*(gv+(1-gv)*grove) is unchanged at ~0.42) and spends it evenly instead of in clumps — canopy closure for free, which matters because looking south out of the Whisperwood is already the heaviest view in the world (4.4 M tris)
-  tundra:    { p: 0.34, sp: [3],    col: [1.02, 1.22, 1.52], gv: 0.36 },   // FROSTED, not summer green: the tint multiplies an already-dark needle albedo, so 0.74/0.88/1.06 only made a dark pine very slightly bluer   // Winterspring is a FOREST under snow, not an empty steppe: dense frosted conifers
+  forest:    { p: 0.34, sp: [8], og: 0.58, col: [0.45, 0.80, 0.62], gv: 0.72 },   // deep green + subtle teal (accent applied at placement); species 8 is the aspen-free broadleaf pool — the gold-tinted Aspen presets in species 0 were the "random ochre autumn trees"
+  tundra:    { p: 0.34, sp: [3],    col: [0.90, 0.96, 1.06], gv: 0.36, sMax: 0.17, yMax: 34 },   // snow-laden conifers (card_conifer_snow) — winter, never summer green; treeline stops below the glacier massif
   celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
-  dragon:    { p: 0.10, sp: [3],    col: [0.70, 0.78, 0.68] },   // dark alpine pine, only on the lower ledges
-  infernal:  { p: 0.04, sp: [4],    col: [0.34, 0.24, 0.20] },   // charred husks, sparse — the wastes are mostly vents and ash
+  dragon:    { p: 0.07, sp: [6],    col: [0.42, 0.54, 0.47], sMax: 0.30, yMax: 62 },   // dark alpine pine, LOW ledges only (heart sits at ~44 m; the benches above stay bare)
+  infernal:  { p: 0.04, sp: [4],    col: [0.92, 0.90, 0.88] },   // charred LEAFLESS snags, sparse — the wastes are mostly vents and ash (col is near-neutral: it tints the trunk impostor, and a charred trunk must stay charcoal)
   lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
-  shadowfen: { p: 0.32, sp: [4],    col: [0.40, 0.46, 0.28] },   // ALL of it dead: species 2 is a leafy willow, and a canopy of healthy green over standing water reads as a damp wood, not a cursed fen
+  shadowfen: { p: 0.32, sp: [7],    col: [0.40, 0.46, 0.28] },   // ALL of it dead: sparse husk canopy over standing water (species 7 keeps the old sparse-leaf dead look; 4 went fully leafless for the infernal spec)
   sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
   void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };
@@ -702,21 +710,32 @@ export class Vegetation {
       const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
       if (u0 > p) continue;
-      if (terrain.slopeAt(x, z) > 0.5) continue;
+      if (terrain.slopeAt(x, z) > (bTree?.sMax ?? 0.5)) continue;      // per-biome slope gate: no pines pasted on the glacier face / sheer dragon domes
+      if (bTree?.yMax !== undefined && y > bTree.yMax) continue;       // altitude band: dragon pines on LOW ledges only, tundra treeline below the massif
+      if (Math.hypot(x - 118, z + 96) < 36) continue;                  // Hearthfall hamlet: cottages sit 13-24 m from (118,-96) + eaves + canopy overhang — trees were growing through hut roofs
       let species; const u = rng();
-      if (bTree && bt.w > 0.45) species = bTree.sp[(u * bTree.sp.length) | 0];
+      if (bTree) {
+        // a region's pool owns ALL of its trees. The old `bt.w > 0.45` gate let the Vale's green species
+        // leak in wherever the weight dipped — which is exactly the "living green trees all over the
+        // Infernal Wastes" spec violation. Below w 0.02 there is no bTree and home logic applies as before.
+        species = bTree.sp[(u * bTree.sp.length) | 0];
+        if (bTree.og && rng() < bTree.og * bt.w) species = 5;          // old-growth share: the crowns that close the canopy
+      }
       else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
-      const sp = treeSpec[species] ?? treeSpec[species === 3 ? 0 : 1];
-      const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 ? 0.7 + rng() * 0.6 : 0.8 + rng() * 0.4;
+      const sp = treeSpec[species] ?? treeSpec[species === 3 || species === 6 ? 0 : 1];
+      const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 || species === 6 ? 0.7 + rng() * 0.6 : species === 5 ? 0.9 + rng() * 0.35 : 0.8 + rng() * 0.4;
       E.set((rng() - 0.5) * 0.08, rng() * Math.PI * 2, (rng() - 0.5) * 0.08); Qt.setFromEuler(E); P.set(x, y - 0.25 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       // per-instance hue jitter, then pushed toward the REGION's foliage colour by the biome weight
       const tj = 0.76 + rng() * 0.44;
       let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
       if (bTree?.col) { const k = bTree.col, w = bt.w; cr *= 1 + (k[0] - 1) * w; cg *= 1 + (k[1] - 1) * w; cb *= 1 + (k[2] - 1) * w; }
+      if (bTree && bt.id === 'forest' && rng() < 0.18) { cr *= 0.78; cb *= 1.24; }   // the enchanted accent: a scatter of blue-teal crowns in the deep green
       C.setRGB(cr, cg, cb);
-      (this.treeSets[species] ?? this.treeSets[species === 3 ? 0 : 1]).lod.add(M, C);
-      const r = Math.max(0.28, sp.colR * scale);
-      this.trees.push({ x, y, z, species, scale, r });
+      (this.treeSets[species] ?? this.treeSets[species === 3 || species === 6 ? 0 : 1]).lod.add(M, C);
+      const r = Math.max(0.28, sp.colR * scale * (species === 5 ? 1.5 : 1));
+      // `c` (leaf tint) rides along for EZTrees, but ONLY for region-owned trees — the home Vale keeps
+      // EZTrees' own neutral jitter so this change cannot shift the spawn meadow's read.
+      this.trees.push(bTree ? { x, y, z, species, scale, r, c: [C.r, C.g, C.b] } : { x, y, z, species, scale, r });
       col.add({ type: 'capsule', a: new THREE.Vector3(x, y - 1, z), b: new THREE.Vector3(x, y + sp.colH * scale, z), r });
     }
     // ---- rocks

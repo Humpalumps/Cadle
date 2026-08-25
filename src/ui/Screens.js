@@ -388,6 +388,9 @@ export class Screens {
     const ctx = this.ctx;
     const isMap = this.tab === 'map';
     const isReward = this.tab === 'reward';
+    // the status line is per-tab state: the map re-sets its zoom/waypoint readout below, every
+    // other tab starts blank (it used to leak "ZOOM 3.2x ..." under Inventory and the Quest Log)
+    if (this._prevTab !== this.tab) this.say('');
     this._ttl.textContent = isReward ? 'Choose your reward' : (TABS.find(([t]) => t === this.tab)?.[1] ?? '');
     for (const b of this._tabs) b.classList.toggle('on', b.getAttribute('data-tab') === this.tab);
     this._mapbox.style.display = isMap ? '' : 'none';
