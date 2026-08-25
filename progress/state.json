@@ -1,305 +1,39 @@
 {
- "updated": "2026-08-20 12:30",
- "status": "<b>Wave 5 running (fix-first + gated)</b>: wave 4 died with zero agents (model limit) so no fixes landed; wave 5 relaunches from the same stored verdicts with a new safeguard — every builder must pass <code>node tools/gate.mjs</code> (white blobs, screen jitter, pointer lock, at both quality levels) before reporting done, and no critic may award WIN while the gate fails. Code is backed up on GitHub with <code>v0.1.1-stable</code> as the revert point.",
+ "updated": "2026-08-25 (wave 1 verdicts in)",
+ "status": "<b>Wave 1 verdict: every region LOSES the blind test vs Destiny 2.</b> 12 fresh-context critics inspected the live build. The single biggest cross-cutting bug: the shared prop-kit stone material renders as terracotta <i>brick</i> in six regions (Elderheart, celestial ruins, dwarven gate, Lost monoliths, infernal cliffs, void isle undersides). Second: floating isles read as UFO discs. Third: midday atmosphere is cheerful in the cursed regions. Wave 2 launching: ~10 builders on disjoint files + a fresh AI-generated texture set (bark, marble, basalt, voidstone, ice, flagstone...), then fresh critics re-judge each region.",
  "kpis": [
-  {
-   "label": "GitHub backup",
-   "value": "v0.1.1-stable"
-  },
-  {
-   "label": "regression gate",
-   "value": "blobs · jitter · pointer lock"
-  },
-  {
-   "label": "assets preloaded",
-   "value": "43 in 2.6 s"
-  },
-  {
-   "label": "errors",
-   "value": "0"
-  },
-  {
-   "label": "open bug",
-   "value": "TAA jitter @ q=high"
-  }
+  { "label": "wave", "value": "2 — builders" },
+  { "label": "regions at bar", "value": "0 / 10" },
+  { "label": "worst", "value": "forest & sunken 3/10" },
+  { "label": "best", "value": "vale 6.5 (TOSSUP)" },
+  { "label": "Magnific credits", "value": "~7000" }
  ],
  "pieces": [
-  {
-   "key": "sky",
-   "name": "Sky / atmosphere / time of day",
-   "files": "render/Sky.js",
-   "status": "fixing",
-   "score": 4.0,
-   "verdict": "LOSE",
-   "gap": "Cloud rewrite regressed: conical spike fence — redirected to volumetric fbm masses. Night sky praised.",
-   "round": 2
-  },
-  {
-   "key": "lighting",
-   "name": "Lighting / shadows (CSM)",
-   "files": "render/Lighting.js",
-   "status": "critic",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "Shadows invisible wherever grass covers ground — grass never samples the CSM.",
-   "round": 1
-  },
-  {
-   "key": "postfx",
-   "name": "Post-processing pipeline",
-   "files": "render/PostFX.js",
-   "status": "fixing",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "God rays = crosshatch stipple; AO smudge halos; 1.74 ms vs 1.3 budget.",
-   "round": 2
-  },
-  {
-   "key": "terrain",
-   "name": "Terrain",
-   "files": "world/Terrain.js",
-   "status": "fixing",
-   "score": 5.5,
-   "verdict": "LOSE",
-   "gap": "Textures landed; mountains still soft-serve mounds — needs ridgelines/crag structure.",
-   "round": 2
-  },
-  {
-   "key": "water",
-   "name": "Water",
-   "files": "world/Water.js",
-   "status": "fixing",
-   "score": 7.2,
-   "verdict": "TOSSUP",
-   "gap": "Reflection good now; foam swung to absent — needs crisp contact-line lace.",
-   "round": 2
-  },
-  {
-   "key": "grass",
-   "name": "Grass",
-   "files": "world/Grass.js",
-   "status": "fixing",
-   "score": 7.3,
-   "verdict": "TOSSUP",
-   "gap": "Close range 0-8 m: stiff dark daggers + floating flowers — last blocker.",
-   "round": 2
-  },
-  {
-   "key": "vegetation",
-   "name": "Vegetation / crystals / props",
-   "files": "world/Vegetation.js, Props.js",
-   "status": "fixing",
-   "score": 5.5,
-   "verdict": "LOSE",
-   "gap": "Foliage = flat paddle shelves — ordered onto leaf_card/bark/column/aetheryte assets.",
-   "round": 2
-  },
-  {
-   "key": "movement",
-   "name": "Movement controller",
-   "files": "player/PlayerController.js",
-   "status": "fixing",
-   "score": 8.3,
-   "verdict": "TOSSUP",
-   "gap": "Only surface-swim porpoising left.",
-   "round": 2
-  },
-  {
-   "key": "camera",
-   "name": "Camera feel",
-   "files": "player/PlayerCamera.js",
-   "status": "fixing",
-   "score": 8.0,
-   "verdict": "TOSSUP",
-   "gap": "FOV fixed. Landing dip unverified on a real fall — demonstrate or fix.",
-   "round": 2
-  },
-  {
-   "key": "weapons",
-   "name": "Weapons + viewmodel",
-   "files": "player/Weapons.js, weapons/*",
-   "status": "fixing",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "Hands exist; reloads are frozen-hand puppet shows — hand-driven reload anims.",
-   "round": 2
-  },
-  {
-   "key": "abilities",
-   "name": "Abilities",
-   "files": "player/Abilities.js",
-   "status": "critic",
-   "score": 4.5,
-   "verdict": "LOSE",
-   "gap": "All ability energy blows out to cream/white; needs saturated gold/arc/void cores.",
-   "round": 1
-  },
-  {
-   "key": "combat",
-   "name": "Combat / damage",
-   "files": "combat/Combat.js",
-   "status": "fixing",
-   "score": 8.0,
-   "verdict": "TOSSUP",
-   "gap": "Occlusion fixed. Bolts read as soft balloons — needs stretched hot-core darts.",
-   "round": 2
-  },
-  {
-   "key": "enemies",
-   "name": "Enemies / AI / creatures",
-   "files": "enemies/*",
-   "status": "fixing",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "Standoff landed but overtuned — hounds land ~0 bites; needs real melee pressure.",
-   "round": 2
-  },
-  {
-   "key": "vfx",
-   "name": "VFX / particles",
-   "files": "vfx/*",
-   "status": "fixing",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "Muzzle/tracers invisible in noon footage — daylight readability.",
-   "round": 2
-  },
-  {
-   "key": "audio",
-   "name": "Audio (synthesized)",
-   "files": "audio/*",
-   "status": "fixing",
-   "score": 6.0,
-   "verdict": "LOSE",
-   "gap": "Recorded gunshot takes still unwired (builder killed) — mandatory this wave.",
-   "round": 2
-  },
-  {
-   "key": "hud",
-   "name": "HUD",
-   "files": "ui/*",
-   "status": "critic",
-   "score": null,
-   "verdict": null,
-   "gap": "Still unjudged (two critics killed) — wave 3 is its first surviving pass.",
-   "round": 1
-  },
-  {
-   "key": "perf",
-   "name": "Performance budget",
-   "files": "(all)",
-   "status": "critic",
-   "score": null,
-   "verdict": null,
-   "gap": "",
-   "round": 0
-  },
-  {
-   "key": "rpg",
-   "name": "RPG: stats / loot / inventory",
-   "files": "rpg/",
-   "status": "later",
-   "score": null,
-   "verdict": null,
-   "gap": "",
-   "round": 0
-  },
-  {
-   "key": "quests",
-   "name": "Quests / NPC dialogue (voice)",
-   "files": "rpg/",
-   "status": "later",
-   "score": null,
-   "verdict": null,
-   "gap": "",
-   "round": 0
-  },
-  {
-   "key": "bosses",
-   "name": "World bosses",
-   "files": "bosses/",
-   "status": "later",
-   "score": null,
-   "verdict": null,
-   "gap": "",
-   "round": 0
-  },
-  {
-   "key": "story",
-   "name": "Story mode",
-   "files": "rpg/",
-   "status": "later",
-   "score": null,
-   "verdict": null,
-   "gap": "",
-   "round": 0
-  }
+  { "key": "vale", "name": "🌾 The Vale", "files": "Grass, Props", "status": "fixing", "score": 6.5, "verdict": "TOSSUP", "gap": "black grass clumps + crystal clipping at the Aetheryte plaza — polished at 100 m, broken at 10 m", "round": 1 },
+  { "key": "forest", "name": "🌲 Whisperwood Deep", "files": "Vegetation, Props, Terrain, Grass", "status": "fixing", "score": 3, "verdict": "LOSE", "gap": "no forest interior: orchard saplings, 90% open sky overhead; Elderheart is brick masonry", "round": 1 },
+  { "key": "tundra", "name": "❄️ Frostveil Tundra", "files": "Vegetation, Terrain, Props", "status": "fixing", "score": 4.5, "verdict": "LOSE", "gap": "summer-green conifers, zero snow on boughs; Glacier Throne is a grey brick chimney", "round": 1 },
+  { "key": "celestial", "name": "✨ Celestial Isles", "files": "Props, Sky", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "floating isles are brown sombrero hats; Empyrean Gate doesn't exist as a landmark", "round": 1 },
+  { "key": "dragon", "name": "🏔️ Dragon Peaks", "files": "Props, Terrain, Vegetation", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "Kharaz-Dun Gate is a floating brick greybox, not a gate cut into the mountain", "round": 1 },
+  { "key": "infernal", "name": "🔥 Infernal Wastes", "files": "Terrain, Vegetation, Sky, Water", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "reads as friendly pink-sky Mars with living green trees; hellscape only exists from the air", "round": 1 },
+  { "key": "lost", "name": "🏰 The Lost Realm", "files": "Props, Terrain", "status": "fixing", "score": 3.5, "verdict": "LOSE", "gap": "monoliths render as orange patio brick; flagstone blown-out lilac-white", "round": 1 },
+  { "key": "shadowfen", "name": "🌑 Shadowfen", "files": "Sky, Water, Props", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "midday reads as a cheerful mountain lake — the cursed key/haze is not on screen", "round": 1 },
+  { "key": "sunken", "name": "🌊 The Sunken Kingdom", "files": "Water, Props", "status": "fixing", "score": 3, "verdict": "LOSE", "gap": "underwater is flat cyan void: no surface from below, no depth gradient, hoard gold reads grey", "round": 1 },
+  { "key": "void", "name": "🕳️ The Void", "files": "Props, Terrain", "status": "fixing", "score": 4, "verdict": "LOSE", "gap": "isles are maroon UFO discs with brick undersides; the abyss has a horizon", "round": 1 },
+  { "key": "feel", "name": "⚔️ Game feel / content", "files": "Weapons, vfx, HUD", "status": "fixing", "score": 6, "verdict": "LOSE", "gap": "ADS is an untextured slab with no sight alignment; zero recoil under sustained fire", "round": 1 },
+  { "key": "physics", "name": "🧱 Collision / placement", "files": "Props placement", "status": "fixing", "score": 6, "verdict": "LOSE", "gap": "kit props hover/bury on slopes; trees through hut roofs; collision sim itself passed", "round": 1 }
  ],
  "shots": [
-  {
-   "src": "/progress/shots/spawn-n.png",
-   "label": "spawn-n"
-  },
-  {
-   "src": "/progress/shots/spawn-e.png",
-   "label": "spawn-e"
-  },
-  {
-   "src": "/progress/shots/spawn-w.png",
-   "label": "spawn-w"
-  },
-  {
-   "src": "/progress/shots/ground-close.png",
-   "label": "ground-close"
-  },
-  {
-   "src": "/progress/shots/airborne.png",
-   "label": "airborne"
-  },
-  {
-   "src": "/progress/shots/tod-06-dawn.png",
-   "label": "tod-06-dawn"
-  },
-  {
-   "src": "/progress/shots/tod-17-golden.png",
-   "label": "tod-17-golden"
-  },
-  {
-   "src": "/progress/shots/tod-23-night.png",
-   "label": "tod-23-night"
-  },
-  {
-   "src": "/progress/shots/vista-1.png",
-   "label": "vista-1"
-  },
-  {
-   "src": "/progress/shots/vista-2.png",
-   "label": "vista-2"
-  },
-  {
-   "src": "/progress/shots/sky.png",
-   "label": "sky"
-  },
-  {
-   "src": "/progress/shots/reload.png",
-   "label": "reload"
-  }
+  { "src": "tools/out/crit1-forest-b/shot-canopy.png", "label": "forest: 90% open sky where a closed canopy should be" },
+  { "src": "tools/out/crit1-celestial-c/shot-isle-under.png", "label": "celestial: isle = sombrero hat with basket-weave underside" },
+  { "src": "tools/out/crit1-infernal/shot-in.png", "label": "infernal: pink-sky Mars with green trees" },
+  { "src": "tools/out/crit1-lost-c/shot-dusk.png", "label": "lost: orange patio-brick monoliths" },
+  { "src": "tools/out/crit1-tundra-b/shot-night-aurora.png", "label": "tundra night aurora — the one thing critics praised" },
+  { "src": "tools/out/crit1-vale-c/shot-night-plaza.png", "label": "vale night plaza — best shot of the sweep" }
  ],
  "log": [
-  "Wave 5 launched (wf_c90dc398-1cd) with the regression gate mandatory for builders and blocking WIN for critics. Wave 4 died 0/29 on the model limit — no work lost.",
-  "Bugs hunted down: pointer lock escaped because requestPointerLock({unadjustedMovement}) rejects on some drivers and Chrome blocks relock for ~1.3 s — fixed with a single Input.lock() path. Screen jitter isolated by freezing the world: q=low flat at 1.15, q=high drifting 1.17→3.21 — TAA is not converging (postfx builder owns the fix). Blob check now runs at q=low too, where the user still saw them.",
-  "Code backed up to github.com/Humpalumps/FPS-RPG — tags v0.1.0-stable and v0.1.1-stable are one-command revert points.",
-  "Wave 4 launched fix-first (wf_cd5c7899-156): 13 builders start from stored wave-3 verdicts, then fresh critics; lighting/abilities/hud critic-first. Wave 3 scores: movement 8.3, camera 8, combat 8, grass 7.3, water 7.2, enemies 6 (up from 4), terrain 5.5, sky regressed to 4 (cloud spikes — redirected).",
-  "Prod-grade asset plumbing: new core Assets preloader loads all 43 generated assets (10 tex, 3 GLBs, 30 audio) in ~2.6 s behind the start screen with GPU pre-upload — zero mid-game streaming hitches. GLBs decimated 380k→57k/38k/31k tris (~3 MB each); total asset payload ~24 MB. CLAUDE.md now carries hard asset perf budgets + a style-coherence palette rule; the between-wave coherence agent judges style unity.",
-  "Magnific MCP live: 6 seamless 2k terrain albedos + 28 gunshot/explosion takes + field & night themes generated, tiling-verified, committed under public/assets/ (ASSETS.md). X/GitHub research done: TECHNIQUES.md ranks N8AO (CC0), Quick_Grass (MIT), shadow-map god rays, hex tiling, octahedral impostors, volumetric clouds — licenses verified.",
-  "Wave 3 launched (wf_e7ac807f-e3c): critics-first on all 16 pieces; briefs carry wave-2 gaps + asset/technique orders. Wave 2 died at 13/40 agents (usage limit) after returning 13 verdicts — worst: enemies 4.0 (melee still clips), abilities 4.5 (white blobs), terrain 4.5 (chalk cliffs).",
-  "User flagged ~100 flashing white blobs in the meadow. Root-caused live: wisp glow white-clipping + wisp bolt vfx + 3 spawn wisps perma-aggroing. Fixed: matte flowers (Grass.js), wisp glow 2.6→1.1 (defs.js), spawn meadow 2 calm wisps beyond perception (Enemies.js). Bolt/impact vfx saturation lands with the wave-2 vfx/combat builders.",
-  "Wave 2 launched (run wf_022db421-f2d): fresh critics on all 16 pieces, ≤3 fix rounds, wave-1b gaps in the briefs. Player.js now emits pre-shield damage; terrain gains colorAt(x,z) ask; weapons gains setHidden(bool) ask.",
-  "Wave 1b verdicts in: 12 LOSE / 3 TOSSUP / 0 WIN. Camera fix round completed (recoil climb, footstep-locked bob); HUD built fresh. Usage limit killed the other 14 fix builders mid-flight; game still boots clean (0 errors, 152 fps idle).",
-  "HANDOVER.md added — full pickup doc (job, machine, wave pattern, live state, next actions, gotchas) kept current every loop tick.",
-  "Wave 1b launched: critic-first on all 16 pieces, HUD rebuild.",
-  "Added per-system CPU timing + GPU timer queries to the harness (stats().systems / gpuMs); tour now warms up 5 s and walks east.",
-  "Wave 1 (interrupted by usage limit): sky, lighting/CSM, postfx (AO/god rays/grade), terrain LOD + triplanar, water (reflection/refraction), grass, vegetation+props, movement, camera, weapons (6 archetypes, viewmodel), abilities, combat, enemies (6 types), vfx, audio all landed in some form; HUD still stub.",
-  "Project scaffolded: Vite + three r185 + postprocessing. Headless-GPU Playwright harness verified (RTX 3060 via ANGLE D3D11)."
+  "2026-08-25 — WAVE 1 COMPLETE: 12 critics, 12 LOSE/TOSSUP. Root causes ranked: (1) shared kit material reads as brick in 6 regions, (2) isle silhouettes, (3) midday atmosphere in cursed regions, (4) no underwater render model, (5) no forest canopy, (6) summer pines in tundra, (7) dead gunfeel in ADS/recoil.",
+  "2026-08-25 — black basalt ground albedo generated + made seamless (Moisan periodic decomposition) for the Infernal rebuild.",
+  "2026-08-25 — campaign start: wave 1 = blind critic sweep of the live build (12 auditors, serial on the GPU).",
+  "2026-08-25 — worktree dev server up on :5179. invariants PASS."
  ]
 }

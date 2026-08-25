@@ -14,6 +14,31 @@ Policy: see CLAUDE.md "Non-negotiable conventions". Need something? Put `ASSET A
 | `snow.jpg` | Terrain mountain-top splat | soft drifts, slight blue recesses |
 | `ruins_stone.jpg` | Props ruins / arena / plinth material | sandstone bricks, moss mortar |
 
+### Batch 4 — Destiny-2-polish wave (2026-08-25, all 1536&times;1536 JPG/PNG, seamless via periodic decomposition, wrap-shift verified)
+
+| file | for | notes |
+|---|---|---|
+| `bark_gnarled.jpg` | Elderheart + Vegetation trunk bark | deep-ridged grey-brown gnarled bark |
+| `granite_moss.jpg` | forest elven ruin kit (Props) | grey granite blocks, moss joints — replaces ruins_stone in the forest |
+| `marble_strata.jpg` | celestial isle undersides / boulders / colonnade | ivory strata, gold veining |
+| `granite_carved.jpg` | Kharaz-Dun dwarven gate (Props) | monumental cool-grey ashlar, chisel detail |
+| `basalt_columnar.jpg` | infernal cliffs / cinder cones (Terrain triplanar, Props) | matte black columnar fracture |
+| `flagstone_violet.jpg` | Lost Realm ground splat (Terrain layer) | worn dark-violet slabs, faint gold inlay |
+| `megalith_violet.jpg` | Convergence spire + 16 monoliths + Hagstone (Props) | violet-slate chiseled face |
+| `voidstone.jpg` | void isles / crater walls (Props, Terrain) | near-black purple strata, pale veins |
+| `ice_glacial.jpg` | tundra frozen lake sheet (Water/Terrain) | pale blue ice, pressure cracks |
+| `snow_sastrugi.jpg` | tundra ground splat (Terrain layer 9 upgrade) | fine wind-streaked snow |
+| `peat_muck.jpg` | shadowfen bed + shorelines (Terrain layer 10 upgrade) | near-black olive muck, twigs |
+| `seabed_ripple.jpg` | sunken seabed (Terrain layer 4 tint base) | pale golden ripple ridges |
+| `lava_crust.jpg` | Water lava surface | orange glow through dark crust — cap emissive per invariants |
+| `ash_basalt.jpg` | infernal ground splat (Terrain layer 8 replacement) | black cracked basalt plates + grey ash; mean luma 39/255 — re-tune the cB.a glow bands |
+| `egg_speckle.jpg` | dragon nest eggs (Props) | cream + dark speckle |
+| `glove_leather.jpg` | first-person viewmodel hands/sleeves (Weapons) | quilted charcoal leather, gold stitch |
+| `card_conifer_snow.png` | tundra snow-laden needle cards (Vegetation) | RGBA cutout, snow on boughs |
+| `card_fern.png` | forest floor fern clumps (Grass/Vegetation) | RGBA cutout |
+| `card_reed.png` | shadowfen reed clumps (Props/Grass) | RGBA cutout, 2:3 |
+| `card_moss.png` | hanging moss drapes on fen snags (Props) | RGBA cutout, 2:3 |
+
 **Usage: `game.assets.tex('<key>')`** (keys = filename without extension; glyphs = `glyph1`/`glyph2`). Preloaded + GPU-uploaded before any system init — never load asset files yourself. sRGB, repeat-wrap, aniso 8 already set (leaf_card/glyphs are clamped). Derive normal/roughness procedurally (height-from-luma or noise) — only albedo is generated. Blend with your procedural detail/macro variation; do not drop macro variation.
 
 ## Intro loading screen — `public/assets/intro/` (293 KB total: 7 x 512 px JPG, NO model)

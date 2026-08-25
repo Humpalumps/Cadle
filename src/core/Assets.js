@@ -28,6 +28,28 @@ const TEX = {
   leaf_card: { url: '/assets/tex/leaf_card.png', repeat: false },
   glyph1: { url: '/assets/tex/glyph-ring-1.jpg', repeat: false },
   glyph2: { url: '/assets/tex/glyph-ring-2.jpg', repeat: false },
+  // Destiny-2-polish wave batch (2026-08-25): per-region architecture/ground albedos + foliage cards.
+  // All seamless (Moisan periodic decomposition, wrap-shift verified). See ASSETS.md batch 4.
+  bark_gnarled: { url: '/assets/tex/bark_gnarled.jpg', repeat: true },
+  granite_moss: { url: '/assets/tex/granite_moss.jpg', repeat: true },
+  marble_strata: { url: '/assets/tex/marble_strata.jpg', repeat: true },
+  granite_carved: { url: '/assets/tex/granite_carved.jpg', repeat: true },
+  basalt_columnar: { url: '/assets/tex/basalt_columnar.jpg', repeat: true },
+  flagstone_violet: { url: '/assets/tex/flagstone_violet.jpg', repeat: true },
+  megalith_violet: { url: '/assets/tex/megalith_violet.jpg', repeat: true },
+  voidstone: { url: '/assets/tex/voidstone.jpg', repeat: true },
+  ice_glacial: { url: '/assets/tex/ice_glacial.jpg', repeat: true },
+  snow_sastrugi: { url: '/assets/tex/snow_sastrugi.jpg', repeat: true },
+  peat_muck: { url: '/assets/tex/peat_muck.jpg', repeat: true },
+  seabed_ripple: { url: '/assets/tex/seabed_ripple.jpg', repeat: true },
+  lava_crust: { url: '/assets/tex/lava_crust.jpg', repeat: true },
+  ash_basalt: { url: '/assets/tex/ash_basalt.jpg', repeat: true },
+  egg_speckle: { url: '/assets/tex/egg_speckle.jpg', repeat: true },
+  glove_leather: { url: '/assets/tex/glove_leather.jpg', repeat: true },
+  card_conifer_snow: { url: '/assets/tex/card_conifer_snow.png', repeat: false },
+  card_fern: { url: '/assets/tex/card_fern.png', repeat: false },
+  card_reed: { url: '/assets/tex/card_reed.png', repeat: false },
+  card_moss: { url: '/assets/tex/card_moss.png', repeat: false },
 };
 const AUDIO = {};
 for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) AUDIO[`shot-${a}-${i}`] = `/assets/sfx/shot-${a}-${i}.mp3`;
