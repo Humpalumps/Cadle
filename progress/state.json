@@ -235,6 +235,10 @@
    "label": "Creature batch 1 — rendered from the actual GLBs at full res (58k tris, 4096² PBR each). These are img2threejs REFERENCES; no GLB ships."
   },
   {
+   "src": "tools/out/assetgen/tripo/hound-walk-sheet.png",
+   "label": "Hound walk cycle at four phases — real gait, tail sway, clean deformation. Locomotion comes from Tripo presets; attacks stay procedural so they can sync to damage windows and be interrupted mid-swing."
+  },
+  {
    "src": "tools/out/assetgen/sheet.png",
    "label": "batch 4 contact sheet — all 19 generations at a glance"
   },
@@ -323,48 +327,40 @@
    "label": "granite_detail — dragon near-camera cliff octave (seamless)"
   },
   {
-   "src": "tools/out/assetgen/tripo/gate-hq-render.jpg",
-   "label": "Empyrean Gate — celestial hero landmark (139k tris ref)"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/wayfinder-hq-render.jpg",
-   "label": "Wayfinder — the NPC quest giver"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/hound-hq-render.jpg",
-   "label": "Aether Hound"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/sentinel-hq-render.jpg",
-   "label": "Sentinel"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/golem-hq-render.jpg",
-   "label": "Golem"
+   "src": "tools/out/assetgen/tripo/treant-hq-render.jpg",
+   "label": "treant — rigged + optimised, staged at public/assets/creatures/treant.glb"
   },
   {
    "src": "tools/out/assetgen/tripo/drake-hq-render.jpg",
-   "label": "Drake (restyled: matte scales, gold filigree horns, ember chest)"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/treant-hq-render.jpg",
-   "label": "Treant"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/frostwolf-hq-render.jpg",
-   "label": "Frostwolf (restyled: ice-shard ruff)"
+   "label": "drake — rigged + optimised, staged at public/assets/creatures/drake.glb"
   },
   {
    "src": "tools/out/assetgen/tripo/wraith-hq-render.jpg",
-   "label": "Wraith — sculpted opaque, ghost shader applied in-game"
+   "label": "wraith — rigged + optimised, staged at public/assets/creatures/wraith.glb"
   },
   {
-   "src": "tools/out/assetgen/tripo/riftling-hq-render.jpg",
-   "label": "Riftling — void ethereal"
+   "src": "tools/out/assetgen/tripo/golem-hq-render.jpg",
+   "label": "golem — rigged + optimised, staged at public/assets/creatures/golem.glb"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/sentinel-hq-render.jpg",
+   "label": "sentinel — rigged + optimised, staged at public/assets/creatures/sentinel.glb"
   },
   {
    "src": "tools/out/assetgen/tripo/sprite-hq-render.jpg",
-   "label": "Fae Sprite — re-done hovering, no plinth"
+   "label": "sprite — rigged + optimised, staged at public/assets/creatures/sprite.glb"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/frostwolf-hq-render.jpg",
+   "label": "frostwolf — rigged + optimised, staged at public/assets/creatures/frostwolf.glb"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/riftling-hq-render.jpg",
+   "label": "riftling — rigged + optimised, staged at public/assets/creatures/riftling.glb"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/hound-hq-render.jpg",
+   "label": "hound — rigged + optimised, staged at public/assets/creatures/hound.glb"
   }
  ]
 }
