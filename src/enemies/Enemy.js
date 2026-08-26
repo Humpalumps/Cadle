@@ -88,10 +88,10 @@ export class Enemy {
    *  `name`: override the readable name (elite default: "Elite <def.name>"); `questTag`: opaque string quest
    *  code can match on (e.g. objectives keyed to a specific spawn, not just a type). `isGuide`: true only for
    *  the escort guide (Enemies.spawnFriendly) — routes takeDamage to _guideDamage instead of the normal AI death. */
-  spawn(pos, { level = 1, camp = null, slot = null, yaw, elite = false, name = null, questTag = null, isGuide = false } = {}) {
+  spawn(pos, { level = 1, camp = null, slot = null, yaw, elite = false, name = null, questTag = null, isGuide = false, hpMul = null, namedRare = false } = {}) {
     const def = this.def, g = this.game, rnd = this.sys.rnd;
     this.id = NEXT_ID++; this.level = level; this.camp = camp; this.slot = slot; this.alive = true; this.state = 'idle'; this.stateT = 0;
-    this.elite = elite; this.questTag = questTag; this.isGuide = isGuide;
+    this.elite = elite; this.questTag = questTag; this.isGuide = isGuide; this.namedRare = namedRare;
     this.target.team = 'enemy';   // reset every spawn: spawnFriendly flips this to 'player' AFTER calling spawn()
     // for the escort guide specifically — without this reset a pooled ex-guide instance stays immune to the
     // player's own fire forever the next time it is recycled as a normal hostile.
@@ -100,8 +100,10 @@ export class Enemy {
     this._threat.pos.copy(this.sys.playerPos); this._threat.obj = g.player?.target ?? null;
     this._threat.feet.copy(g.player?.position ?? this.sys.playerPos);
     this.name = name ?? (elite ? `Elite ${def.name}` : def.name); this.target.name = this.name; this.target.level = level;
-    this.maxHealth = Math.round(LEVEL_HP(def.health, level) * (elite ? ELITE_HP_MUL : 1)); this.health = this.maxHealth;
-    this.maxShield = Math.round(LEVEL_HP(def.shield, level) * (elite ? ELITE_HP_MUL : 1)); this.shield = this.maxShield;
+    // `hpMul` overrides the elite HP multiplier when given (named rares are speced at 2.5x, not the full 3.0x)
+    const hm = hpMul ?? (elite ? ELITE_HP_MUL : 1);
+    this.maxHealth = Math.round(LEVEL_HP(def.health, level) * hm); this.health = this.maxHealth;
+    this.maxShield = Math.round(LEVEL_HP(def.shield, level) * hm); this.shield = this.maxShield;
     this.damage = Math.round(LEVEL_DMG(def.damage, level) * (elite ? ELITE_DMG_MUL : 1));
     this.xp = Math.round(LEVEL_XP(def.xp, level) * (elite ? ELITE_XP_MUL : 1));
     this.position.copy(pos); if (!def.flying) this.position.y = g.terrain.heightAt(pos.x, pos.z); else this.position.y = g.terrain.heightAt(pos.x, pos.z) + def.hover;
@@ -316,9 +318,16 @@ export class Enemy {
     }
     if (st === 'patrol') {
       if (this.alert) { this._setState('chase'); return; }
+      // routed camps (roaming packs) walk waypoint LOOPS through the region's POIs — legs are long, so
+      // arrival is loose (7 m) and the timeout generous; a timeout does NOT advance the route (the next
+      // patrol leg resumes the same waypoint), only a real arrival does.
+      const route = this.camp?.route;
       _v.subVectors(this.wander, this.position); _v.y = 0; const d = _v.length();
-      if (d < 1.2 || this.stateT > 14) { this._setState('idle'); this.idleDur = 1.5 + this.sys.rnd() * 4; return; }
-      this.wantDir.copy(_v).multiplyScalar(1 / d); this.wantSpeed = def.speed * (def.flying ? 0.35 : 0.42);
+      if (d < (route ? 7 : 1.2) || this.stateT > (route ? 75 : 14)) {
+        if (route && d < 7) this.routeIdx = ((this.routeIdx ?? this.id) + 1) % route.length;
+        this._setState('idle'); this.idleDur = route ? 0.6 + this.sys.rnd() * 1.8 : 1.5 + this.sys.rnd() * 4; return;
+      }
+      this.wantDir.copy(_v).multiplyScalar(1 / d); this.wantSpeed = def.speed * (def.flying ? (route ? 0.45 : 0.35) : (route ? 0.55 : 0.42));
       if (def.flying) { this.wantPos.copy(this.wander); this.wantPos.y = this.sys.heightAt(this.wander.x, this.wander.z) + def.hover; }
       return;
     }
@@ -385,6 +394,14 @@ export class Enemy {
     }
   }
   _pickWander() {
+    const route = this.camp?.route;
+    if (route) {   // patrol ROUTE: head for the current waypoint of the loop (jittered so a pack doesn't stack)
+      this.routeIdx = (this.routeIdx ?? this.id) % route.length;   // modulo every read: pooled instances carry a stale index
+      const p = route[this.routeIdx], rnd = this.sys.rnd;
+      this.wander.set(p.x + (rnd() - 0.5) * 14, 0, p.z + (rnd() - 0.5) * 14);
+      this.wander.y = this.sys.heightAt(this.wander.x, this.wander.z);
+      return;
+    }
     const r = this.camp ? this.camp.radius : 10, rnd = this.sys.rnd, c = this.camp ? this.camp.center : this.home;
     for (let i = 0; i < 4; i++) {
       const a = rnd() * Math.PI * 2, rr = 3 + rnd() * r;

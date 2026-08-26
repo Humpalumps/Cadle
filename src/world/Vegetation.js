@@ -41,24 +41,27 @@ const BTREE = {
   forest:    { p: 0.34, sp: [8], og: 0.58, col: [0.45, 0.80, 0.62], gv: 0.72 },   // deep green + subtle teal (accent applied at placement); species 8 is the aspen-free broadleaf pool — the gold-tinted Aspen presets in species 0 were the "random ochre autumn trees"
   tundra:    { p: 0.34, sp: [3],    col: [0.90, 0.96, 1.06], gv: 0.36, sMax: 0.17, yMax: 34 },   // snow-laden conifers (card_conifer_snow) — winter, never summer green; treeline stops below the glacier massif
   celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
-  dragon:    { p: 0.07, sp: [6],    col: [0.42, 0.54, 0.47], sMax: 0.30, yMax: 62 },   // dark alpine pine, LOW ledges only (heart sits at ~44 m; the benches above stay bare)
+  dragon:    { p: 0.07, sp: [6],    col: [0.30, 0.40, 0.35], sMax: 0.30, yMax: 54 },   // DARK alpine pine, LOW ledges only (heart ~44 m; yMax 62->54 clears the high benches; col darkened — 0.42-green still read spring-lime beside the gate, crit2-dragon-b)
   infernal:  { p: 0.04, sp: [4],    col: [0.92, 0.90, 0.88] },   // charred LEAFLESS snags, sparse — the wastes are mostly vents and ash (col is near-neutral: it tints the trunk impostor, and a charred trunk must stay charcoal)
   lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
   shadowfen: { p: 0.32, sp: [7],    col: [0.40, 0.46, 0.28] },   // ALL of it dead: sparse husk canopy over standing water (species 7 keeps the old sparse-leaf dead look; 4 went fully leafless for the infernal spec)
   sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
   void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };
-// [accept probability, linear rock tint]
+// [accept probability, linear rock tint, material group]. `grp` routes the region's rocks to their own
+// albedo material (see _buildRocks GROUPS) — one shared cracked-vein texture read as "dried mud balls" in
+// dragon/celestial/infernal and "marble eggs" in lost, and its moss term went olive on tundra domes
+// (wave-2 verdicts). No grp (or a missing asset) = the default mossy granite.
 const BROCK = {
-  forest:    { p: 0.05, col: [0.80, 0.95, 0.78] },   // mossy
-  tundra:    { p: 0.12, col: [1.05, 1.08, 1.15] },   // frost-bleached
-  celestial: { p: 0.09, col: [1.12, 1.06, 0.94] },   // sunlit marble
-  dragon:    { p: 0.22, col: [0.92, 0.90, 0.92] },
-  infernal:  { p: 0.17, col: [0.26, 0.20, 0.18] },   // basalt
-  lost:      { p: 0.08, col: [0.92, 0.86, 1.10] },
+  forest:    { p: 0.05, col: [0.80, 0.95, 0.78] },                        // mossy granite (procedural)
+  tundra:    { p: 0.12, col: [1.05, 1.08, 1.15], grp: 'tundra' },         // frost-bleached granite, snow-dusted tops
+  celestial: { p: 0.09, col: [1.12, 1.06, 0.94], grp: 'celestial' },      // white marble strata
+  dragon:    { p: 0.22, col: [0.92, 0.90, 0.92], grp: 'dragon' },         // granular granite
+  infernal:  { p: 0.17, col: [0.52, 0.48, 0.46], grp: 'infernal' },       // columnar basalt (tint raised from 0.26: over an already-dark albedo the boulders went featureless black)
+  lost:      { p: 0.08, col: [0.92, 0.86, 1.10], grp: 'lost' },           // violet megalith stone
   shadowfen: { p: 0.06, col: [0.62, 0.70, 0.55] },
   sunken:    { p: 0.14, col: [0.72, 0.92, 0.92] },
-  void:      { p: 0.18, col: [0.34, 0.28, 0.46] },
+  void:      { p: 0.18, col: [0.34, 0.28, 0.46], grp: 'void' },           // voidstone
 };
 // biome spires reuse the crystal geometry: [p, linear instance tint, [minScale, maxScale]].
 // Colours stay SATURATED and the bright ones stay modest in value — an emissive spire that tone-maps
@@ -68,7 +71,7 @@ const BROCK = {
 // (it is the instance matrix) and is what makes them read apart at a distance.
 const BSPIRE = {
   forest:    { p: 0.030, col: [0.45, 1.00, 0.62], s: [0.8, 1.9], a: [0.70, 1.05] },   // fae light: slim wisps
-  tundra:    { p: 0.100, col: [0.66, 0.92, 1.10], s: [2.0, 4.4], a: [0.60, 1.60] },   // ice: tall thin fracture shards
+  tundra:    { p: 0.100, col: [0.92, 0.96, 1.04], s: [2.0, 4.4], a: [0.60, 1.60] },   // ice: PALE glacial fracture shards (near-white tint flips the crystal shader's body to frost — see paleT in _buildCrystals; the old 0.66-blue read as opaque royal sapphire, wave-1+2 verdicts)
   celestial: { p: 0.000, col: [1.05, 0.86, 0.42], s: [2.2, 4.2], a: [0.74, 1.40] },   // marble + gold, no crystal
   dragon:    { p: 0.000, col: [0.86, 0.80, 0.74], s: [1.4, 2.8], a: [1.10, 0.85] },   // bone and scorched rock
   infernal:  { p: 0.000, col: [0.30, 0.11, 0.08], s: [1.6, 3.6], a: [1.30, 0.68] },   // basalt vents instead
@@ -204,9 +207,10 @@ function barkTextures(kind, aniso) {
 // real granite sits at 0.15-0.35 -- and in direct sun a boulder near the camera crossed 212 sRGB
 // luminance, i.e. tools/blobcheck.py's "glowing" bar, whose calibration note expects sunlit rock at
 // 202-208. Toned to ~0.80 peak: still bright granite, no longer a light source.
-function rockTexture(aniso, base = [0.62, 0.60, 0.565], tint = [0.74, 0.70, 0.63]) {
+function rockTexture(aniso, base = [0.62, 0.60, 0.565], tint = [0.74, 0.70, 0.63], crack = 1) {
   return noiseTexture(256, 256, (u, v) => {
-    const n = tfbm(u, v, 6, 41, 5), cr = Math.pow(1 - Math.abs(tn(u, v, 9, 42)), 8) * 0.7 + Math.pow(1 - Math.abs(tn(u, v, 17, 43)), 12) * 0.4; // cracks
+    const cr = (Math.pow(1 - Math.abs(tn(u, v, 9, 42)), 8) * 0.7 + Math.pow(1 - Math.abs(tn(u, v, 17, 43)), 12) * 0.4) * crack; // cracks (crack < 1: frost-shattered granite, not jigsaw veins)
+    const n = tfbm(u, v, 6, 41, 5);
     const sp = tn(u, v, 90, 44) > 0.55 ? 0.095 : 0; // quartz speckle (halved: it was the part that clipped)
     const t = 0.5 + n; return base.map((c, i) => clamp(lerp(c, tint[i], t - 0.5) * (1 - cr * 0.6) + sp, 0, 1));
   }, { aniso });
@@ -603,15 +607,36 @@ export class Vegetation {
   }
   _buildRocks(rng, aniso, Q) {
     const rockTex = rockTexture(aniso); this.rockTexture = rockTex;
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: rockTex, vertexColors: true, roughness: 0.95, metalness: 0.02 }), mergePatch(fadePatch, triplanarPatch(0.28, 0.55), { key: 'rock' }));
+    const A = (k) => this.game.assets?.tex?.(k) ?? null;
+    // One material per region GROUP (BROCK.grp), same 4 geometries. `moss` reuses the triplanar up-face
+    // term; for tundra its colour is snow, so domes get a white dusting instead of olive moss.
+    const GROUPS = {
+      default:   { map: rockTex,                                                          tri: 0.28, moss: 0.55 },
+      tundra:    { map: rockTexture(aniso, [0.55, 0.57, 0.61], [0.66, 0.68, 0.73], 0.3),  tri: 0.28, moss: 0.95, mossCol: [0.52, 0.54, 0.58] },
+      celestial: { map: A('marble_strata'),   tri: 0.20, moss: 0 },
+      dragon:    { map: A('granite_detail'),  tri: 0.30, moss: 0 },
+      infernal:  { map: A('basalt_columnar'), tri: 0.22, moss: 0 },
+      lost:      { map: A('megalith_violet'), tri: 0.20, moss: 0 },
+      void:      { map: A('voidstone'),       tri: 0.22, moss: 0 },
+    };
     this.rockGeos = [0, 1, 2, 3].map((k) => makeRockGeometry(k, k * 3 + 1));
+    // InstLOD.finalize writes an aFade attribute onto the mesh's geometry, so groups cannot share geometry
+    // objects — alias the buffers (same position/normal/color/index, own aFade stream), zero copies.
+    const alias = (g) => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(g.index); return ng; };
     const near = [320, 130, 130, 130];
-    this.rockSets = this.rockGeos.map((g, k) => {
-      const m = new THREE.InstancedMesh(g, mat, 8);
-      m.castShadow = k === 0; // only the big boulders cast — small rocks hug the ground, their shadow is invisible but costs 3 cascade draws
-      m.receiveShadow = true; m.name = 'rocks-' + k; this.game.scene.add(m);
-      const lod = new InstLOD({ near: [m], nearDist: near[k] * Q, band: 30, color: true }); this.lods.push(lod); return lod;
-    });
+    this.rockSets = [];      // FLAT list (Props._pruneCelestialRocks iterates it) — all groups' LODs
+    this._rockGrp = {};      // group name -> [lod kind 0..3], used at placement time
+    for (const [gname, cfg] of Object.entries(GROUPS)) {
+      if (!cfg.map) continue;   // asset missing -> the region falls back to default at placement time
+      const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: cfg.map, vertexColors: true, roughness: 0.95, metalness: 0.02 }),
+        mergePatch(fadePatch, triplanarPatch(cfg.tri, cfg.moss, cfg.mossCol), { key: 'rock-' + gname }));
+      this._rockGrp[gname] = this.rockGeos.map((g, k) => {
+        const m = new THREE.InstancedMesh(gname === 'default' ? g : alias(g), mat, 8);
+        m.castShadow = k === 0; // only the big boulders cast — small rocks hug the ground, their shadow is invisible but costs 3 cascade draws
+        m.receiveShadow = true; m.name = `rocks-${gname}-${k}`; this.game.scene.add(m);
+        const lod = new InstLOD({ near: [m], nearDist: near[k] * Q, band: 30, color: true }); this.lods.push(lod); this.rockSets.push(lod); return lod;
+      });
+    }
   }
   _buildCrystals(rng, aniso) {
     const U = this.uniforms;
@@ -653,7 +678,16 @@ export class Vegetation {
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
         diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
         diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (vec3(0.55) + gTint * 0.95), fh * 0.6 + tipT * 0.3); }`,
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (vec3(0.55) + gTint * 0.95), fh * 0.6 + tipT * 0.3);
+        // PALE SPIRES (Frostveil ice): a near-white instance tint means "this is ICE, not aether" — the
+        // body swaps its deep violet albedo for pale glacial, so daylight facets read frost instead of
+        // opaque royal sapphire (wave-1+2 tundra verdicts). Facet steps + growth banding stay, in white.
+        // The translucent read comes from tint SATURATION (rim/backlight in the pale ice hue), not emissive.
+        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+        float paleT = smoothstep(0.86, 0.96, dot(vColor.rgb, vec3(0.2126, 0.7152, 0.0722)));
+        diffuseColor.rgb = mix(diffuseColor.rgb,
+          vec3(0.72, 0.80, 0.90) * (0.55 + 0.45 * fh) * (0.88 + 0.18 * sin(vLy * 6.0 + fh * 17.0)), paleT);
+        #endif }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
         vec3 tintC = gTint;
         float pulse = 0.78 + 0.22 * sin(uTime * 1.4 + vPh * 6.2832);
@@ -693,7 +727,10 @@ export class Vegetation {
     for (let gx = -half; gx < half; gx += 7) for (let gz = -half; gz < half; gz += 7) {
       const x = gx + (rng() - 0.5) * 6, z = gz + (rng() - 0.5) * 6; if (!ok(x, z)) continue;
       const r0 = Math.hypot(x, z);
-      if (r0 < 34 || ruinD(x, z) < 58 || arenaD(x, z) < 55 || aethD(x, z) < 14) continue;
+      // aetheryte plaza: 22 m, not 14 — a gnarled crown is ~7 m wide, so a legally-placed trunk at 14-16 m
+      // still tangled its canopy through the pedestal + crystal (crit2-vale-c/shot-aetheryte-tree-up).
+      // Plaza hard floor is r>=12 around (0,-28); trees need plaza + crown + margin.
+      if (r0 < 34 || ruinD(x, z) < 58 || arenaD(x, z) < 55 || aethD(x, z) < 22) continue;
       const forest = smoothstep(-170, -215, z) * smoothstep(275, 235, Math.abs(x)) * smoothstep(-470, -420, z);
       const grove = smoothstep(0.12, 0.45, fbm(x * 0.009, z * 0.009, { octaves: 3, seed: 9 }));
       let p = forest * 0.62 + (1 - forest) * (grove * 0.22 + 0.012);
@@ -705,7 +742,10 @@ export class Vegetation {
       // `gv` is the FLOOR under the grove noise. Without one, grove2 returns 0 across whole stretches and the
       // region's heart is an open lawn with a treeline around it — which is a meadow, not a forest. A closed
       // canopy needs trees between the groves too; the noise should vary density, not switch it off.
-      if (bTree) { const gv = bTree.gv ?? 0; p = p * (1 - bt.w) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bt.w; }
+      // The floor fades DOWN toward the region edge: full-strength gv at the heart keeps the closed canopy,
+      // but at the edge band a uniform floor over a 7 m lattice read as orchard rows on open ground
+      // (crit2-forest-c/shot-lowsun-west) — there the grove noise takes over and trees CLUMP instead.
+      if (bTree) { const gv = (bTree.gv ?? 0) * smoothstep(0.30, 0.85, bt.w); p = p * (1 - bt.w) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bt.w; }
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
       const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
@@ -719,7 +759,7 @@ export class Vegetation {
         // leak in wherever the weight dipped — which is exactly the "living green trees all over the
         // Infernal Wastes" spec violation. Below w 0.02 there is no bTree and home logic applies as before.
         species = bTree.sp[(u * bTree.sp.length) | 0];
-        if (bTree.og && rng() < bTree.og * bt.w) species = 5;          // old-growth share: the crowns that close the canopy
+        if (bTree.og && rng() < bTree.og * (0.35 + 0.65 * bt.w)) species = 5;   // old-growth share keeps a floor at the edges: the western band was ALL uniform young trees (w-proportional share ~0 there), which is half of the orchard-rows read
       }
       else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
       const sp = treeSpec[species] ?? treeSpec[species === 3 || species === 6 ? 0 : 1];
@@ -748,21 +788,36 @@ export class Vegetation {
       if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
       const br = B(x, z), bRock = br.w > 0.02 ? BROCK[br.id] : null;
       if (bRock) p = p * (1 - br.w) + bRock.p * br.w;
+      // the frozen lake at the Frostveil heart is a raised flat ICE SHEET now — keep it ice, not a rock
+      // yard (the wave-2 "floating boulders litter the lake bowl" frame was mostly rocks strewn there)
+      if (bRock && br.id === 'tundra' && y < wl + 2.5 && slope < 0.06) p *= 0.12;
       if (rng() > p) continue;
       const big = rng() < (slope > 0.2 || y > 30 ? 0.35 : 0.15) && rd > 45;
       const kind = big ? 0 : 1 + Math.floor(rng() * 3); const scale = big ? 2.2 + rng() * 3 : (rd < 45 ? 0.35 + rng() * 0.7 : 0.5 + rng() * 1.3);
+      if (big) { // no pine through a dome boulder (crit2-tundra/crop-dome): big rocks yield to standing trees
+        const rr = 1.1 * scale + 0.8; let hit = false;
+        for (const t of this.trees) if (Math.abs(t.x - x) < rr && Math.abs(t.z - z) < rr) { hit = true; break; } // ponytail: linear scan, ~500 big rocks x ~5k trees once at boot; grid-hash if it ever shows in the boot profile
+        if (hit) continue;
+      }
       E.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5); Qt.setFromEuler(E);
-      P.set(x, y - 0.3 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
+      // seat on the LOWEST ground under the base ring, not the centre sample: centre-only seating left
+      // boulders hovering off downhill edges (tundra lake bowl floaters, the dragon crest slab)
+      let yb = y; { const rr = scale * 0.7; for (let a = 0; a < 3; a++) { const th = a * 2.0944 + 0.5; yb = Math.min(yb, terrain.heightAt(x + Math.cos(th) * rr, z + Math.sin(th) * rr)); } }
+      P.set(x, yb - 0.3 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       const g = 0.75 + rng() * 0.35; C.setRGB(g * (1 + (rng() - 0.5) * 0.1), g, g * (1 - rng() * 0.08));
       if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], br.w), C.g * lerp(1, t[1], br.w), C.b * lerp(1, t[2], br.w)); }
-      this.rockSets[kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
-      col.add({ type: 'sphere', pos: new THREE.Vector3(x, y - 0.3 * scale + 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
+      const grp = (bRock?.grp && this._rockGrp[bRock.grp] && br.w > 0.35) ? bRock.grp : 'default';
+      this._rockGrp[grp][kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
+      col.add({ type: 'sphere', pos: new THREE.Vector3(x, yb - 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
     // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
     const addCrystal = (x, z, scale, variant, tint, aspect) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
       const ax = aspect ? aspect[0] : 1, ay = aspect ? aspect[1] : 1;
-      P.set(x, y - 0.1 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
+      // seat on the lowest ground under the cluster footprint (same anti-float rule as the rocks: a
+      // centre-sampled shard on the tundra lake slope hung its base over downhill air)
+      let yb = y; { const rr = scale * ax * 0.55; for (let a = 0; a < 3; a++) { const th = a * 2.0944 + 1.1; yb = Math.min(yb, terrain.heightAt(x + Math.cos(th) * rr, z + Math.sin(th) * rr)); } }
+      P.set(x, yb - 0.12 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
       const hue = rng();
       if (tint) { const j = 0.88 + hue * 0.24; C.setRGB(tint[0] * j, tint[1] * j, tint[2] * j); }   // biome spire: ice / obsidian / coral / void shard
       else C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
@@ -771,7 +826,7 @@ export class Vegetation {
     };
     for (let gx = -half; gx < half; gx += 11) for (let gz = -half; gz < half; gz += 11) {
       const x = gx + (rng() - 0.5) * 10, z = gz + (rng() - 0.5) * 10; if (!ok(x, z)) continue;
-      const r0 = Math.hypot(x, z); if (r0 < 22 || ruinD(x, z) < 40 || arenaD(x, z) < 50 || aethD(x, z) < 10) continue;
+      const r0 = Math.hypot(x, z); if (r0 < 22 || ruinD(x, z) < 40 || arenaD(x, z) < 50 || aethD(x, z) < 12) continue;   // plaza clearance r>=12 (props-B measured ask)
       const y = terrain.heightAt(x, z); if (y < wl + 0.3 || y > 110 || terrain.slopeAt(x, z) > 0.6) continue;
       const home = smoothstep(400, 300, r0);
       const field = smoothstep(215, 250, x) * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.02, z * 0.02, { octaves: 3, seed: 19 })) * home;
@@ -795,7 +850,9 @@ export class Vegetation {
       const y = terrain.heightAt(x, z); if (y < wl + 0.5 || y > 75 || terrain.slopeAt(x, z) > 0.45) continue;
       addCrystal(x, z, 3.4 + rng() * 2.0, 2); heroes++;
     }
-    for (const [x, z, s] of [[7.5, -23, 0.9], [-6.5, -34, 1.1], [9, -34, 0.7], [-8, -22, 0.6]]) addCrystal(x, z, s, Math.floor(rng() * 3));
+    // plaza-ring crystals pushed to >= 10.9 m from plaza centre (0,-28): at 8.8-10.8 m they clipped the
+    // aetheryte plaza skirt (props-B's measured ask; plaza outer edge is ~10.5 m)
+    for (const [x, z, s] of [[9.5, -21.5, 0.9], [-8, -35.5, 1.1], [10.5, -35, 0.7], [-10, -20.5, 0.6]]) addCrystal(x, z, s, Math.floor(rng() * 3));
   }
 
   /** Deterministic collision self-test: walk a player-sized sphere straight into nearby registered colliders

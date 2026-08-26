@@ -297,6 +297,16 @@ export class Props {
       void: mkTri('rm-void', 'voidstone', 0.22),
     };
     this.flagstoneMat = mkTri('rm-flag', 'flagstone_violet', 0.30);                                        // lost: slabs that lie FLAT (dais)
+    // DIVINE GOLD (celestial night verdict: "the zone emits no divine light"): the gate's frieze/archivolt/
+    // sunburst and the isle rim bands, saturated warm gold that is near-dormant by day and wakes at night.
+    // Exactly the mushroom recipe: night-boosted emissive closed by a HUE-PRESERVING luminance cap that
+    // tightens in daylight (BLOB LAW: saturate the COLOUR, cap the INTENSITY — never white). These are
+    // metre-scale bands on a 37 m monument, not sub-pixel points; night cap 0.85 stays a warm sheen.
+    this.divineMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xcfa14e, vertexColors: true, roughness: 0.5, metalness: 0.3, emissive: 0xff9a2e, emissiveIntensity: 0.9 }), {
+      key: 'divine-gold', uniforms: { uSunI: this.U.uSunI ?? { value: 1 } }, fHead: 'uniform float uSunI;',
+      fEmissive: 'totalEmissiveRadiance *= 0.10 + 1.0 * (1.0 - clamp(uSunI, 0.0, 1.0)); float dLum = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722)); float dCap = mix(0.85, 0.14, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= dCap / max(dLum, dCap);',
+    });
+    this._divine = { parts: [], tints: [] };   // collected by the gate + isles, built into one mesh after _buildIsles
     // The Elderheart's own skin (wave-1 blocker: its organic forms wore the brick map): gnarled bark,
     // moss creeping up the weather side. Crown foliage is flat-shaded painterly blobs — vertex colour IS
     // the albedo, deep teal-greens, zero emissive (ground-adjacent foliage never glows: BLOB LAW).
@@ -341,6 +351,32 @@ export class Props {
     this._buildBorderStones(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildBiomeClutter(rng, h, col);
+    this._pruneCelestialRocks(col);
+  }
+
+  /** Wave-2 major "mud-crack toad-skin rocks still squat on the marble plaza": Vegetation scatters its
+   *  boulders before Props exists, so its cracked-rock instances land on the Empyrean plaza. Props owns
+   *  the plaza (and the collider registry — Colliders.js header); veg internals are read DEFENSIVELY —
+   *  if their shape drifts this quietly does nothing and the source-side ask stands. Zero-scaling keeps
+   *  translation intact so InstLOD's xz culling arrays stay truthful; the matching sphere colliders are
+   *  removed through the public registry API so no ghost collision squats where no rock renders. */
+  _pruneCelestialRocks(col) {
+    const B = OUTER.find((b) => b.id === 'celestial'); if (!B) return;
+    const veg = this.game.world?.vegetation, R2 = 85 * 85; let n = 0;
+    for (const r of veg?.rocks ?? []) {
+      const dx = r.x - B.cx, dz = r.z - B.cz; if (dx * dx + dz * dz > R2) continue;
+      n++;
+      for (const c of col.query(r.x, r.z, 0.5)) if (c.type === 'sphere' && Math.abs(c.pos.x - r.x) < 0.01 && Math.abs(c.pos.z - r.z) < 0.01) col.remove(c);
+    }
+    if (!n) return;
+    for (const set of veg?.rockSets ?? []) {
+      if (set?.mats && set.xz) {                                        // finalized InstLOD: zero the 3x3, keep the translation row
+        for (let i = 0; i < set.n; i++) { const dx = set.xz[i * 2] - B.cx, dz = set.xz[i * 2 + 1] - B.cz; if (dx * dx + dz * dz > R2) continue; for (let k = 0; k < 12; k++) set.mats[i * 16 + k] = 0; }
+      } else if (set?.items) {                                          // not yet finalized: same surgery on the staging list
+        for (const it of set.items) { const dx = it.e[12] - B.cx, dz = it.e[14] - B.cz; if (dx * dx + dz * dz > R2) continue; for (let k = 0; k < 12; k++) it.e[k] = 0; }
+      }
+    }
+    console.log(`[props] celestial plaza: pruned ${n} vegetation boulders`);
   }
 
 
@@ -379,7 +415,7 @@ export class Props {
     // one recipe per region: { mat, n, tint, place(x, y, z, out) }. `out(geometry, tintOverride)` collects.
     // `n` is how many ATTEMPTS are made across the region disc; terrain rejects thin that out.
     const KIT = {
-      celestial: { mat: 'celestial', n: 260, tint: [0.95, 0.93, 0.86], build: (x, y, z, P) => {
+      celestial: { mat: 'celestial', n: 430, tint: [0.95, 0.93, 0.86], build: (x, y, z, P) => {   // n raised with the satellite-site count: same per-site density over 9 sites instead of 4
         const k = rng();
         if (k < 0.055) {                                                   // an altar: the plaza's focus piece
           P(box(3.4, 0.7, 3.4).translate(x, y + 0.35, z));
@@ -400,13 +436,19 @@ export class Props {
           const ca = Math.cos(a), sa = Math.sin(a);
           for (const sd of [-1, 1]) P(box(0.7, hh, 0.7).translate(x + ca * sd * w * 0.5, y + hh / 2, z + sa * sd * w * 0.5));
           P(box(w * 0.8, 0.6, 0.7).rotateY(-a).rotateZ(0.12).translate(x, y + hh + 0.2, z));
-        } else {                                                           // a gilded standard: the GOLD the Isles are described by and never had on the ground
-          const hh = 3.4 + rng() * 2.2;
-          P(cyl(0.16, 0.22, hh, 8).translate(x, y + hh / 2, z), [0.95, 0.72, 0.28]);
-          P(new THREE.TorusGeometry(0.85, 0.09, 6, 20).rotateX(Math.PI / 2).translate(x, y + hh - 0.2, z), [0.98, 0.75, 0.30]);
-          for (let i = 0; i < 4; i++) P(new THREE.OctahedronGeometry(0.20).translate(x + Math.cos(i * 1.5708) * 0.85, y + hh - 0.2, z + Math.sin(i * 1.5708) * 0.85), [0.96, 0.73, 0.28]);
-          P(box(1.5, 0.35, 1.5).translate(x, y + 0.17, z), [0.94, 0.91, 0.82]);
-          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh, z), r: 0.5 });
+        } else {                                                           // a BANNERED standard (wave-2: the disc-on-pole read as a floating side table)
+          const hh = 5.0 + rng() * 1.5, ry = rng() * Math.PI * 2;
+          const GB = [0.98, 0.75, 0.30], VIO = [0.42, 0.38, 0.68];         // gold staff, deep blue-violet cloth (the style guide's pairing)
+          P(box(1.7, 0.5, 1.7).translate(x, y + 0.25, z), [0.94, 0.91, 0.82]);   // stepped base
+          P(box(1.1, 0.4, 1.1).translate(x, y + 0.65, z), [0.90, 0.87, 0.78]);
+          P(cyl(0.09, 0.15, hh, 7).translate(x, y + hh / 2 + 0.6, z), GB);       // the staff
+          P(box(2.2, 0.14, 0.14).rotateY(ry).translate(x, y + hh + 0.30, z), GB);   // crossbar
+          const ox = Math.sin(ry) * 0.12, oz = Math.cos(ry) * 0.12;              // banner hangs just clear of the staff
+          P(box(1.55, 2.35, 0.06).rotateY(ry).translate(x + ox, y + hh - 0.95, z + oz), VIO);
+          P(box(1.55, 0.20, 0.09).rotateY(ry).translate(x + ox, y + hh - 2.20, z + oz), GB);   // gold fringe hem
+          P(cyl(0.42, 0.42, 0.10, 12).rotateX(Math.PI / 2).rotateY(ry).translate(x, y + hh + 0.95, z), GB);   // sun-disc finial
+          P(new THREE.OctahedronGeometry(0.16).translate(x, y + hh + 1.5, z), GB);
+          col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh + 1, z), r: 0.5 });
         }
       } },
       dragon: { mat: 'basalt', n: 210, tint: [0.86, 0.84, 0.80], build: (x, y, z, P) => {
@@ -628,8 +670,13 @@ export class Props {
       let spots = null;
       if (B.id === 'celestial') {
         const r0 = Math.hypot(B.cx, B.cz), ux = B.cx / r0, uz = B.cz / r0, tx = -uz, tz = ux;
+        // wave-2 major "the plain still reads empty": satellite ruin sites spread across the MID-PLAIN,
+        // not just hugging the heart — every mid-distance sightline now crosses at least one.
         spots = [{ x: B.cx, z: B.cz, r: 62 }, { x: B.cx + tx * 112, z: B.cz + tz * 112, r: 34 },
-          { x: B.cx - tx * 96 - ux * 42, z: B.cz - tz * 96 - uz * 42, r: 34 }, { x: B.cx - ux * 132, z: B.cz - uz * 132, r: 30 }];
+          { x: B.cx - tx * 96 - ux * 42, z: B.cz - tz * 96 - uz * 42, r: 34 }, { x: B.cx - ux * 132, z: B.cz - uz * 132, r: 30 },
+          { x: B.cx + ux * 105 + tx * 62, z: B.cz + uz * 105 + tz * 62, r: 32 }, { x: B.cx - tx * 158 + ux * 66, z: B.cz - tz * 158 + uz * 66, r: 32 },
+          { x: B.cx + tx * 48 - ux * 178, z: B.cz + tz * 48 - uz * 178, r: 30 }, { x: B.cx - tx * 64 - ux * 118, z: B.cz - tz * 64 - uz * 118, r: 28 },
+          { x: B.cx + tx * 176 - ux * 40, z: B.cz + tz * 176 - uz * 40, r: 30 }];
       }
       for (let i = 0; i < K.n; i++) {
         let x, z;
@@ -950,35 +997,89 @@ export class Props {
           pillar(px, pz, ph, 1.2, 0.5, [0.74, 0.85, 0.98]);
           fringe(px - 1.0, pz, px + 1.0, pz, h(px, pz) + ph * 0.7, 5); });      // frost collars on the ring pillars
       } else if (B.id === 'celestial') {
-        // THE EMPYREAN GATE (wave-1 blocker rebuild): a ruined white-marble twin-colonnade gate with a
-        // broken pediment, facing the approach bearing, apex ~34 m — the landmark finally EXISTS as a
-        // silhouette. Marble is the region material; gold lives in saturated tints (never emissive).
-        dais(13, 3, 0.6, [0.86, 0.83, 0.76]);
+        // THE EMPYREAN GATE (wave-2 escalation — rebuilt against the Tripo GLB structural baseline at
+        // tools/out/assetgen/tripo/empyrean_gate.glb, per the img2threejs GLB-mediated track; the GLB is
+        // reference only, NEVER loaded at runtime). A ruined marble TRIUMPHAL ARCH, not post-and-lintel:
+        // a facade PIERCED by a real semicircular arch, paired fluted great columns on pedestals, gold
+        // frieze + archivolt + attic sunburst (the filigree read), a broken pediment with a jagged stub
+        // against the sky, and low ruined colonnade wings. Apex ~37 m over the plain. Gold trim lives in
+        // the divine bucket (night sheen); structural gold stays saturated tints — never white.
+        const top = dais(16, 3, 0.65, [0.86, 0.83, 0.76]);
         const r0 = Math.hypot(CX, CZ), ux = CX / r0, uz = CZ / r0, tx = -uz, tz = ux;
-        const ryG = Math.atan2(-ux, -uz);   // local +X -> the tangent (gate runs ACROSS the approach), +Z -> home: the front faces arrivals
-        const MARB = [0.97, 0.95, 0.87], GOLD2 = [1.12, 0.86, 0.38];
-        const CH = 24, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
-        const rowAt = (dOff, broken) => { for (const [ti, t] of [-12, -6.8, 6.8, 12].entries()) {
-          const px = CX + tx * t + ux * dOff, pz = CZ + tz * t + uz * dOff, py = h(px, pz) - 0.3;
-          const brk = broken && (ti === 1 || ti === 3);
-          const g = (brk ? colB : colI).clone().scale(2.0, brk ? 0.45 + rng() * 0.3 : 1, 2.0).rotateY(ryG).translate(px, py, pz);
+        const ryG = Math.atan2(-ux, -uz);   // local +X -> tangent (gate runs ACROSS the approach), +Z -> home: the front faces arrivals
+        const MARB = [0.97, 0.95, 0.87], MARB2 = [0.88, 0.86, 0.78];
+        const DV = (g, t) => { this._divine.parts.push(g); this._divine.tints.push(t ?? [1, 1, 1]); };
+        // author in gate-local metres (X tangent, Y up from dais top, Z toward home/arrivals), place once
+        const L = (geo, lx, ly, lz, tint, div) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(CX, top, CZ); (div ? DV : P)(geo, tint); };
+        const W2 = 11.5, FH = 19.5, FD = 5.6, AR = 4.3, SPR = 10.2;             // facade half-width / height / depth, arch radius / springline
+        { const fs = new THREE.Shape();                                          // the pierced facade — the arch IS the silhouette
+          fs.moveTo(-W2, 0); fs.lineTo(W2, 0); fs.lineTo(W2, FH); fs.lineTo(-W2, FH); fs.closePath();
+          const holeP = new THREE.Path(); holeP.moveTo(-AR, 0); holeP.lineTo(-AR, SPR); holeP.absarc(0, SPR, AR, Math.PI, 0, true); holeP.lineTo(AR, 0); holeP.closePath();
+          fs.holes.push(holeP);
+          L(new THREE.ExtrudeGeometry(fs, { depth: FD, bevelEnabled: false, curveSegments: 18 }).translate(0, 0, -FD / 2), 0, 0, 0, MARB); }
+        for (const sd of [-1, 1]) {                                              // pier colliders leave the archway open to walk through
+          const pcx = CX + tx * sd * (W2 + AR) / 2, pcz = CZ + tz * sd * (W2 + AR) / 2;
+          const ex = Math.abs(tx) * (W2 - AR) / 2 + Math.abs(ux) * FD / 2, ez = Math.abs(tz) * (W2 - AR) / 2 + Math.abs(uz) * FD / 2;
+          col.add({ type: 'box', box: new THREE.Box3(V3(pcx - ex, top - 2, pcz - ez), V3(pcx + ex, top + FH, pcz + ez)) });
+        }
+        const CH = 10.4, CS = 1.55, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
+        const colAt = (t, d, brk, s = CS) => {                                   // a fluted great column on its pedestal
+          const px = CX + tx * t + ux * d, pz = CZ + tz * t + uz * d;
+          L(new THREE.BoxGeometry(2.9, 2.5, 2.9), t, 0.45, d, MARB2);   // sunk 0.8 so the outer pedestals never float over a dais step edge
+          const g = (brk ? colB : colI).clone().scale(s, brk ? (0.4 + rng() * 0.3) : 1, s).rotateY(ryG).translate(px, top + 1.7, pz);
           P(g, MARB);
-          col.add({ type: 'capsule', a: V3(px, py, pz), b: V3(px, py + (brk ? 12 : CH + 1), pz), r: 1.8 });
-        } };
-        rowAt(0, false);                                                        // the gate row: four intact great columns
-        rowAt(9.5, true);                                                       // its twin behind, half fallen — a RUINED colonnade
-        const eG = (geo, t, d, yy, tint) => P(geo.rotateY(ryG).translate(CX + tx * t + ux * d, CY + yy, CZ + tz * t + uz * d), tint);
-        eG(new THREE.BoxGeometry(28, 2.0, 4.4), 0, 0, CH + 2.2, MARB);          // architrave
-        eG(new THREE.BoxGeometry(28, 0.5, 4.5), 0, 0, CH + 3.35, GOLD2);        // gold frieze band
-        eG(new THREE.BoxGeometry(28.6, 1.5, 4.8), 0, 0, CH + 4.3, MARB);        // cornice
-        eG(new THREE.BoxGeometry(14.5, 1.7, 3.6).rotateZ(0.42), -6.6, 0, CH + 7.9, MARB);   // raking pediment, left
-        eG(new THREE.BoxGeometry(7.5, 1.7, 3.6).rotateZ(-0.42), 11.0, 0, CH + 6.6, MARB);   // …right side BROKEN short
-        eG(new THREE.BoxGeometry(2.6, 2.0, 3.7), 7.6, 0, CH + 7.4, MARB);       // the jagged break stub
-        eG(new THREE.BoxGeometry(9, 1.6, 3.2).rotateZ(0.28).rotateX(0.1), 4.5, -13, 1.2, MARB);   // the fallen pediment chunk, face-down on the approach
-        col.add({ type: 'sphere', pos: V3(CX + tx * 4.5 - ux * 13, CY + 1.2, CZ + tz * 4.5 - uz * 13), r: 4.2 });
-        eG(new THREE.BoxGeometry(11, 0.5, 13), 0, 4.5, 0.25, [0.92, 0.90, 0.82]);   // threshold pavement between the rows
-        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 7, CY - 1, CZ - 7), V3(CX + 7, CY + 0.6, CZ + 7)), walkable: true });
-        ring(6, 21, (a) => pillar(CX + Math.cos(a) * 21, CZ + Math.sin(a) * 21, 9 + rng() * 5, 0.9, 0.86, [0.88, 0.85, 0.78]));
+          col.add({ type: 'capsule', a: V3(px, top - 1, pz), b: V3(px, top + (brk ? 8 : FH), pz), r: 1.5 });
+        };
+        for (const t of [-10.4, -6.6, 6.6, 10.4]) colAt(t, 3.9, false);          // paired great columns proud of the front
+        for (const t of [-8.5, 8.5]) colAt(t, -3.9, t > 0);                      // the rear pair, one snapped — a RUIN, not a mint
+        L(new THREE.BoxGeometry(26.0, 1.6, 8.8), 0, FH + 0.8, 0.9, MARB);        // architrave (projects over the columns)
+        L(new THREE.BoxGeometry(26.2, 1.15, 9.0), 0, FH + 2.0, 0.9, [1, 1, 1], true);   // GOLD FRIEZE — divine: warm sheen at night
+        for (let i = 0; i < 16; i++) L(new THREE.BoxGeometry(0.55, 0.55, 0.5), -10.5 + i * 1.4, FH + 2.85, 5.5, MARB2);   // dentil course
+        L(new THREE.BoxGeometry(27.2, 1.0, 9.8), 0, FH + 3.6, 0.9, MARB);        // cornice
+        L(new THREE.BoxGeometry(23.5, 4.8, 7.0), 0, FH + 6.5, 0.9, MARB);        // attic storey
+        L(new THREE.BoxGeometry(8.6, 3.1, 0.4), 0, FH + 6.5, 4.55, MARB2);       // attic cartouche panel...
+        L(new THREE.BoxGeometry(9.2, 0.3, 0.34), 0, FH + 8.15, 4.6, [1, 1, 1], true);   // ...gold frame
+        L(new THREE.BoxGeometry(9.2, 0.3, 0.34), 0, FH + 4.85, 4.6, [1, 1, 1], true);
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(0.3, 3.6, 0.34), sd * 4.45, FH + 6.5, 4.6, [1, 1, 1], true);
+        L(new THREE.CylinderGeometry(0.55, 0.55, 0.3, 12).rotateX(Math.PI / 2), 0, FH + 6.5, 4.8, [1, 1, 1], true);       // sunburst emblem — the filigree at 45 m
+        for (let i = 0; i < 10; i++) L(new THREE.BoxGeometry(0.17, 1.25, 0.2).rotateZ(i / 10 * Math.PI * 2), Math.cos(i / 10 * 6.2832 + 1.5708) * 1.0, FH + 6.5 + Math.sin(i / 10 * 6.2832 + 1.5708) * 1.0, 4.72, [1, 1, 1], true);
+        L(new THREE.TorusGeometry(AR + 0.28, 0.30, 8, 26, Math.PI), 0, SPR, FD / 2 + 0.12, [1, 1, 1], true);              // gold archivolt over the opening
+        L(new THREE.BoxGeometry(1.15, 2.1, 1.0), 0, SPR + AR + 0.55, FD / 2 + 0.1, [1, 1, 1], true);                      // keystone
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(1.7, 0.4, 0.7), sd * (AR + 0.6), SPR - 0.1, FD / 2 + 0.1, [1, 1, 1], true);   // impost blocks where the arch springs
+        // BROKEN PEDIMENT — the skyline. Left raker rises whole; the right one snaps mid-air with a
+        // jagged stub, and the tympanum behind stops at the break: SKY through the wound at 250 m.
+        L(new THREE.BoxGeometry(25.5, 0.9, 8.2), 0, FH + 9.35, 0.9, MARB);       // pediment base cornice
+        { const ty = new THREE.Shape();                                          // tympanum, broken right of apex
+          ty.moveTo(-11.2, 0); ty.lineTo(-0.5, 6.8); ty.lineTo(2.6, 4.7); ty.lineTo(3.1, 3.1); ty.lineTo(4.2, 2.6); ty.lineTo(4.6, 0); ty.closePath();
+          L(new THREE.ExtrudeGeometry(ty, { depth: 6.2, bevelEnabled: false }).translate(0, 0, -3.1), 0, FH + 9.8, 0.9, MARB2); }
+        L(new THREE.BoxGeometry(13.6, 1.1, 8.0).rotateZ(0.566), -5.85, FH + 13.6, 0.9, MARB);   // left raking cornice, whole
+        L(new THREE.BoxGeometry(4.4, 1.1, 8.0).rotateZ(-0.566), 9.6, FH + 11.0, 0.9, MARB);     // right raker, BROKEN short
+        L(new THREE.BoxGeometry(1.3, 1.6, 5.8).rotateZ(0.3), 7.4, FH + 11.6, 0.9, MARB2);       // the jagged stubs at the break
+        L(new THREE.BoxGeometry(1.0, 1.2, 4.6).rotateZ(-0.5), 3.4, FH + 13.2, 0.9, MARB2);
+        // RUINED COLONNADE WINGS — low fluted rows running along the tangent till the plain takes them
+        const colW = columnGeometry(8.6, false, rng), colWB = columnGeometry(8.6, true, rng);
+        const wtops = [];
+        for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) {
+          const t = sd * (14.5 + k * 5.7);
+          const px = CX + tx * t, pz = CZ + tz * t, py = Math.min(h(px, pz), top + 0.4) - 0.35;
+          const brk = (k === 1 && sd < 0) || (k === 3 && sd > 0) || (k === 2 && sd > 0);
+          P(new THREE.BoxGeometry(2.3, 0.8, 2.3).rotateY(ryG).translate(px, py + 0.4, pz), MARB2);
+          P((brk ? colWB : colW).clone().scale(1.15, brk ? 0.35 + rng() * 0.35 : 1, 1.15).rotateY(ryG).translate(px, py + 0.8, pz), MARB);
+          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + (brk ? 4.5 : 10.5), pz), r: 1.1 });
+          wtops.push(brk ? null : [t, py + 0.8 + 11.21]);                        // capital top ((8.6+1.15)*1.15): the architrave beams ride these
+        }
+        for (let i = 0; i + 1 < wtops.length; i++) {                             // beam segments between surviving neighbours
+          const a2 = wtops[i], b2 = wtops[i + 1];
+          if (!a2 || !b2 || Math.sign(a2[0]) !== Math.sign(b2[0]) || Math.abs(b2[0] - a2[0]) > 6.5) continue;
+          const tm = (a2[0] + b2[0]) / 2, ym = (a2[1] + b2[1]) / 2, pitch = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]);
+          P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 1.6, 0.95, 1.9).rotateZ(pitch).rotateY(ryG).translate(CX + tx * tm, ym + 0.48, CZ + tz * tm), MARB);
+        }
+        L(new THREE.BoxGeometry(9, 1.6, 3.2).rotateZ(0.28).rotateX(0.1), 4.5, 0.9, 13.5, MARB);   // the fallen pediment chunk, face-down on the approach
+        col.add({ type: 'sphere', pos: V3(CX + tx * 4.5 - ux * 13.5, top + 0.9, CZ + tz * 4.5 - uz * 13.5), r: 4.2 });
+        for (let i = 0; i < 5; i++) {                                            // spilled column drums where the rear pair fell
+          const a2 = rng() * 6.2832, d2 = 7 + rng() * 6;
+          L(new THREE.CylinderGeometry(0.95, 1.0, 1.6 + rng() * 0.9, 12).rotateZ(Math.PI / 2).rotateY(rng() * 3), Math.cos(a2) * d2 - 6, 0.55, -Math.abs(Math.sin(a2)) * d2 - 4, MARB2);
+        }
         isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.0, 0.97, 0.90], kind: 'celestial' });   // near-neutral over marble_strata: the map carries the white, the tint only warms it
       } else if (B.id === 'dragon') {
         // KHARAZ-DUN GATE (wave-1 blocker rebuild): the old gate was a 44 m brick box floating in front
@@ -1106,6 +1207,12 @@ export class Props {
     }
 
     if (isles.length) this._buildIsles(isles, rng, h, col);
+    // one mesh for every divine-gold accent (gate frieze/archivolt/sunburst + isle rims + hero altar drum):
+    // dormant gilt by day, the region's night light — see divineMat in init()
+    if (this._divine.parts.length) {
+      const dm = new THREE.Mesh(flat(mergeAll(this._divine.parts, this._divine.tints)), this.divineMat);
+      dm.castShadow = dm.receiveShadow = true; dm.name = 'celestial-divine'; dm.geometry.computeBoundingSphere(); scene.add(dm);
+    }
     // Brazier flames (Kharaz-Dun): SAME material as the meadow lantern flames — same emissiveIntensity
     // cap (invariants rule g), same flicker program — just a bigger octahedron in an iron bowl.
     if (this._braziers?.length && this.flameMat) {
@@ -1632,9 +1739,9 @@ export class Props {
           tints.push([s.tint[0] * sh, s.tint[1] * sh, s.tint[2] * sh]);
           ly -= lh * 0.94; lr *= 0.72 + rng() * 0.10;
         }
-        if (s.kind === 'celestial') {                          // gold rim band under the cap edge — same rim noise, so it hugs the marble
-          parts.push(strata(R * 1.015, 0.32, ph0, 0.10).translate(x, y + R * 0.2 - 0.22, z));
-          tints.push([1.0, 0.76, 0.30]);
+        if (s.kind === 'celestial') {                          // gold rim band under the cap edge — same rim noise, so it hugs the marble.
+          this._divine.parts.push(strata(R * 1.015, 0.32, ph0, 0.10).translate(x, y + R * 0.2 - 0.22, z));
+          this._divine.tints.push([1, 1, 1]);                  // divine bucket: the rims are the isles' night light (wave-2 "no divine light")
         }
         // keel: a jagged point the whole mass tapers into
         const kh = R * (0.55 + rng() * 0.25);
@@ -1674,7 +1781,7 @@ export class Props {
           if (hero) {                                                       // the altar: a gilded drum on a stepped dais
             parts.push(new THREE.CylinderGeometry(4.2, 4.8, 0.5, 12).translate(x, ty + 0.25, z)); tints.push([0.94, 0.92, 0.82]);
             parts.push(new THREE.CylinderGeometry(3.2, 3.6, 0.5, 12).translate(x, ty + 0.72, z)); tints.push([0.96, 0.94, 0.84]);
-            parts.push(new THREE.CylinderGeometry(1.5, 1.8, 1.6, 10).translate(x, ty + 1.75, z)); tints.push([1.0, 0.76, 0.30]);
+            this._divine.parts.push(new THREE.CylinderGeometry(1.5, 1.8, 1.6, 10).translate(x, ty + 1.75, z)); this._divine.tints.push([1, 1, 1]);   // gilded drum joins the night accents
             col.add({ type: 'capsule', a: V3(x, ty, z), b: V3(x, ty + 2.6, z), r: 2.0 });
           }
         } else if (s.kind === 'void') {
@@ -1716,6 +1823,10 @@ export class Props {
           const L = (f1 - f0) / Math.cos(pitch) + 0.7;               // slope length + overlap: joints share stone
           const put = (g) => g.rotateX(-pitch).rotateY(ry).translate(px, py, pz);
           parts.push(put(new THREE.BoxGeometry(2.6, 0.55, L))); tints.push([s.tint[0] * 0.92, s.tint[1] * 0.92, s.tint[2] * 0.92]);
+          // under-rib: the arch belly. Seen from below or side-on the bare slab was the "60 m two-by-four";
+          // a deep keel-shaped rib under the deck gives the span a masonry cross-section from every angle.
+          parts.push(put(new THREE.BoxGeometry(1.15, 0.9, L * 0.98).translate(0, -0.6, 0)));
+          tints.push([s.tint[0] * 0.80, s.tint[1] * 0.80, s.tint[2] * 0.84]);
           // Kerbs and posts: a bare 2.6 x 0.55 slab seen from below is a plank in the air; a raised edge
           // and a post at each joint give it a profile that reads as a bridge from any angle.
           for (const sd of [-1, 1]) {

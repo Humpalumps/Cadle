@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound - see its doc comment
-import { mulberry32, smoothstep, clamp, lerp } from '../core/Noise.js';
-import { ORDER, RB, RR, RL_CORE, RL_EDGE, RING_IN, RING_OUT, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
+import { mulberry32, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
+import { ORDER, RB, RR, RL_CORE, RL_EDGE, RING_IN, RING_OUT, EDGE, THETA0, STEP, BIOMES, centerOf, wedgeAt, weightAt } from './Biomes.js';
 // The bake math lives in terrainKernel.js so a REAL module worker can import it (see terrainWorker.js).
 // It used to be stringified into a Blob worker, which silently died in every minified build.
 import { heightAt, bakeKernel, layerTex, LAYERS, BC } from './terrainKernel.js';
@@ -107,7 +107,8 @@ export class Terrain {
     const d2 = x * x + z * z;
     if (d2 > RING_IN * RING_IN) {
       const k = wedgeAt(x, z), w = weightAt(x, z, k);
-      const wild = 0.5 * (1 - ss(28, 56, this.heightAt(x, z)));      // ring rock + the corridors between regions: patchy scrub
+      let wild = 0.5 * (1 - ss(28, 56, this.heightAt(x, z)));        // ring rock + the corridors between regions: patchy scrub
+      wild *= 1 - ss(EDGE - 70, EDGE - 20, Math.sqrt(d2));           // never at the world-edge wall base (the void-rim green smudge)
       return mix(wild, BIOMES[ORDER[k]].grass.d, w);
     }
     const b = this.biomeAt(x, z);
@@ -121,10 +122,17 @@ export class Terrain {
     const k = wedgeAt(x, z); out.k = k; out.id = ORDER[k]; out.w = weightAt(x, z, k);
     return out;
   }
-  /** 0..1 "no standing water here" mask (Infernal ash + the Void abyss). Water/Lava read it. */
+  /** 0..1 "no standing water here" mask (Infernal ash, the Void abyss, the frozen Frostveil lake). Water/Lava read it. */
   dryAt(x, z) {
     const b = this.biomeBlend(x, z, this._bd ??= {});
-    return BIOMES[b.id]?.dry ? b.w : 0;
+    let dry = BIOMES[b.id]?.dry ? b.w : 0;
+    if (b.id === 'tundra' && b.w > 0.01) {
+      // Frostveil frozen lake: the bowl is a solid ice SHEET (kernel holds the bed at 4.22, above WL) —
+      // dry-masked with the kernel's exact basin term so no melt puddle ever paints on the ice.
+      const bd = Math.hypot(x - BC[1][0], z - BC[1][1]) + noise2(x * 0.012, z * 0.012, this.seed + 214) * 18;
+      dry = Math.max(dry, smoothstep(100, 60, bd) * b.w);
+    }
+    return dry;
   }
   /** Gravity multiplier for the player/projectiles (the Void's broken physics). */
   gravityAt(x, z) {
@@ -170,7 +178,7 @@ export class Terrain {
     const skirtM = ss(76, 58, rd) * ss(38, 52, rd);
     const arenaM = 1 - ss(43, 49, Math.hypot(x + 60, z - 260));
     const forestM = ss(-150, -215, z + (macro - 0.5) * 40) * ss(290, 245, Math.abs(x));
-    const mtn = Math.max(ss(26, 40, h + (macro - 0.5) * 10), ss(340, 400, d0c + (macro - 0.5) * 70) * (1 - ss(500, 580, d0c)));
+    const mtn = Math.max(Math.max(ss(26, 40, h + (macro - 0.5) * 10), ss(340, 400, d0c + (macro - 0.5) * 70) * (1 - ss(500, 580, d0c))), ss(EDGE - 70, EDGE - 10, d0c));
     const crystalM = ss(195, 260, x + (macro - 0.5) * 40) * (1 - mtn);
     const alt = ss(26, 58, h);
     let wSnow = ss(104, 138, h + (macro - 0.5) * 24) * (1 - ss(0.22, 0.46, slope));
@@ -370,7 +378,8 @@ export class Terrain {
     // 14 seabed_ripple (sunken floor).
     const ASSET_LAYERS = [[0, 'grass_albedo', 1.00], [3, 'cliff_strata', 1.20], [4, 'beach_sand', 0.80], [5, 'snow', 0.84],
       [6, 'celestial_marble', 0.88], [8, 'ash_basalt', 1.00], [9, 'snow_sastrugi', 0.80], [10, 'peat_muck', 1.00], [11, 'voidstone', 1.05],
-      [12, 'basalt_columnar', 1.05], [13, 'flagstone_violet', 1.30], [14, 'seabed_ripple', 0.85]];
+      [12, 'basalt_columnar', 1.05], [13, 'flagstone_violet', 1.30], [14, 'seabed_ripple', 0.85],
+      [15, 'ice_glacial', 0.95], [16, 'granite_detail', 1.00]];   // 15 tundra frozen lake sheet, 16 near-camera cliff grain octave
     const imgP = Promise.all(ASSET_LAYERS.map(([l, nm, mul]) =>
       fetch(`/assets/tex/${nm}.jpg`).then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then((bl) => createImageBitmap(bl, { resizeWidth: R, resizeHeight: R, resizeQuality: 'high' }))
@@ -531,10 +540,10 @@ void biomeSet(float k, out float layer, out float scl, out float rough, out floa
   else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.86; rough = 0.55; tint = vec3(0.98, 1.14, 1.46); }    // celestial: celestial_marble.jpg is TAN (linear ratio 1 : 0.85 : 0.61) and the old warm tint pushed it further, which is why the Isles read as a sand desert. This inverts the asset's own hue to a warm WHITE marble
   else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.88; rockCut = 0.12; steep = 1.0; tint = vec3(0.84, 0.88, 1.02); }   // dragon rock. rockCut stays LOW on purpose: the triplanar cliff (cR) is the only layer with real crag detail; steep=1 hands every face >~30 deg to it so the top-projected floor can no longer smear into corduroy
   else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.12; steep = 0.85; mvar = 0.8; tint = vec3(0.96, 0.97, 1.02); }   // infernal: ash_basalt is already charcoal (the old 0.80/0.82/0.94 cooled a warm ash that is gone); cliffs/cinder cones go to columnar basalt via the cR override, not to the top-projected floor (the old rockCut 0.80 is what put brick-course strata on every cone)
-  else if (k < 5.5) { layer = 13.0; scl = 4.6; cov = 0.92; rough = 0.85; mvar = 0.7; tint = vec3(1.02, 0.98, 1.08); }   // lost realm: flagstone_violet IS dark violet with gold inlay — the old celestial-marble + 1.42 blue lift is what blew the plain out lilac-white
+  else if (k < 5.5) { layer = 13.0; scl = 4.6; cov = 0.92; rough = 0.85; steep = 0.55; mvar = 0.7; tint = vec3(1.02, 0.98, 1.08); }   // lost realm: flagstone_violet IS dark violet with gold inlay — the old celestial-marble + 1.42 blue lift is what blew the plain out lilac-white. steep: the rampart berm face is built stone (triplanar), not stretched flagstone smear
   else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.94; rough = 0.60; rockCut = 0.45; tint = vec3(0.84, 0.98, 0.72); }   // shadowfen: peat_muck is true dark peat; mild olive push only (the old 0.70/0.86/0.74 compensated the warm fen_muck that is gone)
   else if (k < 7.5) { layer = 14.0; scl = 3.4; cov = 0.90; rough = 0.70; tint = vec3(0.90, 1.00, 1.00); rockCut = 0.55; }   // sunken reef: seabed_ripple carries the sand read; near-neutral tint, the water column does the teal
-  else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; tint = vec3(0.78, 0.74, 0.92); }   // voidstone
+  else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; steep = 0.90; tint = vec3(0.78, 0.74, 0.92); }   // voidstone. steep: the abyss walls go to the triplanar cliff path (overridden to voidstone below) — top projection is what smeared the crater slopes into corduroy
 }`;
 
 // splat: computed where <map_fragment> would sample the albedo; leaves tN (world normal), tRough, tAO, tEmis for later chunks
@@ -575,6 +584,9 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float home = 1.0 - smoothstep(300.0, 400.0, rad);                          // home-bowl features never leak into the biome belt
   forestM *= home;
   float mtn = max(smoothstep(26.0, 40.0, P.y + (macro - 0.5) * 10.0), smoothstep(340.0, 400.0, rad + (macro - 0.5) * 70.0) * (1.0 - smoothstep(500.0, 580.0, rad)));
+  // world-edge wall base is always rock/dirt, never lawn: the low band at its foot sat past the region
+  // look radius (bW fading), so bare vale-green splat bled through — the void-rim "green smudge" verdict
+  mtn = max(mtn, smoothstep(${EDGE - 70}.0, ${EDGE - 10}.0, rad));
   float crystalM = smoothstep(195.0, 260.0, P.x + (macro - 0.5) * 40.0) * (1.0 - mtn) * home;
   // --- outer biome (Biomes.js: 9 wedges, centres on a ring of radius RB) ---
   // The border between two regions is the bisector wedgeAt hands over on. Picking ONE wedge per pixel drew
@@ -609,6 +621,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // infernal-cliff weight: which side(s) of the seam want columnar basalt on their steep faces (cR override)
   float bInf = mix(bW * step(3.5, bK) * step(bK, 4.5), bW2 * step(3.5, bK2) * step(bK2, 4.5), bMix);
   float bDrg = mix(bW * step(2.5, bK) * step(bK, 3.5), bW2 * step(2.5, bK2) * step(bK2, 3.5), bMix);
+  float bVod = mix(bW * step(7.5, bK), bW2 * step(7.5, bK2), bMix);   // void steep faces: voidstone cliff override (cR), same pattern as bInf
   bRough = mix(bRough, bRough2, bMix);
   bSnow = mix(bSnow, bSnow2, bMix); bRockCut = mix(bRockCut, bRockCut2, bMix);
   bSteep = mix(bSteep, bSteep2, bMix); bMvar = mix(bMvar, bMvar2, bMix);
@@ -634,9 +647,11 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   wRock = max(wRock, beltM * smoothstep(0.26, 0.60, macro2C + (det2.b - 0.5) * 0.30) * smoothstep(0.02, 0.09, slope));
   wRock = max(wRock, skirtM * smoothstep(0.10, 0.20, slope + (macro - 0.5) * 0.08));
   wRock *= 1.0 - bW * bRockCut;      // in the Wastes/Void/glacier/reef the CLIFF is the biome's own stone, not generic strata
-  // ...and the inverse: in rock regions (dragon, infernal cones) STEEP faces belong to the triplanar cliff,
-  // never to the top-projected floor — top projection stretches 1/cos(slope) into the corduroy smear.
-  wRock = max(wRock, bW * bSteep * smoothstep(0.30, 0.52, slope + (macro - 0.5) * 0.06));
+  // ...and the inverse: in rock regions (dragon, infernal cones, the void walls, the lost berm) STEEP faces
+  // belong to the triplanar cliff, never to the top-projected floor — top projection stretches 1/cos(slope)
+  // into the corduroy smear. Gate lowered 0.30->0.22 (wave 2): the mid-slope gullies at 25-35 deg were
+  // still top-projected, and those are exactly the "brushed-silk streak" frames.
+  wRock = max(wRock, bW * bSteep * smoothstep(0.22, 0.44, slope + (macro - 0.5) * 0.06));
   float wSand = lakeM * smoothstep(uWater + 1.9, uWater + 0.9, P.y + (macro2 - 0.5) * 0.9);
   float wStone = max(ruinM, arenaM);
   float wDirt = clamp(smoothstep(0.12, 0.26, slope + (macro2 - 0.5) * 0.06) + smoothstep(0.64, 0.80, macro2) * 0.7 + crystalM * 0.35 + alt * 0.5 + mtn * 0.75, 0.0, 1.0);
@@ -693,7 +708,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   }
   vec4 cR = vec4(0.0);
   if (wRock > 0.002) {
-    vec3 bw = pow(abs(gN), vec3(5.0)); bw /= (bw.x + bw.y + bw.z);
+    vec3 bw = pow(abs(gN), vec3(6.0)); bw /= (bw.x + bw.y + bw.z);   // 6 (was 5): narrower 3-way blend zones = less double-image mush on 45-deg edges
     float rs = 1.0 / 13.0;    // cliff_strata.jpg: real blocky strata; hex offsets shift the blocks like faults (no repeat)
     cR = lyrHex(P.zy * rs, 3.0, 8.0) * bw.x + lyrHex(P.xz * rs, 3.0, 8.0) * bw.y + lyrHex(P.xy * rs, 3.0, 8.0) * bw.z;
     // macro warm/cool patches that survive ANY distance (kills the chalk-plaster look on far cliffs)
@@ -707,14 +722,26 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
       cC.rgb *= mix(0.80, 1.35, rMac);                                    // keep the macro warm/cool patches so far cones don't flatten
       cR.rgb = mix(cR.rgb, cC.rgb, bInf); cR.a = mix(cR.a, cC.a, bInf);
     }
-    // near-camera granite octave: cliff_strata tiles at 13 m, so at 2 m a face was "blurry brown mush" —
-    // a second hex-tiled octave at 2.7 m restores grain where you can see it (dragon nest-bench verdict).
+    // void steep faces: voidstone (layer 11) on the same triplanar frame, not warm strata — the abyss
+    // walls stay in the region's palette while escaping the top-projection smear (bSteep routes them here).
+    if (bVod > 0.002) {
+      float vs = 1.0 / 7.0;
+      vec4 cV = lyrHex(P.zy * vs, 11.0, 8.0) * bw.x + lyrHex(P.xz * vs, 11.0, 8.0) * bw.y + lyrHex(P.xy * vs, 11.0, 8.0) * bw.z;
+      cV.rgb *= mix(0.80, 1.30, rMac);
+      cR.rgb = mix(cR.rgb, cV.rgb, bVod); cR.a = mix(cR.a, cV.a, bVod);
+    }
+    // near-camera granite octave: cliff_strata tiles at 13 m, so at 2 m a face was "blurry brown mush".
+    // Wave 3: the octave is now a REAL fine-grain tile (granite_detail, layer 16) at 1.9 m instead of a
+    // re-tap of the strata — actual feldspar/mica granularity instead of more blur (dragon close-up verdict).
     float rockNear = 1.0 - smoothstep(6.0, 30.0, camD);
     if (rockNear > 0.002) {
-      float ns = 1.0 / 2.7;
-      vec4 cRn = lyrHex(P.zy * ns, 3.0, 6.0) * bw.x + lyrHex(P.xz * ns, 3.0, 6.0) * bw.y + lyrHex(P.xy * ns, 3.0, 6.0) * bw.z;
-      cR.rgb *= mix(1.0, clamp(dot(cRn.rgb, vec3(0.30, 0.55, 0.15)) * 4.2, 0.50, 1.75), rockNear * 0.5);
+      float ns = 1.0 / 1.9;
+      vec4 cRn = lyrHex(P.zy * ns, 16.0, 6.0) * bw.x + lyrHex(P.xz * ns, 16.0, 6.0) * bw.y + lyrHex(P.xy * ns, 16.0, 6.0) * bw.z;
+      cR.rgb *= mix(1.0, clamp(dot(cRn.rgb, vec3(0.30, 0.55, 0.15)) * 5.0, 0.45, 1.70), rockNear * 0.6);   // 5.0 = 1/mean-luma of granite_detail.jpg (0.193 linear) — remeasure if the asset is replaced
     }
+    // far-field tiling break: a 143 m value swing over every cliff (macroC is already in registers — free).
+    // The masonry-course repeat read at distance because each 13 m hex cell kept the same mean value.
+    cR.rgb *= mix(1.0, 0.70 + 0.60 * macroC, farC * 0.75);
     // per-region strata: frequency, TILT, phase drift and PRESENCE all vary (steep faces only, never one global
     // corduroy). Suppressed where columnar basalt owns the face, and mostly on dragon faces — the huge Peaks
     // walls turned the wandering bedding into "vertical stacked-shale banding" (wave-1 dragon verdict).
@@ -741,6 +768,19 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     float bMac = mix(1.0, mix(0.78, 1.24, macro2C), bMvar);       // macro blotch scaled per region (bMvar): full on moss/ash, faint on snow/flagstone
     cB = lyrHexG(P.xz / bScl, bLayer, 3.0, pdx / bScl, pdy / bScl);
     cB.rgb *= bTint * bMac;
+    // Frostveil frozen lake: walkable ice sheet over the bowl (kernel holds the bed at 4.22, dryAt-masked).
+    // ice_glacial (layer 15) with sastrugi-snow drifts blown back across it — cracks read, patches soften.
+    float wTun = bW * step(0.5, bK) * step(bK, 1.5);
+    if (wTun > 0.002) {
+      float iceM = wTun * (1.0 - smoothstep(54.0, 88.0, length(P.xz - vec2(${BC[1][0].toFixed(1)}, ${BC[1][1].toFixed(1)})) + (macro - 0.5) * 36.0));
+      if (iceM > 0.002) {
+        vec4 cI = lyrHexG(P.xz * (1.0 / 5.5), 15.0, 3.0, pdx * (1.0 / 5.5), pdy * (1.0 / 5.5));
+        float snowP = smoothstep(0.58, 0.80, macro2 + (snowN - 0.5) * 0.55);
+        cI.rgb = mix(cI.rgb, cB.rgb, snowP);
+        bRough = mix(bRough, mix(0.40, bRough, snowP), iceM);     // sheen on bare ice, matte under the drifts (large flat sheet: shoulder-capped, cannot blob)
+        cB.rgb = mix(cB.rgb, cI.rgb, iceM); cB.a = mix(cB.a, cI.a, iceM);
+      }
+    }
     if (bMix > 0.004) {                                           // inside a border band: fade the neighbour's floor in
       vec4 cN = lyrHexG(P.xz / bScl2, bLayer2, 3.0, pdx / bScl2, pdy / bScl2);
       cN.rgb *= bTint2 * bMac;

@@ -49,11 +49,26 @@ const SPECIES_TUNE = {
   7: (o) => { if (o.leaves) { o.leaves.count = Math.max(1, Math.round((o.leaves.count ?? 10) * 0.08)); o.leaves.size = (o.leaves.size ?? 2) * 0.65; } },
 };
 // per-species leaf/needle tint fallback (region-owned trees carry their own tr.c from Vegetation._place)
-const LEAF_TINT = { 3: [0.90, 0.96, 1.06], 4: [0.52, 0.40, 0.30], 6: [0.42, 0.54, 0.47], 7: [0.52, 0.40, 0.30] };
+const LEAF_TINT = { 3: [0.90, 0.96, 1.06], 4: [0.52, 0.40, 0.30], 6: [0.30, 0.40, 0.35], 7: [0.52, 0.40, 0.30] };
 // bark colour over the gnarled bark map. Default darker than the old white-on-pale-ez-bark: trunks were
 // reading as utility poles. 4 = matte charcoal (charred, NOT winter birch), 7 = wet peat-stained.
 const BARK_TINT = { default: 0xa6988a, 3: 0x8e857b, 4: 0x38322e, 6: 0x776e64, 7: 0x63564a };
-const LEAF_MAP = { 3: 'card_conifer_snow' };   // painted snow bough replaces the oak-lobed summer cards
+// per-species leaf MATERIAL colour override (multiplies the texture, under the per-instance tint).
+// 6: ez's Pine presets carry a bright spring green in the material — beside the Kharaz-Dun gate they read
+// as lime saplings (crit2-dragon-b/shot-gate-22). A grey-sage override kills the summer read at the source.
+const LEAF_COL = { 6: 0x8fa397 };
+// mip-dilution edge tint for the impostor bake clear colour (RGB only, alpha stays 0): with mipmaps on,
+// crown-edge texels blend toward this instead of toward whatever the renderer's global clear colour was.
+const CLEAR_COL = { 3: [0.72, 0.78, 0.85], 4: [0.16, 0.14, 0.13], 5: [0.15, 0.24, 0.13], 7: [0.24, 0.26, 0.16], default: [0.19, 0.28, 0.14] };
+const LEAF_MAP = {
+  3: 'card_conifer_snow',   // painted snow bough replaces the oak-lobed summer cards
+  // 5: the old-growth crown is a few HUGE (~10 m) cards. With ez-tree's single-leaf texture stretched
+  // across them, every card rendered as one solid green slab — from the void border the whole Whisperwood
+  // canopy read as stacked "Minecraft" cubes (crit2-void-b/crop-cubetrees). A 10 m crown card must carry a
+  // whole painterly CLUSTER (leaves at ~40 cm, ragged bush silhouette), which is exactly what the painted
+  // leaf_card asset is. Tri-neutral: same cards, different texture.
+  5: 'leaf_card',
+};
 // NEAR was 190 when only Whisperwood was wooded. A closed canopy there plus Frostveil-as-forest measured
 // 4.19 M / 3.88 M tris, trees being 2.17 M of it. The near tier is area-scaled, so this is the dial: 175 m
 // holds the frame around 3.6 M against the 4 M budget, and the impostor tier — what you are actually looking
@@ -179,19 +194,24 @@ export function buildEZTrees(game, trees, vegetation) {
   function bakeImpostor(v) {
     const res = 192;
     const w = v.w, h = v.h;
-    const rt = new THREE.WebGLRenderTarget(res, res, { format: THREE.RGBAFormat, depthBuffer: true, stencilBuffer: false });
+    // Mipmapped: the old un-mipped RT point-sampled the 192px bake at treeline distances, which read as
+    // crawling noise; with mips + aniso the far canopy resolves like the legacy Vegetation impostors.
+    const rt = new THREE.WebGLRenderTarget(res, res, { format: THREE.RGBAFormat, depthBuffer: true, stencilBuffer: false,
+      generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
     const clones = [[v.branchGeo, v.barkMat], [v.leafGeo, v.leafMat]].map(([g, m]) => new THREE.Mesh(g,
       new THREE.MeshBasicMaterial({ map: m.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, color: m.color?.clone() ?? 0xffffff })));
     for (const c of clones) { c.frustumCulled = false; bakeScene.add(c); }
     const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h, 0, 0.1, w * 4);
     cam.position.set(0, 0, w * 2); cam.lookAt(0, 0, 0);
     const prevTone = renderer.toneMapping, prevTarget = renderer.getRenderTarget(), prevClear = renderer.getClearAlpha();
+    const prevCC = new THREE.Color(); renderer.getClearColor(prevCC);
+    const cc = CLEAR_COL[v.species] ?? CLEAR_COL.default;
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.setRenderTarget(rt); renderer.setClearAlpha(0); renderer.clear();
+    renderer.setRenderTarget(rt); renderer.setClearColor(new THREE.Color(cc[0], cc[1], cc[2]), 0); renderer.clear();
     renderer.render(bakeScene, cam);
-    renderer.setRenderTarget(prevTarget); renderer.setClearAlpha(prevClear); renderer.toneMapping = prevTone;
+    renderer.setRenderTarget(prevTarget); renderer.setClearColor(prevCC, prevClear); renderer.toneMapping = prevTone;
     for (const c of clones) { bakeScene.remove(c); c.material.dispose(); }
-    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    rt.texture.colorSpace = THREE.SRGBColorSpace; rt.texture.anisotropy = 8;
     return rt.texture;
   }
 
@@ -204,13 +224,20 @@ export function buildEZTrees(game, trees, vegetation) {
     tune(t.options);
     SPECIES_TUNE[species]?.(t.options);
     t.generate();
-    // measure from the BRANCH geometry only: the leaf buffer carries stray far-out vertices that
-    // blew the measured height to ~186 m (instances shrank to 1 m, bake framed a transparent speck)
+    // Bounds: leaf bbox CLAMPED to branch bbox + 2.3x leaf size. Branch-only + a size*0.6 margin (the old
+    // form) clipped the big crown cards at the texture border — a leaf card anchors at its BASE and extends
+    // a full `size` past the branch tip (ez-tree generateLeaf), so old-growth crowns baked with flat-chopped
+    // tops/sides and the treeline read as rectangles. The clamp still rejects the stray far-out leaf verts
+    // that blew a raw leaf-bbox measurement to ~186 m.
     t.branchesMesh.geometry.computeBoundingBox();
     const b1 = t.branchesMesh.geometry.boundingBox;
-    const margin = (t.options.leaves?.size ?? 2) * 1.2;
-    const h = Math.max(1, b1.max.y + margin * 0.5);
-    const w = Math.max(2, Math.max(b1.max.x - b1.min.x, b1.max.z - b1.min.z) + margin);
+    const lsz = (t.options.leaves?.size ?? 2) * (1 + (t.options.leaves?.sizeVariance ?? 0));
+    const lg = t.leavesMesh.geometry; let lb = null;
+    if (lg.getAttribute('position')?.count) { lg.computeBoundingBox(); lb = lg.boundingBox; }
+    const bHalf = Math.max(b1.max.x, -b1.min.x, b1.max.z, -b1.min.z);
+    const lHalf = lb ? Math.max(lb.max.x, -lb.min.x, lb.max.z, -lb.min.z) : 0;
+    const h = Math.max(1, Math.min(Math.max(b1.max.y, lb ? lb.max.y : 0), b1.max.y + 2.3 * lsz) + 0.4);
+    const w = Math.max(2, 2 * (Math.min(Math.max(bHalf, lHalf), bHalf + 2.3 * lsz) + 0.4));
     const barkMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: gnBark ?? t.branchesMesh.material.map ?? null, normalMap: gnNormal, normalScale: gnNormal ? new THREE.Vector2(1.6, 1.6) : undefined,
       roughness: 0.94, metalness: 0, color: BARK_TINT[species] ?? BARK_TINT.default,
@@ -218,8 +245,14 @@ export function buildEZTrees(game, trees, vegetation) {
     const assetLeaf = LEAF_MAP[species] ? game.assets?.tex?.(LEAF_MAP[species]) : null;
     const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: assetLeaf ?? t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
-      color: assetLeaf ? 0xffffff : (t.leavesMesh.material.color?.clone() ?? 0xffffff),   // the painted card carries its own colour — ez's preset green would re-summer the snow
-    }), mergePatch(erodeNear, sway));
+      color: assetLeaf ? 0xffffff : (LEAF_COL[species] ?? t.leavesMesh.material.color?.clone() ?? 0xffffff),   // the painted card carries its own colour — ez's preset green would re-summer the snow
+    }), mergePatch(erodeNear, sway, {
+      // Canopy-sphere shading: raw card normals point wherever the card faces, so a sun-aligned 10 m card
+      // lit uniformly bright next to a dark neighbour read as long two-tone "plastic strip" slashes across
+      // the crown (crit2-forest-b/shot-heart-side). Pulling normals toward up shades the canopy like a
+      // volume — same trick Vegetation.cards() uses spherical normals for.
+      vNormal: 'vec3 objectNormal = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.55));',
+    }));
     // Impostor: three quads at 60 degrees, not two at 90. A 2-quad cross has two viewing azimuths per
     // rotation where one card is edge-on and the silhouette collapses to a single flat plane — the
     // "cardboard tree" tell when you strafe past the treeline. A third quad costs 2 triangles per instance

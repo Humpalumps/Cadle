@@ -24,8 +24,11 @@ import { OUTER } from '../world/Biomes.js';
  *   `elite: true` scales HP/dmg/xp and gives a distinguishing gold tint + size bump (see ELITE_* in Enemy.js) for slay-a-mini-boss quest
  *   objectives — `enemy.elite === true`, optional `enemy.questTag`. populate() places camps per the CLAUDE.md layout (meadow wisps, Sundered
  *   Spire ruins + Warden, Whisperwood edge, crystal fields) plus, per outer region: 3 camps (heart + two satellites ~140 m off the region
- *   bearing) and 2 roaming packs of the region's common trash type wandering the gap between them; slots respawn 45-60 s (boss/mini-boss 180 s)
- *   after death when the player is > 50 m away. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond;
+ *   bearing), 2 roaming packs of the region's common trash type walking a waypoint LOOP (heart -> satellite -> the rare's POI; camp.route),
+ *   and ONE NAMED RARE (NAMED_RARES: gold elite at 2.5x hp, band-top level, 8-12 min respawn, at a POI off the pass road, `enemy.namedRare`
+ *   — RPG.js drops a guaranteed legendary off it); slots respawn 45-60 s (boss/mini-boss 180 s)
+ *   after death when the player is > 50 m away. Dragon nests are encounters (_updateNests): approach one and a guardian wyvern pair
+ *   wakes + the nest drops an egg (quest item while 'peak-s3' is active, else an uncommon); 10 min re-arm, never under `passive`. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond;
  *   shadows < 25 m); anim + AI-tick + uniform-upkeep rates are further crowd-scaled (1.5x > 16 alive, 2x > 32, 3x > 48 alive).
  * API: spawn(type, pos, opts), list (alive), all (alive + dying), clear(), populate(), warm() (one sleeping instance of every type in the pools, so boot compiles their shaders), types (defs), killAll(), lineup(pos?) (one of each type in a
  *   row facing the player, passive), passive (bool: nobody aggroes), nearest(pos, r), count(type?), stats(),
@@ -78,6 +81,24 @@ const GUIDE_SPEED = 3.2;   // m/s: a walk, not a sprint — the player has to st
 // (GUIDE_COLOR + trail), and the HUD nameplate (HUD.js showGuide/hideGuide) — all off the ground-cover
 // blob path entirely. Upgrade path if a ground cue is still wanted: a static (non-flashing) decal texture
 // under the feet, not a particle burst — ask whoever owns VFX.js/Grass.js for a ground-cover-safe primitive.
+
+// NAMED RARES — one per outer region (Destiny "wandering elite" beat). Pure data: the runtime is the
+// existing elite modifier (Enemy.js) + the existing camp/slot/respawn machinery, at 2.5x HP (hpMul
+// overrides the elite 3.0x), level = top of the region's band, 8-12 min respawn, spawned at a POI off
+// the pass road (radial+tangent diagonal from the region heart — see populate). Every `type` is in
+// that region's Biomes.js roster, so nothing here can name an enemy that does not exist.
+// The guaranteed legendary drop on death is RPG.js's side of the contract (it checks `enemy.namedRare`).
+const NAMED_RARES = {
+  forest:    { type: 'treant',     name: 'Thornmaw the Rooted' },
+  tundra:    { type: 'frostwolf',  name: 'Old Rimefang' },
+  celestial: { type: 'seraph',     name: 'Auriel of the Second Choir' },
+  dragon:    { type: 'wyvern',     name: 'Ashwing the Broodmother' },
+  infernal:  { type: 'magmagolem', name: 'Slagheart' },
+  lost:      { type: 'sentinel',   name: 'Warden of the Sixteenth Stone' },
+  shadowfen: { type: 'bogwitch',   name: 'Grandmother Rot' },
+  sunken:    { type: 'drowned',    name: 'The Seneschal' },
+  void:      { type: 'voidhorror', name: 'Null-of-Nine' },
+};
 
 export class Enemies {
   constructor(game) {
@@ -272,10 +293,10 @@ export class Enemies {
   populate() {
     this.clear(); this.camps.length = 0;
     const camp = (name, cx, cz, radius, level, members, opts = {}) => {
-      const c = { name, center: new THREE.Vector3(cx, 0, cz), radius, level, slots: [], alertT: -99, respawn: opts.respawn ?? 45 };
+      const c = { name, center: new THREE.Vector3(cx, 0, cz), radius, level, slots: [], alertT: -99, respawn: opts.respawn ?? 45, route: opts.route ?? null };
       for (const [type, n, r0, r1] of members) for (let i = 0; i < n; i++) {
         const p = this._campPoint(cx, cz, r0 ?? 2, r1 ?? radius, DEFS[type].flying);
-        c.slots.push({ type, pos: p, enemy: null, deadAt: -1e9, level: opts.levelOf?.(type) ?? level });
+        c.slots.push({ type, pos: p, enemy: null, deadAt: -1e9, level: opts.levelOf?.(type) ?? level, opts: opts.slotOpts ?? null });
       }
       this.camps.push(c);
     };
@@ -303,8 +324,17 @@ export class Enemies {
       const midLevel = Math.round((lo + hi) / 2);
       const respawn = b.id === 'lost' ? 180 : 60;
       const levelOf = (type) => (DEFS[type].boss ? hi : lo + Math.floor(this.rnd() * (hi - lo + 1)));
-      if (b.id === 'forest') { camp(b.short, b.cx, b.cz, 120, midLevel, b.enemies, { respawn, levelOf }); continue; }
       const px = -Math.sin(b.bearing), pz = Math.cos(b.bearing);   // tangent to the bearing
+      if (b.id === 'forest') {
+        camp(b.short, b.cx, b.cz, 120, midLevel, b.enemies, { respawn, levelOf });
+        // forest keeps its original roster (tri-budget exception) but still gets its named rare:
+        // ONE extra streamed slot, geometry shared with every other treant — not a density change.
+        const fr = NAMED_RARES.forest;
+        camp(b.short + '-rare', b.cx + Math.cos(b.bearing) * 90 + px * 70, b.cz + Math.sin(b.bearing) * 90 + pz * 70, 20, hi,
+          [[fr.type, 1, 0, 8]], { respawn: 480 + (b.k % 5) * 60, levelOf: () => hi,
+            slotOpts: { elite: true, hpMul: 2.5, name: fr.name, namedRare: true, questTag: 'rare:' + b.id } });
+        continue;
+      }
       const centers = [
         { name: b.short, cx: b.cx, cz: b.cz, share: 0.5 },
         { name: b.short + '-e1', cx: b.cx + px * 140, cz: b.cz + pz * 140, share: 0.25 },
@@ -316,10 +346,26 @@ export class Enemies {
           .filter(([, n]) => n > 0);
         if (roster.length) camp(c.name, c.cx, c.cz, 120, midLevel, roster, { respawn, levelOf });
       }
+      // --- the region's NAMED RARE: at a POI off the pass road (the pass comes home along the radial,
+      // satellites sit on the tangent — the diagonal is claimed by neither), guaranteed-legendary elite
+      // on an 8-12 min clock. The name IS the content: a gold-tinted 2.5x-hp version of a roster
+      // archetype the player already knows how to fight, worth walking to.
+      const rare = NAMED_RARES[b.id];
+      const rx = b.cx + Math.cos(b.bearing) * 90 + px * 70, rz = b.cz + Math.sin(b.bearing) * 90 + pz * 70;
+      if (rare) {
+        camp(b.short + '-rare', rx, rz, 20, hi, [[rare.type, 1, 0, 8]], {
+          respawn: 480 + (b.k % 5) * 60,   // 8-12 min, staggered per region so two rares never share a clock
+          levelOf: () => hi,
+          slotOpts: { elite: true, hpMul: 2.5, name: rare.name, namedRare: true, questTag: 'rare:' + b.id },
+        });
+      }
+      // --- roaming packs walk a real patrol ROUTE: heart -> satellite -> the rare's POI and around
+      // again (~450 m loop through three places that exist), instead of milling around a midpoint.
       const roamType = b.enemies.find(([t]) => !DEFS[t].boss)?.[0] ?? b.enemies[0][0];
       for (let i = 0; i < 2; i++) {
         const sat = centers[1 + i];
-        camp(b.short + '-roam' + i, (b.cx + sat.cx) / 2, (b.cz + sat.cz) / 2, 80, midLevel, [[roamType, i === 0 ? 3 : 2, 0, 80]], { respawn, levelOf });
+        camp(b.short + '-roam' + i, (b.cx + sat.cx) / 2, (b.cz + sat.cz) / 2, 80, midLevel, [[roamType, i === 0 ? 3 : 2, 0, 80]],
+          { respawn, levelOf, route: [{ x: b.cx, z: b.cz }, { x: sat.cx, z: sat.cz }, { x: rx, z: rz }] });
       }
     }
     // Only the home region is populated up front — the rest stream in as the player travels (see update).
@@ -336,7 +382,7 @@ export class Enemies {
   }
   _spawnSlot(c, s) {
     if (this.list.length >= this.maxAlive) return null;
-    const e = this.spawn(s.type, s.pos, { level: s.level, camp: c, slot: s });
+    const e = this.spawn(s.type, s.pos, { level: s.level, camp: c, slot: s, ...(s.opts ?? {}) });   // slot opts: named rares (elite/hpMul/name/namedRare)
     if (e) s.enemy = e; return e;
   }
 
@@ -361,6 +407,60 @@ export class Enemies {
       }
       const dx = P.position.x - h.x, dz = P.position.z - h.z;
       if (dx * dx + dz * dz < h.r * h.r && Math.abs(P.position.y - h.y) < 3) P.damage?.(h.dps * dt, null, { element: h.element, source: 'hazard' });
+    }
+  }
+
+  // ------------------------------------------------------------------ dragon nests (wave-2: "nests are scenery")
+  /**
+   * Approaching a nest is an ENCOUNTER: a guardian pair of wyverns wakes on top of you and the nest
+   * gives up an egg. Nest positions come from Props' egg placements (game.world.props._eggs — ASK:
+   * expose this as props.nests officially), clustered into sites; if Props hasn't published them a
+   * deterministic bench-ring fallback around the dragon landmark is used. A nest re-arms after 10 min.
+   * Egg loot: while the 'peak-s3' collect quest is active it drops the quest egg; otherwise a
+   * vendor-value uncommon. Checked at 4 Hz, dragon region only, and never under `passive` (harness).
+   */
+  _buildNests() {
+    const out = this._nests = [];
+    const eggs = this.game.world?.props?._eggs;
+    if (Array.isArray(eggs) && eggs.length) {
+      for (const [x, y, z] of eggs) {   // cluster: eggs sit within ~5 m of their nest centre
+        const n = out.find((m) => (m.x - x) * (m.x - x) + (m.z - z) * (m.z - z) < 64);
+        if (n) { n.x = (n.x * n.c + x) / (n.c + 1); n.z = (n.z * n.c + z) / (n.c + 1); n.c++; }
+        else out.push({ x, y, z, c: 1, rearmAt: -1e9 });
+      }
+    } else {
+      const b = this._dragonB, T = this.game.terrain;   // fallback: the five bench-ring bearings Props uses
+      for (let n = 0; n < 5; n++) {
+        const a = 0.7 + n * 1.21, x = b.cx + Math.cos(a) * 95, z = b.cz + Math.sin(a) * 95;
+        out.push({ x, y: T.heightAt(x, z), z, c: 3, rearmAt: -1e9 });
+      }
+    }
+  }
+  _updateNests(t) {
+    if (this.passive) return;
+    const b = this._dragonB ??= OUTER.find((o) => o.id === 'dragon'); if (!b) return;
+    const p = this.game.player.position;
+    const dx0 = p.x - b.cx, dz0 = p.z - b.cz; if (dx0 * dx0 + dz0 * dz0 > 340 * 340) return;
+    if (!this._nests) this._buildNests();
+    let guards = 0; for (const e of this.list) if (e.questTag === 'nest-guard') guards++;
+    for (const n of this._nests) {
+      if (t < n.rearmAt) continue;
+      const dx = p.x - n.x, dz = p.z - n.z;
+      if (dx * dx + dz * dz > 16 * 16) continue;
+      n.rearmAt = t + 600;
+      if (guards < 6) {   // ponytail: flat cap on live guardians so kiting every nest can't flood the region
+        const [lo, hi] = b.level;
+        for (let i = 0; i < 2; i++) {
+          const a = (i ? 2.6 : 0.9) + n.x * 0.01;
+          const e = this.spawn('wyvern', { x: n.x + Math.sin(a) * 10, z: n.z + Math.cos(a) * 10 },
+            { level: i ? lo : Math.round((lo + hi) / 2), questTag: 'nest-guard' });
+          if (e) { e.alert = true; e.lastSeen.copy(this.playerPos); e.lastSeenT = t; e.home.set(n.x, e.position.y, n.z); guards++; }
+        }
+      }
+      const rpg = this.game.rpg, pos = { x: n.x, y: n.y + 0.5, z: n.z };
+      if (rpg?.quest?.active?.has?.('peak-s3')) rpg.dropQuestItem?.(pos, 'drake-egg', 'Speckled Drake Egg');
+      else rpg?.dropLoot?.(pos, 'uncommon');
+      this.game.hud?.toast?.('THE BROOD WAKES', { ms: 2200, kind: 'ability' });
     }
   }
 
@@ -396,6 +496,7 @@ export class Enemies {
     this._respT = (this._respT ?? 0) + dt;
     if (this._respT > 0.25) {
       this._respT = 0;
+      this._updateNests(t);
       // Camp streaming. The world is 2048 m with ten regions; populating every slot would blow the
        // 40-alive cap at spawn and leave every distant biome empty forever. Instead a slot is eligible
        // only inside STREAM m of the player, and when the cap is full the FARTHEST live camp enemy is

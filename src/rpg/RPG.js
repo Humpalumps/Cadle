@@ -199,7 +199,11 @@ export class RPG {
     // `enemy.xp` is the LEVEL-SCALED value Enemy.spawn() computes (defs.LEVEL_XP), not the flat
     // `def.xp` base. Reading the base is what made a level-44 Void Horror pay the same 280 as its
     // level-34 twin, which on its own put the 1->50 curve thousands of kills out of reach.
-    g.events.on('enemy:death', (e) => { const en = e?.enemy; R.addXp(en?.xp ?? en?.def?.xp ?? 10); });
+    g.events.on('enemy:death', (e) => {
+      const en = e?.enemy; R.addXp(en?.xp ?? en?.def?.xp ?? 10);
+      // named rares (Enemies.js NAMED_RARES) always pay purple+: the walk to the POI is the price
+      if (en?.namedRare && en.position) { try { R.dropLoot(en.position, 'legendary'); } catch (err) {} }
+    });
     // player-outgoing damage rides gear quality: wrap the two combat entry points once
     const mul = () => (R.stats.damageMul || 1) * (R.weaponMul || 1);
     for (const fn of ['hitscan', 'explode']) {

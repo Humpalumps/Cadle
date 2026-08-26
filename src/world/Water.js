@@ -16,7 +16,13 @@ import { mulberry32 } from '../core/Noise.js';
  *  - Infernal lava skin: lava_crust albedo, plates stretched+scrolled along the channel's downhill direction,
  *    ember glow in the cracks (saturated, hue-preserving luma cap — never a white blob), 1-tap crust parallax.
  *  - Shadowfen: opaque peat murk (extinction < 1 m), dark olive mirror, oily still surface, duckweed scum
- *    patches (instanced matte cards) hugging the shores.
+ *    patches (instanced matte cards) hugging the shores. Sun/moon specular is per-biome capped (sp key):
+ *    under the fen's overcast key a glossy glint read as washed-white blobs — blob law applies to water too.
+ *  - Sunken cascade gorge (docs/SUNKEN-REDESIGN-BRIEF.md): waterfall curtains draped on every wall the
+ *    water laps against (auto-scanned from the terrain bake — riser notches, gorge flanks), plunge-pool
+ *    foam rings and soft mist cards at each fall base (merged: 2 draw calls total), plus advected
+ *    white-water streaks in the shader flowing down-gorge. All foam/mist is LIT colour, luma-capped —
+ *    silver, never clipped white.
  * API (stable):
  *   water.level                       y of the flat water plane (= terrain.waterLevel)
  *   water.isWater(x, z)               terrain below water level here?
@@ -41,11 +47,14 @@ const QP = {  // refl = reflection res scale, everyN = render reflection every N
 const NO_REFLECT = /^(grass-ring|rocks-|crystals-|enemy-|vfx-|lantern-flames|eztree-trunk|eztree-leaves)/;   // ez near trees are full geometry — re-rendering them into the half-res mirror every 3rd frame was a periodic 30ms spike (perf audit); the crossed-quad impostors stay in, so the far shore still shows trees
 // per-biome water look: shallow tint, deep tint, per-channel absorption (higher = light dies sooner).
 // Optional keys: rt = reflection tint, rgh = roughness, det = detail-normal strength, fm = foam multiplier
-// (white lace reads wrong on a peat bog) — all lerped by biome weight.
+// (white lace reads wrong on a peat bog), sp = sun/moon specular multiplier — all lerped by biome weight.
 const WATER_LOOK = {
-  // peat murk: extinction inside ~0.5 m, green-black body, dark olive mirror, oily still surface (wave-1 critic)
-  shadowfen: { sh: [0.040, 0.062, 0.030], dp: [0.006, 0.011, 0.004], ab: [7.50, 4.80, 8.50], rt: [0.40, 0.46, 0.38], rgh: 0.155, det: 0.16, fm: 0.25 },
-  sunken:    { sh: [0.018, 0.205, 0.300], dp: [0.002, 0.016, 0.072], ab: [1.55, 0.36, 0.12] },   // open ocean: blue goes deep
+  // peat murk: extinction inside ~0.5 m, green-black body, dark olive mirror, oily still surface (wave-1 critic).
+  // rgh 0.155 -> 0.34 + sp 0.05 (wave-2 BLOCKER): the glossy lobe threw huge washed-white sun smears under the
+  // overcast key (the sun uniform doesn't know about cloud) — satin sheen only, the glint can never reach white.
+  shadowfen: { sh: [0.040, 0.062, 0.030], dp: [0.006, 0.011, 0.004], ab: [7.50, 4.80, 8.50], rt: [0.40, 0.46, 0.38], rgh: 0.34, det: 0.16, fm: 0.25, sp: 0.05 },
+  // cascade gorge (user decree 2026-08-25): clear fast mountain water at wading depth, not open ocean
+  sunken:    { sh: [0.060, 0.200, 0.240], dp: [0.008, 0.045, 0.075], ab: [1.30, 0.55, 0.30], fm: 1.35, det: 0.44 },
   tundra:    { sh: [0.075, 0.215, 0.310], dp: [0.008, 0.045, 0.115], ab: [1.45, 0.55, 0.26] },   // meltwater under ice
   void:      { sh: [0.030, 0.020, 0.075], dp: [0.004, 0.002, 0.020], ab: [2.20, 2.40, 1.30] },
   infernal:  { sh: [0.180, 0.045, 0.010], dp: [0.060, 0.012, 0.002], ab: [0.60, 2.40, 3.20] },   // molten: the uLava skin does the rest
@@ -98,7 +107,7 @@ uniform float uInvSize; uniform float uHeightOffset; uniform mat4 uReflMatrix; u
 uniform vec3 uSunDir; uniform vec3 uSunRad; uniform vec3 uMoonDir; uniform vec3 uMoonRad;
 uniform vec3 uSkyColor; uniform vec3 uHorizonColor; uniform vec3 uAmbient; uniform vec3 uFogColor; uniform vec3 uFogParams; // density, near, far (near<far -> linear fog)
 uniform float uTime; uniform float uLava; uniform float uCamBelow; uniform float uDetail; uniform float uRough; uniform float uDistort; uniform float uReflDistort;
-uniform float uSpecMax; uniform float uSumAmp; uniform float uLevel; uniform vec3 uReflTint; uniform float uFoamMul;
+uniform float uSpecMax; uniform float uSumAmp; uniform float uLevel; uniform vec3 uReflTint; uniform float uFoamMul; uniform float uSpecMul; uniform float uRapid;
 uniform vec3 uShallow; uniform vec3 uDeep; uniform vec3 uAbsorb; uniform float uFoamDepth; uniform float uDebug; uniform float uNight;
 varying vec3 vWorld; varying vec3 vGN; varying float vViewZ; varying float vCrest;
 
@@ -249,6 +258,7 @@ void main() {
   mtrail = mtrail / (1.0 + mtrail * 0.66);
   vec3 mspec = uMoonRad * (ggx(n, V, uMoonDir, rough) * 0.8 + mtrail * 0.9 * gw);
   spec += mspec / (1.0 + dot(mspec, LUMA) * 0.55);   // hue-preserving cap: per-pixel sparkle survives, the trail can never flatten into a white sheet
+  spec *= uSpecMul;   // per-biome glint kill switch (fen murk: satin, never a washed-white smear)
 
   vec3 col;
   if (uCamBelow > 0.5) {
@@ -288,21 +298,36 @@ void main() {
   // lowest frequency survived the mips, which drew one bright clump per 14 m repeat = the "dashed line" shore)
   vec2 pf = mat2(0.31, -0.95, 0.95, 0.31) * p * 1.014 + (n1.rg * 2.0 - 1.0) * 1.4;
   float fp = n2.a * 0.6 + texture2D(uNormal, pf * 0.07 + vec2(-0.02, 0.035) * t).b * 0.7;
-  float iso = d0 + (fp - 0.62) * 0.07 + 0.035 * sin(t * 1.3 + fp * 9.0);      // wobbled + breathing contact isoline
+  float distF = smoothstep(60.0, 200.0, dist);
+  // far-shore wobble damped: at distance the +-7 cm isoline chop turned on/off per fp period = the "dashed line"
+  float iso = d0 + (fp - 0.62) * 0.07 * (1.0 - 0.7 * distF) + 0.035 * sin(t * 1.3 + fp * 9.0);
   // band width = max(~6 screen px, 9 cm of depth), capped at 55 cm: a hairline at distance, a believable wash at your
   // feet, and never the whole shelf even where the bed is nearly flat. Far shores thin toward a soft bright
   // edge instead of holding a uniform 55 cm skirt (the island wore it like a white collar).
-  float distF = smoothstep(60.0, 200.0, dist);
   float bandW = clamp(fwD * 6.0, 0.09, 0.55) * (1.0 - 0.65 * distF);
   float lace = texture2D(uNormal, p * 0.31 + vec2(0.05, -0.04) * t).b;
   float holes = 0.25 + 0.75 * smoothstep(0.12, 0.58, lace * 0.6 + fp * 0.4);  // lace texture: bright clumps + gaps, never fully solid
-  holes = mix(holes, 0.8, distF);                                             // far away the clump/gap pattern is sub-pixel: read as a soft continuous lace, not dashes
+  // far away the clump/gap pattern is sub-pixel; the old flat 0.8 read as a uniform white collar and the
+  // surviving tile fundamental as even dashes — amplitude-modulate with the macro field (217 m period, no
+  // visible repeat) so far foam swells and thins over tens of metres like real windward/leeward wash
+  holes = mix(holes, clamp(0.15 + 1.3 * macro, 0.0, 1.0), distF);
   float foam = (1.0 - smoothstep(0.0, bandW, iso)) * holes;                   // the contact lace (land side is clipped by the shore alpha)
   float arc = smoothstep(0.10, 0.03, abs(fract(iso * 2.2 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
   foam += arc * smoothstep(0.75, 0.15, iso) * smoothstep(0.5, 0.82, fp) * 0.5 * (1.0 - smoothstep(60.0, 170.0, dist));
   // sparse wave-crest lace in open water. 0.30/0.45 put a white cap on roughly a third of the lake at any
   // instant and read as soap suds from the shore; a lake this calm should only lace the sharpest crests.
   foam += smoothstep(0.62, 0.92, vCrest / uSumAmp) * smoothstep(0.62, 0.88, fp) * 0.16;
+  // white-water rapids (sunken cascade gorge): elongated foam streaks advected down-gorge. Flow direction
+  // is radially outward (the gorge descends from the pass at low r0 to the Court at the region centre).
+  if (uRapid > 0.001) {
+    vec2 fd2 = normalize(vWorld.xz + vec2(1e-3));
+    vec2 q = vec2(dot(p, fd2), dot(p, vec2(-fd2.y, fd2.x)));
+    float s1 = texture2D(uNormal, vec2(q.x * 0.020 - t * 0.055, q.y * 0.11)).b;         // ~2.8 m/s downstream
+    float s2 = texture2D(uNormal, vec2(q.x * 0.033 - t * 0.115 + 0.37, q.y * 0.19 + 0.5)).b;
+    float streak = smoothstep(0.52, 0.88, s1 * 0.62 + s2 * 0.55);
+    // streaks live in the fast shallows (channel + shelf), calm out in the deeper court basin
+    foam += streak * uRapid * smoothstep(1.7, 0.45, d0) * 0.7;
+  }
   foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
   vec3 foamCol = vec3(0.8) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
   col = mix(col, foamCol, foam);
@@ -366,6 +391,13 @@ void main() {
       vec3 skin = vec3(0.055, 0.030, 0.024) * (0.55 + 0.85 * a2);
       lcol = mix(hot, skin, crust);
     }
+    // bank light (wave-2 minor "lava casts no light on its banks"): the terrain rock is unlit by the pool, so
+    // fake the contact-line heat water-side — the crust EDGE (shallow lava) brightens into a saturated ember
+    // band that reads as light pooling where lava meets rock. Hue-preserving luma cap: fire, never a white rim.
+    float bank = 1.0 - smoothstep(0.10, 1.1, d0);
+    vec3 bankGlow = vec3(1.0, 0.30, 0.03) * bank * (0.42 + 0.18 * sin(uTime * 0.8 + vWorld.x * 0.6 + vWorld.z * 0.45));
+    bankGlow *= min(1.0, 0.50 / max(dot(bankGlow, LUMA), 1e-4));
+    lcol += bankGlow;
     col = mix(col, lcol, uLava);
     alpha = mix(alpha, 1.0, uLava);
   }
@@ -378,6 +410,61 @@ void main() {
     alpha = 1.0;
   }
   gl_FragColor = vec4(col, alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+// ---- Sunken cascade dressing: waterfall curtains + plunge foam rings + spray mist, ONE merged mesh /
+// ONE draw call. aKind picks the branch. All colour is LIT (sun/ambient/moon uniforms shared with the
+// water surface) and hue-preserving-capped — the blob law: silver foam, never clipped white.
+const FALLS_VERT = /* glsl */`
+attribute vec2 aLocal; attribute float aKind;
+varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ;
+void main() {
+  vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
+  vUvM = uv; vLocal = aLocal; vKind = aKind;
+  vec4 mv = viewMatrix * vec4(wp, 1.0); vViewZ = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}`;
+const FALLS_FRAG = /* glsl */`
+uniform sampler2D uTex; uniform float uTime;
+uniform vec3 uSunDir; uniform vec3 uSunRad; uniform vec3 uAmbient; uniform vec3 uMoonRad;
+uniform vec3 uFogColor; uniform vec3 uFogParams;
+varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ;
+void main() {
+  const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+  float t = uTime;
+  float day = clamp(uSunDir.y * 2.5, 0.0, 1.0);
+  vec3 fc = vec3(0.86, 0.92, 0.96) * (uSunRad * 0.32 * day + uAmbient * 1.2 + uMoonRad * 0.3);
+  fc /= (1.0 + dot(fc, LUMA) * 0.5);            // soft hue-preserving cap: bright silver, never a white clip
+  float a;
+  if (vKind < 0.5) {
+    // curtain: vertical ropes of falling water, thin at the lip, dissolving into spray at the foot
+    float s1 = texture2D(uTex, vec2(vUvM.x * 0.50, vUvM.y * 0.055 - t * 0.42)).b;   // ~7.6 m/s fall
+    float s2 = texture2D(uTex, vec2(vUvM.x * 0.23 + 0.41, vUvM.y * 0.030 - t * 0.30)).b;
+    float ropes = smoothstep(0.30, 0.78, s1 * 0.62 + s2 * 0.55);
+    a = 0.30 + 0.62 * ropes;
+    a *= smoothstep(0.0, 0.14, vLocal.y);                                           // sheet gathers below the lip
+    a *= smoothstep(0.0, 0.10, vLocal.x) * smoothstep(1.0, 0.90, vLocal.x);         // side feather
+    a *= 1.0 - 0.35 * smoothstep(0.72, 1.0, vLocal.y);                              // foot dissolves into the pool
+  } else if (vKind < 1.5) {
+    // plunge ring: churned foam collar spreading outward from the fall base (integer tile counts round
+    // the circle so the angular seam is invisible)
+    vec2 c = vLocal * 2.0 - 1.0; float r = length(c); float ang = atan(c.y, c.x);
+    float s1 = texture2D(uTex, vec2(ang * 0.4775, r * 1.1 - t * 0.16)).b;
+    float s2 = texture2D(uTex, vec2(ang * 0.3183 + 0.5, r * 0.7 - t * 0.10)).b;
+    float f = smoothstep(0.34, 0.72, s1 * 0.6 + s2 * 0.55);
+    a = (0.25 + 0.75 * f) * (1.0 - smoothstep(0.35, 1.0, r));
+  } else {
+    // spray mist: soft breathing veil, hazier and cooler than the foam — matte, capped, never washes white
+    vec2 c = vLocal * 2.0 - 1.0;
+    float nm = texture2D(uTex, vec2(vLocal.x * 0.8 + t * 0.010, vLocal.y * 0.8 - t * 0.016)).a;
+    a = max(1.0 - dot(c, c), 0.0) * (0.16 + 0.14 * nm);
+    fc = mix(fc, uAmbient * 1.15, 0.6);
+  }
+  float fog = (uFogParams.z > uFogParams.y) ? smoothstep(uFogParams.y, uFogParams.z, vViewZ) : 1.0 - exp(-uFogParams.x * uFogParams.x * vViewZ * vViewZ);
+  vec3 col = mix(fc, uFogColor, fog);
+  gl_FragColor = vec4(col, a * 0.92);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -417,6 +504,7 @@ export class Water {
   }
   submergedDepth(a, b, c) {
     const x = typeof a === 'object' ? a.x : a, y = typeof a === 'object' ? a.y : b, z = typeof a === 'object' ? a.z : c;
+    if (this._bed(x, z) >= this.level) return 0;   // dry ground below the plane (Void abyss, Infernal ash) is DRY — physics-audit "the abyss is swimmable"
     return Math.max(0, this.heightAt(x, z) - y);
   }
   excludeFromReflection(obj) { this._noReflect.add(obj); }
@@ -450,7 +538,7 @@ export class Water {
       uLava: { value: 0 },
       uDetail: { value: 0.36 }, uRough: { value: 0.075 }, uDistort: { value: 0.026 }, uReflDistort: { value: 0.026 }, uSpecMax: { value: 6.0 }, uReflTint: { value: new THREE.Color(0.94, 0.97, 1.0) },
       uShallow: { value: new THREE.Color(0.035, 0.27, 0.32) }, uDeep: { value: new THREE.Color(0.006, 0.038, 0.105) },
-      uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uFoamMul: { value: 1 }, uDebug: { value: 0 }, uNight: { value: 0 },
+      uAbsorb: { value: new THREE.Vector3(1.25, 0.42, 0.19) }, uFoamDepth: { value: 0.22 }, uFoamMul: { value: 1 }, uSpecMul: { value: 1 }, uRapid: { value: 0 }, uDebug: { value: 0 }, uNight: { value: 0 },
       uLavaTex: { value: null }, uHasLavaTex: { value: 0 },
     };
     const lavaTex = game.assets?.tex?.('lava_crust');
@@ -473,6 +561,117 @@ export class Water {
     this.mesh.visible = this.hasWater;
     game.scene.add(this.mesh);
     this._buildScum();
+    this._buildFalls();
+  }
+
+  // Sunken cascade gorge (docs/SUNKEN-REDESIGN-BRIEF.md): scan the terrain for every place the water laps
+  // against a wall face (riser notches, gorge flanks, the ramp cut) and drape a waterfall there — curtain
+  // following the wall profile + plunge foam ring + spray mist cards. Fully generic (reads only the height
+  // field), deterministic, merged into ONE mesh / ONE draw call (~1.3k tris for ~12 falls).
+  _buildFalls() {
+    const g = this.game, T = g.terrain, WLv = this.level;
+    if (!T?.biomeAt || !this.hasWater) return;
+    const rnd = mulberry32(g.seed + 52121);
+    const S = T.size, half = S / 2;
+    // 1) coarse bbox of the sunken region (biome test only)
+    let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+    for (let z = -half + 12; z < half; z += 24) for (let x = -half + 12; x < half; x += 24)
+      if (T.biomeAt(x, z) === 'sunken') { if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+    if (x1 < x0) return;
+    // 2) fall sites: wet cells with a >=2.4 m wall within 8 m (the face the water pours off)
+    const DIRS = []; for (let i = 0; i < 8; i++) DIRS.push([Math.cos(i * Math.PI / 4), Math.sin(i * Math.PI / 4)]);
+    const cand = [];
+    for (let z = z0; z <= z1; z += 5) for (let x = x0; x <= x1; x += 5) {
+      if (this._bed(x, z) >= WLv - 0.15) continue;
+      let best = null;
+      for (const D of DIRS) {
+        const hw = this._bed(x + D[0] * 8, z + D[1] * 8) - WLv;
+        if (hw >= 2.4 && (!best || hw > best[2])) best = [D[0], D[1], hw];
+      }
+      if (best && T.biomeAt(x, z) === 'sunken') cand.push([x, z, best[0], best[1], best[2]]);
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => b[4] - a[4]);                       // tallest walls first (the pass-side staircase)
+    const picks = [];
+    for (const c of cand) {
+      if (picks.length >= 12) break;
+      if (picks.every((p) => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 > 30 * 30)) picks.push(c);
+    }
+    // 3) resolve each pick: shoreline foot, wall height, drape profile
+    const march = (sx, sz, dx, dz, target) => { for (let d = 0.25; d <= 16; d += 0.25) if (this._bed(sx + dx * d, sz + dz * d) >= target) return d; return 16; };
+    const falls = [];
+    for (const [cx, cz, dx, dz] of picks) {
+      const sd = march(cx, cz, dx, dz, WLv);
+      const sx = cx + dx * sd, sz = cz + dz * sd;           // where the water meets the wall
+      let hw = 0; for (let d = 2; d <= 12; d += 1) hw = Math.max(hw, this._bed(sx + dx * d, sz + dz * d) - WLv);
+      hw = Math.min(Math.max(hw, 2.2), 15);
+      falls.push({ sx, sz, dx, dz, tx: -dz, tz: dx, hw, w: Math.min(4.5 + hw, 14) });
+    }
+    // 4) merged geometry: curtains, then rings, then mist (index order = blend order; all depthWrite:false)
+    const pos = [], uv = [], loc = [], kind = [], idx = [];
+    const quad = (a, b, c, d) => idx.push(a, c, b, b, c, d);
+    const ROWS = 4, COLS = 4;
+    for (const f of falls) {                                // ---- curtains: drape the wall face
+      const jig = []; for (let j = 0; j <= COLS; j++) jig.push((rnd() - 0.5) * 0.9);
+      const hTot = f.hw + 0.45, base = pos.length / 3;
+      for (let i = 0; i <= ROWS; i++) {
+        const fy = i / ROWS, y = WLv + f.hw - hTot * fy;
+        const dWall = y > WLv ? march(f.sx, f.sz, f.dx, f.dz, y) : 0;
+        const proud = 0.35 + 1.3 * fy * fy;                 // plume leans out toward the foot
+        for (let j = 0; j <= COLS; j++) {
+          const fx = j / COLS, off = (fx - 0.5) * f.w;
+          const dd = dWall - proud + jig[j] * (1 - fy);     // ragged lip, converging foot
+          pos.push(f.sx + f.dx * dd + f.tx * off, y, f.sz + f.dz * dd + f.tz * off);
+          uv.push(fx * f.w, fy * hTot); loc.push(fx, fy); kind.push(0);
+        }
+      }
+      for (let i = 0; i < ROWS; i++) for (let j = 0; j < COLS; j++) {
+        const a = base + i * (COLS + 1) + j;
+        quad(a, a + 1, a + COLS + 1, a + COLS + 2);
+      }
+    }
+    for (const f of falls) {                                // ---- plunge foam rings (flat on the pool)
+      const rr = f.w * 0.55 + 2.2, ox = f.sx - f.dx * rr * 0.55, oz = f.sz - f.dz * rr * 0.55, base = pos.length / 3;
+      for (let j = 0; j < 4; j++) {
+        const ax = (j & 1) * 2 - 1, az = ((j >> 1) & 1) * 2 - 1;
+        pos.push(ox + (f.tx * ax + f.dx * az * 0.8) * rr, WLv + 0.07, oz + (f.tz * ax + f.dz * az * 0.8) * rr);
+        uv.push((ax * 0.5 + 0.5) * rr * 2, (az * 0.5 + 0.5) * rr * 2); loc.push(ax * 0.5 + 0.5, az * 0.5 + 0.5); kind.push(1);
+      }
+      quad(base, base + 1, base + 2, base + 3);
+    }
+    for (const f of falls) {                                // ---- spray mist: two crossed soft cards
+      const mw = f.w * 0.55, mh = f.hw * 0.28 + 1.4;
+      const my = WLv + mh * 0.55, ox = f.sx - f.dx * 1.3, oz = f.sz - f.dz * 1.3;
+      for (let q = 0; q < 2; q++) {
+        const ca = Math.cos(q * 1.1 - 0.55), sa = Math.sin(q * 1.1 - 0.55);
+        const ux = f.tx * ca - f.tz * sa, uz = f.tz * ca + f.tx * sa, base = pos.length / 3;
+        for (let j = 0; j < 4; j++) {
+          const ax = (j & 1) * 2 - 1, ay = ((j >> 1) & 1) * 2 - 1;
+          pos.push(ox + ux * ax * mw, my + ay * mh * 0.5, oz + uz * ax * mw);
+          uv.push(ax * 0.5 + 0.5, ay * 0.5 + 0.5); loc.push(ax * 0.5 + 0.5, ay * 0.5 + 0.5); kind.push(2);
+        }
+        quad(base, base + 1, base + 2, base + 3);
+      }
+    }
+    if (!idx.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('aLocal', new THREE.Float32BufferAttribute(loc, 2));
+    geo.setAttribute('aKind', new THREE.Float32BufferAttribute(kind, 1));
+    geo.setIndex(idx);
+    geo.computeBoundingSphere();
+    const u = this.uniforms;
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: FALLS_VERT, fragmentShader: FALLS_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false, lights: false,
+      // shared ENTRY objects: the water surface's _updateUniforms (runs every frame, before renderOrder 6) keeps these fresh
+      uniforms: { uTex: { value: this.normalTex }, uTime: u.uTime, uSunDir: u.uSunDir, uSunRad: u.uSunRad, uAmbient: u.uAmbient, uMoonRad: u.uMoonRad, uFogColor: u.uFogColor, uFogParams: u.uFogParams },
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'water-falls'; mesh.renderOrder = 6; mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = true;
+    mesh.raycast = () => {};
+    this.falls = mesh; this.fallSites = falls;              // fallSites: exposed for Audio (roar emitters) / VFX (spray bursts)
+    g.scene.add(mesh);
   }
 
   // Shadowfen duckweed/scum: matte card patches hugging the shore shallows (wave-1 critic: peat murk needs a
@@ -648,9 +847,10 @@ export class Water {
   _gradeWater(camera) {
     const u = this.uniforms, base = this._baseWater; if (!base) return;
     u.uShallow.value.copy(base.sh); u.uDeep.value.copy(base.dp); u.uAbsorb.value.copy(base.ab);
-    u.uReflTint.value.copy(base.rt); u.uRough.value = base.rgh; u.uDetail.value = base.det; u.uFoamMul.value = 1;
+    u.uReflTint.value.copy(base.rt); u.uRough.value = base.rgh; u.uDetail.value = base.det; u.uFoamMul.value = 1; u.uSpecMul.value = 1; u.uRapid.value = 0;
     const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._wb ??= {});
     u.uLava.value = b && b.id === 'infernal' ? b.w : 0;
+    u.uRapid.value = b && b.id === 'sunken' ? b.w : 0;
     const P = b && b.w > 0.002 ? WATER_LOOK[b.id] : null; if (!P) return;
     const w = b.w;
     u.uShallow.value.setRGB(base.sh.r + (P.sh[0] - base.sh.r) * w, base.sh.g + (P.sh[1] - base.sh.g) * w, base.sh.b + (P.sh[2] - base.sh.b) * w);
@@ -660,6 +860,7 @@ export class Water {
     if (P.rgh !== undefined) u.uRough.value = base.rgh + (P.rgh - base.rgh) * w;
     if (P.det !== undefined) u.uDetail.value = base.det + (P.det - base.det) * w;
     if (P.fm !== undefined) u.uFoamMul.value = 1 + (P.fm - 1) * w;
+    if (P.sp !== undefined) u.uSpecMul.value = 1 + (P.sp - 1) * w;
   }
 
   /** One source of truth for the underwater medium — Sky (scene fog) and PostFX (full-screen grade) can read

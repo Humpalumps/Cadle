@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BIOMES } from '../world/Biomes.js';
+import { mulberry32 } from '../core/Noise.js';
 
 /**
  * Sky + atmosphere + time of day. Owns: sky dome (physically-inspired scattering, FF14-dramatic), sun disc, moon, stars, clouds, aether/aurora at night,
@@ -607,7 +608,9 @@ void main() {
   // Region veil (Biomes.skyVeil): smoke / peat reek / void murk that reaches the SKY, not just the aerial
   // perspective. Without it the Wastes and the fen sit under a clean blue noon dome, which is the single
   // loudest "this is a tinted meadow" cue left in those regions. Thickest at the horizon, thinner overhead.
-  col = mix(col, fogCol, uVeil * mix(1.0, 0.78, smoothstep(0.0, 0.80, d.y)));
+  // zenith factor 0.92 (was 0.78): a smoke ceiling is a CEILING — the leak of clean bright noon sky
+  // through the old 22% overhead window kept the Wastes/Void domes reading as bright haze, not weather.
+  col = mix(col, fogCol, uVeil * mix(1.0, 0.92, smoothstep(0.0, 0.80, d.y)));
   // Region horizon glow (Biomes.glow/glowI): ember light off the Wastes' lava fields, the Isles' gold memory
   // at night. A broad saturated band, intensity premultiplied and capped ≤0.3 — never a point source (blob law).
   col += uGlow * exp(-max(d.y, 0.0) * 5.5);
@@ -805,7 +808,7 @@ export class Sky {
     this.moonDir.set(mx * Math.cos(r20) - mz * Math.sin(r20), Math.sin(tm) * s55, mx * Math.sin(r20) + mz * Math.cos(r20)).normalize();
     this.sunElevation = Math.asin(THREE.MathUtils.clamp(this.sunDir.y, -1, 1));
     const elD = this.sunElevation / DEG;
-    this.sunIntensity = THREE.MathUtils.smoothstep(elD, -2, 6);
+    this.sunIntensity = this._sunIBase = THREE.MathUtils.smoothstep(elD, -2, 6);
     this.night = 1 - THREE.MathUtils.smoothstep(elD, -14, -2);
     this.moonIntensity = THREE.MathUtils.smoothstep(this.moonDir.y, -0.04, 0.12) * this.night;
     this._dirty = true;
@@ -892,6 +895,12 @@ export class Sky {
     // the physical HDR sun mesh (40x, feeds god rays + bloom) dims through the smoke ceiling like the dome's
     // disc does — an undimmed mesh through a 0.88 veil is a washed-white ball over the Wastes (blob law)
     this.sunMat.color.copy(this.sunDiscColor).multiplyScalar(40 * (1 - (this._veilE ?? 0)));
+    // A smoke/reek ceiling dims the SUN ITSELF, not just the dome: without this the Wastes' mountains
+    // stayed brightly key-lit tan under a "smoke" sky and the fen's slopes stayed cheerful spring-lime
+    // (crit2-infernal / crit2-shadowfen). Squared, so true ceilings (0.85+) go sunless-overcast while a
+    // light canopy veil (forest 0.42) keeps most of its key. Lighting reads sunIntensity after us.
+    this.sunIntensity = (this._sunIBase ?? this.sunIntensity) * (1 - 0.70 * (this._veilE ?? 0) ** 2);
+    this._updateShafts(t);   // forest under-canopy sun shafts + dapple (reads _bb, set by _gradeFog above)
   }
 
   /**
@@ -927,6 +936,32 @@ export class Sky {
       gr = gt.r * s; gg = gt.g * s; gb = gt.b * s;
     }
     gU.r += (gr - gU.r) * 0.03; gU.g += (gg - gU.g) * 0.03; gU.b += (gb - gU.b) * 0.03;
+    // ---- per-region key + night-ambient grade (Biomes.keyLow / .ambNight) ----
+    // Applied HERE (Sky updates before Lighting/Water/Grass, all of which read these colours), re-derived
+    // every frame from the pristine copies _refreshColors keeps, so nothing compounds.
+    const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
+    const gld = sstep(0.35, 0.10, this.sunElevation) * sstep(-0.05, 0.02, this.sunElevation);   // 1 = golden hour, 0 = high noon / night
+    const klT = B && B.keyLow != null ? b.w * gld : 0;
+    this._klE = (this._klE ?? 0) + (klT - (this._klE ?? 0)) * 0.03;
+    if (B && B.keyLow != null) {
+      const kcache = this._klCache ??= new Map();
+      let kc = kcache.get(b.id);
+      if (!kc) { kc = new THREE.Color(B.keyLow).convertSRGBToLinear(); kcache.set(b.id, kc); }
+      this._klC = kc;
+    }
+    if (this._sunBase) {
+      const s = this.sunColor.copy(this._sunBase), kc = this._klC;
+      if (kc && this._klE > 0.002) {           // hue toward keyLow, luminance kept (same trick as Lighting)
+        const kk = L(s) / Math.max(1e-4, L(kc)), e = this._klE;
+        s.setRGB(s.r + (kc.r * kk - s.r) * e, s.g + (kc.g * kk - s.g) * e, s.b + (kc.b * kk - s.b) * e);
+      }
+    }
+    const anT = B && B.ambNight != null ? 1 + (B.ambNight - 1) * b.w * this.night : 1;
+    this._anE = (this._anE ?? 1) + (anT - (this._anE ?? 1)) * 0.03;
+    if (this._ambBase) {
+      this.ambientColor.copy(this._ambBase).multiplyScalar(this._anE);
+      this.groundColor.copy(this._gndBase).multiplyScalar(this._anE);
+    }
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
     let t = cache.get(b.id);
@@ -940,16 +975,142 @@ export class Sky {
     // sky's luminance, which is right for clear air — but smoke, peat reek and void murk are DARKER than
     // the sky they hang under, and at midday a hue-only Wastes reads as a bright cream-orange desert.
     this._fogLumE = this._fogLumE == null ? (B.fogLum ?? 1) : this._fogLumE + ((B.fogLum ?? 1) - this._fogLumE) * 0.03;
-    const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
-    const k = L(out) * (1 + (this._fogLumE - 1) * b.w) / Math.max(1e-4, L(c)), w = b.w * 0.85;
+    // fogLum darkens the AIR ITSELF, before the hue force: smoke/reek/murk hang DARKER than the sky above
+    // them. It used to be folded into k and diluted through the 0.85 hue mix — 15% of a luminance-2 noon
+    // sky leaking through is why the Wastes' "smoke" still tone-mapped to a lit cream desert (crit2-infernal).
+    const lumS = 1 + (this._fogLumE - 1) * b.w;
+    out.r *= lumS; out.g *= lumS; out.b *= lumS;
+    // hazeSun: at low sun a mist region hands part of the mix back to the time-of-day colour — water vapour
+    // takes on the sunset light, so golden hour reaches the Sunken gorge instead of constant sea-mint.
+    const k = L(out) / Math.max(1e-4, L(c)), w = b.w * 0.85 * (1 - (B.hazeSun ?? 0) * gld);
     out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
     this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
+  }
+
+  // ---------------- forest sun shafts + ground dapple ----------------
+  // Midday under the Whisperwood canopy read as flat near-dusk with zero light play (crit2-forest-b/
+  // shot-interior-70). These are FF14's cathedral shafts: camera-facing additive ribbons dropped where
+  // a deterministic "canopy gap" scatter allows, each with a broken light pool at its foot. They are
+  // LIGHT, not glow: broad and soft, colour = the real key filtered through leaves, peak added radiance
+  // ~0.45 per shaft (bloom threshold is 1.2 — nothing here can bloom, per the blob decree), and they
+  // fade out entirely when the sun is low (dapple is a high-sun read) or the camera leaves the forest.
+  // Cost: 2 draw calls, ~350 tris, forest-only (group hidden elsewhere).
+  _buildShafts() {
+    const T = this.game.terrain;
+    if (!T?.heightAt) return;
+    this._shaftsBuilt = true;
+    const F = BIOMES.forest;                                    // cx/cz resolved by Biomes at module load
+    const rnd = mulberry32(((this.game.seed ?? 1) | 0) + 777);
+    const pts = [];
+    for (let i = 0; i < 260 && pts.length < 44; i++) {
+      const a = rnd() * PI * 2, r = Math.sqrt(rnd()) * 240;
+      const g = rnd();                                          // gap acceptance BEFORE the position is used
+      const x = F.cx + Math.cos(a) * r, z = F.cz + Math.sin(a) * r;
+      if (g < 0.42) continue;                                   // clustered gaps, not a lawn of shafts
+      const y = T.heightAt(x, z);
+      if (y < (T.waterLevel ?? 4) + 0.5) continue;
+      pts.push([x, y + 0.05, z, rnd()]);
+    }
+    if (!pts.length) return;
+    const mkGeo = (corners) => {
+      const n = pts.length, v = corners.length;
+      const org = new Float32Array(n * v * 3), cor = new Float32Array(n * v * 2), rd = new Float32Array(n * v);
+      const idx = [];
+      for (let i = 0; i < n; i++) {
+        const p = pts[i], b = i * v;
+        for (let j = 0; j < v; j++) {
+          org.set([p[0], p[1], p[2]], (b + j) * 3); cor.set(corners[j], (b + j) * 2); rd[b + j] = p[3];
+        }
+        idx.push(b, b + 1, b + 2, b + 2, b + 1, b + 3);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('aOrigin', new THREE.BufferAttribute(org, 3));
+      geo.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
+      geo.setAttribute('aRand', new THREE.BufferAttribute(rd, 1));
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * v * 3), 3));   // unused; keeps three happy
+      geo.setIndex(idx);
+      return geo;
+    };
+    this._shaftU = {
+      uSunDirW: { value: this.sunDir }, uCol: { value: new THREE.Color() }, uI: { value: 0 },
+      uTime: { value: 0 }, uLen: { value: 26 }, uNoise: { value: this.noiseRT.texture },
+    };
+    const common = { uniforms: this._shaftU, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false };
+    const shaftMat = new THREE.ShaderMaterial({ ...common,
+      vertexShader: /* glsl */`
+        attribute vec3 aOrigin; attribute vec2 aCorner; attribute float aRand;
+        uniform vec3 uSunDirW; uniform float uLen;
+        varying vec2 vUv; varying float vRand, vFade;
+        void main() {
+          vec3 axis = normalize(uSunDirW);
+          vec3 toCam = cameraPosition - aOrigin;
+          vec3 side = cross(axis, toCam);
+          side = normalize(dot(side, side) > 1e-6 ? side : vec3(1.0, 0.0, 0.0));
+          vec3 p = aOrigin + axis * (aCorner.y * uLen) + side * (aCorner.x * (1.0 + aRand * 1.8));
+          vUv = aCorner; vRand = aRand;
+          float d = length(toCam);
+          vFade = (1.0 - smoothstep(70.0, 150.0, d)) * smoothstep(4.0, 14.0, d);   // gone far away, gone right on top of it
+          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform vec3 uCol; uniform float uI, uTime; uniform sampler2D uNoise;
+        varying vec2 vUv; varying float vRand, vFade;
+        void main() {
+          float across = 1.0 - abs(vUv.x);
+          float streak = texture2D(uNoise, vec2(vUv.x * 0.22 + vRand * 5.31 + uTime * 0.006, vRand * 0.73 + uTime * 0.002)).g;
+          float body = smoothstep(0.02, 0.25, vUv.y) * (1.0 - smoothstep(0.60, 0.98, vUv.y));
+          gl_FragColor = vec4(uCol, across * across * (0.30 + 0.70 * streak) * body * uI * vFade);
+        }`,
+    });
+    const discMat = new THREE.ShaderMaterial({ ...common,
+      vertexShader: /* glsl */`
+        attribute vec3 aOrigin; attribute vec2 aCorner; attribute float aRand;
+        varying vec2 vUv; varying float vRand, vFade;
+        void main() {
+          vec3 p = aOrigin + vec3(aCorner.x, 0.0, aCorner.y) * (1.3 + aRand * 1.6) + vec3(0.0, 0.06, 0.0);
+          vUv = aCorner; vRand = aRand;
+          vFade = 1.0 - smoothstep(60.0, 130.0, distance(cameraPosition, aOrigin));
+          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform vec3 uCol; uniform float uI, uTime; uniform sampler2D uNoise;
+        varying vec2 vUv; varying float vRand, vFade;
+        void main() {
+          float core = max(1.0 - dot(vUv, vUv), 0.0);
+          float dap = texture2D(uNoise, vUv * 0.9 + vRand * 3.7 + uTime * 0.0015).b;   // broken leaf-light pool, not a spotlight
+          gl_FragColor = vec4(uCol, core * core * (0.25 + 0.75 * smoothstep(0.35, 0.75, dap)) * 0.55 * uI * vFade);
+        }`,
+    });
+    const quad = [[-1, 0], [1, 0], [-1, 1], [1, 1]], dquad = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+    this.shafts = new THREE.Group(); this.shafts.name = 'sunShafts'; this.shafts.visible = false;
+    for (const [geo, mat] of [[mkGeo(quad), shaftMat], [mkGeo(dquad), discMat]]) {
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false; m.renderOrder = 900;
+      this.shafts.add(m);
+    }
+    this.game.scene.add(this.shafts);
+  }
+
+  _updateShafts(t) {
+    if (!this._shaftsBuilt) { this._buildShafts(); if (!this._shaftsBuilt) return; }
+    if (!this._shaftU) return;
+    const bb = this._bb;                                        // region blend cached by _gradeFog this frame
+    const tgt = (bb?.id === 'forest' && bb.w > 0.02 ? bb.w : 0) * THREE.MathUtils.smoothstep(this.sunDir.y, 0.35, 0.60);
+    this._shaftE = (this._shaftE ?? 0) + (tgt - (this._shaftE ?? 0)) * 0.04;
+    const on = this._shaftE > 0.015;
+    this.shafts.visible = on;
+    if (!on) return;
+    const su = this._shaftU;
+    su.uI.value = this._shaftE; su.uTime.value = t;
+    // sun through leaves: the graded key filtered warm-green, scaled so stacked shafts stay under bloom
+    su.uCol.value.copy(this.sunColor).multiply(this._leafF ??= new THREE.Color(0.85, 1.0, 0.62)).multiplyScalar(0.60);
   }
 
   dispose() {
     for (const rt of [this.noiseRT, this.lutRT, this.cloudRT, this.cloudRTB, this.cloudLoRT, this.shapeRT, this.detailRT, ...(this.occRT ?? [])]) rt?.dispose();
     this.material?.dispose(); this.cloudMat?.dispose(); this.lutMat?.dispose(); this.sunMat?.dispose();
     this.resolveMat?.dispose(); this.occMat?.dispose();
+    if (this.shafts) for (const m of this.shafts.children) { m.geometry.dispose(); m.material.dispose(); }
   }
 
   // ---------------- CPU twin of the atmosphere (colors for the other systems) ----------------
@@ -1081,5 +1242,10 @@ export class Sky {
     uc.uHaze.value = 0.16 + 0.18 * dawn + 0.07 * golden + 0.10 * nf;
     uc.uStarVis.value = 1 - THREE.MathUtils.smoothstep(elD, -14, -8);   // stars only after civil twilight (~-8°), full by -14°
     uc.uAurora.value = (1 - THREE.MathUtils.smoothstep(elD, -14, -7)) * 1.0;
+    // pristine copies: _gradeFog re-applies the per-region key/night-ambient grade from these every frame
+    // (keyLow/ambNight in Biomes.js), so the grade never compounds across frames.
+    (this._sunBase ??= new THREE.Color()).copy(this.sunColor);
+    (this._ambBase ??= new THREE.Color()).copy(this.ambientColor);
+    (this._gndBase ??= new THREE.Color()).copy(this.groundColor);
   }
 }

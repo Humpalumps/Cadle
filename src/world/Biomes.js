@@ -79,6 +79,16 @@ export function weightAt(x, z, k) {
 //                     intensity (glowI ≤ 0.3, night-weighted) — a broad band, never a point source.
 //   sun / amb         key light + ambient grade    (render/Lighting.js _gradeBiome) — what makes the
 //                     Wastes read as lit by fire and the Void as lit by almost nothing
+//   keyLow            optional hex (Sky._gradeFog): at LOW sun the extinction-orange key (sky.sunColor,
+//                     which Lighting/Water/Grass all read) is pulled toward this hue, luminance kept.
+//                     For regions whose identity collapses into the sunset hue (celestial terracotta).
+//   ambNight          optional 0..1 (Sky._gradeFog): scales sky.ambientColor/groundColor at NIGHT only,
+//                     by region weight. For regions whose .amb is right by day but over-lights the
+//                     night floor (celestial read as daylight sepia at midnight).
+//   hazeSun           optional 0..1 (Sky._gradeFog): how much the region's forced haze hue lets the
+//                     time-of-day fog colour through at LOW sun. Water mist takes on sunset light in
+//                     reality — this is what lets golden hour finally touch the Sunken gorge instead
+//                     of the constant-mist grade repainting it every hour.
 //   grass.d           ground-cover DENSITY          (world/Terrain.js grassAt -> world/Grass.js)
 //   grass.tint        reference hue only — the blades actually take their colour from terrain.colorAt
 //                     (which is biome-tinted from Terrain.BALB); keep the two in the same family
@@ -119,7 +129,11 @@ export const BIOMES = {
     // fog was 0xe6dcff: bubble-gum lavender haze fought the gold identity; pale ivory-gold supports it and
     // keeps marble value separation at golden hour. amb was 1.45 — at night the floor read near daylight-
     // bright; 1.22 is still the brightest air in the world by day. glow: soft gold horizon memory after dark.
-    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xfff2d0, amb: 1.22, glow: 0xe0aa50, glowI: 0.12,
+    // keyLow: hour-18 collapsed the zone to monochrome terracotta (crit2-celestial-b/shot-approach) — the
+    // extinction-orange key fed the hemi/env/grass warm boost; pale gold keeps golden hour without the Mars
+    // wash. ambNight 0.45: even at amb 1.22 the midnight floor read as daylight sepia (shot-night-ground).
+    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xfff2d0, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
+    keyLow: 0xffe2ac, ambNight: 0.45,
     ground: 'stone', grass: { d: 0.05, tint: 0xd8e8c0 }, music: 'choir',
     enemies: [['seraph', 3, 16, 100], ['skyserpent', 2, 30, 120], ['wisp', 4, 14, 110]],
     landmark: 'The Empyrean Gate', float: true,
@@ -136,7 +150,11 @@ export const BIOMES = {
   },
   infernal: {
     name: 'Infernal Wastes', short: 'Infernal', zone: 'infernal', level: [18, 25],
-    fog: 0x5c4636, fogMul: 1.85, fogLum: 0.30, skyVeil: 0.88, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
+    // 0x5c4636 @ fogLum 0.30 still tone-mapped to bright Mars-cream at noon (crit2-infernal/shot-in: the
+    // noon fog luminance base is ~2 in HDR, so 30% of it is a lit desert, not smoke) — desaturated near-
+    // charcoal + 0.16 makes the distance converge to black-basalt murk and the noon dome read as a smoke
+    // ceiling. Verified both ways: the Cinder Maw ring still resolves at 30-150 m (fog DENSITY untouched).
+    fog: 0x4a423c, fogMul: 1.85, fogLum: 0.16, skyVeil: 0.92, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
     // fog was 0x4a1f11 (saturated red-brown): through the 0.72 veil it MIXED with the blue zenith into candy
     // pink — the smoke has to be warm grey-brown and near-total (0.88) to read as a ceiling, not a tint.
     // glow: ember-orange horizon band after dark (capped, saturated — the lava fields lighting the smoke).
@@ -165,7 +183,9 @@ export const BIOMES = {
     // At 13:00 the fen still read as a cheerful alpine lake: fogMul 2.4 left 2 km sightlines, fogLum 0.42 kept
     // the haze bright, skyVeil 0.62 left a third of the blue dome + white cumulus. 3.2/0.32/0.85 chokes noon
     // visibility to ~300 m under a bruised olive ceiling. amb 0.50 -> 0.42: the world-dimmest daylight.
-    fog: 0x4c5844, fogMul: 3.2, fogLum: 0.32, skyVeil: 0.85, sun: 0x9cb47e, amb: 0.42,
+    // 3.6/0.22 (wave 3): the near mountain slopes still sat in front of the murk as soapy spring-lime
+    // (crit2-shadowfen/shot-approach upper-left) — the haze now reaches the slope band and stays bruised.
+    fog: 0x46503c, fogMul: 3.6, fogLum: 0.22, skyVeil: 0.85, sun: 0x9cb47e, amb: 0.42,
     ground: 'muck', grass: { d: 0.12, tint: 0x5e6f3e }, music: 'fen',   // the fen's ground cover is REEDS (Props KIT.shadowfen), not lawn: at 0.22 a quarter of the blades still survive at full height and the region read as a green hillside
     enemies: [['wraith', 4, 14, 105], ['bogwitch', 2, 20, 110], ['hound', 3, 16, 110]],
     landmark: 'The Hagstone',
@@ -173,17 +193,27 @@ export const BIOMES = {
     blurb: 'Cursed water to the knee, witchlight, and things that used to be people.',
   },
   sunken: {
+    // USER DECREE 2026-08-25: no underwater area. The sea basin became a tiered cascade gorge —
+    // waterfalls off the ring, rapids between terraces, streets flooded at WADING depth only.
+    // See docs/SUNKEN-REDESIGN-BRIEF.md. `sea` removed on purpose; do not reintroduce swimming here.
     name: 'The Sunken Kingdom', short: 'Sunken Kingdom', zone: 'sunken', level: [20, 28],
-    fog: 0x3a6a74, fogMul: 1.7, skyVeil: 0.22, sun: 0x9fdcf0, amb: 0.9,   // fog desaturated a notch from 0x2e6472 so the time-of-day grade (golden hour especially) reads through the constant cyan
-    ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, sea: true, music: 'deep',
+    // spray-mist over cataracts: cool pale haze, no more constant deep-cyan sea grade. sun was 0xd8ecf2 —
+    // Lighting hue-forces the key to it, so golden hour arrived cyan; warm-neutral lets the hour read.
+    // hazeSun 0.6: mist takes on the sunset light instead of repainting the gorge mint every hour.
+    fog: 0x9ab8bc, fogMul: 1.25, skyVeil: 0.30, sun: 0xeceee6, amb: 0.95, hazeSun: 0.6,
+    ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, music: 'deep',
     enemies: [['drowned', 4, 14, 100], ['leviathan', 2, 40, 130], ['wisp', 3, 20, 110]],
     landmark: 'The Drowned Court',
-    passive: 'Past the shelf the sea is over your head — you swim',
-    blurb: 'A civilisation under the water. Coral has taken the throne room.',
+    passive: 'The cataracts drag at every step you wade',
+    blurb: 'A drowned kingdom among the waterfalls. The court still stands beneath the spray.',
   },
   void: {
     name: 'The Void', short: 'The Void', zone: 'void', level: [34, 44],
-    fog: 0x2c2040, fogMul: 1.15, fogLum: 0.62, skyVeil: 0.55, sun: 0xd6c6f0, amb: 0.78,
+    // 1.5/0.30/0.72 (wave 3, the 'no horizon' decree): midday used to show a bright white-lavender dome, a
+    // crisp horizon line and both neighbours in plain view (crit2-void/shot-in) — the floor now falls off
+    // into violet-black murk and the dome converges to the same air, so the horizon dissolves. Isles stay
+    // readable as silhouettes against the mid-violet; stars/aurora after dark are mostly veiled — on theme.
+    fog: 0x2c2040, fogMul: 1.5, fogLum: 0.30, skyVeil: 0.72, sun: 0xd6c6f0, amb: 0.78,
     ground: 'voidstone', grass: { d: 0, tint: 0x000000 }, dry: true, float: true, gravity: 0.55, music: 'void',
     enemies: [['riftling', 5, 12, 110], ['voidhorror', 3, 24, 120], ['wraith', 2, 20, 110]],
     landmark: 'The Unmaking',

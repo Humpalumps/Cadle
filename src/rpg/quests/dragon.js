@@ -1,5 +1,5 @@
 // Dragon Peaks (dragon) — levels 24-32. Roster: wyvern, forgeknight, golem.
-// XP subtotal: 39,290 (60% of the 65,484 the band costs).  5 quests: 3 chain + 2 side.
+// XP subtotal: 43,490.  6 quests: 3 chain + 3 side.
 // The chain is one story: Kharaz-Dun did not fall to the wyverns. It bricked itself in, from the inside.
 export default [
   {
@@ -94,6 +94,24 @@ export default [
       choices: [
         { tier: 'rare', kind: 'weapon', archetype: 'beam', element: 'solar' },
         { tier: 'rare', kind: 'armour', slot: 'arms', set: 'wyrmsworn' },
+      ] },
+  },
+  {
+    // the nest ENCOUNTER's quest hook (Enemies.js _updateNests): walking up to a nest wakes a guardian
+    // pair and gives up an egg while this is active; wyvern kills can also shake one loose.
+    id: 'peak-s3', region: 'dragon', level: 27,
+    name: 'A Clutch Held Warm',
+    giver: 'stele:dragon',
+    text: {
+      offer: 'The nests on the benches are not abandoned — put a boot within ten paces of one and you will meet what warms it. The eggs run hot enough to fog a lens, which means they are alive, which means somebody is FEEDING this mountain a new generation. Bring me three. The brood will object; the brood is the point.',
+      progress: 'Eggs off the bench nests. The guardians come with them, and they come first.',
+      done: 'Warm through, all three, and each shell carries the same maker mark as the rivets. The wyverns are not nesting here. They are being ISSUED.',
+    },
+    objectives: [{ type: 'collect', item: 'drake-egg', name: 'Speckled Drake Eggs', count: 3, from: ['wyvern'], chance: 0.25 }],
+    reward: { xp: 4200, glimmer: 480, tier: 'rare',
+      choices: [
+        { tier: 'rare', kind: 'weapon', archetype: 'scout', element: 'solar' },
+        { tier: 'rare', kind: 'armour', slot: 'head', set: 'emberward' },
       ] },
   },
 ];

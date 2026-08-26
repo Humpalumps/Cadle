@@ -99,7 +99,7 @@ export default [
     name: 'One Last Light',
     giver: 'stele:lost',
     text: {
-      offer: 'The Elderheart sent a light after you. It has come the whole way — forest, ice, fen, fire, sea, stone, sky, and the Void — and it is guttering out on the rampart because nothing here will let it through to the centre. Take it in. Whatever happens at the Convergence, the wood that started you off deserves to have something of itself standing there when it does.',
+      offer: 'The Elderheart sent a light after you. It has come the whole way — forest, ice, fen, fire, falls, stone, sky, and the Void — and it is guttering out on the rampart because nothing here will let it through to the centre. Take it in. Whatever happens at the Convergence, the wood that started you off deserves to have something of itself standing there when it does.',
       progress: 'Walk the guttering light in from the rampart to the Convergence.',
       done: 'It made it to the stones and steadied. Small, stubborn, and further from home than anything else in this ring.',
     },

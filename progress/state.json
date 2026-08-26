@@ -4,7 +4,7 @@
  "kpis": [
   {
    "label": "wave",
-   "value": "2 done → gate → 3"
+   "value": "3 — redesign + loop-backs"
   },
   {
    "label": "regions at bar",
@@ -32,7 +32,7 @@
    "key": "vale",
    "name": "🌾 The Vale",
    "files": "Grass, Props",
-   "status": "critic",
+   "status": "building",
    "score": 7,
    "verdict": "TOSSUP",
    "gap": "NEW REGRESSION: oak through the Aetheryte pedestal; voxel NPC; windowless cottages",
@@ -42,7 +42,7 @@
    "key": "forest",
    "name": "🌲 Whisperwood Deep",
    "files": "Vegetation, Props, Terrain, Grass",
-   "status": "critic",
+   "status": "building",
    "score": 6,
    "verdict": "TOSSUP",
    "gap": "Elderheart has no mid-range/skyline read — findable only by its UI marker",
@@ -52,7 +52,7 @@
    "key": "tundra",
    "name": "❄️ Frostveil Tundra",
    "files": "Vegetation, Terrain, Props",
-   "status": "critic",
+   "status": "building",
    "score": 6,
    "verdict": "TOSSUP",
    "gap": "ice shards still opaque royal-blue; floating boulders litter the lake bowl",
@@ -62,7 +62,7 @@
    "key": "celestial",
    "name": "✨ Celestial Isles",
    "files": "Props, Sky",
-   "status": "fixing",
+   "status": "building",
    "score": 4.5,
    "verdict": "LOSE",
    "gap": "Empyrean Gate still not a readable hero landmark; golden hour still terracotta",
@@ -72,7 +72,7 @@
    "key": "dragon",
    "name": "🏔️ Dragon Peaks",
    "files": "Props, Terrain, Vegetation",
-   "status": "fixing",
+   "status": "building",
    "score": 5,
    "verdict": "LOSE",
    "gap": "mountain rock fails at every distance: smear close, corduroy mid, masonry tiling far",
@@ -82,7 +82,7 @@
    "key": "infernal",
    "name": "🔥 Infernal Wastes",
    "files": "Terrain, Vegetation, Sky, Water",
-   "status": "fixing",
+   "status": "building",
    "score": 5.5,
    "verdict": "LOSE",
    "gap": "distant ground still Mars-brown, zero smoke anywhere, Maw has no approach draw",
@@ -92,7 +92,7 @@
    "key": "lost",
    "name": "🏰 The Lost Realm",
    "files": "Props, Terrain",
-   "status": "fixing",
+   "status": "building",
    "score": 5,
    "verdict": "LOSE",
    "gap": "rampart ring still a bare cobble berm — walk-in is 100% featureless",
@@ -102,7 +102,7 @@
    "key": "shadowfen",
    "name": "🌑 Shadowfen",
    "files": "Sky, Water, Props",
-   "status": "fixing",
+   "status": "building",
    "score": 5.5,
    "verdict": "LOSE",
    "gap": "BLOCKER: washed-white sun-glint blobs on the murk water; fen flooded not choked",
@@ -112,17 +112,17 @@
    "key": "sunken",
    "name": "🌊 The Sunken Kingdom (REDESIGN: above-water)",
    "files": "Water, Props",
-   "status": "todo",
+   "status": "building",
    "score": 3,
    "verdict": "LOSE",
-   "gap": "USER DECREE: no underwater area — redesigning to waterfalls/rapids/cascades (wave 3); wave-2 water work rescoped",
+   "gap": "REDESIGN IN FLIGHT: terraces + waterfalls + wading streets + court re-staged above water",
    "round": 1
   },
   {
    "key": "void",
    "name": "🕳️ The Void",
    "files": "Props, Terrain",
-   "status": "fixing",
+   "status": "building",
    "score": 5.5,
    "verdict": "LOSE",
    "gap": "abyss still absent (kernel untouched); forest impostors render as green voxel cubes",
@@ -147,6 +147,13 @@
    "verdict": "LOSE",
    "gap": "wave-2: terrain-conform seat pass landed; floaters remain at tundra lake + dragon crest",
    "round": 1
+  },
+  {
+   "key": "creatures",
+   "name": "🐺 Creature pipeline (all 23 monsters + NPCs)",
+   "files": "enemies/* via img2threejs",
+   "status": "building",
+   "gap": "USER DIRECTIVE: bestiary + NPCs are a top weakness — ALL go through concept → Tripo GLB → img2threejs. Batch 1 (7) generating; ethereal types (wisp/wraith/riftling/sprite) stay procedural."
   }
  ],
  "shots": [
@@ -176,6 +183,8 @@
   }
  ],
  "log": [
+  "2026-08-26 — USER DIRECTIVE: all monsters + NPCs go through the concept -> Tripo GLB -> img2threejs pipeline (GLBs never at runtime); future creatures born this way. Batch 1 submitted to Tripo: wayfinder NPC, hound, sentinel, golem, drake, treant, frostwolf (7 tasks running). Conversion = wave 4.",
+  "2026-08-26 — GATE PASSED end-to-end (blobs 88/88 clean both qualities, jitter clean, pointer lock OK). Wave 2 committed (5e82d52). WAVE 3 LAUNCHED: terrain kernel first (sunken terraces, void abyss, lost gate notch, walkable frozen lake), then 7 builders (Empyrean Gate via Tripo GLB + img2threejs, cascades, blocker fixes, named rares + patrols + nest encounter), then critics on all 10 regions.",
   "2026-08-26 — WAVE 2 COMPLETE (19 agents, 0 errors). All builders landed; 9 fresh critics: avg 3.9 -> 5.7, nothing at bar. New blocker: shadowfen water sun-glint blobs. Regression: oak through Aetheryte pedestal. Full verdicts: tools/out/wave2-summary.txt. Next: gate, commit, wave 3.",
   "2026-08-26 — session restarted: Tripo verified working (key valid, balance 6200 queried live; .mcp.json fixed to inherit the env key — this session uses the REST API directly, MCP tools clean from next restart). Dev server relaunched on :5179. Resuming wave 2 (finish builders + rechecks), wave 3 follows.",
   "2026-08-26 — SESSION CUTOFF IMMINENT (user at 2% of window). Wave-2 workflow may die mid-run again; partial builder edits are COMMITTED as wip. RESTART KIT: fresh session reads HANDOVER + this page, relaunches tools/out/wave2-workflow-script.js via the Workflow tool (builder prompts already tell agents to expect partial edits on disk). Wave 3 (sunken redesign, life/content) starts after wave-2 rechecks pass + gate + Tripo MCP connected (.mcp.json ready, user sets TRIPO_API_KEY env var).",
@@ -191,6 +200,14 @@
   {
    "src": "tools/out/assetgen/sheet.png",
    "label": "batch 4 contact sheet — all 19 generations at a glance"
+  },
+  {
+   "src": "tools/out/assetgen/empyrean_gate_a.jpg",
+   "label": "Empyrean Gate concept (Magnific) — the celestial hero landmark, 3rd attempt escalated to the asset pipeline"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/empyrean_gate_render.webp",
+   "label": "Empyrean Gate — Tripo GLB from concept (pipeline: image gen -> Tripo -> image2threejs -> procedural)"
   },
   {
    "src": "public/assets/tex/ash_basalt.jpg",
@@ -271,6 +288,38 @@
   {
    "src": "public/assets/tex/card_moss.png",
    "label": "card_moss — hanging moss drapes (RGBA)"
+  },
+  {
+   "src": "public/assets/tex/granite_detail.jpg",
+   "label": "granite_detail — dragon near-camera cliff octave (seamless)"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/wayfinder.jpg",
+   "label": "Wayfinder NPC concept — batch 1 of the creature pipeline"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/hound.jpg",
+   "label": "Aether Hound concept"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/sentinel.jpg",
+   "label": "Sentinel concept"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/golem.jpg",
+   "label": "Golem concept"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/drake.jpg",
+   "label": "Drake concept"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/treant.jpg",
+   "label": "Treant concept"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/frostwolf.jpg",
+   "label": "Frostwolf concept"
   }
  ]
 }
