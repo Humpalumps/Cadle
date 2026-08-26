@@ -60,6 +60,20 @@ export function weightAt(x, z, k) {
 }
 
 // ---------------------------------------------------------------- per-biome data
+//
+// !!! sRGB IS APPLIED TWICE TO EVERY COLOUR HEX IN THIS TABLE — measure, never eyeball. !!!
+// Every consumer does `new THREE.Color(hex).convertSRGBToLinear()` (Sky._gradeFog's fog/glow/keyLow caches,
+// Lighting._gradeBiome's `sun` tint). Under three r155+ ColorManagement the CONSTRUCTOR already converts
+// sRGB -> linear, so the explicit call converts a second time. The hex you type is therefore NOT the colour
+// the renderer uses: it comes out darker and much more saturated. Worked example, confirmed against a live
+// frame dump (sky3-d): 0xffeccd looks like a pale gold and reads 1 : 0.839 : 0.610 in linear, but the engine
+// used 1 : 0.672 : 0.331 — a full orange. Two waves of "cool the celestial golden hour" landed on nothing
+// because of it. To pick a hex: decide the effective LINEAR ratio you want, then invert srgb->linear twice.
+// (The hue forces preserve luminance, so for `sun`/`keyLow`/`fog` only the RATIO matters — except for
+// `sun`, whose VALUE is also 45% of hemi.color, i.e. the whole night fill. See celestial below.)
+// This convention is consistent across Sky and Lighting, so the table is self-consistent and TUNED against
+// it — do not "fix" the double conversion without re-tuning all ten regions in the same pass.
+//
 // EVERY field here is read by something. If you add one, wire it or leave it out — a data table that
 // promises more than the code delivers is a trap for the next person. Who reads what:
 //   name/short/blurb  map screen + region banner   (ui/mapscreen.js, rpg/RPG.js)
@@ -79,9 +93,11 @@ export function weightAt(x, z, k) {
 //                     intensity (glowI ≤ 0.3, night-weighted) — a broad band, never a point source.
 //   sun / amb         key light + ambient grade    (render/Lighting.js _gradeBiome) — what makes the
 //                     Wastes read as lit by fire and the Void as lit by almost nothing
-//   keyLow            optional hex (Sky._gradeFog): at LOW sun the extinction-orange key (sky.sunColor,
-//                     which Lighting/Water/Grass all read) is pulled toward this hue, luminance kept.
+//   keyLow            optional hex (Sky._gradeFog): at LOW sun the extinction-orange key AND FILL —
+//                     sky.sunColor, sky.ambientColor, sky.groundColor, which Lighting (key + hemisphere +
+//                     env probe), Water and Grass all read — are pulled toward this hue, luminance kept.
 //                     For regions whose identity collapses into the sunset hue (celestial terracotta).
+//                     The fill is the half that matters: Lighting hue-forces the key to `sun` regardless.
 //   ambNight          optional 0..1 (Sky._gradeFog): scales sky.ambientColor/groundColor at NIGHT only,
 //                     by region weight. For regions whose .amb is right by day but over-lights the
 //                     night floor (celestial read as daylight sepia at midnight).
@@ -110,7 +126,11 @@ export const BIOMES = {
   },
   forest: {
     name: 'Whisperwood Deep', short: 'Enchanted Forest', zone: 'forest', level: [5, 11],
-    fog: 0x466e64, fogMul: 2.6, fogLum: 0.52, skyVeil: 0.42, sun: 0xc8f0d6, amb: 0.68,   // Ashenvale: shade under the canopy, DEEP teal mist between the trunks — at fogLum 0.66 the haze luminance-matched a midday sky and every far ridge clipped to flat pale mint
+    // amb 0.68 -> 0.92: measured under the ~95%-closed canopy at hour 13 the floor came out (10,22,19) —
+    // linear 0.006, i.e. genuinely nocturnal, which is the "noon reads like 20:00" half of the verdict.
+    // The key cannot fix it (the canopy blocks it by design), so the fill has to carry the interior; the
+    // LIGHT PLAY is the sun-shaft/dapple scatter in Sky._buildShafts. Night cost is +20% on the fae floor.
+    fog: 0x466e64, fogMul: 2.6, fogLum: 0.52, skyVeil: 0.42, sun: 0xc8f0d6, amb: 0.92,   // Ashenvale: shade under the canopy, DEEP teal mist between the trunks — at fogLum 0.66 the haze luminance-matched a midday sky and every far ridge clipped to flat pale mint
     ground: 'forest', grass: { d: 0.40, tint: 0x6f9c7a }, music: 'wood',   // 0.85 was a knee-high LAWN under the canopy; a forest floor is litter, moss and fern (Props KIT.forest), with grass only in the gaps
     enemies: [['sprite', 4, 8, 90], ['treant', 2, 20, 110], ['hound', 3, 12, 100]],
     landmark: 'The Elderheart',
@@ -132,8 +152,24 @@ export const BIOMES = {
     // keyLow: hour-18 collapsed the zone to monochrome terracotta (crit2-celestial-b/shot-approach) — the
     // extinction-orange key fed the hemi/env/grass warm boost; pale gold keeps golden hour without the Mars
     // wash. ambNight 0.45: even at amb 1.22 the midnight floor read as daylight sepia (shot-night-ground).
-    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xfff2d0, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
-    keyLow: 0xffe2ac, ambNight: 0.45,
+    // `sun` is HUE for the key (Lighting hue-forces it, luminance preserved — the value cannot brighten or
+    // darken the key) but it is also 45% of hemi.color at every hour, and at NIGHT that 45% is essentially
+    // the whole fill (sky.ambientColor is ~0.03 after dark, hemi.intensity jumps to hemiNight 1.05). That is
+    // why hour 22 rendered a warm afternoon-tan floor under an indigo aurora sky (sky3-a/shot-cel22-in):
+    // 0xfff2d0 is a luminance-0.89 light, so the Isles were fill-lit at ~full daylight strength all night.
+    // 0xa89f88 is the SAME warm-ivory hue at luminance 0.34 -> night fill 2.6x darker, day cost ~4% of the
+    // total (the key at sunPeak 3.2 owns noon), and the marble finally gets value separation instead of a
+    // flat wash. Do not "fix" the table by brightening this back: read the hue, ignore the value.
+    // !! READ THE "SRGB IS APPLIED TWICE" NOTE ABOVE THE TABLE BEFORE PICKING ANY HEX HERE !!
+    // 0xa49f97 lands on effective linear 1 : 0.867 : 0.687 at luminance 0.100 — a pale warm ivory, which
+    // is both the key hue at every hour and (via the 45% hemi lerp) the night fill. 0xfff2d0 measured
+    // 1 : 0.764 : 0.356 at luminance 0.78: three times the fill and twice the orange, which is exactly the
+    // hour-18 terracotta AND the daylight-bright midnight floor. Measured after: night floor 145 -> 84.
+    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xa49f97, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
+    // keyLow grades the FILL (Sky._gradeFog): 0xe3ded8 -> effective 1 : 0.894 : 0.779. The two earlier
+    // picks read 1:0.75:0.41 and 1:0.67:0.33 effective — both still oranges, which is why two waves of
+    // "cool the golden hour" changed nothing. The DOME and the PostFX golden grade still carry the gold.
+    keyLow: 0xe3ded8, ambNight: 0.30,
     ground: 'stone', grass: { d: 0.05, tint: 0xd8e8c0 }, music: 'choir',
     enemies: [['seraph', 3, 16, 100], ['skyserpent', 2, 30, 120], ['wisp', 4, 14, 110]],
     landmark: 'The Empyrean Gate', float: true,
@@ -154,7 +190,13 @@ export const BIOMES = {
     // noon fog luminance base is ~2 in HDR, so 30% of it is a lit desert, not smoke) — desaturated near-
     // charcoal + 0.16 makes the distance converge to black-basalt murk and the noon dome read as a smoke
     // ceiling. Verified both ways: the Cinder Maw ring still resolves at 30-150 m (fog DENSITY untouched).
-    fog: 0x4a423c, fogMul: 1.85, fogLum: 0.16, skyVeil: 0.92, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
+    // Measured at hour 13 (sky3-a/shot-inf13-maw150): near ground (34,18,19) — the floor IS black basalt now —
+    // but the dome sat at (163,155,158) and the 500 m ring at (126,103,91), i.e. a bright neutral overcast
+    // over a rust-brown mesa: a dust storm, not a smoke ceiling. fogLum 0.16 -> 0.10 drops the air's value
+    // (dome AND distance) by ~40%; fogMul 1.85 -> 2.30 pulls the haze IN so the ring is ~60% eaten at 500 m
+    // instead of 42%. Neither touches the near field: at 150 m the density is still only ~8%, so the Cinder
+    // Maw ring resolves on the approach (props-A's constraint) — verified in sky3-d/shot-inf13-maw150+45.
+    fog: 0x4a423c, fogMul: 2.30, fogLum: 0.10, skyVeil: 0.92, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
     // fog was 0x4a1f11 (saturated red-brown): through the 0.72 veil it MIXED with the blue zenith into candy
     // pink — the smoke has to be warm grey-brown and near-total (0.88) to read as a ceiling, not a tint.
     // glow: ember-orange horizon band after dark (capped, saturated — the lava fields lighting the smoke).
@@ -183,9 +225,12 @@ export const BIOMES = {
     // At 13:00 the fen still read as a cheerful alpine lake: fogMul 2.4 left 2 km sightlines, fogLum 0.42 kept
     // the haze bright, skyVeil 0.62 left a third of the blue dome + white cumulus. 3.2/0.32/0.85 chokes noon
     // visibility to ~300 m under a bruised olive ceiling. amb 0.50 -> 0.42: the world-dimmest daylight.
-    // 3.6/0.22 (wave 3): the near mountain slopes still sat in front of the murk as soapy spring-lime
-    // (crit2-shadowfen/shot-approach upper-left) — the haze now reaches the slope band and stays bruised.
-    fog: 0x46503c, fogMul: 3.6, fogLum: 0.22, skyVeil: 0.85, sun: 0x9cb47e, amb: 0.42,
+    // 3.6/0.22 was still not enough: measured (sky3-verify/shot-fen13-left) the ceiling sat at (163,189,188)
+    // and the ring slope at (163,188,165) — 64% hazed and STILL soapy spring-lime, because the haze it was
+    // being mixed into was itself a bright pale green. 4.4/0.14 fixes both halves at once: density chokes
+    // noon sightlines to ~300 m so the slope band is 70%+ air, and that air is now a genuinely dark bruise
+    // rather than mist lit like a spring morning. Near play is untouched — 80 m is still only 7% fog.
+    fog: 0x46503c, fogMul: 4.4, fogLum: 0.14, skyVeil: 0.85, sun: 0x9cb47e, amb: 0.42,
     ground: 'muck', grass: { d: 0.12, tint: 0x5e6f3e }, music: 'fen',   // the fen's ground cover is REEDS (Props KIT.shadowfen), not lawn: at 0.22 a quarter of the blades still survive at full height and the region read as a green hillside
     enemies: [['wraith', 4, 14, 105], ['bogwitch', 2, 20, 110], ['hound', 3, 16, 110]],
     landmark: 'The Hagstone',
@@ -200,7 +245,11 @@ export const BIOMES = {
     // spray-mist over cataracts: cool pale haze, no more constant deep-cyan sea grade. sun was 0xd8ecf2 —
     // Lighting hue-forces the key to it, so golden hour arrived cyan; warm-neutral lets the hour read.
     // hazeSun 0.6: mist takes on the sunset light instead of repainting the gorge mint every hour.
-    fog: 0x9ab8bc, fogMul: 1.25, skyVeil: 0.30, sun: 0xeceee6, amb: 0.95, hazeSun: 0.6,
+    // Verified on the built cascades: hour 13 reads cool pale mist over warm terraces and hour 18 finally
+    // goes gold on the far walls (sky3-verify/shot-sun13-gorge, shot-sun18-gorge) — the constant cyan is
+    // gone. fogMul 1.25 -> 1.45 only thickens the spray a little so the cataract walls have air in front
+    // of them; anything more starts flattening the far ranges into paper.
+    fog: 0x9ab8bc, fogMul: 1.45, skyVeil: 0.30, sun: 0xeceee6, amb: 0.95, hazeSun: 0.6,
     ground: 'sand', grass: { d: 0.02, tint: 0x6a9a90 }, music: 'deep',
     enemies: [['drowned', 4, 14, 100], ['leviathan', 2, 40, 130], ['wisp', 3, 20, 110]],
     landmark: 'The Drowned Court',
@@ -209,11 +258,14 @@ export const BIOMES = {
   },
   void: {
     name: 'The Void', short: 'The Void', zone: 'void', level: [34, 44],
-    // 1.5/0.30/0.72 (wave 3, the 'no horizon' decree): midday used to show a bright white-lavender dome, a
-    // crisp horizon line and both neighbours in plain view (crit2-void/shot-in) — the floor now falls off
-    // into violet-black murk and the dome converges to the same air, so the horizon dissolves. Isles stay
-    // readable as silhouettes against the mid-violet; stars/aurora after dark are mostly veiled — on theme.
-    fog: 0x2c2040, fogMul: 1.5, fogLum: 0.30, skyVeil: 0.72, sun: 0xd6c6f0, amb: 0.78,
+    // The 'no horizon' decree, measured rather than hoped: at 1.5/0.30/0.72 hour 13 still read zenith
+    // (187,177,219), ring (172,143,203), floor (59,46,113) — a crisp horizon line with both neighbours in
+    // plain view (sky3-verify/shot-void13-in). Fog is exp(-(d*rho)^2), so REACH is the density: 2.6 takes
+    // the 600-700 m ring from 40% air to ~90%, while 150 m (isle range) only goes 3% -> 10%, i.e. the isles
+    // keep their material and the far world dissolves. 0.20 + veil 0.84 then pull the dome down to the same
+    // violet-black, so ground and sky converge on one value and the horizon LINE stops existing. The veil
+    // also costs the key another 15% (Sky squares it into sunIntensity) — the Void is lit by almost nothing.
+    fog: 0x2c2040, fogMul: 2.6, fogLum: 0.20, skyVeil: 0.84, sun: 0xd6c6f0, amb: 0.78,
     ground: 'voidstone', grass: { d: 0, tint: 0x000000 }, dry: true, float: true, gravity: 0.55, music: 'void',
     enemies: [['riftling', 5, 12, 110], ['voidhorror', 3, 24, 120], ['wraith', 2, 20, 110]],
     landmark: 'The Unmaking',

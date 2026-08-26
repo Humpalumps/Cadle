@@ -26,7 +26,8 @@ import { OUTER } from '../world/Biomes.js';
  *   Spire ruins + Warden, Whisperwood edge, crystal fields) plus, per outer region: 3 camps (heart + two satellites ~140 m off the region
  *   bearing), 2 roaming packs of the region's common trash type walking a waypoint LOOP (heart -> satellite -> the rare's POI; camp.route),
  *   and ONE NAMED RARE (NAMED_RARES: gold elite at 2.5x hp, band-top level, 8-12 min respawn, at a POI off the pass road, `enemy.namedRare`
- *   — RPG.js drops a guaranteed legendary off it); slots respawn 45-60 s (boss/mini-boss 180 s)
+ *   — RPG.js drops a guaranteed legendary off it; it announces itself once per spawn inside 120 m and again on death, and it is
+ *   exempt from cap recycling so the 8-min clock can never be started by anything but a real kill); slots respawn 45-60 s (boss/mini-boss 180 s)
  *   after death when the player is > 50 m away. Dragon nests are encounters (_updateNests): approach one and a guardian wyvern pair
  *   wakes + the nest drops an egg (quest item while 'peak-s3' is active, else an uncommon); 10 min re-arm, never under `passive`. Update LOD by camera distance (anim every frame < 50 m, /2 < 110, /4 < 220, none beyond;
  *   shadows < 25 m); anim + AI-tick + uniform-upkeep rates are further crowd-scaled (1.5x > 16 alive, 2x > 32, 3x > 48 alive).
@@ -166,7 +167,10 @@ export class Enemies {
   }
   _farthestCampEnemy() {
     let best = null, bd = -1; const p = this.game.player.position;
-    for (const e of this.list) { if (!e.slot || e.def.boss) continue; const d = e.position.distanceToSquared(p); if (d > bd) { bd = d; best = e; } }
+    // Bosses and NAMED RARES are never recycled. A rare is on an 8-12 min clock, and _despawnAlive stamps
+    // deadAt as if it had died — so one cap-pressure recycle silently deleted the region's headline content
+    // for the next eight minutes, usually while the player was walking toward it.
+    for (const e of this.list) { if (!e.slot || e.def.boss || e.namedRare) continue; const d = e.position.distanceToSquared(p); if (d > bd) { bd = d; best = e; } }
     return best;
   }
   _despawnAlive(e) { // silent removal (recycling, clear()) — no death event
@@ -176,6 +180,9 @@ export class Enemies {
   _onDeath(e) {
     this._remove(this.list, e); this.dying.push(e);
     if (e.slot) { e.slot.enemy = null; e.slot.deadAt = this.game.time; }
+    // A named rare is the one kill in the region that is an EVENT, not a body count — say so. (The
+    // guaranteed legendary is RPG.js's half of the same beat; without the line the drop reads as luck.)
+    if (e.namedRare) this.game.hud?.toast?.(`${(e.name ?? 'THE RARE').toUpperCase()} FALLS`, { ms: 2600, kind: 'ability' });
   }
   _despawn(e) { this._remove(this.dying, e); this._remove(this.all, e); e.sleep(); this.pools[e.type].push(e); }
   _remove(arr, e) { const i = arr.indexOf(e); if (i >= 0) arr.splice(i, 1); }
@@ -378,12 +385,13 @@ export class Enemies {
       const x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r, s = flying ? 0 : T.slopeAt(x, z), wet = T.heightAt(x, z) < (T.waterLevel ?? -999) + 0.3 ? 5 : 0;
       if (s + wet < bs) { bs = s + wet; best = new THREE.Vector3(x, 0, z); if (bs < 0.25) break; }
     }
-    return best;
+    return best ?? new THREE.Vector3(cx, 0, cz);   // every candidate worse than 9 (a cliff face): fall back to the camp centre rather than a null slot pos, which crashes streaming
   }
   _spawnSlot(c, s) {
     if (this.list.length >= this.maxAlive) return null;
     const e = this.spawn(s.type, s.pos, { level: s.level, camp: c, slot: s, ...(s.opts ?? {}) });   // slot opts: named rares (elite/hpMul/name/namedRare)
-    if (e) s.enemy = e; return e;
+    if (e) { s.enemy = e; e._ann = false; }   // _ann: this instance has not announced itself yet (see the rare-proximity call-out in update)
+    return e;
   }
 
   /**
@@ -447,8 +455,12 @@ export class Enemies {
       if (t < n.rearmAt) continue;
       const dx = p.x - n.x, dz = p.z - n.z;
       if (dx * dx + dz * dz > 16 * 16) continue;
+      // ponytail: flat cap on live guardians so kiting every nest can't flood the region. The cap must NOT
+      // consume the nest — an earlier version stamped rearmAt first, so walking a second nest while six
+      // guards were already up burned that nest for ten minutes and handed over the egg with no fight.
+      if (guards >= 6) continue;
       n.rearmAt = t + 600;
-      if (guards < 6) {   // ponytail: flat cap on live guardians so kiting every nest can't flood the region
+      {
         const [lo, hi] = b.level;
         for (let i = 0; i < 2; i++) {
           const a = (i ? 2.6 : 0.9) + n.x * 0.01;
@@ -497,6 +509,13 @@ export class Enemies {
     if (this._respT > 0.25) {
       this._respT = 0;
       this._updateNests(t);
+      // NAMED RARE call-out. The rare sits at a POI OFF the road on purpose, which means content nobody
+      // is told about is content nobody sees. One line, once per spawned instance, at the range where the
+      // detour is still a decision (120 m). No marker, no bar — the boss bar belongs to actual bosses.
+      if (!this.passive) for (const e of this.list) {
+        if (!e.namedRare || e._ann || !e.alive || e.position.distanceToSquared(P.position) > 14400) continue;
+        e._ann = true; this.game.hud?.toast?.(`${(e.name ?? 'A RARE').toUpperCase()} PROWLS NEARBY`, { ms: 2600, kind: 'ability' });
+      }
       // Camp streaming. The world is 2048 m with ten regions; populating every slot would blow the
        // 40-alive cap at spawn and leave every distant biome empty forever. Instead a slot is eligible
        // only inside STREAM m of the player, and when the cap is full the FARTHEST live camp enemy is

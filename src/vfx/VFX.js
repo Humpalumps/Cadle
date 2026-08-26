@@ -119,10 +119,12 @@ export class VFX {
   /**
    * Persistent regional emitters — the Infernal Wastes' smoke story (wave-2 verdict: "zero smoke anywhere,
    * no vent/cone/maw plume", plus props-A's ask for a vertical draw at the pit).
-   *  - FUMAROLES: ~14 deterministic vents across the region breathing dark matte plumes (~18 m tall,
+   *  - FUMAROLES: ~20 deterministic vents across the region breathing dark matte plumes (~30 m tall,
    *    alpha pool, lit by the scene) — the midday "vents breathing smoke" read at every distance.
    *  - THE CINDER MAW EMBER COLUMN at the landmark: a ~70 m leaning smoke-and-ember updraft with a
-   *    saturated orange base shimmer — the 300 m approach draw the monolith ring alone never had.
+   *    saturated orange base shimmer over the pit lip — the 300 m approach draw the monolith ring never
+   *    had. A wide low-alpha "body" layer is spawned ONLY from beyond 120 m: at range it welds the puffs
+   *    into one silhouette (they read as a dashed dotted line otherwise) and up close it costs nothing.
    *  - LAVA-BANK EMBERS: sparse saturated sparks + heat wisps sampled over live lava surface near the
    *    camera (pairs with Water's bank light).
    * All in the existing pooled sprites (ZERO new draw calls), distance-gated so a quiet region costs
@@ -133,34 +135,34 @@ export class VFX {
     const T = this.game.terrain, B = BIOMES.infernal, rng = mulberry32((this.game.seed ?? 1) + 7717);
     const WL = T.waterLevel ?? 4, bb = {};
     this.fumaroles = [];
-    for (let i = 0; i < 140 && this.fumaroles.length < 14; i++) {
+    for (let i = 0; i < 200 && this.fumaroles.length < 20; i++) {
       const a = rng() * 6.2832, r = 30 + Math.sqrt(rng()) * 205;
       const x = B.cx + Math.cos(a) * r, z = B.cz + Math.sin(a) * r;
       const w = T.biomeBlend?.(x, z, bb);
       if (!w || w.id !== 'infernal' || w.w < 0.55) continue;
       const y = T.heightAt(x, z);
       if (y < WL + 0.6) continue;                                     // inside a lava channel — the banks get embers instead
-      this.fumaroles.push({ x, y, z, acc: rng(), rate: 0.5 + rng() * 0.45, dx: (rng() - 0.5) * 1.6, dz: (rng() - 0.5) * 1.6 });
+      this.fumaroles.push({ x, y, z, acc: rng(), rate: 0.62 + rng() * 0.5, dx: (rng() - 0.5) * 1.6, dz: (rng() - 0.5) * 1.6 });
     }
     if (this.fumaroles.length < 5) { this.fumaroles = null; return; }   // bake not ready yet (heights read flat) — retry next frame
-    this._mawAcc = { smoke: 0, ember: 0, big: 0, glow: 0 }; this._lavaAcc = 0;
-    // pre-warm: smoke lives 9-16 s, so a fresh page (or the first approach) would otherwise show beheaded
+    this._mawAcc = { smoke: 0, ember: 0, big: 0, glow: 0, body: 0 }; this._lavaAcc = 0;
+    // pre-warm: smoke lives 11-17 s, so a fresh page (or the first approach) would otherwise show beheaded
     // stubble plumes for the first quarter minute. Seed each column with already-risen, already-grown puffs.
     const lm = this.game.world?.props?.landmarks?.infernal, br = this.brush, lit = this._lit;
-    if (lm) for (let i = 0; i < 26; i++) {
-      const h01 = (i + 0.5) / 26, s0 = 2.6 + 9.5 * h01, tl = (1 - h01) * 12 + 2;
-      br.reset(this.alpha, lm).jitter(3 + 4 * h01).axisUp().spread(0.07).speed(4.2, 6).life(tl, tl + 2)
-        .size(s0, s0 + 1.2, Math.max(1, 13.5 / s0)).tex(TEX.SMOKE).color(0x2c221c, 0x100d0c).lit(lit)
-        .vary(0.35).alpha(0.55 - 0.25 * h01).rot().spin(0.25).vel(1.1, 0, 0.4).drag(0.05).gravity(-0.2).fade(0.05, 0.6);
-      br.px = lm.x + 14 * h01; br.py = lm.y + 3 + 66 * h01; br.pz = lm.z + 5 * h01;
+    if (lm) for (let i = 0; i < 30; i++) {
+      const h01 = (i + 0.5) / 30, s0 = 4 + 13 * h01, tl = (1 - h01) * 13 + 2;
+      br.reset(this.alpha, lm).jitter(4 + 5 * h01).axisUp().spread(0.07).speed(4.2, 6).life(tl, tl + 2)
+        .size(s0, s0 + 1.6, Math.max(1, 21 / s0)).tex(TEX.SMOKE).color(0x2c221c, 0x100d0c).lit(lit)
+        .vary(0.35).alpha(0.6 - 0.28 * h01).rot().spin(0.25).vel(1.1, 0, 0.4).drag(0.05).gravity(-0.2).fade(0.05, 0.6);
+      br.px = lm.x + 14 * h01; br.py = lm.y + 3 + 68 * h01; br.pz = lm.z + 5 * h01;
       br.burst(1);
     }
-    for (const f of this.fumaroles) for (let i = 0; i < 4; i++) {
-      const h01 = (i + 0.5) / 4, s0 = 1.4 + 6 * h01, tl = (1 - h01) * 11 + 1.5;
-      br.reset(this.alpha, f).jitter(0.7 + 1.5 * h01).axisUp().spread(0.12).speed(1.2, 2.1).life(tl, tl + 1.5)
-        .size(s0, s0 + 0.8, Math.max(1, 8.5 / s0)).tex(TEX.SMOKE).color(0x3a322c, 0x16120f).lit(lit)
-        .vary(0.35).alpha(0.5 - 0.22 * h01).rot().spin(0.3).vel(f.dx, 0, f.dz).drag(0.1).gravity(-0.18).fade(0.05, 0.55);
-      br.px = f.x + f.dx * 6 * h01; br.py = f.y + 0.9 + 17 * h01; br.pz = f.z + f.dz * 6 * h01;
+    for (const f of this.fumaroles) for (let i = 0; i < 5; i++) {
+      const h01 = (i + 0.5) / 5, s0 = 2.0 + 9 * h01, tl = (1 - h01) * 13 + 2;
+      br.reset(this.alpha, f).jitter(0.8 + 2.2 * h01).axisUp().spread(0.12).speed(1.8, 2.8).life(tl, tl + 1.5)
+        .size(s0, s0 + 1.0, Math.max(1, 13 / s0)).tex(TEX.SMOKE).color(0x3a322c, 0x16120f).lit(lit)
+        .vary(0.35).alpha(0.52 - 0.24 * h01).rot().spin(0.3).vel(f.dx, 0, f.dz).drag(0.1).gravity(-0.18).fade(0.05, 0.55);
+      br.px = f.x + f.dx * 7 * h01; br.py = f.y + 0.9 + 30 * h01; br.pz = f.z + f.dz * 7 * h01;
       br.burst(1);
     }
   }
@@ -170,14 +172,14 @@ export class VFX {
     // then (an early run rejected every vent candidate against the flat pre-bake heightfield and locked in 0)
     if (!this.fumaroles) { if (g.world?.props?.landmarks?.infernal && T?.heightAt && T.biomeBlend) this._initAmbient(); if (!this.fumaroles) return; }
     const B = this.brush, cx = cam.position.x, cz = cam.position.z, M = this.mult, lit = this._lit;
-    // 1) fumarole plumes — slow, matte, huge; life 9-14 s so the column is standing long before you arrive
+    // 1) fumarole plumes — slow, matte, huge; life 11-16 s so the column is standing long before you arrive
     for (const f of this.fumaroles) {
       const d2 = (f.x - cx) * (f.x - cx) + (f.z - cz) * (f.z - cz);
       if (d2 > 490000) { f.acc = Math.min(f.acc, 1); continue; }      // 700 m gate: beyond that a puff is sub-pixel
       f.acc += f.rate * M * dt;
       const n = f.acc | 0; if (!n) continue; f.acc -= n;
-      B.reset(this.alpha, f).jitter(0.7).axisUp().spread(0.14).speed(1.2, 2.1).life(9, 14)
-        .size(1.4, 2.2, 4.2).tex(TEX.SMOKE).color(0x3a322c, 0x16120f).lit(lit).vary(0.35).alpha(0.5)
+      B.reset(this.alpha, f).jitter(0.8).axisUp().spread(0.14).speed(1.8, 2.8).life(11, 16)
+        .size(2.0, 3.0, 4.6).tex(TEX.SMOKE).color(0x3a322c, 0x16120f).lit(lit).vary(0.35).alpha(0.52)
         .rot().spin(0.3).vel(f.dx, 0, f.dz).drag(0.1).gravity(-0.18).fade(0.14, 0.55);
       B.py = f.y + 0.9;                                               // mouth height, clear of the cone lip
       B.burst(n);
@@ -187,45 +189,63 @@ export class VFX {
     if (lm) {
       const d2 = (lm.x - cx) * (lm.x - cx) + (lm.z - cz) * (lm.z - cz);
       if (d2 < 640000) {                                              // 800 m gate
-        const A = this._mawAcc;
-        A.smoke += 2.6 * M * dt; A.ember += 24 * M * dt; A.big += 3 * M * dt; A.glow += 1.1 * M * dt;
+        const A = this._mawAcc, far = d2 > 14400;                     // >120 m: the approach silhouette, not the pit interior
+        A.smoke += 4.2 * M * dt; A.ember += 24 * M * dt; A.big += 3.5 * M * dt; A.glow += 1.3 * M * dt;
+        if (far) A.body += 1.15 * M * dt;                             // wide slow column mass — closes the "dashed dotted line" gaps at range
         let n = A.smoke | 0; A.smoke -= n;
-        if (n) B.reset(this.alpha, lm).jitter(3).axisUp().spread(0.07).speed(4.2, 6).life(11, 16)
-          .size(2.6, 4, 3.6).tex(TEX.SMOKE).color(0x2c221c, 0x100d0c).lit(lit).vary(0.35).alpha(0.55)
+        if (n) B.reset(this.alpha, lm).jitter(4).axisUp().spread(0.07).speed(4.2, 6).life(12, 17)
+          .size(4, 5.6, 3.8).tex(TEX.SMOKE).color(0x2c221c, 0x100d0c).lit(lit).vary(0.35).alpha(0.6)
           .rot().spin(0.25).vel(1.1, 0, 0.4).drag(0.05).gravity(-0.2).fade(0.18, 0.6).burst(n);
+        n = A.body | 0; A.body -= n;                                  // only spawned from >120 m out, so it never fogs the pit up close
+        if (n) B.reset(this.alpha, lm).jitter(7).axisUp().spread(0.05).speed(2.6, 3.8).life(17, 23)
+          .size(9, 13, 2.6).tex(TEX.SMOKE).color(0x33281f, 0x131010).lit(lit).vary(0.3).alpha(0.3)
+          .rot().spin(0.12).vel(1.1, 0, 0.4).drag(0.04).gravity(-0.12).fade(0.2, 0.55).burst(n);
         n = A.ember | 0; A.ember -= n;                                // fast small sparks riding the updraft
         if (n) B.reset(this.add, lm).jitter(4.5).axisUp().spread(0.22).speed(7, 13).life(2.6, 4.5)
           .size(0.055, 0.11, 0.5).tex(TEX.STAR).color(0xff6a18, 0x8a2404).hdr(1.9, 0.6).alpha(0.9)
           .rot().spin(3).swirl(0.6, 1.4, true).drag(0.15).gravity(-1.1).fade(0.05, 0.5).burst(n);
         n = A.big | 0; A.big -= n;                                    // sparse big motes: what actually reads at 250-300 m
         if (n) B.reset(this.add, lm).jitter(3.5).axisUp().spread(0.12).speed(5, 9).life(4, 6.5)
-          .size(0.28, 0.45, 0.55).tex(TEX.GLOW).color(0xff5a14, 0x701c00).hdr(1.5, 0.5).alpha(0.8)
+          .size(0.45, 0.8, 0.55).tex(TEX.GLOW).color(0xff5a14, 0x701c00).hdr(1.5, 0.5).alpha(0.8)
           .swirl(0.4, 1, true).drag(0.1).gravity(-0.8).fade(0.08, 0.55).burst(n);
-        n = A.glow | 0; A.glow -= n;                                  // saturated heat shimmer sitting over the pit mouth
-        if (n) B.reset(this.add, lm).jitter(2.5).axisUp().spread(0.3).speed(0.6, 1.4).life(1.6, 2.2)
-          .size(3, 4.6, 1.35).tex(TEX.GLOW).color(0xff5a14, 0x58180a).hdr(1.1, 0.4).alpha(0.5)
-          .rot().fade(0.2, 0.55).burst(n);
+        n = A.glow | 0; A.glow -= n;
+        if (n) {
+          // Saturated heat shimmer at the COLUMN BASE. The landmark anchor sits on the pit floor, so at ground
+          // level the lip ate it (wave-2: "rune ring hidden below the pit lip"): +9 m puts it over the rim, where
+          // it becomes the warm foot of the smoke column — the thing that says "fire" from 250 m. Deep ember hue
+          // at hdr <= 1.15: even stacked 3 deep it tone-maps orange, never a white ball.
+          B.reset(this.add, lm).jitter(4).axisUp().spread(0.3).speed(0.8, 1.8).life(2.0, 2.8)
+            .size(5, 8, 1.3).tex(TEX.GLOW).color(0xff5a14, 0x58180a).hdr(1.15, 0.4).alpha(0.5)
+            .rot().fade(0.2, 0.55);
+          B.py = lm.y + 9;
+          B.burst(n);
+        }
       }
     }
     // 3) lava-bank embers: sample the live lava surface (infernal water) in a box around the camera
     const W = g.world?.water, wb = this._ab ??= {};
     const b = T?.biomeBlend?.(cx, cz, wb);
     if (W?.isWater && b && b.id === 'infernal' && b.w > 0.15) {
-      this._lavaAcc += 15 * b.w * M * dt;
+      // 55 rejection samples/s over a 64 m box: a lava river is a narrow ribbon, so most samples miss on
+      // purpose — the wide box is what puts embers over the channel you are LOOKING at, not just the one you
+      // are standing in, and each hit spawns a small cluster so the hit rate (not the sample rate) sets the
+      // cost. `isWater` is two noise lookups; 55/s is free. Embers must also RISE clear of the flow (~10 m):
+      // over the molten surface they are invisible, it is against the dark bank and the sky that they read.
+      this._lavaAcc += 70 * b.w * M * dt;
       let n = this._lavaAcc | 0; this._lavaAcc -= n;
       const p = this._wp ??= new THREE.Vector3();
       for (; n > 0; n--) {
-        const x = cx + (Math.random() - 0.5) * 48, z = cz + (Math.random() - 0.5) * 48;
+        const x = cx + (Math.random() - 0.5) * 64, z = cz + (Math.random() - 0.5) * 64;
         if (!W.isWater(x, z)) continue;                               // attempts over dry ground are free misses
-        p.set(x, (W.level ?? 4) + 0.3, z);
-        if (Math.random() < 0.8)                                      // drifting ember spark
-          B.reset(this.add, p).axisUp().spread(0.5).speed(0.7, 1.6).life(3, 5.5).size(0.03, 0.065, 0.6)
-            .tex(TEX.SPARK).color(0xff7a20, 0x481304).hdr(1.7, 0.5).alpha(0.9).swirl(0.5, 1.2, true)
-            .vel(0.3, 0, 0.15).drag(0.4).gravity(-0.35).fade(0.06, 0.55).burst(1);
-        else                                                          // occasional heat wisp off the crust
-          B.reset(this.alpha, p).axisUp().spread(0.25).speed(0.5, 1).life(3.5, 5.5).size(0.4, 0.7, 2.6)
+        p.set(x, (W.level ?? 4) + 0.25, z);
+        if (Math.random() < 0.75)                                     // drifting ember sparks (deep saturated orange, hdr 1.7 — hue survives ACES over the white-hot flow)
+          B.reset(this.add, p).jitter(1.8).axisUp().spread(0.45).speed(1.8, 3.4).life(3.5, 6.5).size(0.1, 0.19, 0.55)
+            .tex(TEX.STAR).color(0xff7a20, 0x481304).hdr(1.7, 0.5).alpha(0.9).rot().spin(2).swirl(0.5, 1.2, true)
+            .vel(0.3, 0, 0.15).drag(0.35).gravity(-0.5).fade(0.06, 0.55).burst(4);
+        else                                                          // heat wisp off the crust
+          B.reset(this.alpha, p).jitter(1.2).axisUp().spread(0.25).speed(1.2, 2.2).life(4, 6.5).size(0.5, 0.9, 2.8)
             .tex(TEX.SMOKE).color(0x241b16, 0x110d0b).lit(lit).vary(0.3).alpha(0.34).rot().spin(0.5)
-            .drag(0.25).gravity(-0.25).fade(0.15, 0.5).burst(1);
+            .drag(0.25).gravity(-0.35).fade(0.15, 0.5).burst(2);
       }
     }
   }

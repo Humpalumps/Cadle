@@ -288,7 +288,7 @@ export class Props {
     this.regionMat = {
       forest: mkTri('rm-forest', 'granite_moss', 0.30, { moss: 0.35 }),                                    // elven ruins sinking under moss
       tundra: mkTri('rm-tundra', 'ice_glacial', 0.28, { rough: 0.45, moss: 0.45, mossCol: [0.62, 0.66, 0.78] }), // glacial ice, snow-dusted up-faces
-      celestial: mkTri('rm-celestial', 'marble_strata', 0.20),                                             // white marble + gold civilisation
+      celestial: mkTri('rm-celestial', 'marble_strata', 0.34),                                             // white marble + gold civilisation (0.20 = a 5 m tile: on a 25 m hero facade the strata read as plywood grain at 10 m)
       dragon: mkTri('rm-dragon', 'granite_carved', 0.12),                                                  // dwarven ashlar: ~2 m blocks on a 44 m gate
       infernal: mkTri('rm-infernal', 'basalt_columnar', 0.25, { rough: 0.95 }),
       lost: mkTri('rm-lost', 'megalith_violet', 0.25),
@@ -362,18 +362,21 @@ export class Props {
    *  removed through the public registry API so no ghost collision squats where no rock renders. */
   _pruneCelestialRocks(col) {
     const B = OUTER.find((b) => b.id === 'celestial'); if (!B) return;
-    const veg = this.game.world?.vegetation, R2 = 85 * 85; let n = 0;
+    const veg = this.game.world?.vegetation, R2 = 85 * 85, G = this._celGate, GR2 = 70 * 70; let n = 0;
+    // Two discs: the heart (the giant colonnade ring) and the gate's own plaza 62 m out toward home.
+    const inPlaza = (x, z) => { const dx = x - B.cx, dz = z - B.cz;
+      return dx * dx + dz * dz <= R2 || (G && (x - G.x) * (x - G.x) + (z - G.z) * (z - G.z) <= GR2); };
     for (const r of veg?.rocks ?? []) {
-      const dx = r.x - B.cx, dz = r.z - B.cz; if (dx * dx + dz * dz > R2) continue;
+      if (!inPlaza(r.x, r.z)) continue;
       n++;
       for (const c of col.query(r.x, r.z, 0.5)) if (c.type === 'sphere' && Math.abs(c.pos.x - r.x) < 0.01 && Math.abs(c.pos.z - r.z) < 0.01) col.remove(c);
     }
     if (!n) return;
     for (const set of veg?.rockSets ?? []) {
       if (set?.mats && set.xz) {                                        // finalized InstLOD: zero the 3x3, keep the translation row
-        for (let i = 0; i < set.n; i++) { const dx = set.xz[i * 2] - B.cx, dz = set.xz[i * 2 + 1] - B.cz; if (dx * dx + dz * dz > R2) continue; for (let k = 0; k < 12; k++) set.mats[i * 16 + k] = 0; }
+        for (let i = 0; i < set.n; i++) { if (!inPlaza(set.xz[i * 2], set.xz[i * 2 + 1])) continue; for (let k = 0; k < 12; k++) set.mats[i * 16 + k] = 0; }
       } else if (set?.items) {                                          // not yet finalized: same surgery on the staging list
-        for (const it of set.items) { const dx = it.e[12] - B.cx, dz = it.e[14] - B.cz; if (dx * dx + dz * dz > R2) continue; for (let k = 0; k < 12; k++) it.e[k] = 0; }
+        for (const it of set.items) { if (!inPlaza(it.e[12], it.e[14])) continue; for (let k = 0; k < 12; k++) it.e[k] = 0; }
       }
     }
     console.log(`[props] celestial plaza: pruned ${n} vegetation boulders`);
@@ -672,7 +675,8 @@ export class Props {
         const r0 = Math.hypot(B.cx, B.cz), ux = B.cx / r0, uz = B.cz / r0, tx = -uz, tz = ux;
         // wave-2 major "the plain still reads empty": satellite ruin sites spread across the MID-PLAIN,
         // not just hugging the heart — every mid-distance sightline now crosses at least one.
-        spots = [{ x: B.cx, z: B.cz, r: 62 }, { x: B.cx + tx * 112, z: B.cz + tz * 112, r: 34 },
+        const G = this._celGate;                                                 // the gate moved to the plateau lip: its plaza is the primary site, the heart ring the second
+        spots = [{ x: G?.x ?? B.cx, z: G?.z ?? B.cz, r: 58 }, { x: B.cx, z: B.cz, r: 52 }, { x: B.cx + tx * 112, z: B.cz + tz * 112, r: 34 },
           { x: B.cx - tx * 96 - ux * 42, z: B.cz - tz * 96 - uz * 42, r: 34 }, { x: B.cx - ux * 132, z: B.cz - uz * 132, r: 30 },
           { x: B.cx + ux * 105 + tx * 62, z: B.cz + uz * 105 + tz * 62, r: 32 }, { x: B.cx - tx * 158 + ux * 66, z: B.cz - tz * 158 + uz * 66, r: 32 },
           { x: B.cx + tx * 48 - ux * 178, z: B.cz + tz * 48 - uz * 178, r: 30 }, { x: B.cx - tx * 64 - ux * 118, z: B.cz - tz * 64 - uz * 118, r: 28 },
@@ -689,6 +693,8 @@ export class Props {
         const y0 = h(x, z);
         if (y0 < WL + 0.35 || terrain.slopeAt(x, z) > 0.45) continue;        // not in the water, not on a cliff
         if (Math.hypot(x - B.cx, z - B.cz) < 26) continue;                   // keep the landmark's own ground clear
+        { const LMK = this.landmarks[B.id];                                  // ...and the hero's own footprint when it does not stand on the centre (celestial)
+          if (LMK && Math.hypot(x - LMK.x, z - LMK.z) < 30) continue; }
         // TERRAIN CONFORM (wave-1 physics audit): a centre height sample left the downhill edge of every
         // slab/shelf hovering and pushed raw faces out of the uphill side. Seat on the LOWEST of five
         // footprint samples, sink a little, and lean the whole piece to the slope normal (capped ~17°) —
@@ -876,6 +882,10 @@ export class Props {
       const CX = B.cx, CZ = B.cz, CY = h(CX, CZ);
       const parts = [], tints = [];
       const parts2 = [], tints2 = [];   // secondary material bucket (lost: flagstone_violet for the flat-lying dais)
+      // A region whose hero does not stand on its own centre sets these (celestial: the gate moved out to
+      // the plateau lip so it clears the escarpment from the approach). Everything that points AT the
+      // landmark — HUD marker, quest waypoint, the Wayfinder stele offset, the floor sigil — reads them.
+      let LM = null, GLP = null;
       const P = (g, t) => { parts.push(g); tints.push(t ?? B.stone ?? [0.8, 0.78, 0.74]); };
       const P2 = (g, t) => { parts2.push(g); tints2.push(t ?? B.stone ?? [0.8, 0.78, 0.74]); };
       const T = LANDMARK_STONE[B.id];
@@ -997,89 +1007,190 @@ export class Props {
           pillar(px, pz, ph, 1.2, 0.5, [0.74, 0.85, 0.98]);
           fringe(px - 1.0, pz, px + 1.0, pz, h(px, pz) + ph * 0.7, 5); });      // frost collars on the ring pillars
       } else if (B.id === 'celestial') {
-        // THE EMPYREAN GATE (wave-2 escalation — rebuilt against the Tripo GLB structural baseline at
-        // tools/out/assetgen/tripo/empyrean_gate.glb, per the img2threejs GLB-mediated track; the GLB is
-        // reference only, NEVER loaded at runtime). A ruined marble TRIUMPHAL ARCH, not post-and-lintel:
-        // a facade PIERCED by a real semicircular arch, paired fluted great columns on pedestals, gold
-        // frieze + archivolt + attic sunburst (the filigree read), a broken pediment with a jagged stub
-        // against the sky, and low ruined colonnade wings. Apex ~37 m over the plain. Gold trim lives in
-        // the divine bucket (night sheen); structural gold stays saturated tints — never white.
-        const top = dais(16, 3, 0.65, [0.86, 0.83, 0.76]);
+        // THE EMPYREAN GATE (attempt 3 — img2threejs GLB-mediated track against the Tripo structural
+        // baseline tools/out/assetgen/tripo/empyrean_gate.glb + the concept empyrean_gate_a.jpg; the GLB
+        // is reference ONLY, never loaded at runtime). What the baseline says and both greybox attempts
+        // missed: a triumphal arch is a PODIUM + four FREE-STANDING great columns on pedestals carrying an
+        // entablature that BREAKS FORWARD over each one + an attic + a pediment. Those forward breaks ARE
+        // the silhouette; a flat facade with a hole in it reads as a wall at every distance.
+        //
+        // SITING (the wave-2 blocker "invisible from the 250 m approach"): the heart sits 30 m BELOW the
+        // lip of its own escarpment as seen from the arrival — terrain probe down the bearing gives 34.5 m
+        // at d=250, a wall climbing 45->61 between d=150 and d=130, then plateau at 62-66. From the
+        // arrival everything under y~88 at the heart is behind that lip, which is why only the attic ever
+        // showed. The gate now stands 62 m out toward home on the WIDE part of the plateau (probe: +-60 m
+        // of flat there, vs a 28 m spur further out), where that sightline only eats its bottom ~10 m, and
+        // two crest pylons mark the ridge 118 m out so the approach has a beacon before the arch clears
+        // it. Stele, Wayfinder, floor sigil and the HUD landmark all follow the gate (see LM/GLP below).
+        const D_OUT = 62;
         const r0 = Math.hypot(CX, CZ), ux = CX / r0, uz = CZ / r0, tx = -uz, tz = ux;
-        const ryG = Math.atan2(-ux, -uz);   // local +X -> tangent (gate runs ACROSS the approach), +Z -> home: the front faces arrivals
-        const MARB = [0.97, 0.95, 0.87], MARB2 = [0.88, 0.86, 0.78];
+        const gx = CX - ux * D_OUT, gz = CZ - uz * D_OUT;
+        const WD = (lx, lz) => [gx + tx * lx - ux * lz, gz + tz * lx - uz * lz];   // gate-local (X tangent, Z toward home) -> world
+        let gy = 1e9;                                                            // seat on the LOWEST footprint sample: no floating podium corner
+        for (const s of [[0, 0], [17, 0], [-17, 0], [0, 8], [0, -8], [14, 7], [-14, 7], [14, -7], [-14, -7]]) { const p = WD(s[0], s[1]); gy = Math.min(gy, h(p[0], p[1])); }
+        const ryG = Math.atan2(-ux, -uz);   // local +X -> tangent (the gate runs ACROSS the approach), +Z -> home: the front faces arrivals
+        const MARB = [0.97, 0.95, 0.87], MARB2 = [0.88, 0.86, 0.78], MARB3 = [0.76, 0.75, 0.70];
         const DV = (g, t) => { this._divine.parts.push(g); this._divine.tints.push(t ?? [1, 1, 1]); };
-        // author in gate-local metres (X tangent, Y up from dais top, Z toward home/arrivals), place once
-        const L = (geo, lx, ly, lz, tint, div) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(CX, top, CZ); (div ? DV : P)(geo, tint); };
-        const W2 = 11.5, FH = 19.5, FD = 5.6, AR = 4.3, SPR = 10.2;             // facade half-width / height / depth, arch radius / springline
-        { const fs = new THREE.Shape();                                          // the pierced facade — the arch IS the silhouette
-          fs.moveTo(-W2, 0); fs.lineTo(W2, 0); fs.lineTo(W2, FH); fs.lineTo(-W2, FH); fs.closePath();
-          const holeP = new THREE.Path(); holeP.moveTo(-AR, 0); holeP.lineTo(-AR, SPR); holeP.absarc(0, SPR, AR, Math.PI, 0, true); holeP.lineTo(AR, 0); holeP.closePath();
-          fs.holes.push(holeP);
-          L(new THREE.ExtrudeGeometry(fs, { depth: FD, bevelEnabled: false, curveSegments: 18 }).translate(0, 0, -FD / 2), 0, 0, 0, MARB); }
-        for (const sd of [-1, 1]) {                                              // pier colliders leave the archway open to walk through
-          const pcx = CX + tx * sd * (W2 + AR) / 2, pcz = CZ + tz * sd * (W2 + AR) / 2;
-          const ex = Math.abs(tx) * (W2 - AR) / 2 + Math.abs(ux) * FD / 2, ez = Math.abs(tz) * (W2 - AR) / 2 + Math.abs(uz) * FD / 2;
-          col.add({ type: 'box', box: new THREE.Box3(V3(pcx - ex, top - 2, pcz - ez), V3(pcx + ex, top + FH, pcz + ez)) });
-        }
-        const CH = 10.4, CS = 1.55, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
-        const colAt = (t, d, brk, s = CS) => {                                   // a fluted great column on its pedestal
-          const px = CX + tx * t + ux * d, pz = CZ + tz * t + uz * d;
-          L(new THREE.BoxGeometry(2.9, 2.5, 2.9), t, 0.45, d, MARB2);   // sunk 0.8 so the outer pedestals never float over a dais step edge
-          const g = (brk ? colB : colI).clone().scale(s, brk ? (0.4 + rng() * 0.3) : 1, s).rotateY(ryG).translate(px, top + 1.7, pz);
-          P(g, MARB);
-          col.add({ type: 'capsule', a: V3(px, top - 1, pz), b: V3(px, top + (brk ? 8 : FH), pz), r: 1.5 });
+        const PY = gy + 2.6;                                                     // podium top — the datum every dimension below is measured from
+        const L = (geo, lx, ly, lz, tint, div) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(gx, PY, gz); (div ? DV : P)(geo, tint); };
+        const LG = (geo, lx, ly, lz, tint) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(gx, gy, gz); P(geo, tint); };
+        const LT = (geo, lx, lz, dy, tint) => { const p = WD(lx, lz); geo.rotateY(ryG).translate(p[0], h(p[0], p[1]) + dy, p[1]); P(geo, tint); };   // seats on the terrain (wreckage off the podium)
+        const boxCol = (lx, lz, w, d, y0, y1, walkable) => {                     // rotated box -> conservative world AABB
+          const p = WD(lx, lz), ex = Math.abs(tx) * w / 2 + Math.abs(ux) * d / 2, ez = Math.abs(tz) * w / 2 + Math.abs(uz) * d / 2;
+          col.add({ type: 'box', box: new THREE.Box3(V3(p[0] - ex, y0, p[1] - ez), V3(p[0] + ex, y1, p[1] + ez)), walkable });
         };
-        for (const t of [-10.4, -6.6, 6.6, 10.4]) colAt(t, 3.9, false);          // paired great columns proud of the front
-        for (const t of [-8.5, 8.5]) colAt(t, -3.9, t > 0);                      // the rear pair, one snapped — a RUIN, not a mint
-        L(new THREE.BoxGeometry(26.0, 1.6, 8.8), 0, FH + 0.8, 0.9, MARB);        // architrave (projects over the columns)
-        L(new THREE.BoxGeometry(26.2, 1.15, 9.0), 0, FH + 2.0, 0.9, [1, 1, 1], true);   // GOLD FRIEZE — divine: warm sheen at night
-        for (let i = 0; i < 16; i++) L(new THREE.BoxGeometry(0.55, 0.55, 0.5), -10.5 + i * 1.4, FH + 2.85, 5.5, MARB2);   // dentil course
-        L(new THREE.BoxGeometry(27.2, 1.0, 9.8), 0, FH + 3.6, 0.9, MARB);        // cornice
-        L(new THREE.BoxGeometry(23.5, 4.8, 7.0), 0, FH + 6.5, 0.9, MARB);        // attic storey
-        L(new THREE.BoxGeometry(8.6, 3.1, 0.4), 0, FH + 6.5, 4.55, MARB2);       // attic cartouche panel...
-        L(new THREE.BoxGeometry(9.2, 0.3, 0.34), 0, FH + 8.15, 4.6, [1, 1, 1], true);   // ...gold frame
-        L(new THREE.BoxGeometry(9.2, 0.3, 0.34), 0, FH + 4.85, 4.6, [1, 1, 1], true);
-        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(0.3, 3.6, 0.34), sd * 4.45, FH + 6.5, 4.6, [1, 1, 1], true);
-        L(new THREE.CylinderGeometry(0.55, 0.55, 0.3, 12).rotateX(Math.PI / 2), 0, FH + 6.5, 4.8, [1, 1, 1], true);       // sunburst emblem — the filigree at 45 m
-        for (let i = 0; i < 10; i++) L(new THREE.BoxGeometry(0.17, 1.25, 0.2).rotateZ(i / 10 * Math.PI * 2), Math.cos(i / 10 * 6.2832 + 1.5708) * 1.0, FH + 6.5 + Math.sin(i / 10 * 6.2832 + 1.5708) * 1.0, 4.72, [1, 1, 1], true);
-        L(new THREE.TorusGeometry(AR + 0.28, 0.30, 8, 26, Math.PI), 0, SPR, FD / 2 + 0.12, [1, 1, 1], true);              // gold archivolt over the opening
-        L(new THREE.BoxGeometry(1.15, 2.1, 1.0), 0, SPR + AR + 0.55, FD / 2 + 0.1, [1, 1, 1], true);                      // keystone
-        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(1.7, 0.4, 0.7), sd * (AR + 0.6), SPR - 0.1, FD / 2 + 0.1, [1, 1, 1], true);   // impost blocks where the arch springs
-        // BROKEN PEDIMENT — the skyline. Left raker rises whole; the right one snaps mid-air with a
-        // jagged stub, and the tympanum behind stops at the break: SKY through the wound at 250 m.
-        L(new THREE.BoxGeometry(25.5, 0.9, 8.2), 0, FH + 9.35, 0.9, MARB);       // pediment base cornice
-        { const ty = new THREE.Shape();                                          // tympanum, broken right of apex
-          ty.moveTo(-11.2, 0); ty.lineTo(-0.5, 6.8); ty.lineTo(2.6, 4.7); ty.lineTo(3.1, 3.1); ty.lineTo(4.2, 2.6); ty.lineTo(4.6, 0); ty.closePath();
-          L(new THREE.ExtrudeGeometry(ty, { depth: 6.2, bevelEnabled: false }).translate(0, 0, -3.1), 0, FH + 9.8, 0.9, MARB2); }
-        L(new THREE.BoxGeometry(13.6, 1.1, 8.0).rotateZ(0.566), -5.85, FH + 13.6, 0.9, MARB);   // left raking cornice, whole
-        L(new THREE.BoxGeometry(4.4, 1.1, 8.0).rotateZ(-0.566), 9.6, FH + 11.0, 0.9, MARB);     // right raker, BROKEN short
-        L(new THREE.BoxGeometry(1.3, 1.6, 5.8).rotateZ(0.3), 7.4, FH + 11.6, 0.9, MARB2);       // the jagged stubs at the break
-        L(new THREE.BoxGeometry(1.0, 1.2, 4.6).rotateZ(-0.5), 3.4, FH + 13.2, 0.9, MARB2);
-        // RUINED COLONNADE WINGS — low fluted rows running along the tangent till the plain takes them
-        const colW = columnGeometry(8.6, false, rng), colWB = columnGeometry(8.6, true, rng);
-        const wtops = [];
+        // The registry has no OBB, and for a FLOOR an over-sized AABB is invisible floor you can stand on
+        // past the edge of the stone. So walkable tops are INSCRIBED instead (same trick as dais()'s 0.72):
+        // a chain of squares that fit inside the rotated rectangle, laid along its long axis.
+        const walkTop = (lx, lz, w, d, y0, y1, n = 3) => {
+          const s = Math.min(w, d) / 2 / 1.415;                                  // inscribed square of the inscribed circle
+          for (let i = 0; i < n; i++) {
+            const t = (n === 1 ? 0 : (i / (n - 1) - 0.5)) * (w - Math.min(w, d)), p = WD(lx + t, lz);
+            col.add({ type: 'box', box: new THREE.Box3(V3(p[0] - s, y0, p[1] - s), V3(p[0] + s, y1, p[1] + s)), walkable: true });
+          }
+        };
+        // ---- podium: three courses + the steps down toward home
+        { let yy = -1.0;
+          for (const c of [[38, 23, 1.5], [34.5, 20.5, 1.0], [31, 18, 1.1]]) {
+            LG(new THREE.BoxGeometry(c[0], c[2], c[1]), 0, yy + c[2] / 2, 0, yy < -0.2 ? MARB3 : MARB2);
+            LG(new THREE.BoxGeometry(c[0] + 0.7, 0.26, c[1] + 0.7), 0, yy + c[2] - 0.13, 0, MARB);   // projecting lip: the courses read as mouldings, not slabs, at 10 m
+            yy += c[2];
+          }
+          walkTop(0, 0, 31, 18, gy - 3, PY, 5); }
+        for (let i = 0; i < 4; i++) {                                            // stair down the front so you WALK up to it
+          const sy = PY - 0.62 * (i + 1), sz = 9.6 + i * 1.0;                    // sy = the TREAD top of this step
+          LG(new THREE.BoxGeometry(21 - i * 0.8, 0.62, 1.0), 0, sy - gy - 0.31, sz, MARB2);
+          boxCol(0, sz, 21 - i * 0.8, 1.0, gy - 2, sy, true);
+        }
+        // ---- the facade: a real pierced arch, standing on its own plinth course
+        // FB stays 0: the archway floor IS the podium top, so you can walk through it. The plinth course
+        // is therefore two blocks under the PIERS, never a sill across the opening.
+        // SPR 8.6 (not 9.9) on purpose: the Tripo baseline keeps a deep FIELD between the arch head and the
+        // entablature, and that field is where its gold cartouche lives — the single loudest ornament at
+        // 45 m. A taller opening eats the field and the facade goes blank above the arch again.
+        const W2 = 12.6, FB = 0, FH = 19.8, FD = 7.0, AR = 5.6, SPR = 8.6;       // half-width / facade base / height / depth, arch radius / springline
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(7.0, 1.15, 9.4), sd * 9.1, 0.575, 0, MARB2);   // flush with the jamb: no ledge inside the opening
+        { const fs = new THREE.Shape();
+          fs.moveTo(-W2, 0); fs.lineTo(W2, 0); fs.lineTo(W2, FH); fs.lineTo(-W2, FH); fs.closePath();
+          const hp = new THREE.Path(); hp.moveTo(-AR, 0); hp.lineTo(-AR, SPR); hp.absarc(0, SPR, AR, Math.PI, 0, true); hp.lineTo(AR, 0); hp.closePath();
+          fs.holes.push(hp);
+          L(new THREE.ExtrudeGeometry(fs, { depth: FD, bevelEnabled: false, curveSegments: 20 }).translate(0, 0, -FD / 2), 0, FB, 0, MARB); }
+        for (const sd of [-1, 1]) boxCol(sd * (W2 + AR) / 2, 0, W2 - AR, FD, PY - 2, PY + FH, false);   // pier colliders — the archway stays walk-through
+        // pier faces: a recessed panel frame + a gold inlay line, front and back (the 10 m read)
+        for (const sd of [-1, 1]) for (const zf of [1, -1]) {
+          const t0 = sd * 9.1, zz = zf * (FD / 2 + 0.18);
+          L(new THREE.BoxGeometry(5.0, 0.34, 0.36), t0, FB + 4.2, zz, MARB2); L(new THREE.BoxGeometry(5.0, 0.34, 0.36), t0, FB + 13.4, zz, MARB2);
+          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.34, 9.2, 0.36), t0 + e * 2.33, FB + 8.8, zz, MARB2);
+          L(new THREE.BoxGeometry(0.22, 6.4, 0.30), t0, FB + 8.8, zz + zf * 0.06, [1, 1, 1], true);
+        }
+        // impost string course: PIER-ONLY, never across the void — a band spanning the opening reads as a
+        // lintel dropped through the archway (it did: the first pass put a gold beam across the doorway)
+        for (const sd of [-1, 1]) {
+          L(new THREE.BoxGeometry(7.6, 0.62, 7.9), sd * 9.1, FB + SPR + 0.31, 0, MARB2);
+          L(new THREE.BoxGeometry(7.7, 0.20, 8.0), sd * 9.1, FB + SPR - 0.10, 0, [1, 1, 1], true);
+        }
+        // gold archivolt + keystone over the opening, both faces
+        for (const zf of [1, -1]) {
+          L(new THREE.TorusGeometry(AR + 0.34, 0.34, 8, 26, Math.PI), 0, FB + SPR, zf * (FD / 2 + 0.14), [1, 1, 1], true);
+          L(new THREE.BoxGeometry(1.5, 2.6, 1.1), 0, FB + SPR + AR + 0.7, zf * (FD / 2 + 0.05), [1, 1, 1], true);
+        }
+        for (let i = 0; i < 4; i++)                                              // barrel-vault ribs inside the archway: it is coffered when you walk through.
+          L(new THREE.TorusGeometry(AR - 0.14, 0.24, 6, 22, Math.PI), 0, FB + SPR, -2.6 + i * 1.75, i % 2 ? MARB2 : MARB3);   // MARBLE, not gold: gold ribs behind the gold archivolt read as concentric rainbow arcs
+        // THE CARTOUCHE: the gold-framed relief field over the arch — the baseline's signature, and what
+        // carries the "ornate" read at 45 m. Front face only; the back gets the frame without the emblem.
+        for (const zf of [1, -1]) {
+          const zz = zf * (FD / 2 + 0.22), CY0 = FB + SPR + AR + 2.9;            // centred in the field between arch head and entablature
+          L(new THREE.BoxGeometry(13.0, 4.2, 0.5), 0, CY0, zf * (FD / 2 + 0.1), MARB3);          // recessed field
+          L(new THREE.BoxGeometry(13.6, 0.38, 0.42), 0, CY0 + 2.05, zz, [1, 1, 1], true);        // gold frame
+          L(new THREE.BoxGeometry(13.6, 0.38, 0.42), 0, CY0 - 2.05, zz, [1, 1, 1], true);
+          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.38, 4.5, 0.42), e * 6.6, CY0, zz, [1, 1, 1], true);
+          for (const e of [-1, 1]) L(new THREE.BoxGeometry(1.5, 0.3, 0.34).rotateZ(e * 0.5), e * 4.4, CY0 + 1.2, zz, [1, 1, 1], true);   // scroll corners
+          if (zf > 0) {                                                          // the sunburst emblem, arrivals side
+            L(new THREE.CylinderGeometry(1.05, 1.05, 0.4, 16).rotateX(Math.PI / 2), 0, CY0, zz + 0.12, [1, 1, 1], true);
+            for (let i = 0; i < 14; i++) { const a2 = i / 14 * 6.2832 + 0.22;
+              L(new THREE.BoxGeometry(0.26, 1.9 + (i % 2) * 0.7, 0.28).rotateZ(a2), Math.cos(a2 + 1.5708) * 1.6, CY0 + Math.sin(a2 + 1.5708) * 1.6, zz + 0.06, [1, 1, 1], true); }
+          }
+        }
+        // ---- four free-standing great columns on pedestals, proud of the facade
+        const CH = 16.65, CS = 1.55, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
+        for (const t of [-13.4, -9.2, 9.2, 13.4]) {
+          const brk = t === 13.4;                                                // one snapped column: a RUIN, not a mint
+          L(new THREE.BoxGeometry(3.6, 3.1, 3.6), t, 1.55, 5.0, MARB2);          // pedestal
+          L(new THREE.BoxGeometry(4.1, 0.4, 4.1), t, 3.3, 5.0, MARB3);           // pedestal cap moulding
+          const p = WD(t, 5.0);
+          const g = (brk ? colB : colI).clone().scale(CS, brk ? 0.52 : 1, CS).rotateY(ryG).translate(p[0], PY + 3.5, p[1]);
+          P(g, MARB);
+          col.add({ type: 'capsule', a: V3(p[0], PY - 1, p[1]), b: V3(p[0], PY + (brk ? 12 : 20), p[1]), r: 1.6 });
+        }
+        // ---- entablature: architrave, GOLD frieze, dentils, cornice — breaking forward over every column
+        const EB = FB + FH;                                                      // 20.9: entablature springs off the facade head
+        L(new THREE.BoxGeometry(27.8, 1.5, 8.8), 0, EB + 0.75, 0.3, MARB);
+        L(new THREE.BoxGeometry(28.1, 1.6, 9.0), 0, EB + 2.3, 0.3, [1, 1, 1], true);       // gold frieze (divine bucket: warm sheen at night)
+        for (let i = 0; i < 22; i++) L(new THREE.BoxGeometry(0.62, 0.62, 0.55), -13.1 + i * 1.25, EB + 3.4, 4.9, MARB2);   // dentil course
+        L(new THREE.BoxGeometry(29.2, 1.3, 9.8), 0, EB + 4.35, 0.3, MARB);                 // cornice
+        for (const t of [-13.4, -9.2, 9.2, 13.4]) {                              // the ressaut: entablature steps out over each column
+          L(new THREE.BoxGeometry(4.0, 1.5, 2.8), t, EB + 0.75, 5.3, MARB);
+          L(new THREE.BoxGeometry(4.2, 1.6, 2.9), t, EB + 2.3, 5.35, [1, 1, 1], true);
+          L(new THREE.BoxGeometry(4.6, 1.3, 3.3), t, EB + 4.35, 5.5, MARB);
+        }
+        // ---- attic band (LOW, per the baseline: the pediment sits nearly on the cornice — a tall attic is
+        // what made attempt 2 read as a stepped ziggurat) with a gold inscription course
+        const AY = EB + 5.0;                                                     // attic base 24.8
+        L(new THREE.BoxGeometry(25.0, 2.8, 8.0), 0, AY + 1.4, 0.3, MARB);
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(1.1, 2.8, 8.2), sd * 12.0, AY + 1.4, 0.3, MARB2);   // corner pilaster strips
+        L(new THREE.BoxGeometry(18.0, 0.9, 0.34), 0, AY + 1.4, 4.25, [1, 1, 1], true);     // inscription band
+        for (let i = 0; i < 7; i++) L(new THREE.OctahedronGeometry(0.34), -7.2 + i * 2.4, AY + 1.4, 4.45, [1, 1, 1], true);   // rosettes along it
+        // ---- BROKEN PEDIMENT: the skyline. Left raker whole, right one snapped mid-air over a jagged
+        // stub, tympanum stopping at the wound — sky through the break from 200 m.
+        const PB = AY + 2.8;                                                     // 27.6 — pediment sits nearly on the cornice
+        L(new THREE.BoxGeometry(27.0, 1.0, 8.8), 0, PB + 0.5, 0.3, MARB);        // pediment base cornice
+        { const ty = new THREE.Shape();                                          // 18 deg pitch, broken right of the apex
+          ty.moveTo(-12.2, 0); ty.lineTo(-0.4, 4.0); ty.lineTo(2.9, 2.9); ty.lineTo(3.4, 1.8); ty.lineTo(4.8, 1.4); ty.lineTo(5.2, 0); ty.closePath();
+          L(new THREE.ExtrudeGeometry(ty, { depth: 6.6, bevelEnabled: false }).translate(0, 0, -3.3), 0, PB + 1.0, 0.3, MARB2); }
+        L(new THREE.BoxGeometry(14.2, 1.2, 8.6).rotateZ(0.317), -6.2, PB + 3.4, 0.3, MARB);       // left raking cornice, whole to the apex
+        L(new THREE.BoxGeometry(5.4, 1.2, 8.6).rotateZ(-0.317), 9.9, PB + 2.2, 0.3, MARB);        // right raker, BROKEN short
+        L(new THREE.BoxGeometry(1.6, 2.1, 6.2).rotateZ(0.36), 6.7, PB + 2.9, 0.3, MARB2);         // jagged stubs at the break
+        L(new THREE.BoxGeometry(1.2, 1.5, 4.8).rotateZ(-0.52), 3.6, PB + 4.0, 0.3, MARB2);
+        L(new THREE.BoxGeometry(2.0, 1.5, 2.2).rotateZ(0.2).rotateY(0.4), 12.4, PB + 0.9, 3.4, MARB3);   // and the corner chunk that fell off the cornice
+        // ---- ruined colonnade wings: low fluted rows running out along the tangent
+        const colW = columnGeometry(9.4, false, rng), colWB = columnGeometry(9.4, true, rng), wtops = [];
         for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) {
-          const t = sd * (14.5 + k * 5.7);
-          const px = CX + tx * t, pz = CZ + tz * t, py = Math.min(h(px, pz), top + 0.4) - 0.35;
+          const t = sd * (18.0 + k * 6.2), p = WD(t, 1.0), py = Math.min(h(p[0], p[1]), PY + 0.4) - 0.35;
           const brk = (k === 1 && sd < 0) || (k === 3 && sd > 0) || (k === 2 && sd > 0);
-          P(new THREE.BoxGeometry(2.3, 0.8, 2.3).rotateY(ryG).translate(px, py + 0.4, pz), MARB2);
-          P((brk ? colWB : colW).clone().scale(1.15, brk ? 0.35 + rng() * 0.35 : 1, 1.15).rotateY(ryG).translate(px, py + 0.8, pz), MARB);
-          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + (brk ? 4.5 : 10.5), pz), r: 1.1 });
-          wtops.push(brk ? null : [t, py + 0.8 + 11.21]);                        // capital top ((8.6+1.15)*1.15): the architrave beams ride these
+          P(new THREE.BoxGeometry(2.6, 0.9, 2.6).rotateY(ryG).translate(p[0], py + 0.45, p[1]), MARB2);
+          P((brk ? colWB : colW).clone().scale(1.2, brk ? 0.35 + rng() * 0.35 : 1, 1.2).rotateY(ryG).translate(p[0], py + 0.9, p[1]), MARB);
+          col.add({ type: 'capsule', a: V3(p[0], py - 1, p[1]), b: V3(p[0], py + (brk ? 5 : 12), p[1]), r: 1.2 });
+          wtops.push(brk ? null : [t, py + 0.9 + 12.66]);                        // capital top ((9.4+1.15)*1.2): the architrave beams ride these
         }
         for (let i = 0; i + 1 < wtops.length; i++) {                             // beam segments between surviving neighbours
           const a2 = wtops[i], b2 = wtops[i + 1];
-          if (!a2 || !b2 || Math.sign(a2[0]) !== Math.sign(b2[0]) || Math.abs(b2[0] - a2[0]) > 6.5) continue;
-          const tm = (a2[0] + b2[0]) / 2, ym = (a2[1] + b2[1]) / 2, pitch = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]);
-          P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 1.6, 0.95, 1.9).rotateZ(pitch).rotateY(ryG).translate(CX + tx * tm, ym + 0.48, CZ + tz * tm), MARB);
+          if (!a2 || !b2 || Math.sign(a2[0]) !== Math.sign(b2[0]) || Math.abs(b2[0] - a2[0]) > 7.0) continue;
+          const tm = (a2[0] + b2[0]) / 2, ym = (a2[1] + b2[1]) / 2, pitch = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]), p = WD(tm, 1.0);
+          P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 1.8, 1.05, 2.2).rotateZ(pitch).rotateY(ryG).translate(p[0], ym + 0.52, p[1]), MARB);
+          P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 2.0, 0.5, 2.6).rotateZ(pitch).rotateY(ryG).translate(p[0], ym + 1.3, p[1]), MARB2);
         }
-        L(new THREE.BoxGeometry(9, 1.6, 3.2).rotateZ(0.28).rotateX(0.1), 4.5, 0.9, 13.5, MARB);   // the fallen pediment chunk, face-down on the approach
-        col.add({ type: 'sphere', pos: V3(CX + tx * 4.5 - ux * 13.5, top + 0.9, CZ + tz * 4.5 - uz * 13.5), r: 4.2 });
-        for (let i = 0; i < 5; i++) {                                            // spilled column drums where the rear pair fell
-          const a2 = rng() * 6.2832, d2 = 7 + rng() * 6;
-          L(new THREE.CylinderGeometry(0.95, 1.0, 1.6 + rng() * 0.9, 12).rotateZ(Math.PI / 2).rotateY(rng() * 3), Math.cos(a2) * d2 - 6, 0.55, -Math.abs(Math.sin(a2)) * d2 - 4, MARB2);
+        // ---- the wreckage on the approach: the fallen pediment chunk and spilled drums
+        LT(new THREE.BoxGeometry(9.5, 1.7, 3.4).rotateZ(0.24).rotateX(0.1).rotateY(0.5), -7.5, 15.0, 0.75, MARB);
+        LT(new THREE.BoxGeometry(4.2, 1.2, 3.0).rotateZ(-0.3).rotateY(0.9), -9.8, 18.6, 0.5, MARB2);
+        { const p = WD(-7.5, 15.0); col.add({ type: 'sphere', pos: V3(p[0], h(p[0], p[1]) + 0.75, p[1]), r: 4.4 }); }
+        for (let i = 0; i < 6; i++) {                                            // drums where the snapped column came down
+          const a2 = rng() * 6.2832, d2 = 6 + rng() * 7;
+          LT(new THREE.CylinderGeometry(1.15, 1.2, 1.8 + rng() * 1.0, 12).rotateZ(Math.PI / 2).rotateY(rng() * 3), 11 + Math.cos(a2) * d2 * 0.5, 12 + Math.abs(Math.sin(a2)) * d2, 0.6, MARB2);
         }
+        // ---- CREST PYLONS: the beacon on the escarpment lip, 118 m out, so the approach has something
+        // to walk at before the arch itself clears the ridge (terrain probe: the spur is ~28 m wide there)
+        for (const sd of [-1, 1]) {
+          const px = CX - ux * 118 + tx * sd * 10.5, pz = CZ - uz * 118 + tz * sd * 10.5, py = h(px, pz);
+          P(new THREE.BoxGeometry(3.6, 1.1, 3.6).rotateY(ryG).translate(px, py + 0.4, pz), MARB2);
+          P(new THREE.CylinderGeometry(0.95, 1.45, 12.5, 8).rotateY(ryG).translate(px, py + 7.1, pz), MARB);
+          P(new THREE.BoxGeometry(2.9, 0.7, 2.9).rotateY(ryG).translate(px, py + 13.6, pz), MARB2);
+          DV(new THREE.BoxGeometry(3.1, 0.34, 3.1).rotateY(ryG).translate(px, py + 14.1, pz), [1, 1, 1]);
+          DV(new THREE.OctahedronGeometry(0.95).scale(1, 1.5, 1).rotateY(ryG).translate(px, py + 15.1, pz), [1, 1, 1]);
+          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + 13, pz), r: 1.5 });
+        }
+        LM = V3(gx, gy, gz);                                                     // landmark + floor sigil follow the gate...
+        { const gp = WD(0, 24.0); GLP = V3(gp[0], h(gp[0], gp[1]), gp[1]); }     // ...the sigil onto the apron in front of the steps, clear of the podium
+        this._celGate = LM;                                                      // _pruneCelestialRocks clears the plaza around it
         isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.0, 0.97, 0.90], kind: 'celestial' });   // near-neutral over marble_strata: the map carries the white, the tint only warms it
       } else if (B.id === 'dragon') {
         // KHARAZ-DUN GATE (wave-1 blocker rebuild): the old gate was a 44 m brick box floating in front
@@ -1201,9 +1312,9 @@ export class Props {
       }
       // floor sigil: additive, HDR colour so it reads at noon; hue is the region's, VALUE stays modest
       const gl = new THREE.Mesh(new THREE.RingGeometry(6, 11, 96).rotateX(-Math.PI / 2), this.glyphMat(glyphTexture(512, 6 / 11, 1, rng), new THREE.Color(...T.glyph)));
-      gl.name = 'glyph-' + B.id; gl.position.set(CX, CY + 0.2, CZ); gl.userData.speed = 0.035 * (B.k % 2 ? -1 : 1);
+      gl.name = 'glyph-' + B.id; gl.position.set(GLP?.x ?? CX, (GLP?.y ?? CY) + 0.2, GLP?.z ?? CZ); gl.userData.speed = 0.035 * (B.k % 2 ? -1 : 1);
       this._rot.push(gl); scene.add(gl);
-      this.landmarks[B.id] = V3(CX, CY, CZ);
+      this.landmarks[B.id] = LM ?? V3(CX, CY, CZ);
     }
 
     if (isles.length) this._buildIsles(isles, rng, h, col);

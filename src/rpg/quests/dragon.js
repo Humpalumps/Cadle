@@ -82,9 +82,9 @@ export default [
     name: 'A Nest Worth the Climb',
     giver: 'stele:dragon',
     text: {
-      offer: 'One wyvern has built above the treeline out of things it did not find on this mountain — sea-glass, court silver, a rib of the wrong alloy. It has been flying somewhere none of the others go. Kill it, climb to the nest, and bring me whatever it thought was worth the distance.',
+      offer: 'One wyvern has built above the treeline out of things it did not find on this mountain — fall-polished glass, court silver, a rib of the wrong alloy. It has been flying somewhere none of the others go. Kill it, climb to the nest, and bring me whatever it thought was worth the distance.',
       progress: 'The high nest, above the treeline. The climb is the fight; the wyvern is the easy part.',
-      done: 'Sea-glass from the Sunken shelf and slag from the Maw, in one nest, on one mountain. Everything in this world is pointing at the same door.',
+      done: 'Glass off the Sunken terraces and slag from the Maw, in one nest, on one mountain. Everything in this world is pointing at the same door.',
     },
     objectives: [
       { type: 'slay', enemy: 'wyvern', name: 'the far-flying wyvern', tag: 'peak-hoarder', where: 'dragon' },

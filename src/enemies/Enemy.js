@@ -3,6 +3,13 @@ import { BODIES } from './bodies.js';
 import { cloneBones, plantLegs, damp } from './rig.js';
 import { createCreatureMaterial, createShieldMaterial } from './materials.js';
 import { DEFS, LEVEL_HP, LEVEL_DMG, LEVEL_XP } from './defs.js';
+import { ELEMENT_COLORS } from '../combat/Combat.js';
+
+// Shield bubble read range (m). A shield bubble answers ONE question — "what breaks this, and is it still
+// up?" — and that question only exists inside shooting range. Past it the bubble is a translucent ball
+// parked on a hillside: the wave-2 tundra verdict called them "ghost soap-bubbles stuck in the snow" at
+// 60+ m. So it fades out over this band instead of being drawn on the skyline. Squared, for the hot loop.
+const SHIELD_FADE0 = 45 * 45, SHIELD_FADE1 = 80 * 80;
 
 // Elite modifier: a lightweight reskin of an existing body for slay-a-mini-boss quest objectives and the
 // loot builder's elite tier floor. Not a new creature — same rig, same AI, three numbers and a look tweak.
@@ -17,6 +24,8 @@ const ELITE_TINT = new THREE.Color(0xd9a53a);   // saturated antique gold — di
  * States: idle | patrol | chase | attack | flee | stagger | dead.   Positions: `position` = feet (flyers: body centre).
  * Update cost is LOD-ticked (think/steer, move, animate at staggered rates by camera distance); the player-standoff
  * ring (def.standoff) is enforced on EVERY integration step — melee never touches the camera (Destiny melee dance).
+ * Shield bubble (def.shield + def.shieldRadius): coloured by def.shieldElement (Combat.ELEMENT_COLORS) so the
+ * bubble tells you what strips it, and faded out over SHIELD_FADE0..1 — it is a combat read, not scenery.
  */
 const IDENTITY = new THREE.Matrix4();
 const SHIELD_GEO = new THREE.IcosahedronGeometry(1, 2);
@@ -49,7 +58,10 @@ export class Enemy {
     this.mesh.castShadow = true; this.mesh.receiveShadow = true; this.mesh.name = 'enemy-mesh';
     this.root.add(this.mesh);
     if (def.shield > 0 && def.shieldRadius) {
-      this.shieldMat = createShieldMaterial(0x7fd8ff); this.su = this.shieldMat.userData.u;
+      // colour BY ELEMENT, not a hardcoded arc blue: the bubble is the game telling you which damage type
+      // strips it (Destiny's whole shield-matching read). Every hue here is one of Combat's saturated
+      // element colours, and only the alpha below carries intensity — blob law, saturate hue / cap value.
+      this.shieldMat = createShieldMaterial(ELEMENT_COLORS[def.shieldElement] ?? 0x7fd8ff); this.su = this.shieldMat.userData.u;
       this.shieldMesh = new THREE.Mesh(SHIELD_GEO, this.shieldMat);
       this.shieldMesh.scale.set(def.shieldRadius, def.shieldRadius * 1.3, def.shieldRadius); this.shieldMesh.position.y = def.center; // body-hugging ellipsoid, not a beach ball
       this.shieldMesh.renderOrder = 5; this.shieldMesh.visible = false; this.root.add(this.shieldMesh);
@@ -116,7 +128,10 @@ export class Enemy {
     const pal = def.palette[Math.floor(rnd() * def.palette.length)];
     this.glowColor.set(pal[0]); this.u.uEmissive.value.set(pal[0]); this.u.uTint.value.set(elite ? ELITE_TINT : pal[1]);
     this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uBump.value = def.bump ?? 0.05; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
-    if (this.shieldMat) { this.shieldMat.color.set(pal[0]); this.shieldMat.emissive.set(pal[0]); this.su.uHit.value = 0; this.su.uAlpha.value = 1; }
+    // The bubble is the ELEMENT, not the instance. The per-spawn palette roll is the creature's own hue and
+    // re-rolling the shield with it made a Spire Sentinel's ARC bubble come up gold on half its spawns —
+    // i.e. the one piece of UI that tells you which damage type strips it was lying at random.
+    if (this.shieldMat) { const sc = ELEMENT_COLORS[def.shieldElement] ?? pal[0]; this.shieldMat.color.set(sc); this.shieldMat.emissive.set(sc); this.su.uHit.value = 0; this.su.uAlpha.value = 1; }
     this.target.alive = true; this.target.health = this.health; this.target.maxHealth = this.maxHealth; this.target.shield = this.shield; this.target.maxShield = this.maxShield;
     g.combat.register(this.target);
     // pose
@@ -221,7 +236,7 @@ export class Enemy {
     this.stateT += dt; this.attackCd -= dt; this.fleeCd -= dt;
     this.flash = Math.max(0, this.flash - dt * 6); this.phaseFlash = Math.max(0, this.phaseFlash - dt * 1.5);
     if (this.su && this.su.uHit.value > 0) this.su.uHit.value = Math.max(0, this.su.uHit.value - dt * 4);
-    this._lod = lod;
+    this._lod = lod; this._d2 = d2cam;   // squared camera distance, read by _sync (shield-bubble fade)
     // perception (throttled, staggered; far enemies look less often)
     this.percT -= dt; if (this.percT <= 0) { this.percT = (lod >= 2 ? 0.5 : 0.22) + (this.id % 7) * 0.015; this._perceive(t); }
     // decisions + steering: attack/stagger frame-accurate (strike timing is gameplay); the rest ticks by distance
@@ -708,8 +723,10 @@ export class Enemy {
     const wps = this.target.weakPoints;
     if (wps && lod < 2) for (let i = 0; i < wps.length; i++) { const w = wps[i]; w.position.copy(w.off).applyMatrix4(w.bone.matrixWorld); }
     if (this.shieldMesh) {
-      const on = this.shield > 0 && this.alive; this.shieldMesh.visible = on;
-      if (on) { this.su.uTime.value = t; this.su.uAlpha.value = 0.45 + 0.45 * (this.shield / this.maxShield) + phaseF; this.shieldMesh.rotation.y = t * 0.3; }
+      // SHIELD_FADE: full strength inside 45 m (where you are shooting it), gone by 80 m — see the constant.
+      const near = 1 - THREE.MathUtils.smoothstep(this._d2 ?? 0, SHIELD_FADE0, SHIELD_FADE1);
+      const on = this.shield > 0 && this.alive && near > 0.02; this.shieldMesh.visible = on;
+      if (on) { this.su.uTime.value = t; this.su.uAlpha.value = (0.45 + 0.45 * (this.shield / this.maxShield) + phaseF) * near; this.shieldMesh.rotation.y = t * 0.3; }
     }
   }
   _updateDeath(dt, t) {

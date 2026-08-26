@@ -949,18 +949,18 @@ export class Sky {
       if (!kc) { kc = new THREE.Color(B.keyLow).convertSRGBToLinear(); kcache.set(b.id, kc); }
       this._klC = kc;
     }
-    if (this._sunBase) {
-      const s = this.sunColor.copy(this._sunBase), kc = this._klC;
-      if (kc && this._klE > 0.002) {           // hue toward keyLow, luminance kept (same trick as Lighting)
-        const kk = L(s) / Math.max(1e-4, L(kc)), e = this._klE;
-        s.setRGB(s.r + (kc.r * kk - s.r) * e, s.g + (kc.g * kk - s.g) * e, s.b + (kc.b * kk - s.b) * e);
-      }
-    }
+    // keyLow grades the FILL as well as the key, and that is where the fix actually lives. Measured at
+    // hour 18 in the Isles (sky3-a/shot-cel18-ground): the floor came out 1 : 0.30 : 0.125 in linear —
+    // far more orange than the key ever was, because Lighting hue-forces the key to BIOMES.sun anyway
+    // (luminance-preserving, so keyLow could never reach it) while the ORANGE arrived through the
+    // hemisphere (= sky.ambientColor / groundColor) and the env probe (baked from groundColor+sunColor).
+    // Grading all three at low sun is what stops a region collapsing into one sunset hue.
+    if (this._sunBase) this._hueToward(this.sunColor.copy(this._sunBase), this._klC, this._klE);
     const anT = B && B.ambNight != null ? 1 + (B.ambNight - 1) * b.w * this.night : 1;
     this._anE = (this._anE ?? 1) + (anT - (this._anE ?? 1)) * 0.03;
     if (this._ambBase) {
-      this.ambientColor.copy(this._ambBase).multiplyScalar(this._anE);
-      this.groundColor.copy(this._gndBase).multiplyScalar(this._anE);
+      this._hueToward(this.ambientColor.copy(this._ambBase).multiplyScalar(this._anE), this._klC, this._klE);
+      this._hueToward(this.groundColor.copy(this._gndBase).multiplyScalar(this._anE), this._klC, this._klE);
     }
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
@@ -987,6 +987,15 @@ export class Sky {
     this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
   }
 
+  /** Pull colour `c` toward hue `kc` by `e`, keeping c's own luminance — same trick as Lighting._gradeBiome.
+   *  In place, no allocation (this runs on every colour, every frame). */
+  _hueToward(c, kc, e) {
+    if (!kc || !(e > 0.002)) return c;
+    const lc = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722, lk = kc.r * 0.2126 + kc.g * 0.7152 + kc.b * 0.0722;
+    const k = lc / Math.max(1e-4, lk);
+    return c.setRGB(c.r + (kc.r * k - c.r) * e, c.g + (kc.g * k - c.g) * e, c.b + (kc.b * k - c.b) * e);
+  }
+
   // ---------------- forest sun shafts + ground dapple ----------------
   // Midday under the Whisperwood canopy read as flat near-dusk with zero light play (crit2-forest-b/
   // shot-interior-70). These are FF14's cathedral shafts: camera-facing additive ribbons dropped where
@@ -994,15 +1003,22 @@ export class Sky {
   // LIGHT, not glow: broad and soft, colour = the real key filtered through leaves, peak added radiance
   // ~0.45 per shaft (bloom threshold is 1.2 — nothing here can bloom, per the blob decree), and they
   // fade out entirely when the sun is low (dapple is a high-sun read) or the camera leaves the forest.
-  // Cost: 2 draw calls, ~350 tris, forest-only (group hidden elsewhere).
+  // Cost: 2 draw calls, ~1.4k tris, forest-only (group hidden elsewhere).
+  //
+  // DENSITY IS THE WHOLE FEATURE. At 44 points over a 240 m disc the spacing is ~64 m, so the visible
+  // annulus (the 14..70 m band the fade keeps, across a ~100 deg fov) held ONE shaft on average — which is
+  // why hour 13 still photographed as flat dusk with no light play (sky3-verify/shot-for13-interior).
+  // 190 points is ~4-5 in frame: a floor that is broken by light instead of uniformly dark. Cheap enough
+  // that this is the right lever; do not "fix" a thin read by raising the per-shaft radiance instead —
+  // these are additive and they stack, and ground cover is what they land on (blob decree).
   _buildShafts() {
     const T = this.game.terrain;
-    if (!T?.heightAt) return;
-    this._shaftsBuilt = true;
-    const F = BIOMES.forest;                                    // cx/cz resolved by Biomes at module load
+    if (!T?.heightAt) return;                                 // terrain not up yet: retry next frame
+    this._shaftsBuilt = true;                                 // past here every exit is PERMANENT (the scatter is seeded, so an empty result stays empty) — do not retry per frame
+    const F = BIOMES.forest;                                  // cx/cz resolved by Biomes at module load
     const rnd = mulberry32(((this.game.seed ?? 1) | 0) + 777);
     const pts = [];
-    for (let i = 0; i < 260 && pts.length < 44; i++) {
+    for (let i = 0; i < 1100 && pts.length < 190; i++) {
       const a = rnd() * PI * 2, r = Math.sqrt(rnd()) * 240;
       const g = rnd();                                          // gap acceptance BEFORE the position is used
       const x = F.cx + Math.cos(a) * r, z = F.cz + Math.sin(a) * r;
@@ -1049,7 +1065,7 @@ export class Sky {
           vec3 p = aOrigin + axis * (aCorner.y * uLen) + side * (aCorner.x * (1.0 + aRand * 1.8));
           vUv = aCorner; vRand = aRand;
           float d = length(toCam);
-          vFade = (1.0 - smoothstep(70.0, 150.0, d)) * smoothstep(4.0, 14.0, d);   // gone far away, gone right on top of it
+          vFade = (1.0 - smoothstep(70.0, 150.0, d)) * smoothstep(2.5, 9.0, d);    // gone far away, gone right on top of it
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: /* glsl */`
@@ -1067,7 +1083,7 @@ export class Sky {
         attribute vec3 aOrigin; attribute vec2 aCorner; attribute float aRand;
         varying vec2 vUv; varying float vRand, vFade;
         void main() {
-          vec3 p = aOrigin + vec3(aCorner.x, 0.0, aCorner.y) * (1.3 + aRand * 1.6) + vec3(0.0, 0.06, 0.0);
+          vec3 p = aOrigin + vec3(aCorner.x, 0.0, aCorner.y) * (2.2 + aRand * 3.2) + vec3(0.0, 0.06, 0.0);
           vUv = aCorner; vRand = aRand;
           vFade = 1.0 - smoothstep(60.0, 130.0, distance(cameraPosition, aOrigin));
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -1095,15 +1111,22 @@ export class Sky {
     if (!this._shaftsBuilt) { this._buildShafts(); if (!this._shaftsBuilt) return; }
     if (!this._shaftU) return;
     const bb = this._bb;                                        // region blend cached by _gradeFog this frame
-    const tgt = (bb?.id === 'forest' && bb.w > 0.02 ? bb.w : 0) * THREE.MathUtils.smoothstep(this.sunDir.y, 0.35, 0.60);
+    // 0.28..0.52 (was 0.35..0.60): the shafts now carry the whole afternoon, half-strength by ~15:30 and
+    // gone by ~16:30. They cannot go lower than that — the quad is extruded from the ground ALONG sunDir,
+    // so under a 15-degree sun it lies down and reads as a horizontal beam instead of light coming through
+    // the canopy. A real low-sun shaft needs a different anchor (canopy-height origin, extruded downward).
+    const tgt = (bb?.id === 'forest' && bb.w > 0.02 ? bb.w : 0) * THREE.MathUtils.smoothstep(this.sunDir.y, 0.28, 0.52);
     this._shaftE = (this._shaftE ?? 0) + (tgt - (this._shaftE ?? 0)) * 0.04;
     const on = this._shaftE > 0.015;
     this.shafts.visible = on;
     if (!on) return;
     const su = this._shaftU;
     su.uI.value = this._shaftE; su.uTime.value = t;
-    // sun through leaves: the graded key filtered warm-green, scaled so stacked shafts stay under bloom
-    su.uCol.value.copy(this.sunColor).multiply(this._leafF ??= new THREE.Color(0.85, 1.0, 0.62)).multiplyScalar(0.60);
+    // sun through leaves: the graded key filtered warm-green, scaled so stacked shafts stay under bloom.
+    // 0.50 (was 0.60) buys headroom for the 4x denser scatter: peak per shaft ~0.28 luminance, so it takes
+    // four at full centre-line alpha to reach the 1.2 bloom threshold, and `across*across` means the centre
+    // line is a sliver. Saturate the colour, cap the intensity.
+    su.uCol.value.copy(this.sunColor).multiply(this._leafF ??= new THREE.Color(0.85, 1.0, 0.62)).multiplyScalar(0.50);
   }
 
   dispose() {

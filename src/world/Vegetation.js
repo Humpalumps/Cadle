@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, fbm, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
-import { BIOMES } from './Biomes.js';
+import { BIOMES, RL_EDGE } from './Biomes.js';
 
 /**
  * Vegetation: procedural trees (3 species, instanced, near mesh + baked billboard impostor LOD, wind sway,
@@ -32,19 +32,23 @@ const NO_BIOME = { id: 'meadow', w: 0, k: -1 };
 // world took the same yellow-green instance jitter, so a Frostveil pine, a Void husk and a Whisperwood oak
 // were the same tree wearing the same leaves. It multiplies the jitter (so the per-instance variation
 // survives) and fades in with the biome weight, exactly like the crystal spires' tint.
+// `col` VALUES WERE REBALANCED 2026-08-26: until the iTint fix in EZTrees.js the tint never reached the
+// fragment shader at all, so these numbers had been tuned against a canopy that was ignoring them. Now that
+// they land, forest/dragon/shadowfen are pulled back toward 1.0 — the old triples multiplied a leaf material
+// that is ALREADY region-coloured (LEAF_COL/card assets) and would have rendered near-black.
 // `og` = share of accepts that become species 5 (old-growth, 25-35 m, huge crown cards — see EZTrees.js);
 // `sMax`/`yMax` = per-biome slope/altitude gates (glacier faces and dragon cliffs must stay bare).
 // p 0.45 -> 0.34 for the forest pays for the old-growth crowns with FEWER instances, not more geometry:
 // each old-growth covers ~4x the sky of a sapling, so the canopy closes while the tri count drops
 // (looking south out of the Whisperwood is the heaviest view in the world — it must not grow).
 const BTREE = {
-  forest:    { p: 0.34, sp: [8], og: 0.58, col: [0.45, 0.80, 0.62], gv: 0.72 },   // deep green + subtle teal (accent applied at placement); species 8 is the aspen-free broadleaf pool — the gold-tinted Aspen presets in species 0 were the "random ochre autumn trees"
+  forest:    { p: 0.34, sp: [8], og: 0.58, col: [0.58, 0.86, 0.70], gv: 0.72 },   // deep green + subtle teal (accent applied at placement); species 8 is the aspen-free broadleaf pool — the gold-tinted Aspen presets in species 0 were the "random ochre autumn trees"
   tundra:    { p: 0.34, sp: [3],    col: [0.90, 0.96, 1.06], gv: 0.36, sMax: 0.17, yMax: 34 },   // snow-laden conifers (card_conifer_snow) — winter, never summer green; treeline stops below the glacier massif
   celestial: { p: 0.00, sp: [0],    col: [1.12, 0.98, 0.60] },   // marble isles: broken colonnade, not woodland (Props._buildBiomeClutter)
-  dragon:    { p: 0.07, sp: [6],    col: [0.30, 0.40, 0.35], sMax: 0.30, yMax: 54 },   // DARK alpine pine, LOW ledges only (heart ~44 m; yMax 62->54 clears the high benches; col darkened — 0.42-green still read spring-lime beside the gate, crit2-dragon-b)
+  dragon:    { p: 0.07, sp: [6],    col: [0.68, 0.82, 0.74], sMax: 0.30, yMax: 54 },   // DARK alpine pine, LOW ledges only (heart ~44 m; yMax 62->54 clears the high benches; col darkened — 0.42-green still read spring-lime beside the gate, crit2-dragon-b)
   infernal:  { p: 0.04, sp: [4],    col: [0.92, 0.90, 0.88] },   // charred LEAFLESS snags, sparse — the wastes are mostly vents and ash (col is near-neutral: it tints the trunk impostor, and a charred trunk must stay charcoal)
   lost:      { p: 0.00, sp: [1],    col: [0.88, 0.72, 1.14] },   // standing stones instead
-  shadowfen: { p: 0.32, sp: [7],    col: [0.40, 0.46, 0.28] },   // ALL of it dead: sparse husk canopy over standing water (species 7 keeps the old sparse-leaf dead look; 4 went fully leafless for the infernal spec)
+  shadowfen: { p: 0.32, sp: [7],    col: [0.55, 0.62, 0.42] },   // ALL of it dead: sparse husk canopy over standing water (species 7 keeps the old sparse-leaf dead look; 4 went fully leafless for the infernal spec)
   sunken:    { p: 0.00, sp: [2],    col: [0.48, 0.92, 0.84] },   // coral and wreck, no trees
   void:      { p: 0.00, sp: [4],    col: [0.58, 0.44, 0.94] },   // nothing grows; the rubble hangs instead
 };
@@ -488,6 +492,7 @@ export class Vegetation {
     this._buildRocks(rng, aniso, Q);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildCrystals(rng, aniso);
+    this._buildUnderstory();
     await new Promise((r) => requestAnimationFrame(r));
     this._place(mulberry32(game.seed + 777));
     // ez-tree trees are the DEFAULT (see EZTrees.js): generated variants through the same InstLOD
@@ -638,6 +643,27 @@ export class Vegetation {
       });
     }
   }
+  /** Whisperwood understory: knee-to-waist fern/bracken clumps ABOVE the grass-blade fern cards.
+   *  The wave-2 forest minor was "one fern mesh repeated at uniform density" — Grass.js owns the blade-scale
+   *  card and cannot give it a second SIZE, so the variety has to come from a layer with its own instance
+   *  scale/rotation/tint. 3 crossed quads = 6 triangles, near tier only: ~70 instances in frame, ~0.4 k tris,
+   *  one draw call. Null-safe: no card_fern -> no layer, the grass floor is unchanged. */
+  _buildUnderstory() {
+    const tex = this.game.assets?.tex?.('card_fern') ?? null;
+    this.understory = null;
+    if (!tex) return;
+    const q = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
+    const geo = mergeGeometries([q, q.clone().rotateY(Math.PI / 3), q.clone().rotateY(Math.PI * 2 / 3)]);
+    const nn = geo.getAttribute('normal');
+    for (let i = 0; i < nn.count; i++) nn.setXYZ(i, 0, 1, 0);   // lit like the ground it sits on: no black backside quad
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }),
+      { ...erodeFade(0.42), key: 'understory' });
+    const m = new THREE.InstancedMesh(geo, mat, 8);
+    m.castShadow = false; m.receiveShadow = true; m.name = 'understory-fern';
+    this.game.scene.add(m);
+    this.understory = new InstLOD({ near: [m], nearDist: 38, band: 8, color: true });
+    this.lods.push(this.understory);
+  }
   _buildCrystals(rng, aniso) {
     const U = this.uniforms;
     // FF14 daylight read: deep saturated body, per-facet albedo contrast, internal streaks, thin normalized
@@ -648,14 +674,28 @@ export class Vegetation {
     // sun without becoming the light source.
     const mat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x3a2a9e, emissive: 0x3616e0, emissiveIntensity: 1.0, roughness: 0.30, metalness: 0.0, flatShading: true, clearcoat: 0.48, clearcoatRoughness: 0.30, envMapIntensity: 1.0 }), {
       key: 'crystal', uniforms: { uTime: U.uTime, uSunI: U.uSunI, uSunColor: U.uSunColor, uSunDirV: U.uSunDirV },
-      vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN;', vBegin: `
+      // vITint — THE PER-INSTANCE TINT, CARRIED BY HAND. three r185 puts `#define USE_INSTANCING_COLOR` in
+      // the VERTEX prefix only (WebGLProgram prefixVertex), and `color_pars_fragment` declares `vColor`
+      // under `USE_COLOR || USE_COLOR_ALPHA` — i.e. only when the MATERIAL sets vertexColors. So on an
+      // InstancedMesh with instanceColor but no vertexColors, the tint reaches the vertex stage and dies
+      // there: `#if defined(USE_INSTANCING_COLOR)` in a fragment patch is always FALSE, and three's own
+      // `color_fragment` never multiplies it in either. Every crystal in the world was therefore rendering
+      // the material's base aether violet — which is why "Frostveil ice shards read as royal sapphire, not
+      // glacial ice" survived a wave-1 fix AND a wave-2 fix: both edited a tint that could not arrive.
+      // (Rocks were never affected — that material sets vertexColors:true and its geometry has a colour
+      // attribute.) Reading `instanceColor` in the vertex shader and forwarding it costs one varying.
+      vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN; varying vec3 vITint;', vBegin: `
         #ifdef USE_INSTANCING
           vPh = fract(dot(instanceMatrix[3].xz, vec2(0.137, 0.291)));
         #else
           vPh = 0.0;
         #endif
+        vITint = vec3(-1.0);
+        #ifdef USE_INSTANCING_COLOR
+          vITint = instanceColor;
+        #endif
         vLy = position.y; vFN = objectNormal;`,
-      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN;
+      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN; varying vec3 vITint;
         float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
         vec3 gTint = vec3(0.42, 0.30, 1.00);`,
       fMap: `{
@@ -663,8 +703,8 @@ export class Vegetation {
         // used to be hardcoded aether violet reads off this, so an ice shard, a coral fan and a void
         // splinter stop looking like the same meadow crystal. Normalising to the brightest channel takes
         // the hue and leaves the value alone: saturate the colour, never raise it (CLAUDE.md law).
-        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
-          gTint = vColor.rgb;
+        if (vITint.r >= 0.0) {
+          gTint = vITint;
           // SATURATE, then normalise. Normalising alone keeps the hue but NOT the chroma, and a pale
           // instance colour — the meadow's own cyan-to-magenta jitter runs up to (0.9, 0.85, 1.0) — comes
           // out near-white, so the glow tone-maps to a white ball instead of its colour. The gate caught
@@ -673,8 +713,8 @@ export class Vegetation {
           float tL = dot(gTint, vec3(0.2126, 0.7152, 0.0722));
           gTint = max(vec3(0.0), tL + (gTint - tL) * 2.2);
           gTint /= max(max(gTint.r, max(gTint.g, gTint.b)), 1e-3);
-        #endif
-        float fh = facetHash(vFN);                                                       // stable per-facet value (flat normals)
+        }
+        float fh = facetHash(vFN);                                                    // stable per-facet value (flat normals)
         float tipT = clamp(vLy / 2.2, 0.0, 1.0);
         diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
         diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
@@ -683,11 +723,10 @@ export class Vegetation {
         // body swaps its deep violet albedo for pale glacial, so daylight facets read frost instead of
         // opaque royal sapphire (wave-1+2 tundra verdicts). Facet steps + growth banding stay, in white.
         // The translucent read comes from tint SATURATION (rim/backlight in the pale ice hue), not emissive.
-        #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
-        float paleT = smoothstep(0.86, 0.96, dot(vColor.rgb, vec3(0.2126, 0.7152, 0.0722)));
+        float paleT = vITint.r < 0.0 ? 0.0 : smoothstep(0.86, 0.96, dot(vITint, vec3(0.2126, 0.7152, 0.0722)));
         diffuseColor.rgb = mix(diffuseColor.rgb,
           vec3(0.72, 0.80, 0.90) * (0.55 + 0.45 * fh) * (0.88 + 0.18 * sin(vLy * 6.0 + fh * 17.0)), paleT);
-        #endif }`,
+        }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
         vec3 tintC = gTint;
         float pulse = 0.78 + 0.22 * sin(uTime * 1.4 + vPh * 6.2832);
@@ -725,7 +764,14 @@ export class Vegetation {
     // ---- trees
     const treeSpec = this.treeSets.map((s) => s.spec);
     for (let gx = -half; gx < half; gx += 7) for (let gz = -half; gz < half; gz += 7) {
-      const x = gx + (rng() - 0.5) * 6, z = gz + (rng() - 0.5) * 6; if (!ok(x, z)) continue;
+      // DE-ROWED LATTICE. One candidate per 7 m cell jittered by only +-3 m leaves 1 m of dead space on
+      // every cell boundary, and the eye reads that residual grid as ORCHARD ROWS the moment density gets
+      // high enough to see two cells at once — the wave-2 forest deficiency, and plainly visible around the
+      // Vale plaza too (tools/out/veg3-before/shot-vale-aetheryte-up.png). Full-cell jitter plus a half-cell
+      // stagger on alternate columns turns the square lattice into a hex-ish one: no axis-aligned rows left
+      // to see. Same cost, same instance count, same determinism.
+      const x = gx + (rng() - 0.5) * 7, z = gz + ((((gx / 7) | 0) & 1) ? 3.5 : 0) + (rng() - 0.5) * 7;
+      if (!ok(x, z)) continue;
       const r0 = Math.hypot(x, z);
       // aetheryte plaza: 22 m, not 14 — a gnarled crown is ~7 m wide, so a legally-placed trunk at 14-16 m
       // still tangled its canopy through the pedestal + crystal (crit2-vale-c/shot-aetheryte-tree-up).
@@ -759,7 +805,12 @@ export class Vegetation {
         // leak in wherever the weight dipped — which is exactly the "living green trees all over the
         // Infernal Wastes" spec violation. Below w 0.02 there is no bTree and home logic applies as before.
         species = bTree.sp[(u * bTree.sp.length) | 0];
-        if (bTree.og && rng() < bTree.og * (0.35 + 0.65 * bt.w)) species = 5;   // old-growth share keeps a floor at the edges: the western band was ALL uniform young trees (w-proportional share ~0 there), which is half of the orchard-rows read
+        // Old-growth share at the EDGE, not just the heart: at w~0.4 the old floor gave 0.61 of the heart
+        // share, so the western band was mostly uniform young trees — the other half of the orchard-rows
+        // read (the lattice above is the first half). 0.58 + 0.42w is heart-identical (w=1 -> 1.0) and
+        // hands the west band 0.75: giants clump, and a giant costs FEWER triangles than the saplings it
+        // replaces (see SPECIES_TUNE[5] in EZTrees.js), so extending old-growth west is a tri WIN.
+        if (bTree.og && rng() < bTree.og * (0.58 + 0.42 * bt.w)) species = 5;
       }
       else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
       const sp = treeSpec[species] ?? treeSpec[species === 3 || species === 6 ? 0 : 1];
@@ -777,6 +828,26 @@ export class Vegetation {
       // EZTrees' own neutral jitter so this change cannot shift the spawn meadow's read.
       this.trees.push(bTree ? { x, y, z, species, scale, r, c: [C.r, C.g, C.b] } : { x, y, z, species, scale, r });
       col.add({ type: 'capsule', a: new THREE.Vector3(x, y - 1, z), b: new THREE.Vector3(x, y + sp.colH * scale, z), r });
+    }
+    // ---- forest understory (see _buildUnderstory). Scanned over the Whisperwood's bounding box only —
+    // a whole-map grid here would add ~110 k biomeBlend calls to boot for a layer that exists in one region.
+    if (this.understory) {
+      const F = BIOMES.forest, x0 = F.cx - RL_EDGE, x1 = F.cx + RL_EDGE, z0 = F.cz - RL_EDGE, z1 = F.cz + RL_EDGE;
+      for (let gx = x0; gx < x1; gx += 6) for (let gz = z0; gz < z1; gz += 6) {
+        const x = gx + (rng() - 0.5) * 6, z = gz + ((((gx / 6) | 0) & 1) ? 3 : 0) + (rng() - 0.5) * 6;
+        if (!ok(x, z)) continue;
+        const bu = B(x, z); if (bu.id !== 'forest' || bu.w < 0.22) continue;
+        // clumped, never a carpet: the point is patches of bracken between bare duff, not a second lawn
+        const clump = smoothstep(0.34, 0.72, 0.5 + 0.5 * fbm(x * 0.021, z * 0.021, { octaves: 3, seed: 57 }));
+        if (rng() > 0.62 * clump * bu.w) continue;
+        if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
+        const y = terrain.heightAt(x, z); if (y < wl + 0.4 || terrain.slopeAt(x, z) > 0.42) continue;
+        const s = 0.55 + rng() * 1.45, lean = 0.22;                                  // 0.55-2.0 m: the size spread the grass card cannot have
+        E.set((rng() - 0.5) * lean, rng() * Math.PI * 2, (rng() - 0.5) * lean); Qt.setFromEuler(E);
+        P.set(x, y - 0.06 * s, z); S.set(s * (0.8 + rng() * 0.5), s, s * (0.8 + rng() * 0.5)); M.compose(P, Qt, S);
+        const g = 0.62 + rng() * 0.5; C.setRGB(g * (0.72 + rng() * 0.22), g, g * (0.66 + rng() * 0.3));   // deep green .. teal, matching BTREE.forest
+        this.understory.add(M, C);
+      }
     }
     // ---- rocks
     for (let gx = -half; gx < half; gx += 10) for (let gz = -half; gz < half; gz += 10) {

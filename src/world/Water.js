@@ -225,7 +225,10 @@ void main() {
     // grazing views magnify the half-res RT: hard silhouettes (trunks, dunes) turned into stair-stepped blocks.
     // Mip bias alone can't fix an LOD-0 magnification, so smear 3 taps vertically — the axis planar mirrors
     // stretch along — with a width that grows toward grazing and vanishes head-on.
-    float roff = (1.0 - NdotV) * 0.0045;
+    // widened at night: a small VERY bright reflected source (the fen waystone beacon) is a thin vertical
+    // streak in a half-res RT, and LOD-0 magnification stair-steps it (wave-2 minor). The smear axis is the
+    // axis the steps run along, so 3x the width at night dissolves them; the night sky itself is smooth.
+    float roff = (1.0 - NdotV) * 0.0045 * (1.0 + uNight * 1.8);
     vec3 rtex = (texture2D(uReflect, clamp(ruv, 0.001, 0.999), rbias).rgb
                + texture2D(uReflect, clamp(ruv + vec2(0.0, roff), 0.001, 0.999), rbias).rgb
                + texture2D(uReflect, clamp(ruv - vec2(0.0, roff), 0.001, 0.999), rbias).rgb) * (1.0 / 3.0);
@@ -299,37 +302,59 @@ void main() {
   vec2 pf = mat2(0.31, -0.95, 0.95, 0.31) * p * 1.014 + (n1.rg * 2.0 - 1.0) * 1.4;
   float fp = n2.a * 0.6 + texture2D(uNormal, pf * 0.07 + vec2(-0.02, 0.035) * t).b * 0.7;
   float distF = smoothstep(60.0, 200.0, dist);
-  // far-shore wobble damped: at distance the +-7 cm isoline chop turned on/off per fp period = the "dashed line"
-  float iso = d0 + (fp - 0.62) * 0.07 * (1.0 - 0.7 * distF) + 0.035 * sin(t * 1.3 + fp * 9.0);
+  // HARD hand-over to a clean continuous hairline past ~90 m. Damping the far-field noise was not enough
+  // (wave-2: "the right half still resolves into evenly spaced white dashes"): ANY per-pixel modulation of
+  // a band that is 1-2 px wide aliases into evenly spaced dashes, whichever term it comes from. Past that,
+  // the isoline is smooth, the lace is solid, and the LINE FADES BY AMPLITUDE instead — which is also what
+  // kills the island's uniform white collar. You cannot resolve foam lace at 150 m anyway.
+  float far = smoothstep(70.0, 150.0, dist);
+  float iso = d0 + ((fp - 0.62) * 0.07 + 0.035 * sin(t * 1.3 + fp * 9.0)) * (1.0 - far);
   // band width = max(~6 screen px, 9 cm of depth), capped at 55 cm: a hairline at distance, a believable wash at your
   // feet, and never the whole shelf even where the bed is nearly flat. Far shores thin toward a soft bright
   // edge instead of holding a uniform 55 cm skirt (the island wore it like a white collar).
-  float bandW = clamp(fwD * 6.0, 0.09, 0.55) * (1.0 - 0.65 * distF);
+  // ...and a SCREEN-SPACE FLOOR on the band, which is what finally kills the dashes. The band's on-screen
+  // width is bandW / |grad depth|, and the baked bed is bilinear, so its gradient is piecewise constant per
+  // texel: the width steps at every texel edge. Thinning the far band by 65% then pushed the steep steps
+  // below one pixel — the line vanished there and survived elsewhere, i.e. evenly spaced dashes locked to
+  // the height-texture grid. fwD is one pixel of depth, so max(..., fwD * 2.5) guarantees ~2.5 px of line
+  // everywhere: thickness still varies, but it can never break. Costs nothing (fwD is already computed).
+  float bandW = max(clamp(fwD * 6.0, 0.09, 0.55) * (1.0 - 0.65 * distF), fwD * 2.5);
   float lace = texture2D(uNormal, p * 0.31 + vec2(0.05, -0.04) * t).b;
   float holes = 0.25 + 0.75 * smoothstep(0.12, 0.58, lace * 0.6 + fp * 0.4);  // lace texture: bright clumps + gaps, never fully solid
-  // far away the clump/gap pattern is sub-pixel; the old flat 0.8 read as a uniform white collar and the
-  // surviving tile fundamental as even dashes — amplitude-modulate with the macro field (217 m period, no
-  // visible repeat) so far foam swells and thins over tens of metres like real windward/leeward wash
-  holes = mix(holes, clamp(0.15 + 1.3 * macro, 0.0, 1.0), distF);
+  // far away the clump/gap pattern is sub-pixel: go SOLID (no gaps to alias into dashes) and let the
+  // macro field (217 m period) only swell/thin the line gently, well above zero so it never breaks
+  holes = mix(holes, 0.72 + 0.28 * macro, far);
   float foam = (1.0 - smoothstep(0.0, bandW, iso)) * holes;                   // the contact lace (land side is clipped by the shore alpha)
   float arc = smoothstep(0.10, 0.03, abs(fract(iso * 2.2 + fp * 0.3 - t * 0.09) - 0.4) - 0.05);   // wash fronts sliding shoreward
   foam += arc * smoothstep(0.75, 0.15, iso) * smoothstep(0.5, 0.82, fp) * 0.5 * (1.0 - smoothstep(60.0, 170.0, dist));
   // sparse wave-crest lace in open water. 0.30/0.45 put a white cap on roughly a third of the lake at any
   // instant and read as soap suds from the shore; a lake this calm should only lace the sharpest crests.
   foam += smoothstep(0.62, 0.92, vCrest / uSumAmp) * smoothstep(0.62, 0.88, fp) * 0.16;
-  // white-water rapids (sunken cascade gorge): elongated foam streaks advected down-gorge. Flow direction
-  // is radially outward (the gorge descends from the pass at low r0 to the Court at the region centre).
+  // White-water rapids (sunken cascade gorge): elongated foam streaks running downhill.
+  // Gate them on the BED SLOPE, not on depth. The gorge is 0.91 m deep at its deepest point (wave-3 kernel
+  // scan), so the old shallow-water test was true EVERYWHERE and painted the whole region one silver sheet.
+  // Bed slope separates it cleanly: p50 over wet cells is 0.006, p90 is 0.147 — flats vs cut channels differ
+  // by 20x. So: still plazas on the terraces, white water only in the channels and down the risers.
   if (uRapid > 0.001) {
-    vec2 fd2 = normalize(vWorld.xz + vec2(1e-3));
+    float e = 3.0 * uInvSize;
+    vec2 huv = vWorld.xz * uInvSize + 0.5 + uHeightOffset;
+    vec2 gb = vec2(texture2D(uHeight, huv + vec2(e, 0.0)).r - texture2D(uHeight, huv - vec2(e, 0.0)).r,
+                   texture2D(uHeight, huv + vec2(0.0, e)).r - texture2D(uHeight, huv - vec2(0.0, e)).r);
+    float fast = smoothstep(0.025, 0.13, length(gb) * (1.0 / 6.0));   // gb spans 6 m of world
+    // Rotated flow frame is safe HERE (unlike the lava skin, which had to stay world-aligned): the frame's
+    // singularity is where the gradient vanishes, and that is exactly where fast is 0, so the vortex the
+    // lava probe found can never become visible.
+    vec2 fd2 = -gb / max(length(gb), 1e-4);                                              // downstream
     vec2 q = vec2(dot(p, fd2), dot(p, vec2(-fd2.y, fd2.x)));
     float s1 = texture2D(uNormal, vec2(q.x * 0.020 - t * 0.055, q.y * 0.11)).b;         // ~2.8 m/s downstream
     float s2 = texture2D(uNormal, vec2(q.x * 0.033 - t * 0.115 + 0.37, q.y * 0.19 + 0.5)).b;
-    float streak = smoothstep(0.52, 0.88, s1 * 0.62 + s2 * 0.55);
-    // streaks live in the fast shallows (channel + shelf), calm out in the deeper court basin
-    foam += streak * uRapid * smoothstep(1.7, 0.45, d0) * 0.7;
+    float streak = smoothstep(0.50, 0.86, s1 * 0.62 + s2 * 0.55);
+    foam += uRapid * fast * (streak * 0.85 + smoothstep(0.26, 0.04, d0) * 0.35);        // streaks + froth against the bank
   }
-  foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
+  // far field: the line fades by AMPLITUDE (a dim continuous hairline), never by punching gaps in it
+  foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - 0.55 * far) * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow);
   vec3 foamCol = vec3(0.8) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
+  foamCol /= (1.0 + dot(foamCol, LUMA) * 0.35);   // blob law on the lace: golden-hour sun radiance pushed this past the bloom threshold
   col = mix(col, foamCol, foam);
 
   // ---- fog (matches three's FogExp2 / Fog on view depth). AIR fog — it never applies under the surface:
@@ -394,12 +419,24 @@ void main() {
     // bank light (wave-2 minor "lava casts no light on its banks"): the terrain rock is unlit by the pool, so
     // fake the contact-line heat water-side — the crust EDGE (shallow lava) brightens into a saturated ember
     // band that reads as light pooling where lava meets rock. Hue-preserving luma cap: fire, never a white rim.
-    float bank = 1.0 - smoothstep(0.10, 1.1, d0);
+    // 1.1 m was far too wide for pools this shallow: the ember band swallowed the whole rim and the pool
+    // read inside-out (bright donut, dark middle). 0.45 m hugs the contact line, so the crust keeps the
+    // middle and the heat reads as a hot shoreline.
+    float bank = 1.0 - smoothstep(0.05, 0.45, d0);
     vec3 bankGlow = vec3(1.0, 0.30, 0.03) * bank * (0.42 + 0.18 * sin(uTime * 0.8 + vWorld.x * 0.6 + vWorld.z * 0.45));
-    bankGlow *= min(1.0, 0.50 / max(dot(bankGlow, LUMA), 1e-4));
+    bankGlow *= min(1.0, 0.42 / max(dot(bankGlow, LUMA), 1e-4));
     lcol += bankGlow;
+    // ...and put the heat ON THE ROCK. The water mesh already covers 0.6 m of DRY ground past the shoreline
+    // (the discard is at depth < -0.6); until now uLava forced that skirt fully opaque, so the pool visibly
+    // spilled onto the bank. Instead, fade it out as a translucent saturated ember wash: a heat decal that
+    // reads as light pooling on the rock, which a pure emissive surface can never do. No light source, no
+    // shadow cost, and it dies within 0.6 m so it cannot become a glowing halo.
+    float dryS = clamp(-depth * (1.0 / 0.6), 0.0, 1.0);   // 0 at the waterline -> 1 at the discard edge
+    vec3 heat = vec3(1.0, 0.30, 0.04) * (0.45 + 0.17 * sin(uTime * 0.8 + vWorld.x * 0.6 + vWorld.z * 0.45));
+    heat *= min(1.0, 0.50 / max(dot(heat, LUMA), 1e-4));  // hue-preserving cap: fire, never a white rim
+    lcol = mix(lcol, heat, smoothstep(0.0, 0.15, dryS));
     col = mix(col, lcol, uLava);
-    alpha = mix(alpha, 1.0, uLava);
+    alpha = mix(alpha, 1.0 - smoothstep(0.0, 0.85, dryS), uLava);
   }
   if (uDebug > 0.5) {   // 1 reflection, 2 refraction grab, 3 depth, 4 foam, 5 normal
     if (uDebug < 1.5) col = texture2D(uReflect, clamp(rp.xy / rp.w, 0.0, 1.0)).rgb;
@@ -419,18 +456,19 @@ void main() {
 // water surface) and hue-preserving-capped — the blob law: silver foam, never clipped white.
 const FALLS_VERT = /* glsl */`
 attribute vec2 aLocal; attribute float aKind;
-varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ;
+varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ; varying vec2 vWxz;
 void main() {
   vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
-  vUvM = uv; vLocal = aLocal; vKind = aKind;
+  vUvM = uv; vLocal = aLocal; vKind = aKind; vWxz = wp.xz;
   vec4 mv = viewMatrix * vec4(wp, 1.0); vViewZ = -mv.z;
   gl_Position = projectionMatrix * mv;
 }`;
 const FALLS_FRAG = /* glsl */`
 uniform sampler2D uTex; uniform float uTime;
+uniform sampler2D uHeight; uniform float uInvSize; uniform float uHeightOffset;
 uniform vec3 uSunDir; uniform vec3 uSunRad; uniform vec3 uAmbient; uniform vec3 uMoonRad;
 uniform vec3 uFogColor; uniform vec3 uFogParams;
-varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ;
+varying vec2 vUvM; varying vec2 vLocal; varying float vKind; varying float vViewZ; varying vec2 vWxz;
 void main() {
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   float t = uTime;
@@ -455,6 +493,10 @@ void main() {
     float s2 = texture2D(uTex, vec2(ang * 0.3183 + 0.5, r * 0.7 - t * 0.10)).b;
     float f = smoothstep(0.34, 0.72, s1 * 0.6 + s2 * 0.55);
     a = (0.25 + 0.75 * f) * (1.0 - smoothstep(0.35, 1.0, r));
+    // the ring is a flat disc on the pool, so where the pool ends it must end too: the wave-3 vista had
+    // white foam discs sitting on dry sand wherever a fall's foot was near a shoreline
+    float bed = texture2D(uHeight, vWxz * uInvSize + 0.5 + uHeightOffset).r;
+    a *= smoothstep(-0.02, 0.14, -bed);
   } else {
     // spray mist: soft breathing veil, hazier and cooler than the foam — matte, capped, never washes white
     vec2 c = vLocal * 2.0 - 1.0;
@@ -578,32 +620,39 @@ export class Water {
     for (let z = -half + 12; z < half; z += 24) for (let x = -half + 12; x < half; x += 24)
       if (T.biomeAt(x, z) === 'sunken') { if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
     if (x1 < x0) return;
-    // 2) fall sites: wet cells with a >=2.4 m wall within 8 m (the face the water pours off)
+    // 2) fall sites: wet cells with a >=2.4 m wall within 8 m (the face the water pours off).
+    //    Order matters for boot cost — biomeAt is ~20x cheaper than the 8 heightAt probes, and the bbox
+    //    covers a lot of neighbouring region, so it goes first. 8 m step: the narrowest fall is 9 m wide.
+    const t0 = performance.now();
     const DIRS = []; for (let i = 0; i < 8; i++) DIRS.push([Math.cos(i * Math.PI / 4), Math.sin(i * Math.PI / 4)]);
     const cand = [];
-    for (let z = z0; z <= z1; z += 5) for (let x = x0; x <= x1; x += 5) {
+    for (let z = z0; z <= z1; z += 8) for (let x = x0; x <= x1; x += 8) {
+      if (T.biomeAt(x, z) !== 'sunken') continue;
       if (this._bed(x, z) >= WLv - 0.15) continue;
       let best = null;
       for (const D of DIRS) {
         const hw = this._bed(x + D[0] * 8, z + D[1] * 8) - WLv;
         if (hw >= 2.4 && (!best || hw > best[2])) best = [D[0], D[1], hw];
       }
-      if (best && T.biomeAt(x, z) === 'sunken') cand.push([x, z, best[0], best[1], best[2]]);
+      if (best) cand.push([x, z, best[0], best[1], best[2]]);
     }
     if (!cand.length) return;
     cand.sort((a, b) => b[4] - a[4]);                       // tallest walls first (the pass-side staircase)
     const picks = [];
     for (const c of cand) {
-      if (picks.length >= 12) break;
-      if (picks.every((p) => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 > 30 * 30)) picks.push(c);
+      if (picks.length >= 16) break;
+      if (picks.every((p) => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 > 26 * 26)) picks.push(c);
     }
-    // 3) resolve each pick: shoreline foot, wall height, drape profile
-    const march = (sx, sz, dx, dz, target) => { for (let d = 0.25; d <= 16; d += 0.25) if (this._bed(sx + dx * d, sz + dz * d) >= target) return d; return 16; };
+    // 3) resolve each pick: shoreline foot, wall height, drape profile.
+    //    march is capped at 6 m: the curtain may hug the wall, never lean out into a flat sheet.
+    const march = (sx, sz, dx, dz, target) => { for (let d = 0.25; d <= 6; d += 0.25) if (this._bed(sx + dx * d, sz + dz * d) >= target) return d; return 6; };
     const falls = [];
     for (const [cx, cz, dx, dz] of picks) {
       const sd = march(cx, cz, dx, dz, WLv);
       const sx = cx + dx * sd, sz = cz + dz * sd;           // where the water meets the wall
-      let hw = 0; for (let d = 2; d <= 12; d += 1) hw = Math.max(hw, this._bed(sx + dx * d, sz + dz * d) - WLv);
+      // height from the SAME 6 m window the drape can march across. Reading it out to 12 m let a gentle bank
+      // claim a 10 m curtain whose top row hung metres out in the air above the slope.
+      let hw = 0; for (let d = 1; d <= 6; d += 0.5) hw = Math.max(hw, this._bed(sx + dx * d, sz + dz * d) - WLv);
       hw = Math.min(Math.max(hw, 2.2), 15);
       falls.push({ sx, sz, dx, dz, tx: -dz, tz: dx, hw, w: Math.min(4.5 + hw, 14) });
     }
@@ -616,7 +665,9 @@ export class Water {
       const hTot = f.hw + 0.45, base = pos.length / 3;
       for (let i = 0; i <= ROWS; i++) {
         const fy = i / ROWS, y = WLv + f.hw - hTot * fy;
-        const dWall = y > WLv ? march(f.sx, f.sz, f.dx, f.dz, y) : 0;
+        // never lean out more than 0.85x the drop: a face that recedes further than that gets a free-falling
+        // plume instead of a sheet laid flat on the slope (the wave-3 "white paper triangles on the sand")
+        const dWall = y > WLv ? Math.min(march(f.sx, f.sz, f.dx, f.dz, y), f.hw * 0.85) : 0;
         const proud = 0.35 + 1.3 * fy * fy;                 // plume leans out toward the foot
         for (let j = 0; j <= COLS; j++) {
           const fx = j / COLS, off = (fx - 0.5) * f.w;
@@ -665,13 +716,15 @@ export class Water {
     const mat = new THREE.ShaderMaterial({
       vertexShader: FALLS_VERT, fragmentShader: FALLS_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false, lights: false,
       // shared ENTRY objects: the water surface's _updateUniforms (runs every frame, before renderOrder 6) keeps these fresh
-      uniforms: { uTex: { value: this.normalTex }, uTime: u.uTime, uSunDir: u.uSunDir, uSunRad: u.uSunRad, uAmbient: u.uAmbient, uMoonRad: u.uMoonRad, uFogColor: u.uFogColor, uFogParams: u.uFogParams },
+      uniforms: { uTex: { value: this.normalTex }, uTime: u.uTime, uSunDir: u.uSunDir, uSunRad: u.uSunRad, uAmbient: u.uAmbient, uMoonRad: u.uMoonRad, uFogColor: u.uFogColor, uFogParams: u.uFogParams,
+        uHeight: u.uHeight, uInvSize: u.uInvSize, uHeightOffset: u.uHeightOffset },
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'water-falls'; mesh.renderOrder = 6; mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = true;
     mesh.raycast = () => {};
     this.falls = mesh; this.fallSites = falls;              // fallSites: exposed for Audio (roar emitters) / VFX (spray bursts)
     g.scene.add(mesh);
+    console.log(`[water] cascades: ${falls.length} falls, ${idx.length / 3} tris, scan ${(performance.now() - t0) | 0} ms`);
   }
 
   // Shadowfen duckweed/scum: matte card patches hugging the shore shallows (wave-1 critic: peat murk needs a

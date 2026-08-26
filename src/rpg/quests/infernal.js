@@ -44,7 +44,7 @@ export default [
     name: 'The Foreman of the Maw',
     giver: 'stele:infernal',
     text: {
-      offer: 'The drakes are not wildlife here. One of them keeps the shift, and it is the reason the channels get recut every dawn — the imps are only its hands. Kill it and the foundry stops. Then go west and get wet: the alloy went out of here by water, and the Drowned Court took delivery.',
+      offer: 'The drakes are not wildlife here. One of them keeps the shift, and it is the reason the channels get recut every dawn — the imps are only its hands. Kill it and the foundry stops. Then go west into the spray: the alloy went out of here by water, and the Drowned Court took delivery at the bottom of the falls.',
       progress: 'The drake that keeps the shift, over the Cinder Maw. Then west, to the Drowned Court.',
       done: 'The flows are already going crooked. Whatever door that alloy was for, it is going to be finished somewhere else — follow it down the falls.',
     },

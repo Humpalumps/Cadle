@@ -516,8 +516,8 @@ reintroduces the string form, drops the module-worker call, imports three into t
 `heightAt` wiring.
 
 `terrain.heightAt` is ground truth for the entire game. Snapshot it before touching the kernel — seed 1337
-must give `{"n":2695,"sum":162867.162973}`
-(**re-baselined 2026-08-23.** The old figure here, 164490.108949, was stale: the ten-biome pass moved the
+must give `{"n":2695,"sum":164219.761892}`
+(**re-baselined 2026-08-26** — the wave-3 kernel pass moved sunken/void/lost/tundra deliberately; previous figure 162867.162973. Earlier note: **re-baselined 2026-08-23.** The old figure here, 164490.108949, was stale: the ten-biome pass moved the
 height kernels — `bhTundra`'s basin alone went 5.2 -> 3.35 — so this check had been FAILING on unmodified
 `main`. Verified identical on `main` @ 5e52a14 and on the hitch-wave branch. Re-baseline it deliberately
 whenever a kernel changes, and say so here; a snapshot that cries wolf is one nobody reads.):

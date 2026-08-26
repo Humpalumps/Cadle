@@ -73,7 +73,12 @@ const LEAF_MAP = {
 // 4.19 M / 3.88 M tris, trees being 2.17 M of it. The near tier is area-scaled, so this is the dial: 175 m
 // holds the frame around 3.6 M against the 4 M budget, and the impostor tier — what you are actually looking
 // at past ~140 m — carries the treeline unchanged out to 780 m.
-const NEAR = 175, FAR = 780;                // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
+// 2026-08-26: 175 -> 163. Measured at the Whisperwood heart looking SOUTH (the heaviest view in the world,
+// tools/out/veg3-runB): 4.65 M tris against a 4 M budget, while the same camera facing NORTH is 3.48 M — the
+// view is entirely near-tier-bound. The near tier is area-scaled, so 163/175 squared is ~13% fewer real
+// trees, and the band it gives up (163-175 m) is well past the ~140 m where the 3-quad impostor is already
+// what you are looking at. No visual change, ~0.5 M tris back.
+const NEAR = 163, FAR = 780;              // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
 const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
 const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
                                             // band fade rides on distance — the fade stepped instead of gliding)
@@ -143,6 +148,22 @@ export function buildEZTrees(game, trees, vegetation) {
     vBegin: 'vFade = aFade;',
     fHead: 'varying float vFade; float ezDT(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
     fAlpha: 'if (vFade < 0.999 && ezDT(gl_FragCoord.xy) <= 1.0 - vFade) discard;',
+  };
+  // PER-INSTANCE LEAF TINT, CARRIED BY HAND — three r185 drops it on the floor otherwise. `#define
+  // USE_INSTANCING_COLOR` is emitted into the VERTEX prefix only (WebGLProgram prefixVertex), and
+  // `color_pars_fragment` declares `vColor` under `USE_COLOR || USE_COLOR_ALPHA` — which comes from the
+  // MATERIAL's vertexColors flag, not from instanceColor. So on an InstancedMesh with instanceColor and
+  // no vertexColors, three's own `color_fragment` never multiplies the tint in and a fragment `#ifdef
+  // USE_INSTANCING_COLOR` is always false. Every `tr.c` region leaf colour Vegetation._place computes
+  // (BTREE[].col: Whisperwood's deep teal-green, the enchanted blue-teal accent, the Frostveil cool cast)
+  // was being uploaded and discarded — which is why the Whisperwood canopy renders as flat spring lime.
+  // Setting vertexColors:true would "work" and then read a non-existent `color` attribute as (0,0,0) —
+  // black leaves. One varying is the whole fix, and it costs nothing.
+  const iTint = {
+    vHead: 'varying vec3 vITint;',
+    vBegin: 'vITint = vec3(1.0);\n#ifdef USE_INSTANCING_COLOR\nvITint = instanceColor;\n#endif',
+    fHead: 'varying vec3 vITint;',
+    fMap: '#include <map_fragment>\ndiffuseColor.rgb *= vITint;',
   };
 
   // Low-poly tune: raw presets are ~50-100k tris per tree (148M in frame, 29 fps measured).
@@ -246,12 +267,29 @@ export function buildEZTrees(game, trees, vegetation) {
     const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: assetLeaf ?? t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       color: assetLeaf ? 0xffffff : (LEAF_COL[species] ?? t.leavesMesh.material.color?.clone() ?? 0xffffff),   // the painted card carries its own colour — ez's preset green would re-summer the snow
-    }), mergePatch(erodeNear, sway, {
+    }), mergePatch(erodeNear, sway, iTint, {
       // Canopy-sphere shading: raw card normals point wherever the card faces, so a sun-aligned 10 m card
       // lit uniformly bright next to a dark neighbour read as long two-tone "plastic strip" slashes across
       // the crown (crit2-forest-b/shot-heart-side). Pulling normals toward up shades the canopy like a
       // volume — same trick Vegetation.cards() uses spherical normals for.
-      vNormal: 'vec3 objectNormal = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.55));',
+      vNormal: 'vec3 objectNormal = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.68));',
+      // GRAZING-ANGLE EROSION — the other half of the plastic-strip bug, and the half the shading fix
+      // could not reach. A 6-10 m old-growth crown card seen near edge-on projects to a long thin WEDGE:
+      // a hard-edged bright slash lying across the canopy (crit2-forest verdict "shredded plastic strips";
+      // reproduced at tools/out/veg3-before/shot-forest-south.png, crop-crown). No amount of normal
+      // blending fixes it, because the artefact is the card's SILHOUETTE, not its shading.
+      // So a card dissolves as it turns edge-on: the alpha cutout climbs toward 1 as |N.V| -> 0, and the
+      // neighbouring cards (3 random orientations per crown) cover the hole. Zero triangles, zero draw
+      // calls, and it is the raw GEOMETRIC card normal that drives it — vNormal above is already bent
+      // toward up, which is why this carries its own varying.
+      vHead: 'varying vec3 vCardN;',
+      vBegin: `{ vec3 cardN0 = normal;
+        #ifdef USE_INSTANCING
+        cardN0 = mat3(instanceMatrix) * cardN0;
+        #endif
+        vCardN = normalMatrix * cardN0; }`,
+      fHead: 'varying vec3 vCardN;',
+      fAlpha: 'if (diffuseColor.a < mix(1.01, 0.42, smoothstep(0.09, 0.34, abs(dot(normalize(vCardN), normalize(vViewPosition)))))) discard;',
     }));
     // Impostor: three quads at 60 degrees, not two at 90. A 2-quad cross has two viewing azimuths per
     // rotation where one card is edge-on and the silhouette collapses to a single flat plane — the
@@ -302,7 +340,7 @@ export function buildEZTrees(game, trees, vegetation) {
       // one bake per frame: a burst of six RT renders was a visible boot hitch (perf audit 2026-08-20)
       await new Promise((res) => requestAnimationFrame(res));
       v.impMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bakeImpostor(v), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
-        { ...impFade, key: 'eztree-impostor' });
+        mergePatch(impFade, iTint, { key: 'eztree-impostor' }));
       const n = list.length;
       // static per-instance data, written once; rebucketing rewrites the mesh instance buffers from it
       const mats = new Float32Array(n * 16), cols = new Float32Array(n * 3), xz = new Float32Array(n * 2);

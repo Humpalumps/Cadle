@@ -4,7 +4,7 @@
  "kpis": [
   {
    "label": "wave",
-   "value": "3 — redesign + loop-backs"
+   "value": "3 — terrain landed, builders re-running"
   },
   {
    "label": "regions at bar",
@@ -153,7 +153,7 @@
    "name": "🐺 Creature pipeline (all 23 monsters + NPCs)",
    "files": "enemies/* via img2threejs",
    "status": "building",
-   "gap": "USER DIRECTIVE: bestiary + NPCs are a top weakness — ALL go through concept → Tripo GLB → img2threejs. Batch 1 (7) generating; ethereal types (wisp/wraith/riftling/sprite) stay procedural."
+   "gap": "Batch 1 GLBs DONE at Tripo v3.1 detailed (10 models incl. the Wayfinder NPC + ethereal types sculpted opaque for shader treatment). img2threejs conversion = wave 4."
   }
  ],
  "shots": [
@@ -183,6 +183,9 @@
   }
  ],
  "log": [
+  "2026-08-26 — STYLE COHERENCE CATCH (user spotted it): the first drake concept was a glossy metallic collectible figurine — monochrome copper, mirror sheen, no gold filigree, no aether — clashing with the sentinel/golem/treant. Root cause was the CONCEPT prompt, not Tripo. Re-concepted drake + frostwolf with mandatory matte/dark-material/filigree/anti-gloss clauses and regenerated both models. The recipe is now pinned in docs/CREATURE-PIPELINE.md so future batches cannot drift.",
+  "2026-08-26 — WAVE 3 terrain landed + committed (fca805c): sunken cascade gorge (3 terraces, max depth 0.9 m — no swimming), void abyss -33 -> -82 m, lost gate notch, WALKABLE frozen lake, cliff-smear fix. Gate PASSED. Fable-5 limit killed the other 17 agents mid-wave; relaunched on Opus 5.",
+  "2026-08-26 — GLB QUALITY FIX: v3.0 standard was too coarse for img2threejs. Re-ran everything on Tripo v3.1 + geometry_quality/texture_quality=detailed + 150k faces (gate) / 60k (creatures) — 2.1 MB -> 7.2 MB on the gate, and the creature batch is genuinely production-grade. Ethereal types (wraith/riftling/sprite) solved by sculpting them as OPAQUE statues then applying the translucent ghost shader in-game — mesh gives the silhouette, shader gives the ethereality.",
   "2026-08-26 — USER DIRECTIVE: all monsters + NPCs go through the concept -> Tripo GLB -> img2threejs pipeline (GLBs never at runtime); future creatures born this way. Batch 1 submitted to Tripo: wayfinder NPC, hound, sentinel, golem, drake, treant, frostwolf (7 tasks running). Conversion = wave 4.",
   "2026-08-26 — GATE PASSED end-to-end (blobs 88/88 clean both qualities, jitter clean, pointer lock OK). Wave 2 committed (5e82d52). WAVE 3 LAUNCHED: terrain kernel first (sunken terraces, void abyss, lost gate notch, walkable frozen lake), then 7 builders (Empyrean Gate via Tripo GLB + img2threejs, cascades, blocker fixes, named rares + patrols + nest encounter), then critics on all 10 regions.",
   "2026-08-26 — WAVE 2 COMPLETE (19 agents, 0 errors). All builders landed; 9 fresh critics: avg 3.9 -> 5.7, nothing at bar. New blocker: shadowfen water sun-glint blobs. Regression: oak through Aetheryte pedestal. Full verdicts: tools/out/wave2-summary.txt. Next: gate, commit, wave 3.",
@@ -198,16 +201,12 @@
  ],
  "assets": [
   {
+   "src": "tools/out/assetgen/tripo/sheet-hq.png",
+   "label": "Tripo v3.1 HQ batch — Empyrean Gate + 10 creatures (structural references for img2threejs; GLBs never ship)"
+  },
+  {
    "src": "tools/out/assetgen/sheet.png",
    "label": "batch 4 contact sheet — all 19 generations at a glance"
-  },
-  {
-   "src": "tools/out/assetgen/empyrean_gate_a.jpg",
-   "label": "Empyrean Gate concept (Magnific) — the celestial hero landmark, 3rd attempt escalated to the asset pipeline"
-  },
-  {
-   "src": "tools/out/assetgen/tripo/empyrean_gate_render.webp",
-   "label": "Empyrean Gate — Tripo GLB from concept (pipeline: image gen -> Tripo -> image2threejs -> procedural)"
   },
   {
    "src": "public/assets/tex/ash_basalt.jpg",
@@ -294,32 +293,44 @@
    "label": "granite_detail — dragon near-camera cliff octave (seamless)"
   },
   {
-   "src": "tools/out/assetgen/creatures/wayfinder.jpg",
-   "label": "Wayfinder NPC concept — batch 1 of the creature pipeline"
+   "src": "tools/out/assetgen/tripo/gate-hq.webp",
+   "label": "Empyrean Gate HQ (150k) — celestial hero"
   },
   {
-   "src": "tools/out/assetgen/creatures/hound.jpg",
-   "label": "Aether Hound concept"
+   "src": "tools/out/assetgen/tripo/wayfinder-hq.webp",
+   "label": "Wayfinder NPC HQ — the quest giver"
   },
   {
-   "src": "tools/out/assetgen/creatures/sentinel.jpg",
-   "label": "Sentinel concept"
+   "src": "tools/out/assetgen/tripo/hound-hq.webp",
+   "label": "Aether Hound HQ"
   },
   {
-   "src": "tools/out/assetgen/creatures/golem.jpg",
-   "label": "Golem concept"
+   "src": "tools/out/assetgen/tripo/sentinel-hq.webp",
+   "label": "Sentinel HQ"
   },
   {
-   "src": "tools/out/assetgen/creatures/drake.jpg",
-   "label": "Drake concept"
+   "src": "tools/out/assetgen/tripo/golem-hq.webp",
+   "label": "Golem HQ"
   },
   {
-   "src": "tools/out/assetgen/creatures/treant.jpg",
-   "label": "Treant concept"
+   "src": "tools/out/assetgen/tripo/treant-hq.webp",
+   "label": "Treant HQ"
   },
   {
-   "src": "tools/out/assetgen/creatures/frostwolf.jpg",
-   "label": "Frostwolf concept"
+   "src": "tools/out/assetgen/tripo/wraith-hq.webp",
+   "label": "Wraith HQ — ethereal sculpted opaque, ghost shader in-game"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/riftling-hq.webp",
+   "label": "Riftling HQ — void ethereal"
+  },
+  {
+   "src": "tools/out/assetgen/creatures/sheet-v2.png",
+   "label": "drake + frostwolf re-concepted on-style (left column of each pair chosen) — the first drake read as a glossy collectible figurine"
+  },
+  {
+   "src": "tools/out/assetgen/tripo/sprite-hq.webp",
+   "label": "Fae Sprite HQ — ethereal sculpted opaque, ghost shader applied in-game"
   }
  ]
 }
