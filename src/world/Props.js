@@ -1031,7 +1031,11 @@ export class Props {
         const ryG = Math.atan2(-ux, -uz);   // local +X -> tangent (the gate runs ACROSS the approach), +Z -> home: the front faces arrivals
         const MARB = [0.97, 0.95, 0.87], MARB2 = [0.88, 0.86, 0.78], MARB3 = [0.76, 0.75, 0.70];
         const DV = (g, t) => { this._divine.parts.push(g); this._divine.tints.push(t ?? [1, 1, 1]); };
-        const PY = gy + 2.6;                                                     // podium top — the datum every dimension below is measured from
+        // Podium top clears the surrounding grade by ~0.2 m, NOT 0.8: Colliders' walkable boxes only let
+        // you step up 0.6 m, so a podium seated on the lowest footprint sample and raised 2.6 walls the
+        // player out of his own landmark from the sides. The FRONT drop (terrain falls 66 -> 60 over 20 m
+        // toward home) is handled by a real stair below.
+        const PY = gy + 2.0;                                                     // podium top — the datum every dimension below is measured from
         const L = (geo, lx, ly, lz, tint, div) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(gx, PY, gz); (div ? DV : P)(geo, tint); };
         const LG = (geo, lx, ly, lz, tint) => { geo.translate(lx, ly, lz).rotateY(ryG).translate(gx, gy, gz); P(geo, tint); };
         const LT = (geo, lx, lz, dy, tint) => { const p = WD(lx, lz); geo.rotateY(ryG).translate(p[0], h(p[0], p[1]) + dy, p[1]); P(geo, tint); };   // seats on the terrain (wreckage off the podium)
@@ -1042,26 +1046,39 @@ export class Props {
         // The registry has no OBB, and for a FLOOR an over-sized AABB is invisible floor you can stand on
         // past the edge of the stone. So walkable tops are INSCRIBED instead (same trick as dais()'s 0.72):
         // a chain of squares that fit inside the rotated rectangle, laid along its long axis.
-        const walkTop = (lx, lz, w, d, y0, y1, n = 3) => {
-          const s = Math.min(w, d) / 2 / 1.415;                                  // inscribed square of the inscribed circle
+        // and for a STAIR it is worse than invisible floor: an oversized AABB one tread deep overlaps its
+        // neighbours, so `groundAt`'s "highest top within 0.6" keeps lifting you back up and the stair
+        // cannot be walked DOWN. Squares small enough to sit inside one tread never overlap the next.
+        const walkTop = (lx, lz, w, d, y0, y1) => {
+          const s = Math.min(w, d) / 2 / 1.415, span = Math.max(0, w / 2 - s), n = Math.max(1, Math.ceil(span * 2 / (s * 1.6)) + 1);
           for (let i = 0; i < n; i++) {
-            const t = (n === 1 ? 0 : (i / (n - 1) - 0.5)) * (w - Math.min(w, d)), p = WD(lx + t, lz);
+            const t = n === 1 ? 0 : (i / (n - 1) - 0.5) * span * 2, p = WD(lx + t, lz);
             col.add({ type: 'box', box: new THREE.Box3(V3(p[0] - s, y0, p[1] - s), V3(p[0] + s, y1, p[1] + s)), walkable: true });
           }
         };
         // ---- podium: three courses + the steps down toward home
         { let yy = -1.0;
-          for (const c of [[38, 23, 1.5], [34.5, 20.5, 1.0], [31, 18, 1.1]]) {
+          for (const c of [[38, 23, 1.5], [34.5, 20.5, 1.0], [31, 18, 0.5]]) {
             LG(new THREE.BoxGeometry(c[0], c[2], c[1]), 0, yy + c[2] / 2, 0, yy < -0.2 ? MARB3 : MARB2);
             LG(new THREE.BoxGeometry(c[0] + 0.7, 0.26, c[1] + 0.7), 0, yy + c[2] - 0.13, 0, MARB);   // projecting lip: the courses read as mouldings, not slabs, at 10 m
             yy += c[2];
           }
-          walkTop(0, 0, 31, 18, gy - 3, PY, 5); }
-        for (let i = 0; i < 4; i++) {                                            // stair down the front so you WALK up to it
-          const sy = PY - 0.62 * (i + 1), sz = 9.6 + i * 1.0;                    // sy = the TREAD top of this step
-          LG(new THREE.BoxGeometry(21 - i * 0.8, 0.62, 1.0), 0, sy - gy - 0.31, sz, MARB2);
-          boxCol(0, sz, 21 - i * 0.8, 1.0, gy - 2, sy, true);
-        }
+          walkTop(0, 0, 31, 18, gy - 3, PY); }
+        // THE STAIR — outside the podium footprint (the first pass buried it inside the base course) and
+        // walked down the slope until it MEETS grade: 0.5 m risers because Colliders' walkable step-up is
+        // 0.6, 1.5 m treads so the run reads monumental. Terrain-sampled per step, so it works on the
+        // swale in front of the gate instead of ending in mid-air.
+        { let sy = PY, sz = 11.6;
+          for (let i = 0; i < 14; i++) {
+            sz += 1.5; const p = WD(0, sz), gnd = h(p[0], p[1]);
+            const next = Math.max(sy - 0.5, gnd + 0.2);
+            if (next >= sy - 0.02) break;                                        // reached grade
+            sy = next;
+            const w = 20 - i * 0.35, hgt = Math.max(2.2, sy - gnd + 1.5);        // each tread is a BLOCK down past grade: a stair on a slope that hangs in the air is the floater bug
+            P(new THREE.BoxGeometry(w, hgt, 1.7).rotateY(ryG).translate(p[0], sy - hgt / 2, p[1]), MARB2);
+            P(new THREE.BoxGeometry(w + 0.5, 0.22, 1.85).rotateY(ryG).translate(p[0], sy - 0.11, p[1]), MARB);   // nosing
+            walkTop(0, sz, 13, 1.7, sy - 3.5, sy);       // 13 m of walkable tread, one square per 1.4 m: never overlaps the next riser
+          } }
         // ---- the facade: a real pierced arch, standing on its own plinth course
         // FB stays 0: the archway floor IS the podium top, so you can walk through it. The plinth course
         // is therefore two blocks under the PIERS, never a sill across the opening.
@@ -1933,17 +1950,17 @@ export class Props {
           const pitch = Math.atan2(y1 - y0, f1 - f0);
           const L = (f1 - f0) / Math.cos(pitch) + 0.7;               // slope length + overlap: joints share stone
           const put = (g) => g.rotateX(-pitch).rotateY(ry).translate(px, py, pz);
-          parts.push(put(new THREE.BoxGeometry(2.6, 0.55, L))); tints.push([s.tint[0] * 0.92, s.tint[1] * 0.92, s.tint[2] * 0.92]);
+          parts.push(put(new THREE.BoxGeometry(3.4, 0.8, L))); tints.push([s.tint[0] * 0.92, s.tint[1] * 0.92, s.tint[2] * 0.92]);   // deck: 2.6x0.55 still read slender across a 60 m span (wave-2 "two-by-four")
           // under-rib: the arch belly. Seen from below or side-on the bare slab was the "60 m two-by-four";
           // a deep keel-shaped rib under the deck gives the span a masonry cross-section from every angle.
-          parts.push(put(new THREE.BoxGeometry(1.15, 0.9, L * 0.98).translate(0, -0.6, 0)));
+          parts.push(put(new THREE.BoxGeometry(1.6, 1.35, L * 0.98).translate(0, -0.85, 0)));
           tints.push([s.tint[0] * 0.80, s.tint[1] * 0.80, s.tint[2] * 0.84]);
           // Kerbs and posts: a bare 2.6 x 0.55 slab seen from below is a plank in the air; a raised edge
           // and a post at each joint give it a profile that reads as a bridge from any angle.
           for (const sd of [-1, 1]) {
-            parts.push(put(new THREE.BoxGeometry(0.32, 0.46, L).translate(sd * 1.15, 0.34, 0)));
+            parts.push(put(new THREE.BoxGeometry(0.38, 0.55, L).translate(sd * 1.5, 0.5, 0)));
             tints.push([s.tint[0] * 1.02, s.tint[1] * 1.02, s.tint[2] * 1.02]);
-            parts.push(put(new THREE.BoxGeometry(0.42, 1.05, 0.42).translate(sd * 1.15, 0.6, -(L * 0.5 - 0.3))));
+            parts.push(put(new THREE.BoxGeometry(0.5, 1.2, 0.5).translate(sd * 1.5, 0.8, -(L * 0.5 - 0.3))));
             tints.push([s.tint[0] * 0.98, s.tint[1] * 0.98, s.tint[2] * 0.98]);
           }
           col.add({ type: 'box', box: new THREE.Box3(V3(px - 1.6, py - 0.3, pz - 1.6), V3(px + 1.6, py + 0.28, pz + 1.6)), walkable: true });

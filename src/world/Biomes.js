@@ -161,11 +161,16 @@ export const BIOMES = {
     // total (the key at sunPeak 3.2 owns noon), and the marble finally gets value separation instead of a
     // flat wash. Do not "fix" the table by brightening this back: read the hue, ignore the value.
     // !! READ THE "SRGB IS APPLIED TWICE" NOTE ABOVE THE TABLE BEFORE PICKING ANY HEX HERE !!
-    // 0xa49f97 lands on effective linear 1 : 0.867 : 0.687 at luminance 0.100 — a pale warm ivory, which
-    // is both the key hue at every hour and (via the 45% hemi lerp) the night fill. 0xfff2d0 measured
-    // 1 : 0.764 : 0.356 at luminance 0.78: three times the fill and twice the orange, which is exactly the
-    // hour-18 terracotta AND the daylight-bright midnight floor. Measured after: night floor 145 -> 84.
-    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xa49f97, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
+    // Two separate jobs, both carried by this one field, which is why it is so far from "gold":
+    //  VALUE: 0xfff2d0 was luminance 0.78, and `sun` is 45% of hemi.color at every hour — after dark that
+    //   45% IS the fill (hemiNight 1.05, sky ambient ~0.03), so the Isles were fill-lit at daylight strength
+    //   at midnight. Luminance 0.10 here; measured night floor 145 -> 84 with no visible cost at noon.
+    //  HUE: Lighting hue-forces the key to this at EVERY hour, so it, not keyLow, owns golden hour. At
+    //   effective 1 : 0.764 : 0.356 (what 0xfff2d0 really was) the PostFX golden gain + 1.23 saturation
+    //   took the marble to 1 : 0.49 : 0.34 — traffic-cone terracotta. 0xa2a09a is effective 1 : 0.945 :
+    //   0.794, a divine cold-white: the GOLD then comes from the dome, the `glow` band, the PostFX grade
+    //   and the gold props, which is the "white marble and gold" read the zone is supposed to have.
+    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xa2a09a, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
     // keyLow grades the FILL (Sky._gradeFog): 0xe3ded8 -> effective 1 : 0.894 : 0.779. The two earlier
     // picks read 1:0.75:0.41 and 1:0.67:0.33 effective — both still oranges, which is why two waves of
     // "cool the golden hour" changed nothing. The DOME and the PostFX golden grade still carry the gold.

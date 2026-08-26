@@ -183,6 +183,7 @@
   }
  ],
  "log": [
+  "2026-08-26 — Fae Sprite regenerated hovering: Tripo had modelled the 'carved as a statue' framing literally and welded it to a stone plinth. Anti-base clause (NO pedestal/plinth/base/rock/stand) added to docs/CREATURE-PIPELINE.md. Drake + frostwolf restyled models landed — drake now reads matte dark scales with gold filigree horns and an ember chest glow.",
   "2026-08-26 — STYLE COHERENCE CATCH (user spotted it): the first drake concept was a glossy metallic collectible figurine — monochrome copper, mirror sheen, no gold filigree, no aether — clashing with the sentinel/golem/treant. Root cause was the CONCEPT prompt, not Tripo. Re-concepted drake + frostwolf with mandatory matte/dark-material/filigree/anti-gloss clauses and regenerated both models. The recipe is now pinned in docs/CREATURE-PIPELINE.md so future batches cannot drift.",
   "2026-08-26 — WAVE 3 terrain landed + committed (fca805c): sunken cascade gorge (3 terraces, max depth 0.9 m — no swimming), void abyss -33 -> -82 m, lost gate notch, WALKABLE frozen lake, cliff-smear fix. Gate PASSED. Fable-5 limit killed the other 17 agents mid-wave; relaunched on Opus 5.",
   "2026-08-26 — GLB QUALITY FIX: v3.0 standard was too coarse for img2threejs. Re-ran everything on Tripo v3.1 + geometry_quality/texture_quality=detailed + 150k faces (gate) / 60k (creatures) — 2.1 MB -> 7.2 MB on the gate, and the creature batch is genuinely production-grade. Ethereal types (wraith/riftling/sprite) solved by sculpting them as OPAQUE statues then applying the translucent ghost shader in-game — mesh gives the silhouette, shader gives the ethereality.",
@@ -325,12 +326,12 @@
    "label": "Riftling HQ — void ethereal"
   },
   {
-   "src": "tools/out/assetgen/creatures/sheet-v2.png",
-   "label": "drake + frostwolf re-concepted on-style (left column of each pair chosen) — the first drake read as a glossy collectible figurine"
+   "src": "tools/out/assetgen/tripo/sheet-restyled.png",
+   "label": "drake + frostwolf after the style fix — matte dark scales, gold filigree horns/spines, ember chest glow"
   },
   {
-   "src": "tools/out/assetgen/tripo/sprite-hq.webp",
-   "label": "Fae Sprite HQ — ethereal sculpted opaque, ghost shader applied in-game"
+   "src": "tools/out/assetgen/creatures/sheet-sprite-v3.png",
+   "label": "Fae Sprite re-concepted hovering (right chosen) — the first version came back welded to a stone cube"
   }
  ]
 }

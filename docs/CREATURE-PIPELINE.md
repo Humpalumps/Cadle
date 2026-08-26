@@ -31,6 +31,7 @@ Non-negotiable clauses and why each one is there:
 | gold filigree / crystal / aether accent | the single strongest style tell shared by every asset in the game |
 | one small glowing feature | saturate the COLOUR, cap the AREA — same blob-law logic as the world art |
 | `three-quarter view`, `full body`, `isolated on a plain flat light-grey background` | Tripo reconstructs a single view; a cropped, posed or busy-background image loses limbs |
+| `floating free with nothing beneath it, NO pedestal, NO plinth, NO base, NO rock, NO stand` — on any creature that hovers, and worth carrying on all of them | the word "statue" (see the ethereal note below) invites a display base, and Tripo models whatever the concept shows: the first fae sprite came back welded to a stone cube. Geometry that is not the creature has to be deleted by hand later, so keep it out of the concept |
 | `painterly-realistic fantasy MMO style, even diffuse lighting` | the repo-wide suffix from CLAUDE.md |
 
 Generate `count: 2` and pick by eye against the rest of the batch — one prompt does not reliably
@@ -74,7 +75,8 @@ its topology and materials are never copied). Requirements for a converted creat
 voxel, voronoi, minecraft), so wisp/sprite/wraith/riftling are authored as **opaque statues** —
 a robe frozen mid-drift, a jagged void quadruped — and the translucency, rim glow and dissolve are
 applied at the material stage in the converted code. The mesh supplies the silhouette; the shader
-supplies the ghost.
+supplies the ghost. **Caveat learned the hard way:** the words "carved as a statue" also invite a
+carved *plinth*. Always pair that framing with the anti-base clause above.
 
 ## Batch 1 (2026-08-26)
 

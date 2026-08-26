@@ -723,7 +723,15 @@ export class Vegetation {
         // body swaps its deep violet albedo for pale glacial, so daylight facets read frost instead of
         // opaque royal sapphire (wave-1+2 tundra verdicts). Facet steps + growth banding stay, in white.
         // The translucent read comes from tint SATURATION (rim/backlight in the pale ice hue), not emissive.
-        float paleT = vITint.r < 0.0 ? 0.0 : smoothstep(0.86, 0.96, dot(vITint, vec3(0.2126, 0.7152, 0.0722)));
+        // ...and "is this ice?" is a question about SATURATION, not brightness. Keying it off luminance
+        // meant the per-instance brightness jitter (j = 0.88..1.12 in addCrystal) decided it: the dim ~40%
+        // of Frostveil shards fell under the threshold and came out royal sapphire next to their pale
+        // neighbours (tools/out/veg3-runC/shot-tundra-shards.png). Chroma is invariant under that jitter —
+        // it scales all three channels — so it separates the regions cleanly and for good: ice [.92 .96 1.04]
+        // is 0.12 saturated, while void [.52 .22 1.05], lost, forest and the meadow's own jitter are all 0.45+.
+        float pMax = max(vITint.r, max(vITint.g, vITint.b));
+        float pSat = (pMax - min(vITint.r, min(vITint.g, vITint.b))) / max(pMax, 1e-3);
+        float paleT = vITint.r < 0.0 ? 0.0 : 1.0 - smoothstep(0.14, 0.34, pSat);
         diffuseColor.rgb = mix(diffuseColor.rgb,
           vec3(0.72, 0.80, 0.90) * (0.55 + 0.45 * fh) * (0.88 + 0.18 * sin(vLy * 6.0 + fh * 17.0)), paleT);
         }`,
