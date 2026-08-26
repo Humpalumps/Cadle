@@ -35,6 +35,13 @@ If your task involves a creature, an NPC, or a landmark, **read `docs/CREATURE-P
   `C:\Users\ianca\bin\python3` (Git Bash) and `python3.cmd` (cmd/PowerShell). Run skill scripts from
   the skill root: `C:/Users/ianca/.claude/skills/img2threejs`. The skill is stdlib-only; nothing to
   install.
+- **The budget does not create form.** Segment counts are automatic (the declared budget picks the
+  tessellation tier, so limbs stop faceting on their own — do not hand-tune radial segments).
+  Chamfered edges, relief, horns/claws/folds, where detail concentrates, smooth-vs-flat shading and
+  material truth are **authored**, and no budget invents any of them: subdividing a box just gives a
+  box with more triangles on its flat faces. That is why the pipeline's detail inventory refuses
+  prose and demands each feature resolve to a real component. See the table in
+  `docs/CREATURE-PIPELINE.md`.
 - **Massing is not detail.** A hero asset is judged at THREE distances and must be captured at all
   three before you report done: silhouette at 200 m, ornament hierarchy at 40 m (is the cornice
   actually carved? are the columns actually fluted?), material truth at 8 m (veining, chipped

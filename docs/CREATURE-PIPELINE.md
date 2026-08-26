@@ -70,6 +70,35 @@ shadow catcher, auto-framed camera; `yaw`/`pitch` params to orbit). Geometry can
 without rendering by parsing the GLB's JSON chunk for accessor counts and embedded texture sizes —
 a good creature reference lands around 55-60k tris with 4096 maps.
 
+### What the triangle budget buys you, and what it never will
+
+A recurring misunderstanding, and the direct cause of the greybox landmarks and slab creatures:
+**the budget is a ceiling and a tier selector. It does not create form.**
+
+**Automatic — do NOT hand-tune these.** `performanceBudget.targetTriangles` selects the generator's
+tessellation tier, which sets radial/height segment counts on every primitive that has them. Declaring
+10000/15000 puts you in the *standard* tier and limbs stop faceting on their own. Writing "16 radial
+segments" into a spec by hand is redundant at best and fights the tier at worst.
+
+**Never automatic — these must be authored as components, or they simply will not exist:**
+
+| the thing | why tessellation cannot produce it |
+|---|---|
+| **chamfers / bevels on hard edges** | subdividing a box gives you a box with more triangles on flat faces; the 90 deg edge stays razor-sharp at any tier. This is the loudest greybox tell and it is a *modelling* decision, full stop. |
+| carved relief, flutes, dentils, coffers | these are geometry that is not in the base primitive at all |
+| silhouette parts — horns, claws, jaw, ears, spines, cloth folds | a smoother cylinder is still a cylinder |
+| where the detail concentrates | tiers tessellate fairly evenly; a creature wants its triangles on the head and hands, which is a per-component decision |
+| `flatShading` and normal handling | `flatShading: true` makes a 20k model look like a 2k one. Smooth-shade organic forms; reserve flat shading for genuinely faceted crystal |
+| material truth — veining, roughness break-up, dirt in recesses, metal that is metal | not geometry at all |
+
+This is exactly why the pipeline has a **detail inventory** and why it refuses prose: every
+identity-defining feature must resolve to a `component.localFeatures` or `material.localOverrides`
+entry. If a feature is not in the inventory, no triangle budget will conjure it.
+
+**The practical rule:** declare the budget, let the tier handle smoothness, and spend your actual
+effort enumerating the inventory — then check the 8 m frame, which is where missing chamfers and
+missing material announce themselves.
+
 ## Step 3 — img2threejs → procedural code
 
 Invoke the `img2threejs` skill on the GLB (its GLB-mediated track: the mesh is a structural baseline,

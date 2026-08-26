@@ -278,7 +278,7 @@ const BIOME_DEFS = {
     fleeAt: 0.18, fleeTime: 1.8, strafe: 1, stagger: 0.26, staggerTime: 0.32,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
     palette: [[0xb070ff, 0x8a7ba8], [0x8a3dff, 0x7d6fa0], [0xd070ff, 0x9484ae]], glow: 1.05, rim: 0.7, bump: 0.05,
-    ghost: 0.40, hem: [-0.56, -0.88],
+    ghost: 0.40, hem: [-0.62, -0.82],
     signature: { blink: { cd: 3.2, dist: 9 } },
     deathTime: 1.1, xp: 90,
   },

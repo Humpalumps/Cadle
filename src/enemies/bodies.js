@@ -1138,7 +1138,7 @@ const riftling = {
     // ---- legs: four, tucked and bent. No IK and no gait — it hovers; the paddle is in animate().
     for (const [n, sx, z, fwd] of [['FL', 1, 0.24, 1], ['FR', -1, 0.24, 1], ['HL', 1, -0.34, 0], ['HR', -1, -0.34, 0]]) {
       const hip = R.bone('hip' + n, body, sx * 0.15, -0.12, z), knee = R.bone('knee' + n, hip, 0, -0.24, 0);
-      R.part(hip, prim.limb(0.6), { p: [sx * 0.17, -0.10, z], r: [0, 0, -sx * 0.22], s: [0.070, 0.26, 0.075], color: HIDE2, mottle: 0.2 });
+      R.part(hip, prim.limb(0.6), { p: [sx * 0.17, -0.10, z], r: [0, 0, -sx * 0.22], s: [0.070, 0.34, 0.075], color: HIDE2, mottle: 0.2 });
       R.part(hip, prim.slab(0.6), { p: [sx * 0.19, -0.16, z], r: [0, 0, -sx * 0.3], s: [0.10, 0.16, 0.13], color: PLATE, flat: true, mottle: 0.16 });
       R.part(knee, prim.limb(0.7), { p: [sx * 0.19, -0.40, z + (fwd ? 0.05 : -0.03)], r: [fwd ? 0.30 : -0.30, 0, 0], s: [0.050, 0.28, 0.052], color: HIDE });
       R.part(knee, prim.slab(0.8), { p: [sx * 0.19, -0.66, z + (fwd ? 0.11 : -0.07)], s: [0.095, 0.055, 0.15], color: HIDE2, flat: true, mottle: 0.18 });   // paw
@@ -1219,11 +1219,11 @@ const sprite = {
       // glow 0.14, NOT 0.30: at 0.30 the wing's green emissive reached ~1.8 linear under the noon dayGlow
       // multiplier and bloomed along the leading edge. And no `flat` — computeVertexNormals on a non-indexed
       // membrane throws away the camber and leaves a flat-shaded sheet, which is what a paper wing looks like.
-      R.part(w, prim.membrane(fore ? 3 : 2), { p: [sx * (0.13 + span * 0.5), fore ? 0.24 : 0.04, fore ? 0.00 : -0.16], r: [0, sx > 0 ? -0.35 : Math.PI + 0.35, sx * (fore ? 0.62 : 0.34)], s: [span, 0.09, chord], color: WING, glow: 0.14 });
+      R.part(w, prim.membrane(fore ? 3 : 2), { p: [sx * (0.13 + span * 0.5), fore ? 0.24 : 0.04, fore ? 0.00 : -0.16], r: [0, sx > 0 ? -0.35 : Math.PI + 0.35, sx * (fore ? 0.62 : 0.34)], s: [span, 0.09, chord], color: WING, glow: 0.09 });
       for (let i = 0; i < 2; i++) {                                          // veins: two thin ribs per wing, no more — they are 2 px at combat range
         const u = 0.30 + i * 0.34;
         link(R, w, [sx * (0.13 + span * 0.06), fore ? 0.16 : 0.0, fore ? 0.16 : -0.02], [sx * (0.13 + span * 0.92), fore ? 0.16 + span * 0.30 * (u - 0.3) : 0.0, (fore ? 0.02 : -0.18) - chord * (u - 0.15)], 0.010,
-          { color: WING, glow: 0.10, w2: 0.006 });
+          { color: WING, glow: 0.07, w2: 0.006 });
       }
     }
     for (const sx of [1, -1]) for (let i = 0; i < 3; i++) {                   // six tucked legs
