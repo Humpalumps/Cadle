@@ -677,36 +677,105 @@ const giant = {
   },
 };
 
-// ---------------------------------------------------------------- WRAITH: hooded revenant, floats, robe trails into rags
+// ---------------------------------------------------------------- WRAITH: hooded revenant, floats, robe swirls into smoke
+// Rebuilt from tools/out/assetgen/tripo/wraith-hq.glb (render wraith-hq-render.jpg). Wave-3 shadowfen verdict,
+// on Shadowfen's headline creature: "renders as a flat violet balloon with the reed geometry poking through
+// its shell". Half of that was the shield bubble (flat-shaded icosahedron — fixed in Enemy.js); the other half
+// was this body, which was ONE downward cone plus ONE smooth sphere, i.e. literally a balloon on a cone.
+// Identity-defining features the reference has and the old body did not, in priority order:
+//   1. A SWIRLING SKIRT, not a cone. The bottom third is a vortex of ~14 curling tendrils that sweep OUTWARD
+//      and all twist the same way, so the creature reads as smoke caught mid-rotation. That silhouette is the
+//      whole creature at 40 m and it is the thing the hem dissolve (materials.js uGhost) then eats into.
+//   2. A DEEP HOOD with an overhanging brow and a peaked, folded crown — a hollow you can see INTO, not a
+//      cone with two dots on it.
+//   3. LONG REACHING ARMS with bony four-fingered hands, held forward and low: the pose is grasping.
+//   4. A layered shoulder mantle and a fluted robe: cloth in courses, so grazing light has edges to catch.
+// ~1.5k tris (the old one was ~1.0k but spent 384 of it on two smooth spheres).
+const WR_TEND = 14, WR_TEND2 = 6;
 const wraith = {
   build() {
     const R = new Rig(), { root } = R;      // root = body centre (flyer)
-    const CLOTH = 0x2a2733, CLOTH2 = 0x3b3648, GLOW = 0xffffff, HOLLOW = 0x0a0a12;
+    // lifted off near-black on purpose: the ethereal shader (uGhost) multiplies the LIT terms down toward the
+    // centre, so a robe that starts at 0x2a2733 comes out as a hole in the world instead of a ghost.
+    const CLOTH = 0x393343, CLOTH2 = 0x4b4459, CLOTH3 = 0x5c5470, BONE = 0x8a8098, GLOW = 0xffffff, HOLLOW = 0x07070d;
     const body = R.bone('body', root, 0, 0, 0);
-    R.part(body, prim.cone(), { p: [0, -0.5, 0], r: [Math.PI, 0, 0], s: [0.5, 1.45, 0.44], color: CLOTH, mottle: 0.26, flat: true });   // robe: point down
-    R.part(body, prim.sphere(), { p: [0, 0.3, 0], s: [0.4, 0.36, 0.38], color: CLOTH2, mottle: 0.2 });                                   // shoulders
-    R.mirror(body, prim.hex(), { p: [0.34, 0.36, -0.02], r: [0, 0, 0.8], s: [0.2, 0.05, 0.2], color: CLOTH2, flat: true, mottle: 0.12 });
-    const head = R.bone('head', body, 0, 0.52, 0);
-    R.part(head, prim.cone(), { p: [0, 0.6, -0.02], s: [0.29, 0.5, 0.3], color: CLOTH2, flat: true, mottle: 0.18 });   // hood
-    R.part(head, prim.sphere(), { p: [0, 0.5, 0.13], s: [0.17, 0.19, 0.15], color: HOLLOW, mottle: 0.05 });            // nothing inside it
-    R.mirror(head, prim.sphere(), { p: [0.075, 0.53, 0.23], s: 0.045, color: GLOW, glow: 1 });
-    for (const [n, sx] of [['R', 1], ['L', -1]]) {
-      const sh = R.bone('sh' + n, body, sx * 0.36, 0.26, 0), el = R.bone('el' + n, sh, 0, -0.4, 0);
-      R.part(sh, prim.limb(0.7), { p: [sx * 0.38, 0.2, 0], s: [0.095, 0.42, 0.095], color: CLOTH2, mottle: 0.2 });
-      R.part(el, prim.limb(0.5), { p: [sx * 0.38, -0.22, 0.04], s: [0.085, 0.4, 0.085], color: CLOTH, mottle: 0.22 });
-      R.part(el, prim.crystal(), { p: [sx * 0.4, -0.58, 0.07], r: [0.35, 0, 0], s: [0.07, 0.2, 0.07], color: GLOW, glow: 1, flat: true });
+    // ---- torso: a fluted robe. Six drape panels round a core, each leaning out a little, so the trunk has
+    // vertical edges instead of being one smooth lit volume (the "balloon" read is a volume with no edges).
+    R.part(body, prim.cone(), { p: [0, -0.34, 0], r: [Math.PI, 0, 0], s: [0.40, 0.92, 0.36], color: CLOTH, mottle: 0.26, flat: true });
+    R.part(body, prim.sphereLo(), { p: [0, 0.22, -0.01], s: [0.33, 0.28, 0.30], color: CLOTH2, mottle: 0.22 });          // chest/shoulder mass
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2 + 0.5;
+      link(R, body, [Math.cos(a) * 0.26, 0.10, Math.sin(a) * 0.24], [Math.cos(a + 0.34) * 0.40, -0.72, Math.sin(a + 0.34) * 0.37], 0.16,
+        { color: i % 2 ? CLOTH : CLOTH2, mottle: 0.30, flat: true, taper: 0.35, w2: 0.10 });
     }
-    for (let i = 0; i < 5; i++) {
-      const rb = R.bone('rag' + i, body, 0, -0.85, 0), a = i / 5 * Math.PI * 2 + 0.3;
-      R.part(rb, prim.cone(), { p: [Math.cos(a) * 0.28, -1.3, Math.sin(a) * 0.28], r: [Math.PI, 0, 0], s: [0.085, 0.66 + (i % 2) * 0.18, 0.085], color: CLOTH, flat: true, mottle: 0.3 });
+    // ---- shoulder mantle: three lames a side, rolled edge outward. The reference's cowl is its widest point.
+    R.mirror(body, prim.slab(0.5), { p: [0.30, 0.30, -0.02], r: [0, 0, 0.62], s: [0.30, 0.20, 0.30], color: CLOTH3, flat: true, mottle: 0.16 });
+    R.mirror(body, prim.slab(0.6), { p: [0.34, 0.17, 0.02], r: [0, 0, 0.86], s: [0.26, 0.17, 0.26], color: CLOTH2, flat: true, mottle: 0.2 });
+    R.mirror(body, prim.slab(0.7), { p: [0.33, 0.02, -0.03], r: [0, 0, 1.02], s: [0.21, 0.14, 0.22], color: CLOTH, flat: true, mottle: 0.24 });
+    R.part(body, prim.slab(0.8), { p: [0, 0.10, -0.28], r: [-0.22, 0, 0], s: [0.44, 0.52, 0.10], color: CLOTH, flat: true, mottle: 0.28 });   // back cloak
+    // ---- hood: peak, brow, cowl ring, and a hollow with two coals in it
+    const head = R.bone('head', body, 0, 0.52, 0);
+    R.part(head, prim.hex(), { p: [0, 0.34, -0.01], r: [0, 0.52, 0], s: [0.29, 0.09, 0.28], color: CLOTH3, flat: true, mottle: 0.14 });        // cowl ring
+    R.part(head, prim.cone(), { p: [0, 0.62, -0.05], r: [-0.12, 0.45, 0], s: [0.27, 0.46, 0.29], color: CLOTH2, flat: true, mottle: 0.18 });   // hood
+    R.part(head, prim.cone(), { p: [0, 0.88, -0.14], r: [0.55, 0.9, 0], s: [0.13, 0.30, 0.14], color: CLOTH, flat: true, mottle: 0.22 });      // peaked crown fold
+    R.part(head, prim.slab(0.45), { p: [0, 0.66, 0.16], r: [-0.62, 0, 0], s: [0.28, 0.22, 0.13], color: CLOTH3, flat: true, mottle: 0.16 });   // overhanging brow
+    R.part(head, prim.sphereLo(), { p: [0, 0.53, 0.09], s: [0.16, 0.17, 0.14], color: HOLLOW, mottle: 0.04 });                                  // nothing inside it
+    R.mirror(head, prim.octa(), { p: [0.072, 0.55, 0.19], s: 0.040, color: GLOW, glow: 1, flat: true });                                        // eyes
+    R.mirror(head, prim.slab(0.6), { p: [0.20, 0.52, 0.03], r: [0.1, 0, 0.30], s: [0.11, 0.34, 0.16], color: CLOTH2, flat: true, mottle: 0.2 }); // hood cheeks
+    // hood streamers: cloth licks trailing back off the cowl (the reference has six of them, all curling one way)
+    for (let i = 0; i < 4; i++) {
+      const sx = i < 2 ? 1 : -1, k = i % 2;
+      link(R, head, [sx * 0.22, 0.42 + k * 0.16, -0.10], [sx * (0.40 + k * 0.10), 0.62 + k * 0.22, -0.44 - k * 0.12], 0.075,
+        { color: CLOTH, flat: true, mottle: 0.34, taper: 0.2, geo: prim.cone() });
+    }
+    // ---- arms: reaching forward and low, bony four-fingered hands
+    for (const [n, sx] of [['R', 1], ['L', -1]]) {
+      const sh = R.bone('sh' + n, body, sx * 0.30, 0.22, 0), el = R.bone('el' + n, sh, 0, -0.40, 0);
+      R.part(sh, prim.limb(0.62), { p: [sx * 0.31, 0.20, 0], s: [0.090, 0.42, 0.090], color: CLOTH2, mottle: 0.2 });
+      R.part(sh, prim.cone(), { p: [sx * 0.31, 0.10, 0], r: [Math.PI, 0, 0], s: [0.15, 0.30, 0.15], color: CLOTH, flat: true, mottle: 0.3 });   // sleeve
+      R.part(el, prim.limb(0.5), { p: [sx * 0.31, -0.20, 0.03], s: [0.070, 0.40, 0.070], color: BONE, mottle: 0.24 });
+      R.part(el, prim.slab(0.8), { p: [sx * 0.31, -0.63, 0.06], r: [0.35, 0, 0], s: [0.11, 0.09, 0.13], color: BONE, flat: true, mottle: 0.2 }); // palm
+      for (let f = 0; f < 4; f++) {                                        // long grasping fingers, splayed
+        const fx = sx * (0.31 + (f - 1.5) * 0.045), sp = (f - 1.5) * 0.22;
+        link(R, el, [fx, -0.67, 0.08], [fx + sx * 0.03 + sp * 0.03, -0.80 - Math.abs(f - 1.5) * 0.02, 0.20 + Math.abs(1.5 - f) * -0.01], 0.020,
+          { color: BONE, flat: true, mottle: 0.18, geo: prim.cone() });
+      }
+      R.part(el, prim.crystal(), { p: [sx * 0.31, -0.50, 0.10], r: [0.35, 0, 0], s: [0.045, 0.13, 0.045], color: GLOW, glow: 1, flat: true });   // wrist ember
+    }
+    // ---- THE SKIRT: a vortex of curling tendrils. All twist the same way (SWIRL > 0) so the mass reads as
+    // rotating smoke; the outer ring flares wide and curls its tips back UP, the inner ring hangs closer.
+    // Each tendril is its own bone so the animation can drift them independently.
+    const SWIRL = 1.15;
+    for (let i = 0; i < WR_TEND; i++) {
+      const rb = R.bone('rag' + i, body, 0, -0.55, 0);
+      const a = i / WR_TEND * Math.PI * 2 + 0.31, long = 0.86 + (i % 3) * 0.16;
+      const p0 = [Math.cos(a) * 0.20, -0.42, Math.sin(a) * 0.19];
+      const a1 = a + SWIRL * 0.45, p1 = [Math.cos(a1) * 0.40, -0.42 - long * 0.44, Math.sin(a1) * 0.38];
+      const a2 = a + SWIRL, p2 = [Math.cos(a2) * 0.60, -0.42 - long * 0.72, Math.sin(a2) * 0.56];
+      const a3 = a + SWIRL * 1.45, p3 = [Math.cos(a3) * 0.68, -0.42 - long * 0.60, Math.sin(a3) * 0.63];   // tip curls back up
+      link(R, rb, p0, p1, 0.105, { color: i % 2 ? CLOTH : CLOTH2, flat: true, mottle: 0.30, taper: 0.6, w2: 0.075 });
+      link(R, rb, p1, p2, 0.078, { color: CLOTH, flat: true, mottle: 0.34, taper: 0.5, w2: 0.055 });
+      link(R, rb, p2, p3, 0.055, { color: CLOTH2, flat: true, mottle: 0.36, geo: prim.cone() });
+    }
+    for (let i = 0; i < WR_TEND2; i++) {                                    // inner ring: fills the vortex core
+      const rb = R.bone('rig' + i, body, 0, -0.40, 0), a = i / WR_TEND2 * Math.PI * 2;
+      const p0 = [Math.cos(a) * 0.12, -0.30, Math.sin(a) * 0.11];
+      const a1 = a + 0.7, p1 = [Math.cos(a1) * 0.26, -0.86, Math.sin(a1) * 0.24];
+      const a2 = a + 1.25, p2 = [Math.cos(a2) * 0.34, -1.10, Math.sin(a2) * 0.31];
+      link(R, rb, p0, p1, 0.075, { color: CLOTH2, flat: true, mottle: 0.3, taper: 0.55, w2: 0.055 });
+      link(R, rb, p1, p2, 0.050, { color: CLOTH, flat: true, mottle: 0.34, geo: prim.cone() });
     }
     return R.build();
   },
-  setup(e) { e.rags = []; for (let i = 0; i < 5; i++) e.rags.push(e.bones['rag' + i]); },
+  setup(e) {
+    e.rags = []; for (let i = 0; i < WR_TEND; i++) e.rags.push(e.bones['rag' + i]);
+    e.rigs = []; for (let i = 0; i < WR_TEND2; i++) e.rigs.push(e.bones['rig' + i]);
+  },
   animate(e, dt, t, A) {
     const b = e.bones, tt = t + e.seedT, sw = SW(e), reach = seg(sw, 0, 0.3) - seg(sw, 0.34, 0.5);
     b.body.position.y = Math.sin(tt * 1.1) * 0.16 + Math.sin(tt * 2.3) * 0.05 + (e.state === 'stagger' ? -0.2 : 0);
     b.body.rotation.z = Math.sin(tt * 0.7) * 0.09;
+    b.body.rotation.y = Math.sin(tt * 0.31) * 0.10;                    // the whole revenant turns slowly on its own axis
     b.body.rotation.x = e.tilt * 0.5 + reach * 0.2;
     if (e.alert) aimAt(b.head, A.eye, 1.1, 0.6, 6, dt); else relaxBone(b.head, 1.5, dt);
     for (const n of ['R', 'L']) {
@@ -715,10 +784,19 @@ const wraith = {
       b['sh' + n].rotation.z = damp(b['sh' + n].rotation.z, -s * (0.35 - reach * 0.25) + Math.sin(tt * 0.6 + s * 2) * 0.08, 5, dt);
       b['el' + n].rotation.x = damp(b['el' + n].rotation.x, -0.55 + reach * 0.5, 8, dt);
     }
-    for (let i = 0; i < 5; i++) {                                     // rags drift like they are underwater
+    // the skirt turns as one vortex plus a per-tendril wobble: a rotating mass reads as smoke, a set of
+    // independently flapping rags reads as laundry. Speed adds sweep-back, the telegraph winds it up.
+    const spin = tt * (0.55 + e.speedN * 0.9 + e.telegraph * 1.8);
+    for (let i = 0; i < WR_TEND; i++) {
       const r = e.rags[i];
-      r.rotation.x = Math.sin(tt * 1.3 + i * 1.4) * 0.22 + e.speedN * 0.3;
-      r.rotation.z = Math.cos(tt * 1.1 + i * 2.1) * 0.2;
+      r.rotation.y = Math.sin(spin - i * 0.42) * 0.22 + spin * 0.10;
+      r.rotation.x = Math.sin(tt * 1.3 + i * 1.4) * 0.13 + e.speedN * 0.30;
+      r.rotation.z = Math.cos(tt * 1.1 + i * 2.1) * 0.11;
+    }
+    for (let i = 0; i < WR_TEND2; i++) {
+      const r = e.rigs[i];
+      r.rotation.y = Math.sin(spin * 1.3 + i * 0.9) * 0.26 - spin * 0.14;
+      r.rotation.x = Math.sin(tt * 1.7 + i * 2.2) * 0.16;
     }
   },
 };
@@ -1002,4 +1080,168 @@ const treant = {
   },
 };
 
-export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent, frostwolf, treant };
+// ---------------------------------------------------------------- RIFTLING: jagged void quadruped, prowls the air
+// Built from tools/out/assetgen/tripo/riftling-hq.glb (render riftling-hq-render.jpg). It used to wear the WISP
+// body — a glowing orb with halo rings — which is why the wave-3 void verdict measured the Void's own trash mob
+// as "a chunky flat pale-pink body with three flat pink ribbon loops orbiting it ... bubblegum plastic".
+// The reference is nothing like an orb: a low crouched armoured lizard-panther. Features in priority order:
+//   1. A CREST OF LONG BACKSWEPT SPIKES over the neck and shoulders, tallest at the shoulder, dropping down
+//      the spine into a spiked tail. It is most of the silhouette and it is what makes it read as void-forged.
+//   2. OVERLAPPING ANGULAR PLATES — the whole hide is faceted armour, not skin. Flat-shaded on purpose.
+//   3. A low wedge skull carried out FRONT on a short neck, long jaw, four splayed clawed feet.
+// It stays `flying: true` (def unchanged — that is its AI): the mass hangs BELOW the root so a hovering
+// riftling has its paws just off the ground, prowling on nothing, which is what a rift beast should do.
+// The hem dissolve (def.ghost) eats the paws and tail tip, so the "walking on air" never has to be explained.
+const riftling = {
+  build() {
+    const R = new Rig(), { root } = R;      // root = body centre (flyer); mass hangs below it
+    const HIDE = 0x2a2438, HIDE2 = 0x3b3352, PLATE = 0x191426, HORN = 0x120e1c, CLAW = 0x0d0a14, GLOW = 0xffffff;
+    const body = R.bone('body', root, 0, 0, 0);
+    // ---- torso: shoulders high, waist pinched, haunch heavy — a stalking cat's line
+    R.part(body, prim.sphereLo(), { p: [0, -0.06, 0.20], s: [0.23, 0.22, 0.30], color: HIDE });
+    R.part(body, prim.sphereLo(), { p: [0, -0.10, -0.10], s: [0.18, 0.17, 0.26], color: HIDE2, mottle: 0.22 });
+    R.part(body, prim.sphereLo(), { p: [0, -0.08, -0.42], s: [0.21, 0.20, 0.24], color: HIDE });
+    R.part(body, prim.slab(0.75), { p: [0, -0.24, 0.02], s: [0.20, 0.10, 0.52], color: PLATE, flat: true, mottle: 0.2 });   // belly plate
+    // overlapping dorsal + flank plates: each one tilted a little more than the last, so the light breaks
+    for (let i = 0; i < 6; i++) {
+      const k = i / 5, z = 0.34 - k * 0.86;
+      R.part(body, prim.slab(0.45), { p: [0, 0.11 - k * 0.05, z], r: [0.30 - k * 0.16, 0, 0], s: [0.30 - k * 0.07, 0.09, 0.20], color: PLATE, flat: true, mottle: 0.16 });
+      R.mirror(body, prim.slab(0.5), { p: [0.17 - k * 0.02, -0.03 - k * 0.02, z], r: [0, 0, 1.15 - k * 0.2], s: [0.15, 0.07, 0.19], color: HIDE2, flat: true, mottle: 0.18 });
+    }
+    // ---- THE CREST: backswept spikes, tallest over the shoulder, plus a shorter outboard pair each side
+    for (let i = 0; i < 7; i++) {
+      const k = i / 6, z = 0.40 - k * 0.92, h = 0.30 - Math.abs(k - 0.18) * 0.26;
+      link(R, body, [0, 0.13 - k * 0.05, z], [0, 0.13 - k * 0.05 + h, z - h * 0.85], 0.055,
+        { color: i === 1 || i === 2 ? HORN : PLATE, flat: true, mottle: 0.14, geo: prim.cone(), w2: 0.038 });
+      if (i < 4) {
+        const hs = h * 0.62;
+        for (const sx of [1, -1]) link(R, body, [sx * (0.13 + k * 0.02), 0.05 - k * 0.03, z], [sx * (0.24 + k * 0.03), 0.05 + hs, z - hs * 0.9], 0.042,
+          { color: HORN, flat: true, mottle: 0.14, geo: prim.cone(), w2: 0.03 });
+      }
+    }
+    R.part(body, prim.crystal(), { p: [0, 0.16, 0.16], r: [-0.35, 0, 0], s: [0.045, 0.13, 0.045], color: GLOW, glow: 1, flat: true });   // rift core between the shoulder spikes
+    // ---- neck + wedge head, carried out front and low
+    const neck = R.bone('neck', body, 0, -0.02, 0.34);
+    R.part(neck, prim.limb(0.85), { p: [0, 0.06, 0.42], r: [-1.30, 0, 0], s: [0.115, 0.24, 0.13], color: HIDE2 });
+    R.part(neck, prim.slab(0.5), { p: [0, 0.11, 0.42], r: [-1.1, 0, 0], s: [0.20, 0.10, 0.16], color: PLATE, flat: true, mottle: 0.16 });
+    const head = R.bone('head', neck, 0, 0.02, 0.24);
+    R.part(head, prim.slab(0.55), { p: [0, 0.01, 0.66], r: [-1.44, 0, 0], s: [0.155, 0.30, 0.145], color: HIDE });          // skull, narrow to the snout
+    R.mirror(head, prim.slab(0.5), { p: [0.075, 0.09, 0.60], r: [0.2, 0, 1.05], s: [0.075, 0.06, 0.20], color: PLATE, flat: true, mottle: 0.14 });   // brow ridges
+    R.mirror(head, prim.octa(), { p: [0.078, 0.055, 0.61], s: 0.030, color: GLOW, glow: 1, flat: true });                    // eyes
+    R.part(head, prim.slab(0.6), { p: [0, -0.065, 0.68], r: [-1.47, 0, 0], s: [0.115, 0.27, 0.065], color: HIDE2, mottle: 0.2 });   // lower jaw
+    for (let i = 0; i < 3; i++) {                                                                                            // jaw fangs + cheek spurs
+      for (const sx of [1, -1]) R.part(head, prim.cone(), { p: [sx * 0.055, -0.015 - i * 0.005, 0.72 - i * 0.06], r: [Math.PI, 0, 0], s: [0.016, 0.055, 0.016], color: CLAW, flat: true });
+    }
+    for (const sx of [1, -1]) link(R, head, [sx * 0.10, 0.03, 0.55], [sx * 0.20, 0.11, 0.38], 0.032, { color: HORN, flat: true, geo: prim.cone(), w2: 0.024 });   // cheek horns
+    // ---- legs: four, tucked and bent. No IK and no gait — it hovers; the paddle is in animate().
+    for (const [n, sx, z, fwd] of [['FL', 1, 0.24, 1], ['FR', -1, 0.24, 1], ['HL', 1, -0.34, 0], ['HR', -1, -0.34, 0]]) {
+      const hip = R.bone('hip' + n, body, sx * 0.15, -0.12, z), knee = R.bone('knee' + n, hip, 0, -0.24, 0);
+      R.part(hip, prim.limb(0.6), { p: [sx * 0.17, -0.10, z], r: [0, 0, -sx * 0.22], s: [0.070, 0.26, 0.075], color: HIDE2, mottle: 0.2 });
+      R.part(hip, prim.slab(0.6), { p: [sx * 0.19, -0.16, z], r: [0, 0, -sx * 0.3], s: [0.10, 0.16, 0.13], color: PLATE, flat: true, mottle: 0.16 });
+      R.part(knee, prim.limb(0.7), { p: [sx * 0.19, -0.40, z + (fwd ? 0.05 : -0.03)], r: [fwd ? 0.30 : -0.30, 0, 0], s: [0.050, 0.28, 0.052], color: HIDE });
+      R.part(knee, prim.slab(0.8), { p: [sx * 0.19, -0.66, z + (fwd ? 0.11 : -0.07)], s: [0.095, 0.055, 0.15], color: HIDE2, flat: true, mottle: 0.18 });   // paw
+      for (const dx of [0.030, 0, -0.030]) R.part(knee, prim.cone(), { p: [sx * 0.19 + dx, -0.685, z + (fwd ? 0.19 : -0.15)], r: [fwd ? 1.45 : -1.45, 0, 0], s: [0.015, 0.055, 0.015], color: CLAW, flat: true });
+    }
+    // ---- tail: four segments, spiked, ending in a blade
+    const t0 = R.bone('tail0', body, 0, -0.04, -0.56), t1 = R.bone('tail1', t0, 0, 0.02, -0.26), t2 = R.bone('tail2', t1, 0, 0.04, -0.24), t3 = R.bone('tail3', t2, 0, 0.05, -0.22);
+    link(R, t0, [0, -0.04, -0.56], [0, -0.02, -0.82], 0.070, { color: HIDE, flat: true, mottle: 0.2, taper: 0.7, w2: 0.062 });
+    link(R, t1, [0, -0.02, -0.82], [0, 0.02, -1.06], 0.055, { color: HIDE2, flat: true, mottle: 0.2, taper: 0.7, w2: 0.048 });
+    link(R, t2, [0, 0.02, -1.06], [0, 0.08, -1.28], 0.042, { color: HIDE, flat: true, mottle: 0.22, taper: 0.7, w2: 0.036 });
+    link(R, t3, [0, 0.08, -1.28], [0, 0.20, -1.46], 0.055, { color: PLATE, flat: true, mottle: 0.16, geo: prim.cone(), w2: 0.022 });   // blade fluke
+    for (const [bn, z, y, h] of [[t0, -0.66, 0.02, 0.11], [t1, -0.90, 0.04, 0.10], [t2, -1.14, 0.08, 0.085]]) {
+      link(R, bn, [0, y, z], [0, y + h, z - h * 0.8], 0.030, { color: HORN, flat: true, geo: prim.cone(), w2: 0.02 });
+    }
+    return R.build();
+  },
+  setup(e) {
+    e.legs = null;                                                       // hovers: no IK, no foot planting
+    e.rTail = [e.bones.tail0, e.bones.tail1, e.bones.tail2, e.bones.tail3];
+    e.rLegs = ['FL', 'FR', 'HL', 'HR'].map((n) => [e.bones['hip' + n], e.bones['knee' + n]]);
+  },
+  animate(e, dt, t, A) {
+    const b = e.bones, tt = t + e.seedT, sw = SW(e), sp = e.speedN;
+    const lunge = seg(sw, 0.05, 0.30) - seg(sw, 0.34, 0.62);
+    b.body.position.y = Math.sin(tt * 1.5) * 0.09 + Math.sin(tt * 2.9) * 0.03 + (e.state === 'stagger' ? -0.14 : 0);
+    b.body.rotation.x = e.tilt * 0.6 - sp * 0.16 + lunge * 0.34;         // noses down as it accelerates, rears on the spit
+    b.body.rotation.z = Math.sin(tt * 0.8) * 0.07 + e.strafeLean * 0.14;
+    b.neck.rotation.x = damp(b.neck.rotation.x, -0.10 + sp * 0.14 - lunge * 0.30, 9, dt);
+    if (e.alert) aimAt(b.head, A.eye, 1.0, 0.7, 7, dt); else { relaxBone(b.head, 2, dt); b.head.rotation.y = Math.sin(tt * 0.6) * 0.4; }
+    chainWave(e.rTail, tt + sp, 0.20 + sp * 0.14, 2.4 + sp * 3, 'y', 0.75);
+    for (let i = 0; i < 4; i++) e.rTail[i].rotation.x = 0.10 - i * 0.06 + Math.sin(tt * 1.4 - i * 0.6) * 0.07;
+    // legs paddle slowly, front and back out of phase — a beast treading air, not a corpse hanging from a hook
+    for (let i = 0; i < 4; i++) {
+      const [hip, knee] = e.rLegs[i], ph = tt * (1.1 + sp * 2.2) + i * 1.9;
+      hip.rotation.x = Math.sin(ph) * (0.18 + sp * 0.34) - 0.12 - lunge * 0.5;
+      knee.rotation.x = 0.55 + Math.cos(ph) * (0.16 + sp * 0.26) + lunge * 0.4;
+    }
+  },
+};
+
+// ---------------------------------------------------------------- SPRITE: round moth-fae, four wings, hooded mantle
+// Built from tools/out/assetgen/tripo/sprite-hq.glb (render sprite-hq-render.jpg). Like the riftling it used to
+// wear the WISP body, so Whisperwood's own trash mob was the Vale's aether orb painted green.
+// The reference is a plump moth-fae: a round fluffy body under a filigreed hooded mantle, one huge domed eye
+// each side, two pairs of veined wings, two feathered antennae and a pair of long straight quills swept back.
+// Features in priority order: 1. the FOUR WINGS (the whole read at range, and the only fast motion on it),
+// 2. the round body + hooded mantle silhouette, 3. the oversized eye, which is what makes it fae and not a bug.
+const sprite = {
+  build() {
+    const R = new Rig(), { root } = R;      // root = body centre (flyer)
+    const FLUFF = 0xdfe6f2, FLUFF2 = 0xb9c8e2, CLOAK = 0x8fa6c8, TRIM = 0xe8dfc0, WING = 0xffffff, EYE = 0x2a2438, GLOW = 0xffffff;
+    const body = R.bone('body', root, 0, 0, 0);
+    R.part(body, prim.sphereLo(), { p: [0, -0.02, 0], s: [0.26, 0.25, 0.27], color: FLUFF, mottle: 0.22 });                     // fluffy abdomen
+    R.part(body, prim.sphereLo(), { p: [0, -0.20, -0.02], s: [0.19, 0.15, 0.19], color: FLUFF2, mottle: 0.30 });                // under-fluff
+    R.part(body, prim.sphereLo(), { p: [0, 0.10, 0.13], s: [0.20, 0.18, 0.19], color: FLUFF2, mottle: 0.2 });                   // thorax
+    // hooded mantle: a cowl over the back and shoulders with a trim edge and two filigree scrolls
+    R.part(body, prim.cone(), { p: [0, 0.10, -0.10], r: [-0.30, 0, 0], s: [0.30, 0.36, 0.28], color: CLOAK, flat: true, mottle: 0.16 });
+    R.part(body, prim.hex(), { p: [0, -0.06, -0.06], r: [0.2, 0.5, 0], s: [0.30, 0.05, 0.29], color: TRIM, flat: true, mottle: 0.08 });
+    R.mirror(body, prim.slab(0.5), { p: [0.20, 0.02, 0.02], r: [0, 0, 0.9], s: [0.14, 0.20, 0.20], color: CLOAK, flat: true, mottle: 0.16 });  // shoulder lappets
+    R.mirror(body, prim.ring(), { p: [0.16, 0.06, -0.14], r: [0.4, 0.6, 0], s: 0.10, color: TRIM, mottle: 0.06 });                             // filigree scrolls
+    // ---- head: small, mostly eye
+    const head = R.bone('head', body, 0, 0.16, 0.20);
+    R.part(head, prim.sphereLo(), { p: [0, 0.18, 0.28], s: [0.135, 0.13, 0.13], color: FLUFF, mottle: 0.18 });
+    R.part(head, prim.cone(), { p: [0, 0.25, 0.24], r: [-0.45, 0, 0], s: [0.15, 0.20, 0.15], color: CLOAK, flat: true, mottle: 0.14 });        // hood peak over the brow
+    R.mirror(head, prim.sphereLo(), { p: [0.085, 0.175, 0.34], s: [0.075, 0.085, 0.070], color: EYE, mottle: 0.06 });                          // huge domed eyes
+    R.mirror(head, prim.octa(), { p: [0.098, 0.195, 0.395], s: 0.026, color: GLOW, glow: 1, flat: true });                                     // catchlight
+    for (const sx of [1, -1]) {                                                                                                                // antennae, curling up and out
+      link(R, head, [sx * 0.06, 0.28, 0.26], [sx * 0.13, 0.44, 0.20], 0.014, { color: FLUFF2, flat: true });
+      link(R, head, [sx * 0.13, 0.44, 0.20], [sx * 0.20, 0.53, 0.10], 0.011, { color: FLUFF2, flat: true, geo: prim.cone() });
+      R.part(head, prim.octa(), { p: [sx * 0.20, 0.53, 0.10], s: 0.022, color: GLOW, glow: 0.8, flat: true });
+    }
+    // two long straight quills swept back over the mantle — the reference's odd, memorable detail
+    for (const sx of [1, -1]) link(R, body, [sx * 0.05, 0.16, -0.05], [sx * 0.12, 0.62, -0.34], 0.014, { color: TRIM, flat: true, geo: prim.cone(), w2: 0.008 });
+    // ---- four wings. membrane() is a cambered scalloped panel (x = span, z = chord, +Z leading edge).
+    for (const [n, sx, fore] of [['FR', 1, 1], ['FL', -1, 1], ['HR', 1, 0], ['HL', -1, 0]]) {
+      const w = R.bone('w' + n, body, sx * 0.13, fore ? 0.10 : -0.02, fore ? 0.04 : -0.10);
+      const span = fore ? 0.62 : 0.40, chord = fore ? 0.46 : 0.34;
+      R.part(w, prim.membrane(fore ? 3 : 2), { p: [sx * (0.13 + span * 0.5), fore ? 0.16 : 0.00, fore ? 0.02 : -0.14], r: [0, sx > 0 ? 0 : Math.PI, sx * (fore ? 0.30 : 0.12)], s: [span, 0.10, chord], color: WING, glow: 0.30, flat: true });
+      for (let i = 0; i < 2; i++) {                                          // veins: two thin ribs per wing, no more — they are 2 px at combat range
+        const u = 0.30 + i * 0.34;
+        link(R, w, [sx * (0.13 + span * 0.06), fore ? 0.16 : 0.0, fore ? 0.16 : -0.02], [sx * (0.13 + span * 0.92), fore ? 0.16 + span * 0.30 * (u - 0.3) : 0.0, (fore ? 0.02 : -0.18) - chord * (u - 0.15)], 0.010,
+          { color: WING, glow: 0.22, flat: true, w2: 0.006 });
+      }
+    }
+    for (const sx of [1, -1]) for (let i = 0; i < 3; i++) {                   // six tucked legs
+      link(R, body, [sx * 0.10, -0.18, 0.10 - i * 0.10], [sx * 0.15, -0.30, 0.06 - i * 0.11], 0.014, { color: FLUFF2, flat: true, geo: prim.cone() });
+    }
+    return R.build();
+  },
+  setup(e) { e.wings = ['FR', 'FL', 'HR', 'HL'].map((n) => e.bones['w' + n]); },
+  animate(e, dt, t, A) {
+    const b = e.bones, tt = t + e.seedT, sw = SW(e), tg = e.telegraph;
+    const beat = tt * (26 + e.speedN * 10);                                  // fast enough to read as a blur, not a flap
+    b.body.position.y = Math.sin(tt * 2.4) * 0.07 + Math.sin(beat) * 0.012 + (e.state === 'stagger' ? -0.12 : 0);
+    b.body.rotation.x = e.tilt * 0.5 + e.speedN * 0.22 - seg(sw, 0, 0.3) * 0.25 + seg(sw, 0.34, 0.55) * 0.35;
+    b.body.rotation.z = Math.sin(tt * 1.3) * 0.10 + e.strafeLean * 0.18;
+    if (e.alert) aimAt(b.head, A.eye, 0.9, 0.6, 7, dt); else { relaxBone(b.head, 2, dt); b.head.rotation.y = Math.sin(tt * 0.8) * 0.45; }
+    for (let i = 0; i < 4; i++) {
+      const w = e.wings[i], sx = i % 2 ? -1 : 1, fore = i < 2;
+      const a = Math.sin(beat - (fore ? 0 : 0.7));                          // hind pair lags the fore pair
+      w.rotation.z = sx * (a * (fore ? 0.55 : 0.42) + 0.10 + tg * 0.5);
+      w.rotation.x = a * 0.16 * (fore ? 1 : -1);
+      w.rotation.y = sx * (-0.10 - tg * 0.35);                              // wings spread flat when it charges a bolt
+    }
+  },
+};
+
+export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent, frostwolf, treant, riftling, sprite };

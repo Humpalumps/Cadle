@@ -98,7 +98,10 @@ export const DEFS = {
 const BIOME_DEFS = {
   // -------------------------------------------------- Whisperwood Deep (forest)
   sprite: {
-    name: 'Wood Sprite', body: 'wisp', element: 'strand', role: 'ranged', flying: true, hover: 1.7, scale: 1.0,
+    name: 'Wood Sprite', body: 'sprite', element: 'strand', role: 'ranged', flying: true, hover: 1.7, scale: 1.0,
+    // ethereal: see the uGhost block in materials.js. `hem` = [solidY, goneY] in the body's BIND-pose root space;
+    // a fae is only half here, so its under-fluff frays into drifting light instead of ending on a hard edge.
+    ghost: 0.45, hem: [-0.10, -0.46],
     health: 55, shield: 0, damage: 5, speed: 6.4, turn: 7, accel: 12,
     perception: 30, fov: 3.2, attackRange: 20, band: [9, 17], attackWindup: 0.45, attackCooldown: 1.7, attackRecover: 0.2, standoff: 2.4,
     projectile: { speed: 26, radius: 0.19, element: 'strand', life: 4 },
@@ -219,8 +222,12 @@ const BIOME_DEFS = {
     perception: 34, fov: 3.0, attackRange: 24, band: [8, 18], attackWindup: 0.6, attackCooldown: 2.0, attackRecover: 0.3, standoff: 2.6,
     projectile: { speed: 24, radius: 0.22, element: 'void', life: 4 },
     strafe: 1, stagger: 0.24, staggerTime: 0.45, shieldRadius: 1.0,
-    radius: 0.5, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.2, off: [0, 0.55, 0.05] }],
+    // off was [0, 0.55, 0.05], which put the crit sphere 0.55 m ABOVE the `head` bone and therefore half a metre
+    // over the hood, in empty air: headshots on a wraith could not land. The bone sits at root y 0.52 and the
+    // hood volume is centred at 0.62, so the offset is 0.10. Same radius, same multiplier, same bone.
+    radius: 0.5, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.2, off: [0, 0.10, 0.02] }],
     palette: [[0xb070ff, 0xe6d8ff], [0x8a7cff, 0xd8d0ff], [0x7cffd8, 0xd0fff0]], glow: 1.5, rim: 0.7, bump: 0.03,
+    ghost: 0.78, hem: [-0.30, -1.32],
     deathTime: 1.5, xp: 70,
   },
   bogwitch: {
@@ -258,13 +265,17 @@ const BIOME_DEFS = {
   },
   // -------------------------------------------------- The Void
   riftling: {
-    name: 'Riftling', body: 'wisp', element: 'void', role: 'ranged', flying: true, hover: 2.1, scale: 1.05,
+    // body 'riftling' (was 'wisp'): the Void's trash mob was the Vale's glowing orb re-tinted, which is what the
+    // wave-3 void verdict measured as "a chunky flat pale-pink body with three flat pink ribbon loops". It is a
+    // rift beast now. hover unchanged, so the AI is untouched — the body just hangs its mass below the root.
+    name: 'Riftling', body: 'riftling', element: 'void', role: 'ranged', flying: true, hover: 2.1, scale: 1.05,
     health: 140, shield: 40, shieldElement: 'void', damage: 9, speed: 7.8, turn: 8, accel: 15,
     perception: 34, fov: 3.4, attackRange: 24, band: [10, 19], attackWindup: 0.4, attackCooldown: 1.6, attackRecover: 0.2, standoff: 2.6,
     projectile: { speed: 30, radius: 0.21, element: 'void', life: 4 },
     fleeAt: 0.18, fleeTime: 1.8, strafe: 1, stagger: 0.26, staggerTime: 0.32,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
-    palette: [[0xb070ff, 0x1a1030], [0x8a3dff, 0x140c28], [0xd070ff, 0x1e1034]], glow: 1.05, rim: 0.7, bump: 0,
+    palette: [[0xb070ff, 0x8a7ba8], [0x8a3dff, 0x7d6fa0], [0xd070ff, 0x9484ae]], glow: 1.05, rim: 0.7, bump: 0.05,
+    ghost: 0.5, hem: [-0.40, -0.82],
     signature: { blink: { cd: 3.2, dist: 9 } },
     deathTime: 1.1, xp: 90,
   },
@@ -274,8 +285,9 @@ const BIOME_DEFS = {
     perception: 44, fov: 3.0, attackRange: 30, band: [10, 22], attackWindup: 0.7, attackCooldown: 2.2, attackRecover: 0.35, volley: 3, volleyGap: 0.15, standoff: 3.0,
     projectile: { speed: 27, radius: 0.28, element: 'void', life: 4.5, explodeRadius: 1.9 },
     strafe: 1, stagger: 0.3, staggerTime: 0.5, shieldRadius: 1.5,
-    radius: 0.72, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.34, mult: 2.2, off: [0, 0.55, 0.05] }],
+    radius: 0.72, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.34, mult: 2.2, off: [0, 0.10, 0.02] }],
     palette: [[0x8a3dff, 0xd8b0ff], [0x6a2ce0, 0xc8a0ff]], glow: 1.7, rim: 0.75, bump: 0.04,
+    ghost: 0.86, hem: [-0.30, -1.32],
     signature: { pull: { force: 13 }, blink: { cd: 6.0, dist: 7 } },
     deathTime: 1.9, xp: 280,
   },

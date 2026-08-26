@@ -294,5 +294,39 @@ for (const f of srcFiles) {
   }
 }
 
+// ------------------------------------------------------------------ (n) NO GLB EVER REACHES THE RUNTIME
+// User directive 2026-08-26: assets come in through concept -> Tripo GLB -> the img2threejs skill ->
+// PROCEDURAL Three.js code, and the GLB is a structural reference that never ships. The project already
+// paid for the lesson once: guy.glb was a single rigid mesh with skinCount 0, so while it was on screen
+// the intro's IK arms, breathing idle and suck-in reach were all dead code (HANDOVER 6).
+// Provenance COMMENTS naming a .glb are wanted — every converted body should say what it was built from —
+// so this rule only looks at code, and only for the two things that actually load one.
+{
+  const stripped = (src) => {
+    let out = '', block = false;
+    for (const raw of src.split('\n')) {
+      let line = raw;
+      if (block) { const e = line.indexOf('*/'); if (e < 0) continue; line = line.slice(e + 2); block = false; }
+      for (;;) {                                  // a line can open a block comment after real code
+        const s = line.indexOf('/*');
+        if (s < 0) break;
+        const e = line.indexOf('*/', s + 2);
+        if (e < 0) { line = line.slice(0, s); block = true; break; }
+        line = line.slice(0, s) + line.slice(e + 2);
+      }
+      const c = line.indexOf('//');
+      out += (c >= 0 ? line.slice(0, c) : line) + '\n';
+    }
+    return out;
+  };
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? walk(join(dir, d.name)) : (d.name.endsWith('.js') ? [join(dir, d.name)] : []));
+  for (const f of walk('src')) {
+    const code = stripped(read(f));
+    if (/GLTFLoader|GLTF_?Loader/.test(code)) fail(`${f} imports/uses GLTFLoader - GLBs are references for the img2threejs pipeline, never runtime assets (docs/CREATURE-PIPELINE.md).`);
+    if (/['"`][^'"`]*\.glb\b/.test(code)) fail(`${f} names a .glb file in CODE (comments are fine) - nothing may load a GLB at runtime; ship the procedural conversion instead (docs/CREATURE-PIPELINE.md).`);
+  }
+}
+
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');
 process.exit(failed ? 1 : 0);
