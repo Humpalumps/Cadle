@@ -407,7 +407,18 @@ export class VFX {
     if (!f) { f = this.lights[0]; for (const x of this.lights) if (x.t / x.dur > f.t / f.dur) f = x; }
     if (!f) return;
     const c = this._col(o, 0xffe2b0);
-    f.t = 0; f.dur = o.duration ?? 0.06; f.i0 = (o.intensity ?? 3) * 9 * (0.5 + 0.5 * this.day); // candela-ish, halved at night (night exposure is high: full power blows out to a structureless orb)
+    // NEAR-CAMERA FADE — the blob decree, and it belongs HERE rather than in each preset because every
+    // caller has the same failure. An enemy explosive bolt detonates ON the player, so `explosion` put a
+    // PointLight 0.5-1.2 m from the eye with a ~10 m falloff and an effective intensity of ~52 after the
+    // multiplier below: it floods every pixel and the raw scene clips before postfx ever runs.
+    // Measured by the creatures-1 diagnosis: 48 near-camera calls in 12 s, peak 52.7 at 0.51 m; zeroing
+    // these lights alone took washed frames 3/5 -> 0/7 (tools/out/c1-diag4..6).
+    // A light that close is never a lighting cue anyway — you cannot see what it lights, only the wash.
+    const cam = this.game?.camera;
+    let nearK = 1;
+    if (cam) { const d = cam.position.distanceTo(p); nearK = d <= 2 ? 0 : Math.min(1, (d - 2) / 3); }   // 0 inside 2 m, full past 5 m
+    if (nearK <= 0) return;
+    f.t = 0; f.dur = o.duration ?? 0.06; f.i0 = (o.intensity ?? 3) * 9 * (0.5 + 0.5 * this.day) * nearK; // candela-ish, halved at night (night exposure is high: full power blows out to a structureless orb)
     f.light.color.copy(c); f.light.distance = o.distance ?? 8; f.light.intensity = f.i0; f.light.position.copy(p);
   }
   attach(preset, obj, o = NOPTS) {

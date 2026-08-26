@@ -321,10 +321,27 @@ for (const f of srcFiles) {
   };
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
     d.isDirectory() ? walk(join(dir, d.name)) : (d.name.endsWith('.js') ? [join(dir, d.name)] : []));
+  // AMENDED 2026-08-26 (user call): RIGGED CREATURE GLBs ARE ALLOWED, everything else is still banned.
+  // Why the rule changed: the original ban was written after guy.glb shipped with skinCount 0 — one rigid
+  // mesh, so the intro's IK arms and breathing idle were dead code. That is an ANIMATION failure, not a
+  // performance one, and it does not apply to a properly rigged asset. Measured this session: Tripo's
+  // rig (v2.5-20260210 — the DEFAULT v1.0 fails with error 1004) returns the hound as a 101-joint
+  // quadruped Armature with full detail and zero warnings, and once a vertex buffer is on the GPU it
+  // costs exactly what procedurally-generated geometry costs. Procedural stays the rule for
+  // ARCHITECTURE, where parametric mouldings and exact repetition genuinely win.
+  // The narrow allowance: creature assets under /assets/creatures/, loaded through game.assets like
+  // everything else. Anything else naming a .glb in code is still the bug this rule was written for.
+  const CREATURE_GLB = /assets\/creatures\/[\w-]+\.glb/;
   for (const f of walk('src')) {
     const code = stripped(read(f));
-    if (/GLTFLoader|GLTF_?Loader/.test(code)) fail(`${f} imports/uses GLTFLoader - GLBs are references for the img2threejs pipeline, never runtime assets (docs/CREATURE-PIPELINE.md).`);
-    if (/['"`][^'"`]*\.glb\b/.test(code)) fail(`${f} names a .glb file in CODE (comments are fine) - nothing may load a GLB at runtime; ship the procedural conversion instead (docs/CREATURE-PIPELINE.md).`);
+    const isAssets = f.replace(/\\/g, '/').endsWith('src/core/Assets.js');
+    const isEnemies = f.replace(/\\/g, '/').includes('src/enemies/');
+    if (/GLTFLoader|GLTF_?Loader/.test(code) && !isAssets) fail(`${f} imports/uses GLTFLoader - only src/core/Assets.js may load models, and only rigged creature GLBs under /assets/creatures/ (docs/CREATURE-PIPELINE.md).`);
+    for (const m of code.matchAll(/['"`]([^'"`]*\.glb)\b/g)) {
+      const url = m[1];
+      if (CREATURE_GLB.test(url) && (isAssets || isEnemies)) continue;   // the allowance
+      fail(`${f} names "${url}" in CODE (comments are fine). Only rigged creature GLBs under /assets/creatures/, referenced from Assets.js or src/enemies/, may exist at runtime - architecture stays procedural (docs/CREATURE-PIPELINE.md).`);
+    }
   }
 }
 

@@ -5,6 +5,85 @@ reference* that the `img2threejs` skill converts into procedural Three.js code, 
 (2) The bestiary and the NPCs are the game's weakest art, so **every** monster and NPC goes through
 this pipeline, and every future creature is created this way from the start.
 
+## ROUTE CHANGE 2026-08-26 — MONSTERS ARE RIGGED GLBs, ARCHITECTURE STAYS PROCEDURAL
+
+The user's call, after seeing what procedural reconstruction actually produced ("those models are
+terrible ... they aren't even close to the glb sample"). Both halves of this are deliberate:
+
+**Monsters: concept -> Tripo GLB -> Tripo RIG -> local optimize -> load through `game.assets`.**
+**Architecture: unchanged, procedural** — parametric mouldings, exact repetition and the ornament
+library genuinely win across ten landmarks, and there is no reference mesh for most of them anyway.
+
+### Why the old "no GLB at runtime" rule did not survive contact
+
+It was written after `guy.glb` shipped with `skinCount 0` — one rigid mesh, so the intro's two-bone
+IK arms and breathing idle were dead code while it was on screen. That is an **animation** failure,
+not a performance one. Once a vertex buffer is on the GPU it costs exactly what procedurally
+generated geometry costs; the GPU cannot tell how it was authored. `tools/invariants.mjs` rule (n) is
+therefore amended rather than deleted: rigged creature GLBs under `/assets/creatures/` referenced
+from `Assets.js` or `src/enemies/` are allowed, everything else still fails the build.
+
+### The route, with the gotchas that cost real time
+
+1. **Generate** — `image_to_model`, `model_version: v3.1-20260211`, `geometry_quality: detailed`,
+   `texture_quality: detailed`, `face_limit` 60000. (Concept rules unchanged, see above.)
+2. **Pre-rig check** — `type: animate_prerigcheck`. Returns `riggable` and a `rig_type`. The hound
+   came back `{riggable: true, rig_type: quadruped, topology: quadruped}`.
+3. **Rig** — `type: animate_rig`, `rig_type` from step 2, `out_format: glb`, and
+   **`model_version: v2.0-20250506` or newer**. **THE DEFAULT RIG VERSION FAILS.** Omitting
+   `model_version` selects `v1.0-20240301`, which returns `error_code 1004` with zero credits
+   consumed — it looks like the model is unriggable when it is not. Passing a newer version resolves
+   to `v2.5-20260210` and succeeds. Result: 103 nodes, an `Armature` skin, **101 joints**, no warnings.
+4. **Optimize locally — never a web service.** `@gltf-transform/cli` (v4.4.2) is the same library the
+   online GLB optimisers are built on; the compression comes from open codecs (meshopt, Draco, KTX2/
+   Basis), so the ratios are identical and a third-party upload buys nothing. Use **meshopt** for
+   geometry (decodes far faster than Draco, and download size is not a constraint — the user ships
+   via a loading screen or a Steam package) and **KTX2/Basis** for textures, which is the real win:
+   GPU-compressed textures stay compressed in VRAM, ~4-8x smaller than a decoded JPEG. Three already
+   ships `meshopt_decoder`, `meshopt_simplifier`, `DRACOLoader` and `KTX2Loader`.
+5. **Load through `game.assets`** like every other asset — preloaded behind the start screen, never
+   streamed mid-game.
+
+### The bone plan — keeping 101 joints from becoming a crowd problem
+
+Tripo rigs to ~101 joints. A shipped crowd enemy usually runs 20-40. What actually costs, in order:
+
+1. **CPU: `Skeleton.update()` + the bone hierarchy's `updateMatrixWorld`.** This is the dominant term
+   and it is per-bone, per-skeleton, per-frame: 50 monsters x 101 joints is ~5,000 matrix
+   compositions a frame before a single triangle is drawn.
+2. **Draw calls.** Three cannot GPU-instance skinned meshes, so 50 animated monsters is 50 calls
+   minimum (plus shadow casters). Affordable inside 350 — but it means one material per creature,
+   not three.
+3. **Bone texture uploads.** 101 joints is 404 texels, a 32x32 DataTexture per mesh. Genuinely minor;
+   do not optimise this first.
+
+**The plan, in the order it should be done:**
+
+- **Prune the skeleton to ~30 joints.** Fingers, toes and facial bones drive nothing readable on a
+  crowd enemy at combat range. Collapse each removed joint's skin weights into its parent (a
+  `gltf-transform` script, not a manual edit) and keep: root, hips, spine x2-3, neck, head, jaw if it
+  is used, and per-limb shoulder/elbow/wrist + hip/knee/ankle, plus the tail chain the silhouette
+  actually needs. **Target 25-35.** This is a ~3x cut in term 1 for zero visible loss.
+- **Rate-limit skeleton updates by distance.** Near enemies pose every frame; mid every 2nd; far
+  every 4th-6th. The pose is interpolated by the existing animate hooks, so a stale frame is
+  invisible past ~25 m. This is the single cheapest large win and it compounds with the prune.
+- **Rigid LOD past the point skinning stops reading.** Beyond ~40 m an enemy does not need skinning
+  at all — a rigid posed mesh (or the existing impostor tier) removes the skeleton from the budget
+  entirely. Our LOD ladder already exists; this is a tier assignment, not new machinery.
+- **One material per creature** so the 50-call floor does not become 150.
+
+**Then measure, do not assume.** The acceptance run is 50 alive in a real camp fight, reporting draw
+calls, `cpuMs`, and the per-system Enemies slice — not a meadow with three wisps. That is the same
+`hitchhunt --route combat` the deferred perf pass owes; the bone work is the one part of that pass
+worth doing early, because it is cheaper to prune a skeleton once at conversion time than to retrofit
+13 creatures later.
+
+### What this does NOT change
+
+Tri budgets, the draw-call rules, the blob decree, `Enemies.warm()`, and the three-distance
+acceptance test (200 m silhouette / 40 m ornament / 8 m material) all still apply. A rigged GLB that
+reads as plastic at 8 m is just as dead as a procedural one.
+
 ## Step 1 — concept image (Magnific `images_generate`)
 
 The concept decides the final style far more than any Tripo setting. A drifted concept produces a
