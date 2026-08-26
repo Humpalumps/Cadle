@@ -5,44 +5,122 @@ reference* that the `img2threejs` skill converts into procedural Three.js code, 
 (2) The bestiary and the NPCs are the game's weakest art, so **every** monster and NPC goes through
 this pipeline, and every future creature is created this way from the start.
 
-## ROUTE CHANGE 2026-08-26 — MONSTERS ARE RIGGED GLBs, ARCHITECTURE STAYS PROCEDURAL
+## THE ROUTE — how we make a monster or an NPC (definitive, 2026-08-26)
 
-The user's call, after seeing what procedural reconstruction actually produced ("those models are
-terrible ... they aren't even close to the glb sample"). Both halves of this are deliberate:
+Proven end to end on the hound. Every number below is measured, not estimated.
 
-**Monsters: concept -> Tripo GLB -> Tripo RIG -> local optimize -> load through `game.assets`.**
-**Architecture: unchanged, procedural** — parametric mouldings, exact repetition and the ornament
-library genuinely win across ten landmarks, and there is no reference mesh for most of them anyway.
+```
+concept image (Magnific)  ->  Tripo generate  ->  Tripo rig  ->  Tripo animate  ->  local optimise  ->  game.assets
+     75 cr                      ~60 cr             25 cr          ~25 cr each        gltf-transform
+```
 
-### Why the old "no GLB at runtime" rule did not survive contact
+Result for the hound: **13,112 tris, 0.74 MB, 101 joints, walk cycle intact** — from a 4.58 MB,
+59,730-tri source. It renders and deforms correctly at every phase of the cycle.
 
-It was written after `guy.glb` shipped with `skinCount 0` — one rigid mesh, so the intro's two-bone
-IK arms and breathing idle were dead code while it was on screen. That is an **animation** failure,
-not a performance one. Once a vertex buffer is on the GPU it costs exactly what procedurally
-generated geometry costs; the GPU cannot tell how it was authored. `tools/invariants.mjs` rule (n) is
-therefore amended rather than deleted: rigged creature GLBs under `/assets/creatures/` referenced
-from `Assets.js` or `src/enemies/` are allowed, everything else still fails the build.
+### 1. Concept (Magnific `images_generate`)
 
-### The route, with the gotchas that cost real time
+Follow the prompt skeleton below — matte, dark base material, filigree/crystal accent, one small
+glow, silhouette specifics, three-quarter view, plain light-grey background, and the anti-plinth
+clause. Generate `count: 2` and pick against the rest of the batch. This step decides the style; a
+drifted concept produces a drifted model no later step can rescue.
 
-1. **Generate** — `image_to_model`, `model_version: v3.1-20260211`, `geometry_quality: detailed`,
-   `texture_quality: detailed`, `face_limit` 60000. (Concept rules unchanged, see above.)
-2. **Pre-rig check** — `type: animate_prerigcheck`. Returns `riggable` and a `rig_type`. The hound
-   came back `{riggable: true, rig_type: quadruped, topology: quadruped}`.
-3. **Rig** — `type: animate_rig`, `rig_type` from step 2, `out_format: glb`, and
-   **`model_version: v2.0-20250506` or newer**. **THE DEFAULT RIG VERSION FAILS.** Omitting
-   `model_version` selects `v1.0-20240301`, which returns `error_code 1004` with zero credits
-   consumed — it looks like the model is unriggable when it is not. Passing a newer version resolves
-   to `v2.5-20260210` and succeeds. Result: 103 nodes, an `Armature` skin, **101 joints**, no warnings.
-4. **Optimize locally — never a web service.** `@gltf-transform/cli` (v4.4.2) is the same library the
-   online GLB optimisers are built on; the compression comes from open codecs (meshopt, Draco, KTX2/
-   Basis), so the ratios are identical and a third-party upload buys nothing. Use **meshopt** for
-   geometry (decodes far faster than Draco, and download size is not a constraint — the user ships
-   via a loading screen or a Steam package) and **KTX2/Basis** for textures, which is the real win:
-   GPU-compressed textures stay compressed in VRAM, ~4-8x smaller than a decoded JPEG. Three already
-   ships `meshopt_decoder`, `meshopt_simplifier`, `DRACOLoader` and `KTX2Loader`.
-5. **Load through `game.assets`** like every other asset — preloaded behind the start screen, never
-   streamed mid-game.
+### 2. Generate (`type: image_to_model`)
+
+```
+model_version: "v3.1-20260211"   geometry_quality: "detailed"   texture_quality: "detailed"
+face_limit: 60000   pbr: true   texture: true
+```
+v3.0 at standard quality is too coarse to be worth rigging. **Look at the render before continuing**
+— never judge from Tripo's `rendered_image` thumbnail (12-34 KB; upscaling one makes a 58k-tri asset
+look like Minecraft). Use `tools/out/assetgen/glbview.html?m=<name>` through the harness.
+
+### 3. Rig (`type: animate_prerigcheck`, then `type: animate_rig`)
+
+Pre-check returns `{riggable, rig_type, topology}`. Then rig with that `rig_type`
+(`biped | quadruped | hexapod | octopod | avian | serpentine | aquatic | others`).
+
+> **THE TRAP THAT LOOKS LIKE A DEAD END: pass `model_version: "v2.0-20250506"` or newer.**
+> Omitting it selects `v1.0-20240301`, which returns **`error_code 1004` with zero credits consumed**
+> — indistinguishable from "this model cannot be rigged". A newer version resolves to `v2.5-20260210`
+> and succeeds.
+
+### 4. Animate (`type: animate_retarget`)
+
+`animation: "preset:<name>"`, `bake_animation: true`. **Tested on a quadruped rig:** `preset:slash`,
+`preset:hurt`, `preset:idle`, `preset:run`, `preset:walk`, `preset:jump`, `preset:shoot` all accept.
+The `quadruped:` namespace has **only** `preset:quadruped:walk` — `quadruped:run`, `quadruped:idle`
+and `quadruped:attack` are rejected as invalid names.
+
+**What we take from Tripo and what we drive ourselves:**
+- **Locomotion (idle / walk / run) from presets.** Periodic, no combat sync needed, and they look
+  good. On a quadruped the biped `run` retargets worst; `walk` is native and clean.
+- **Attacks, stagger and death stay PROCEDURAL**, driven by `src/enemies/rig.js`'s animate hooks on
+  the rigged skeleton. Not because Tripo cannot produce them, but because a baked clip cannot be cut
+  off mid-swing when the enemy is staggered, and attack timing has to line up with damage windows and
+  telegraph frames. The hooks now drive real anatomical bones instead of a stack of primitives.
+- **Bipeds get much better attack presets than quadrupeds** — `slash` and `shoot` are native there,
+  so the sentinel/warden/forgeknight class gets real sword and ranged animations for free.
+
+### 5. Optimise LOCALLY (`node tools/optimize-creature.mjs <in> <out> --tris N`)
+
+Never a web service. The online GLB optimisers are `gltf-transform` front-ends and the compression is
+open codecs (meshopt, Draco, KTX2/Basis), so local tooling gets identical ratios without uploading
+assets and without a build step that depends on someone else's site staying up.
+
+The script runs `dedup -> prune -> weld -> simplify(meshopt) -> flatten -> join -> resample ->
+textureCompress(webp, 1024) -> quantize`. Choices: **meshopt not Draco** (decodes far faster, and
+download size is not a constraint — assets come down behind the loading screen or ship in a Steam
+package, so boot time is what we are short of); **textures to 1024** (Tripo emits 4096, ~16x the
+texels a creature needs); **join/flatten** because draw calls, not triangles, are what bind us at 72
+enemies alive. Measured on the hound: **6.2x smaller, 4.6x fewer triangles, rig and clip intact.**
+
+### 6. Ship it through `game.assets`
+
+Creature GLBs live in `public/assets/creatures/` and load through the preloader like every other
+asset — behind the start screen, never streamed mid-game. `tools/invariants.mjs` rule (n) allows
+`/assets/creatures/*.glb` from `Assets.js` or `src/enemies/` and fails the build for a `.glb`
+anywhere else, so **architecture cannot quietly follow monsters onto this path**.
+
+
+### Batch 1 status (2026-08-27) — 9 rigged creatures optimised and staged
+
+`public/assets/creatures/*.glb`, **8.8 MB total, one mesh each (so one draw call each)**:
+
+| creature | tris | joints | MB | tier target |
+|---|---|---|---|---|
+| treant | 38,354 | 68 | 1.77 | 15k **over** |
+| drake | 25,700 | 82 | 1.08 | 10k **over** |
+| wraith | 24,330 | 94 | 0.99 | 10k **over** |
+| golem | 23,345 | 34 | 1.00 | 15k over |
+| sentinel | 22,540 | 34 | 1.06 | 15k over |
+| sprite | 21,214 | 35 | 0.81 | 4k **way over** |
+| frostwolf | 17,106 | 34 | 0.82 | 10k over |
+| riftling | 14,316 | 59 | 0.63 | 10k over |
+| hound | 13,106 | 101 | 0.65 | 10k (close) |
+
+**KNOWN ISSUE 1 — the simplifier undershoots its target.** `optimize-creature.mjs` computes the
+simplify `ratio` from `count()` evaluated *before* `weld()` runs in the same transform chain, so the
+base is wrong and everything lands 1.3-5x over target. Fix: weld first in its own `transform()` call,
+then compute the ratio, then simplify — or loop until the count converges. Nothing is broken by this,
+the models just carry more triangles than the tier allows.
+
+**KNOWN ISSUE 2 — biped rigs are much cheaper than the rest.** Biped comes back at **34 joints**,
+quadruped/avian at 59-101. The bone plan below matters most for the hound (101), wraith (94) and
+drake (82); the biped creatures are already close to the 25-35 target and may need no pruning at all.
+
+**These are rig-only.** `animate_retarget` is a separate call per creature per clip; only the hound
+has a clip so far (`preset:quadruped:walk`, verified deforming correctly at 13k after optimisation).
+
+**Crowd cost, measured on the optimised hound** (isolated scene, every instance at LOD0 with its own
+skeleton and casting a shadow — the pathological case, not the shipping case):
+
+| instances | ms/frame | draw calls | tris |
+|---|---|---|---|
+| 25 | 6.46 | 51 | 656k |
+| 50 | 12.06 | 99 | 1.28M |
+
+~0.24 ms per creature, linear. 25 on screen is ~6.5 ms against a 7 ms whole-frame budget, so the LOD
+ladder, the bone prune and a shadow-caster cap are **required**, not optional, before this ships.
 
 ### The bone plan — keeping 101 joints from becoming a crowd problem
 
