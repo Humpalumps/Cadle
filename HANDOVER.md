@@ -887,6 +887,19 @@ JS bundles differ by 1004 bytes with identical chunking. **Cross-run boot compar
 worthless (4d), and 18 orphaned `chrome-headless-shell` processes were inflating everything (4b).** Kill the
 orphans, then interleave, before believing any boot number.
 
+## 4m-bis. CREATURE TRI BUDGET RAISED TO 15k AT LOD0 (user, 2026-08-26)
+
+Was ~3.5k. The user raised it 4.3x so converted creatures can carry real detail: "we don't need to
+stick to a 3.5k triangle budget for these models we can go up to 15k". 15000 also sits inside the
+img2threejs generator's "standard" tessellation tier (<=60k), so specs get real segment counts
+instead of the low tier.
+
+**What the deferred perf pass must therefore check** (it did not exist as a risk before): `MAX_ALIVE`
+is 72 and `Enemies` streams camps by distance, so a dense fight can put a lot of LOD0 bodies on
+screen at once. 15k x even a dozen near bodies is 180k tris, which is fine against the 4 M budget —
+the failure mode is the LOD ladder NOT falling away, not LOD0 itself. Measure a real camp fight, not
+the meadow, and check LOD1/LOD2 tri counts as well as the totals.
+
 ## 4m. PERFORMANCE IS A DEFERRED PASS (user call, 2026-08-26)
 
 During the Destiny-2-polish campaign the user decided **not** to gate each wave on performance:

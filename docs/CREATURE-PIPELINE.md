@@ -75,6 +75,11 @@ a good creature reference lands around 55-60k tris with 4096 maps.
 Invoke the `img2threejs` skill on the GLB (its GLB-mediated track: the mesh is a structural baseline,
 its topology and materials are never copied). Requirements for a converted creature:
 
+- **Tri budget: 15k at LOD0** (user, 2026-08-26; was 3.5k). 15000 sits inside the skill's "standard"
+  tessellation tier (<=60k), so `performanceBudget.targetTriangles: 15000` buys real segment counts
+  rather than the low tier. Reach for `geometryDescriptor.decimate` only on a component that is
+  genuinely wasteful. The LOD ladder must still fall away hard past LOD0 — 72 enemies can be alive,
+  so LOD0 is for the near few.
 - keeps the existing `Enemy` contract in `src/enemies/` — per-type procedural poses, walk/attack/
   stagger animation hooks, the same update signature; AI and combat must not change.
 - respects the intensity ceilings that `tools/invariants.mjs` greps (enemy emissive is capped; the

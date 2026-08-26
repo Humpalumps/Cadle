@@ -227,7 +227,7 @@ const BIOME_DEFS = {
     // hood volume is centred at 0.62, so the offset is 0.10. Same radius, same multiplier, same bone.
     radius: 0.5, height: 0, center: 0, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.2, off: [0, 0.10, 0.02] }],
     palette: [[0xb070ff, 0xe6d8ff], [0x8a7cff, 0xd8d0ff], [0x7cffd8, 0xd0fff0]], glow: 1.5, rim: 0.7, bump: 0.03,
-    ghost: 0.78, hem: [-0.30, -1.32],
+    ghost: 0.68, hem: [-0.30, -1.32],
     deathTime: 1.5, xp: 70,
   },
   bogwitch: {
@@ -268,7 +268,10 @@ const BIOME_DEFS = {
     // body 'riftling' (was 'wisp'): the Void's trash mob was the Vale's glowing orb re-tinted, which is what the
     // wave-3 void verdict measured as "a chunky flat pale-pink body with three flat pink ribbon loops". It is a
     // rift beast now. hover unchanged, so the AI is untouched — the body just hangs its mass below the root.
-    name: 'Riftling', body: 'riftling', element: 'void', role: 'ranged', flying: true, hover: 2.1, scale: 1.05,
+    // hover 2.1 -> 1.4 and scale 1.05 -> 0.85: an ORB can float at head height, a 1.9 m armoured quadruped
+    // cannot — at 2.1 m its paws hung level with the player's eyes. 1.4 puts the paws ~0.8 m off the ground,
+    // which is a beast prowling the air. AI, ranges, projectile and standoff are untouched.
+    name: 'Riftling', body: 'riftling', element: 'void', role: 'ranged', flying: true, hover: 1.4, scale: 0.85,
     health: 140, shield: 40, shieldElement: 'void', damage: 9, speed: 7.8, turn: 8, accel: 15,
     perception: 34, fov: 3.4, attackRange: 24, band: [10, 19], attackWindup: 0.4, attackCooldown: 1.6, attackRecover: 0.2, standoff: 2.6,
     projectile: { speed: 30, radius: 0.21, element: 'void', life: 4 },

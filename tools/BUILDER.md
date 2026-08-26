@@ -42,4 +42,7 @@ If your task involves a creature, an NPC, or a landmark, **read `docs/CREATURE-P
   honestly. "Improved" is not "done".
 - **Creatures additionally** keep the existing `src/enemies/` contract — same `BODIES` entry point,
   same bone names and animate hooks, same LOD ladder, `Enemies.warm()` still builds one of each at
-  boot — and fit roughly 3.5k tris at LOD0, because up to 72 are alive at once.
+  boot — and fit **15k tris at LOD0** (raised from 3.5k by the user 2026-08-26 — spend them on the detail that
+  makes a creature read). The LOD ladder must still drop hard beyond LOD0, because up to 72 enemies are
+  alive at once: LOD0 is for the near few, not the crowd. Share geometry across instances, and report
+  what your LOD1/LOD2 come out at.

@@ -50,8 +50,8 @@ function creatureOnBeforeCompile(shader) {
       float hemT = 0.0, hemN = 0.0;
       if (uGhost > 0.001) {
         float hem = 1.0 - smoothstep(uHem.y, uHem.x, vEPos.y);
-        hemN = enoise(vEPos * vec3(3.6, 2.2, 3.6) + vec3(0.0, uTime * 0.42, 0.0)) * 0.72
-             + enoise(vEPos * 11.0 + vec3(0.0, uTime * 0.9, 0.0)) * 0.28;
+        hemN = enoise(vEPos * vec3(6.5, 4.0, 6.5) + vec3(0.0, uTime * 0.42, 0.0)) * 0.70
+             + enoise(vEPos * 16.0 + vec3(0.0, uTime * 0.9, 0.0)) * 0.30;
         hemT = hem * hem * uGhost * 0.94;
         if (hemN < hemT) discard;
       }`)
@@ -87,12 +87,12 @@ function creatureOnBeforeCompile(shader) {
         // leave the grazing edges alone, then add the creature's own hue at the silhouette. Every operation
         // here either multiplies light by < 1 or adds a term that the cap below closes, so it cannot blob.
         float gfr = pow(1.0 - saturate(dot(normal, geometryViewDir)), 2.0);
-        float hollow = mix(1.0, 0.16 + 0.84 * gfr, uGhost);
+        float hollow = mix(1.0, 0.30 + 0.70 * gfr, uGhost);
         reflectedLight.directDiffuse *= hollow;
-        reflectedLight.indirectDiffuse *= mix(1.0, 0.34 + 0.66 * gfr, uGhost);
+        reflectedLight.indirectDiffuse *= mix(1.0, 0.46 + 0.54 * gfr, uGhost);
         reflectedLight.directSpecular *= 1.0 - uGhost * 0.9;      // nothing incorporeal has a highlight
         reflectedLight.indirectSpecular *= 1.0 - uGhost * 0.9;
-        reflectedLight.indirectDiffuse += ecol * gfr * gfr * uGhost * (0.42 + 0.14 * pulse);
+        reflectedLight.indirectDiffuse += ecol * gfr * gfr * uGhost * (0.24 + 0.09 * pulse);
       }`)
     .replace('#include <opaque_fragment>', `#include <opaque_fragment>
       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.6, 1.5, 1.35), uFlash);
