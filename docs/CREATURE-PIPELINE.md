@@ -57,7 +57,18 @@ Same gate re-run at those settings came back 7.2 MB with real fluting and frieze
 `POST /v2/openapi/upload` (multipart) → `POST /v2/openapi/task` (`type: image_to_model`) →
 poll `GET /v2/openapi/task/<id>` → download `output.pbr_model` (GLB) and `output.rendered_image`
 (preview). Rate limit: a burst of ~10 submissions is fine; beyond that it returns code 2000 with a
-`Retry-After`. **Look at every preview before converting** — that is where style drift is caught.
+`Retry-After`. **Look at every model before converting** — that is where style drift is caught. Do NOT judge it by
+`output.rendered_image`: those previews are 12-34 KB thumbnails and upscaling one makes a 58k-tri,
+4096-texture asset look like blocky Minecraft geometry. Render the GLB itself:
+
+```
+CADLE_SKIP_TREECHECK=1 node tools/inspect.mjs --nolock --name glbshot-<m> --noready   --url "http://127.0.0.1:<port>/tools/out/assetgen/glbview.html?m=<m>&w=1100&h=1100"   --w 1100 --h 1100 --steps '[{"wait":7},{"shot":"m"}]'
+```
+
+`tools/out/assetgen/glbview.html` is a dev-only three.js inspector (ACES, PBR environment, soft
+shadow catcher, auto-framed camera; `yaw`/`pitch` params to orbit). Geometry can also be checked
+without rendering by parsing the GLB's JSON chunk for accessor counts and embedded texture sizes —
+a good creature reference lands around 55-60k tris with 4096 maps.
 
 ## Step 3 — img2threejs → procedural code
 

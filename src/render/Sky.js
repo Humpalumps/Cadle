@@ -961,6 +961,11 @@ export class Sky {
     if (this._ambBase) {
       this._hueToward(this.ambientColor.copy(this._ambBase).multiplyScalar(this._anE), this._klC, this._klE);
       this._hueToward(this.groundColor.copy(this._gndBase).multiplyScalar(this._anE), this._klC, this._klE);
+      // horizonColor too, because Lighting.bakeEnv builds the env probe as mix(horizon, zenith, y^0.55):
+      // more than half of the probe's upper hemisphere is this colour, so an ungraded sunset horizon put
+      // the orange straight back onto every up-facing surface through scene.environment. NOT skyColor —
+      // the zenith really is blue at golden hour, and the visible DOME is the GPU LUT, untouched by this.
+      this._hueToward(this.horizonColor.copy(this._horBase), this._klC, this._klE);
     }
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
@@ -1270,5 +1275,6 @@ export class Sky {
     (this._sunBase ??= new THREE.Color()).copy(this.sunColor);
     (this._ambBase ??= new THREE.Color()).copy(this.ambientColor);
     (this._gndBase ??= new THREE.Color()).copy(this.groundColor);
+    (this._horBase ??= new THREE.Color()).copy(this.horizonColor);
   }
 }

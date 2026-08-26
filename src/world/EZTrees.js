@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Tree } from '@dgreenheck/ez-tree';
-import { patchMaterial, mergePatch, fadePatch, normalFromLuma } from './Vegetation.js';
+import { patchMaterial, mergePatch, fadePatch, normalFromLuma, instTintPatch } from './Vegetation.js';
 
 // species mapping: 0 slender birch-alike, 1 gnarled broadleaf, 2 shore willow (closest: droopy ash)
 const POOLS = [
@@ -149,22 +149,11 @@ export function buildEZTrees(game, trees, vegetation) {
     fHead: 'varying float vFade; float ezDT(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
     fAlpha: 'if (vFade < 0.999 && ezDT(gl_FragCoord.xy) <= 1.0 - vFade) discard;',
   };
-  // PER-INSTANCE LEAF TINT, CARRIED BY HAND — three r185 drops it on the floor otherwise. `#define
-  // USE_INSTANCING_COLOR` is emitted into the VERTEX prefix only (WebGLProgram prefixVertex), and
-  // `color_pars_fragment` declares `vColor` under `USE_COLOR || USE_COLOR_ALPHA` — which comes from the
-  // MATERIAL's vertexColors flag, not from instanceColor. So on an InstancedMesh with instanceColor and
-  // no vertexColors, three's own `color_fragment` never multiplies the tint in and a fragment `#ifdef
-  // USE_INSTANCING_COLOR` is always false. Every `tr.c` region leaf colour Vegetation._place computes
-  // (BTREE[].col: Whisperwood's deep teal-green, the enchanted blue-teal accent, the Frostveil cool cast)
-  // was being uploaded and discarded — which is why the Whisperwood canopy renders as flat spring lime.
-  // Setting vertexColors:true would "work" and then read a non-existent `color` attribute as (0,0,0) —
-  // black leaves. One varying is the whole fix, and it costs nothing.
-  const iTint = {
-    vHead: 'varying vec3 vITint;',
-    vBegin: 'vITint = vec3(1.0);\n#ifdef USE_INSTANCING_COLOR\nvITint = instanceColor;\n#endif',
-    fHead: 'varying vec3 vITint;',
-    fMap: '#include <map_fragment>\ndiffuseColor.rgb *= vITint;',
-  };
+  // The leaf and impostor materials below both carry `instTintPatch` (Vegetation.js): without it three
+  // r185 silently drops instanceColor before the fragment stage, and every `tr.c` region leaf colour
+  // Vegetation._place computes (BTREE[].col — Whisperwood's deep teal-green, the enchanted blue-teal
+  // accent, the Frostveil cool cast) is uploaded and discarded. That is why the canopy read as flat
+  // spring lime. See the patch's doc comment for the mechanism and why `vertexColors: true` is not it.
 
   // Low-poly tune: raw presets are ~50-100k tris per tree (148M in frame, 29 fps measured).
   const tune = (o) => {
@@ -267,7 +256,7 @@ export function buildEZTrees(game, trees, vegetation) {
     const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: assetLeaf ?? t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       color: assetLeaf ? 0xffffff : (LEAF_COL[species] ?? t.leavesMesh.material.color?.clone() ?? 0xffffff),   // the painted card carries its own colour — ez's preset green would re-summer the snow
-    }), mergePatch(erodeNear, sway, iTint, {
+    }), mergePatch(erodeNear, sway, instTintPatch, {
       // Canopy-sphere shading: raw card normals point wherever the card faces, so a sun-aligned 10 m card
       // lit uniformly bright next to a dark neighbour read as long two-tone "plastic strip" slashes across
       // the crown (crit2-forest-b/shot-heart-side). Pulling normals toward up shades the canopy like a
@@ -340,7 +329,7 @@ export function buildEZTrees(game, trees, vegetation) {
       // one bake per frame: a burst of six RT renders was a visible boot hitch (perf audit 2026-08-20)
       await new Promise((res) => requestAnimationFrame(res));
       v.impMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bakeImpostor(v), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
-        mergePatch(impFade, iTint, { key: 'eztree-impostor' }));
+        mergePatch(impFade, instTintPatch, { key: 'eztree-impostor' }));
       const n = list.length;
       // static per-instance data, written once; rebucketing rewrites the mesh instance buffers from it
       const mats = new Float32Array(n * 16), cols = new Float32Array(n * 3), xz = new Float32Array(n * 2);

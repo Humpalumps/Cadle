@@ -16,6 +16,7 @@ import { BIOMES, RL_EDGE } from './Biomes.js';
  *                        `c` = [r,g,b] leaf tint, present on region-owned trees only (EZTrees reads it).
  *   vegetation.rocks     [{x,y,z,kind,scale}]
  *   vegetation.crystals  [{x,y,z,scale}]
+ *   vegetation.understory  InstLOD of Whisperwood fern/bracken clumps, or null when card_fern is missing
  *   vegetation.lods      InstLOD sets refreshed round-robin (Props pushes its own)
  *   vegetation.uniforms  { uTime, uWind, uSunDirV, uSunColor, uSunI } shared by Props materials
  *   vegetation.setWind(w)
@@ -149,6 +150,22 @@ export function triplanarPatch(scale = 0.3, moss = 0.0, mossColor = [0.45, 0.62,
       #endif`,
   };
 }
+/** Per-instance InstancedMesh colour, carried by hand — USE THIS ON EVERY INSTANCED MATERIAL THAT WANTS
+ *  ITS instanceColor. three r185 emits `#define USE_INSTANCING_COLOR` into the VERTEX prefix only, and
+ *  `color_pars_fragment` declares `vColor` under `USE_COLOR`/`USE_COLOR_ALPHA` — which come from the
+ *  MATERIAL's `vertexColors` flag, not from instanceColor. So on an InstancedMesh with instanceColor and
+ *  no vertexColors the tint is uploaded, interpolated and then dropped: three's own `color_fragment`
+ *  skips it, and a fragment `#ifdef USE_INSTANCING_COLOR` is always false. Setting `vertexColors: true`
+ *  is NOT the fix — three then reads a `color` ATTRIBUTE the geometry does not have, which comes through
+ *  as (0,0,0) and renders black. (The rocks were always fine: vertexColors:true AND a colour attribute.)
+ *  This cost the project two waves of "Frostveil ice shards are royal sapphire" fixes that edited a tint
+ *  which could not arrive, and it is why the Whisperwood canopy ignored BTREE.forest.col. */
+export const instTintPatch = {
+  vHead: 'varying vec3 vITint;',
+  vBegin: 'vITint = vec3(1.0);\n#ifdef USE_INSTANCING_COLOR\nvITint = instanceColor;\n#endif',
+  fHead: 'varying vec3 vITint;',
+  fMap: '#include <map_fragment>\ndiffuseColor.rgb *= vITint;',
+};
 export const mergePatch = (...ps) => { const o = {}; for (const p of ps) for (const k in p) o[k] = k === 'uniforms' ? { ...(o[k] || {}), ...p[k] } : (o[k] || '') + '\n' + p[k]; return o; };
 
 // ---------------------------------------------------------------- textures
@@ -657,7 +674,7 @@ export class Vegetation {
     const nn = geo.getAttribute('normal');
     for (let i = 0; i < nn.count; i++) nn.setXYZ(i, 0, 1, 0);   // lit like the ground it sits on: no black backside quad
     const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }),
-      { ...erodeFade(0.42), key: 'understory' });
+      mergePatch(erodeFade(0.42), instTintPatch, { key: 'understory' }));   // instTintPatch: without it the per-clump green/teal jitter below would silently do nothing
     const m = new THREE.InstancedMesh(geo, mat, 8);
     m.castShadow = false; m.receiveShadow = true; m.name = 'understory-fern';
     this.game.scene.add(m);
