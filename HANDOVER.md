@@ -9,6 +9,83 @@ Repo: `https://github.com/Humpalumps/Cadle` · branch `main` · everything below
 
 ---
 
+## 0. WHERE THE CAMPAIGN IS RIGHT NOW (2026-08-27) - READ THIS BEFORE ANYTHING ELSE
+
+The user asked for a Destiny-2-quality pass over the whole game, broken into the smallest judgeable
+pieces, built by fan-out sub-agents, judged by fresh-context critics on the RUNNING GAME, looping
+until the critics are genuinely wowed. Four waves are done. **Work in this worktree; its dev server
+is `http://127.0.0.1:5179/`** (5173 is the main checkout - measuring it is the classic wrong-tree
+trap, see 4a-bis).
+
+### Wave scoreboard (fresh critics, blind vs the real Destiny 2 / FF14)
+
+| region | w1 | w2 | w3 | w4 |
+|---|---|---|---|---|
+| forest | 3 | 6 | 6 | 5 |
+| tundra | 4.5 | 6 | 5 | 6 (TOSSUP) |
+| celestial | 3.5 | 4.5 | 6 | 6.5 |
+| dragon | 3.5 | 5 | 4 | 5 |
+| infernal | 4 | 5.5 | 6 | 6.5 |
+| lost | 3.5 | 5 | 6 | 6.5 (TOSSUP) |
+| shadowfen | 4 | 5.5 | 5 | 6 |
+| sunken | 3 | (redesign) | 4 | 4.5 |
+| void | 4 | 5.5 | 5 | 5.5 |
+| vale | 6.5 | 7 | 5 | 6 (TOSSUP) |
+
+Average 3.9 -> 5.7 -> 5.2 -> **5.8**. Nothing is at the bar yet. Verdicts with per-finding evidence:
+`tools/out/wave{1,2,3,4}-summary.txt` and `wave{1,2,3,4}-verdicts.json`; screenshots in
+`tools/out/crit{1,2,3,4}-<region>*/`. Wave 4 closed with a **full GATE PASS** (blobcheck clean 88
+frames at q=high and q=low, jitter clean, pointer lock engage + re-acquire) and curvecheck OK.
+
+### THE BIG ROUTE CHANGE - monsters are rigged GLBs now
+
+The user saw the procedural reconstruction output and rejected it ("those models are terrible ...
+they aren't even close to the glb sample"). **`docs/CREATURE-PIPELINE.md` is now the definitive
+process and must be read before touching a creature or an NPC.** Summary:
+
+- **Monsters/NPCs:** concept (Magnific) -> Tripo `image_to_model` (v3.1, detailed) -> Tripo
+  `animate_rig` -> Tripo `animate_retarget` for locomotion -> `node tools/optimize-creature.mjs`
+  -> `public/assets/creatures/*.glb` -> `game.assets`.
+- **Architecture stays procedural** - parametric mouldings and exact repetition win across ten
+  landmarks. `docs/ORNAMENT-STANDARD.md` is the bar there (and explains why landmarks kept scoring
+  4-6: we kept fixing the 200 m silhouette and never built the 40 m ornament or the 8 m material).
+- `tools/invariants.mjs` rule (n) allows `/assets/creatures/*.glb` from `Assets.js` or `src/enemies/`
+  and **fails the build for a `.glb` anywhere else**, so architecture cannot quietly follow.
+- **Gotcha that reads as a dead end:** `animate_rig` MUST get `model_version: "v2.0-20250506"` or
+  newer. The default v1.0 returns `error_code 1004` with zero credits - indistinguishable from
+  "unriggable".
+- **`python3` did not exist on this box** and every img2threejs doc command starts with it, which is
+  why earlier builders silently hand-rolled primitives. Shimmed at `C:/Users/ianca/bin/python3`
+  (and `python3.cmd` for PowerShell); user PATH updated, `python` untouched.
+
+### WHAT IS DONE vs WHAT IS NEXT
+
+**Done:** 9 creatures generated, rigged, optimised and staged in `public/assets/creatures/`
+(8.8 MB, one mesh each, joints 34-101). Hound has a verified walk clip. Crowd cost measured.
+Blob decree: all three wave-3 violations fixed at root; wave-4 critics found ONE more (dragon melee),
+traced to `VFX.flash()` firing a PointLight ~1 m from the camera, fixed with a near-camera fade in
+the shared function and verified `BLOBCHECK PASS`.
+
+**NEXT, in order:**
+1. **Wire the 9 creature GLBs into the game.** `Assets.js` needs GLB loading (GLTFLoader + meshopt
+   decoder, both already in `node_modules/three`), `src/enemies/` needs to consume them instead of
+   the procedural bodies, keeping the `BODIES` entry points, bone-driven animate hooks, LOD ladder
+   and `Enemies.warm()`. **Nothing is wired yet - the GLBs are on disk and unused.**
+2. **Fix the two known optimiser issues** (doc has them): simplify ratio is computed pre-weld so
+   every model is 1.3-5x over its tier target; and prune the 101/94/82-joint skeletons to ~30.
+   Do the prune at conversion time - retrofitting 13 creatures later is miserable.
+3. **4 creature bodies still need concepts + models:** warden, serpent, giant, wisp. Concepts for
+   warden/serpent/giant were generating when the session ended; **wisp should probably stay
+   procedural** - it is a glow orb, not a mesh.
+4. **Wave 5** (was about to launch): region loop-backs on everything still LOSE, the creature
+   integration above, and a **fresh coherence agent that plays the whole game end to end and judges
+   it as ONE experience** - that has never been done and the user asked for it between major waves.
+5. **Performance is a DEFERRED dedicated pass** (user call, 4m) - do NOT gate waves on it.
+
+### Live asset accounts
+Magnific ~4,400 credits; Tripo ~4,785. `$TRIPO_API_KEY` is in the user environment - the REST API
+works, the Tripo MCP tools 401 in-session and need an app restart to pick the key up.
+
 ## 1. The job
 
 Build a browser FPS-RPG in Three.js at **Destiny 2** level for game feel and **Final Fantasy XIV** level for
