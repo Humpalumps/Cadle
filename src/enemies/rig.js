@@ -46,6 +46,23 @@ export const prim = {
   // both faces under a FrontSide material. Unit box: x = span, z = chord (+Z leading edge), y = billow.
   // ~72 tris — LESS than the beveled RoundedBox it replaces, and it stops the wing looking like a plank.
   membrane: (lobes = 3) => PRIM['memb' + lobes] ??= makeMembrane(lobes),
+
+  // ---- SMOOTH / CHAMFERED FAMILY (creature triangle budget raised by the user 2026-08-26: ~4k small and
+  // ethereal, ~10k standard creature). The cost table above was written against a 3.5k crowd budget and the
+  // whole bestiary is now sitting at a fifth of its ceiling, so the cheap prims above are no longer the
+  // right default for anything ORGANIC. What the extra triangles actually buy, per docs/CREATURE-PIPELINE.md:
+  // curvature (an 8-segment limb facets visibly at 3 m) and chamfered edges (a razor 90 deg edge is the
+  // loudest greybox tell there is). Nothing here changes a silhouette — same shapes, no hard edges.
+  sphereMid: () => PRIM.sphereMid ??= new THREE.SphereGeometry(1, 16, 12),                                  // 352 tris
+  coneS: (seg = 14) => PRIM['coneS' + seg] ??= new THREE.ConeGeometry(1, 1, seg, 1),                        // 28 tris
+  limbS: (taper = 0.7, seg = 14) => PRIM[`limbS${taper}_${seg}`] ??= new THREE.CylinderGeometry(1, taper, 1, seg, 1).translate(0, -0.5, 0),
+  // `slab` generalised: an n-gon prism with the same unit footprint (flat-to-flat = 1 on x and z), so it is a
+  // drop-in for slab(taper) at any side count. sides=8 IS slab with all four of its 90 deg edges chamfered
+  // away, for 16 more triangles — which is the single highest-value triangle in the whole table.
+  prism: (taper = 0.6, sides = 8) => PRIM[`prism${taper}_${sides}`] ??= (() => {
+    const k = 1 / (2 * Math.cos(Math.PI / sides));
+    return new THREE.CylinderGeometry(1, taper, 1, sides, 1).rotateY(Math.PI / sides).scale(k, 1, k);
+  })(),
 };
 function makeMembrane(lobes) {
   const NX = 6, NZ = 3, pos = [], uv = [], idx = [];

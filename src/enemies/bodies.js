@@ -26,7 +26,7 @@ function link(R, bone, a, b, w, o = {}) {
   _lv.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   const L = _lv.length() || 1e-4; _lv.multiplyScalar(1 / L);
   _lq.setFromUnitVectors(_lu, _lv); _le.setFromQuaternion(_lq);            // Euler order XYZ, same as Rig.build
-  R.part(bone, o.geo ?? prim.slab(o.taper ?? 0.55), {
+  R.part(bone, o.geo ?? prim.prism(o.taper ?? 0.55), {
     ...o, p: [a[0] + _lv.x * L * 0.5, a[1] + _lv.y * L * 0.5, a[2] + _lv.z * L * 0.5],
     r: [_le.x, _le.y, _le.z], s: [w, L, o.w2 ?? w],
   });
@@ -701,44 +701,44 @@ const wraith = {
     const body = R.bone('body', root, 0, 0, 0);
     // ---- torso: a fluted robe. Six drape panels round a core, each leaning out a little, so the trunk has
     // vertical edges instead of being one smooth lit volume (the "balloon" read is a volume with no edges).
-    R.part(body, prim.cone(), { p: [0, -0.34, 0], r: [Math.PI, 0, 0], s: [0.40, 0.92, 0.36], color: CLOTH, mottle: 0.26 });
-    R.part(body, prim.sphereLo(), { p: [0, 0.22, -0.01], s: [0.33, 0.28, 0.30], color: CLOTH2, mottle: 0.22 });          // chest/shoulder mass
+    R.part(body, prim.coneS(), { p: [0, -0.34, 0], r: [Math.PI, 0, 0], s: [0.40, 0.92, 0.36], color: CLOTH, mottle: 0.26 });
+    R.part(body, prim.sphereMid(), { p: [0, 0.22, -0.01], s: [0.33, 0.28, 0.30], color: CLOTH2, mottle: 0.22 });          // chest/shoulder mass
     for (let i = 0; i < 6; i++) {
       const a = i / 6 * Math.PI * 2 + 0.5;
       link(R, body, [Math.cos(a) * 0.26, 0.10, Math.sin(a) * 0.24], [Math.cos(a + 0.34) * 0.40, -0.72, Math.sin(a + 0.34) * 0.37], 0.16,
         { color: i % 2 ? CLOTH : CLOTH2, mottle: 0.30, taper: 0.35, w2: 0.10 });
     }
     // ---- shoulder mantle: three lames a side, rolled edge outward. The reference's cowl is its widest point.
-    R.mirror(body, prim.slab(0.5), { p: [0.33, 0.30, -0.02], r: [0, 0, 0.62], s: [0.34, 0.20, 0.32], color: CLOTH3, mottle: 0.16 });
-    R.mirror(body, prim.slab(0.6), { p: [0.37, 0.16, 0.02], r: [0, 0, 0.86], s: [0.29, 0.17, 0.28], color: CLOTH2, mottle: 0.2 });
-    R.mirror(body, prim.slab(0.7), { p: [0.36, 0.01, -0.03], r: [0, 0, 1.02], s: [0.23, 0.14, 0.24], color: CLOTH, mottle: 0.24 });
-    R.part(body, prim.slab(0.8), { p: [0, 0.10, -0.28], r: [-0.22, 0, 0], s: [0.44, 0.52, 0.10], color: CLOTH, mottle: 0.28 });   // back cloak
+    R.mirror(body, prim.prism(0.5), { p: [0.33, 0.30, -0.02], r: [0, 0, 0.62], s: [0.34, 0.20, 0.32], color: CLOTH3, mottle: 0.16 });
+    R.mirror(body, prim.prism(0.6), { p: [0.37, 0.16, 0.02], r: [0, 0, 0.86], s: [0.29, 0.17, 0.28], color: CLOTH2, mottle: 0.2 });
+    R.mirror(body, prim.prism(0.7), { p: [0.36, 0.01, -0.03], r: [0, 0, 1.02], s: [0.23, 0.14, 0.24], color: CLOTH, mottle: 0.24 });
+    R.part(body, prim.prism(0.8), { p: [0, 0.10, -0.28], r: [-0.22, 0, 0], s: [0.44, 0.52, 0.10], color: CLOTH, mottle: 0.28 });   // back cloak
     // ---- hood: peak, brow, cowl ring, and a hollow with two coals in it
     const head = R.bone('head', body, 0, 0.52, 0);
     R.part(head, prim.hex(), { p: [0, 0.34, -0.01], r: [0, 0.52, 0], s: [0.29, 0.09, 0.28], color: CLOTH3, flat: true, mottle: 0.14 });        // cowl ring
-    R.part(head, prim.cone(), { p: [0, 0.64, -0.04], r: [-0.10, 0.45, 0], s: [0.32, 0.56, 0.34], color: CLOTH2, mottle: 0.18 });             // hood
-    R.part(head, prim.cone(), { p: [0, 0.95, -0.08], r: [0.30, 0.9, 0], s: [0.15, 0.34, 0.16], color: CLOTH, mottle: 0.22 });                 // peaked crown fold, tipped BACK
-    R.part(head, prim.slab(0.45), { p: [0, 0.68, 0.19], r: [-0.62, 0, 0], s: [0.31, 0.24, 0.14], color: CLOTH3, mottle: 0.16 });               // overhanging brow
-    R.part(head, prim.sphereLo(), { p: [0, 0.53, 0.09], s: [0.16, 0.17, 0.14], color: HOLLOW, mottle: 0.04 });                                  // nothing inside it
+    R.part(head, prim.coneS(), { p: [0, 0.64, -0.04], r: [-0.10, 0.45, 0], s: [0.32, 0.56, 0.34], color: CLOTH2, mottle: 0.18 });             // hood
+    R.part(head, prim.coneS(), { p: [0, 0.95, -0.08], r: [0.30, 0.9, 0], s: [0.15, 0.34, 0.16], color: CLOTH, mottle: 0.22 });                 // peaked crown fold, tipped BACK
+    R.part(head, prim.prism(0.45), { p: [0, 0.68, 0.19], r: [-0.62, 0, 0], s: [0.31, 0.24, 0.14], color: CLOTH3, mottle: 0.16 });               // overhanging brow
+    R.part(head, prim.sphereMid(), { p: [0, 0.53, 0.09], s: [0.16, 0.17, 0.14], color: HOLLOW, mottle: 0.04 });                                  // nothing inside it
     R.mirror(head, prim.octa(), { p: [0.072, 0.55, 0.19], s: 0.040, color: GLOW, glow: 1, flat: true });                                        // eyes
-    R.mirror(head, prim.slab(0.6), { p: [0.22, 0.50, 0.04], r: [0.1, 0, 0.30], s: [0.13, 0.38, 0.18], color: CLOTH2, mottle: 0.2 });          // hood cheeks
+    R.mirror(head, prim.prism(0.6), { p: [0.22, 0.50, 0.04], r: [0.1, 0, 0.30], s: [0.13, 0.38, 0.18], color: CLOTH2, mottle: 0.2 });          // hood cheeks
     // hood streamers: cloth licks trailing back off the cowl (the reference has six of them, all curling one way)
     for (let i = 0; i < 4; i++) {
       const sx = i < 2 ? 1 : -1, k = i % 2;
       link(R, head, [sx * 0.22, 0.42 + k * 0.16, -0.10], [sx * (0.36 + k * 0.09), 0.58 + k * 0.20, -0.42 - k * 0.12], 0.052,
-        { color: CLOTH, mottle: 0.34, taper: 0.2, geo: prim.cone() });
+        { color: CLOTH, mottle: 0.34, taper: 0.2, geo: prim.coneS() });
     }
     // ---- arms: reaching forward and low, bony four-fingered hands
     for (const [n, sx] of [['R', 1], ['L', -1]]) {
       const sh = R.bone('sh' + n, body, sx * 0.38, 0.22, 0.04), el = R.bone('el' + n, sh, 0, -0.40, 0);
-      R.part(sh, prim.limb(0.62), { p: [sx * 0.39, 0.20, 0.06], s: [0.085, 0.42, 0.085], color: CLOTH2, mottle: 0.2 });
-      R.part(sh, prim.cone(), { p: [sx * 0.39, 0.08, 0.06], r: [Math.PI, 0, 0], s: [0.155, 0.34, 0.155], color: CLOTH, mottle: 0.3 });         // bell sleeve
-      R.part(el, prim.limb(0.5), { p: [sx * 0.39, -0.20, 0.14], r: [-0.28, 0, 0], s: [0.058, 0.40, 0.058], color: BONE, mottle: 0.24 });
-      R.part(el, prim.slab(0.8), { p: [sx * 0.39, -0.60, 0.26], r: [0.55, 0, 0], s: [0.105, 0.09, 0.12], color: BONE, mottle: 0.2 });          // palm
+      R.part(sh, prim.limbS(0.62), { p: [sx * 0.39, 0.20, 0.06], s: [0.085, 0.42, 0.085], color: CLOTH2, mottle: 0.2 });
+      R.part(sh, prim.coneS(), { p: [sx * 0.39, 0.08, 0.06], r: [Math.PI, 0, 0], s: [0.155, 0.34, 0.155], color: CLOTH, mottle: 0.3 });         // bell sleeve
+      R.part(el, prim.limbS(0.5), { p: [sx * 0.39, -0.20, 0.14], r: [-0.28, 0, 0], s: [0.058, 0.40, 0.058], color: BONE, mottle: 0.24 });
+      R.part(el, prim.prism(0.8), { p: [sx * 0.39, -0.60, 0.26], r: [0.55, 0, 0], s: [0.105, 0.09, 0.12], color: BONE, mottle: 0.2 });          // palm
       for (let f = 0; f < 4; f++) {                                        // long grasping fingers, splayed
         const fx = sx * (0.39 + (f - 1.5) * 0.042), sp = (f - 1.5) * 0.20;
         link(R, el, [fx, -0.63, 0.29], [fx + sx * 0.04 + sp * 0.04, -0.73 - Math.abs(f - 1.5) * 0.02, 0.43], 0.019,
-          { color: BONE, mottle: 0.18, geo: prim.cone() });
+          { color: BONE, mottle: 0.18, geo: prim.coneS() });
       }
       R.part(el, prim.crystal(), { p: [sx * 0.39, -0.46, 0.19], r: [0.55, 0, 0], s: [0.042, 0.12, 0.042], color: GLOW, glow: 1, flat: true });  // wrist ember
     }
@@ -755,7 +755,7 @@ const wraith = {
       const a3 = a + SWIRL * 1.45, p3 = [Math.cos(a3) * 0.68, -0.42 - long * 0.60, Math.sin(a3) * 0.63];   // tip curls back up
       link(R, rb, p0, p1, 0.088, { color: i % 2 ? CLOTH : CLOTH2, mottle: 0.30, taper: 0.6, w2: 0.062 });
       link(R, rb, p1, p2, 0.062, { color: CLOTH, mottle: 0.34, taper: 0.5, w2: 0.044 });
-      link(R, rb, p2, p3, 0.044, { color: CLOTH2, mottle: 0.36, geo: prim.cone() });
+      link(R, rb, p2, p3, 0.044, { color: CLOTH2, mottle: 0.36, geo: prim.coneS() });
     }
     for (let i = 0; i < WR_TEND2; i++) {                                    // inner ring: fills the vortex core
       const rb = R.bone('rig' + i, body, 0, -0.40, 0), a = i / WR_TEND2 * Math.PI * 2;
@@ -763,7 +763,7 @@ const wraith = {
       const a1 = a + 0.7, p1 = [Math.cos(a1) * 0.26, -0.86, Math.sin(a1) * 0.24];
       const a2 = a + 1.25, p2 = [Math.cos(a2) * 0.34, -1.10, Math.sin(a2) * 0.31];
       link(R, rb, p0, p1, 0.062, { color: CLOTH2, mottle: 0.3, taper: 0.55, w2: 0.045 });
-      link(R, rb, p1, p2, 0.042, { color: CLOTH, mottle: 0.34, geo: prim.cone() });
+      link(R, rb, p1, p2, 0.042, { color: CLOTH, mottle: 0.34, geo: prim.coneS() });
     }
     return R.build();
   },
@@ -1100,58 +1100,58 @@ const riftling = {
     const HIDE = 0x4c4468, HIDE2 = 0x635880, PLATE = 0x322a48, HORN = 0x272038, CLAW = 0x191322, GLOW = 0xffffff;
     const body = R.bone('body', root, 0, 0, 0);
     // ---- torso: shoulders high, waist pinched, haunch heavy — a stalking cat's line
-    R.part(body, prim.sphereLo(), { p: [0, -0.06, 0.20], s: [0.23, 0.22, 0.30], color: HIDE });
-    R.part(body, prim.sphereLo(), { p: [0, -0.10, -0.10], s: [0.18, 0.17, 0.26], color: HIDE2, mottle: 0.22 });
-    R.part(body, prim.sphereLo(), { p: [0, -0.08, -0.42], s: [0.21, 0.20, 0.24], color: HIDE });
-    R.part(body, prim.slab(0.75), { p: [0, -0.24, 0.02], s: [0.20, 0.10, 0.52], color: PLATE, flat: true, mottle: 0.2 });   // belly plate
+    R.part(body, prim.sphereMid(), { p: [0, -0.06, 0.20], s: [0.23, 0.22, 0.30], color: HIDE });
+    R.part(body, prim.sphereMid(), { p: [0, -0.10, -0.10], s: [0.18, 0.17, 0.26], color: HIDE2, mottle: 0.22 });
+    R.part(body, prim.sphereMid(), { p: [0, -0.08, -0.42], s: [0.21, 0.20, 0.24], color: HIDE });
+    R.part(body, prim.prism(0.75), { p: [0, -0.24, 0.02], s: [0.20, 0.10, 0.52], color: PLATE, flat: true, mottle: 0.2 });   // belly plate
     // overlapping dorsal + flank plates: each one tilted a little more than the last, so the light breaks
     for (let i = 0; i < 6; i++) {
       const k = i / 5, z = 0.34 - k * 0.86;
-      R.part(body, prim.slab(0.45), { p: [0, 0.11 - k * 0.05, z], r: [0.30 - k * 0.16, 0, 0], s: [0.30 - k * 0.07, 0.09, 0.20], color: PLATE, flat: true, mottle: 0.16 });
-      R.mirror(body, prim.slab(0.5), { p: [0.17 - k * 0.02, -0.03 - k * 0.02, z], r: [0, 0, 1.15 - k * 0.2], s: [0.15, 0.07, 0.19], color: HIDE2, flat: true, mottle: 0.18 });
+      R.part(body, prim.prism(0.45), { p: [0, 0.11 - k * 0.05, z], r: [0.30 - k * 0.16, 0, 0], s: [0.30 - k * 0.07, 0.09, 0.20], color: PLATE, flat: true, mottle: 0.16 });
+      R.mirror(body, prim.prism(0.5), { p: [0.17 - k * 0.02, -0.03 - k * 0.02, z], r: [0, 0, 1.15 - k * 0.2], s: [0.15, 0.07, 0.19], color: HIDE2, flat: true, mottle: 0.18 });
     }
     // ---- THE CREST: backswept spikes, tallest over the shoulder, plus a shorter outboard pair each side
     for (let i = 0; i < 7; i++) {
       const k = i / 6, z = 0.40 - k * 0.92, h = 0.30 - Math.abs(k - 0.18) * 0.26;
       link(R, body, [0, 0.13 - k * 0.05, z], [0, 0.13 - k * 0.05 + h, z - h * 0.85], 0.055,
-        { color: i === 1 || i === 2 ? HORN : PLATE, flat: true, mottle: 0.14, geo: prim.cone(), w2: 0.038 });
+        { color: i === 1 || i === 2 ? HORN : PLATE, flat: true, mottle: 0.14, geo: prim.coneS(), w2: 0.038 });
       if (i < 4) {
         const hs = h * 0.62;
         for (const sx of [1, -1]) link(R, body, [sx * (0.13 + k * 0.02), 0.05 - k * 0.03, z], [sx * (0.24 + k * 0.03), 0.05 + hs, z - hs * 0.9], 0.042,
-          { color: HORN, flat: true, mottle: 0.14, geo: prim.cone(), w2: 0.03 });
+          { color: HORN, flat: true, mottle: 0.14, geo: prim.coneS(), w2: 0.03 });
       }
     }
     R.part(body, prim.crystal(), { p: [0, 0.16, 0.16], r: [-0.35, 0, 0], s: [0.045, 0.13, 0.045], color: GLOW, glow: 1, flat: true });   // rift core between the shoulder spikes
     // ---- neck + wedge head, carried out front and low
     const neck = R.bone('neck', body, 0, -0.02, 0.34);
-    R.part(neck, prim.limb(0.85), { p: [0, 0.06, 0.42], r: [-1.30, 0, 0], s: [0.115, 0.24, 0.13], color: HIDE2 });
-    R.part(neck, prim.slab(0.5), { p: [0, 0.11, 0.42], r: [-1.1, 0, 0], s: [0.20, 0.10, 0.16], color: PLATE, flat: true, mottle: 0.16 });
+    R.part(neck, prim.limbS(0.85), { p: [0, 0.06, 0.42], r: [-1.30, 0, 0], s: [0.115, 0.24, 0.13], color: HIDE2 });
+    R.part(neck, prim.prism(0.5), { p: [0, 0.11, 0.42], r: [-1.1, 0, 0], s: [0.20, 0.10, 0.16], color: PLATE, flat: true, mottle: 0.16 });
     const head = R.bone('head', neck, 0, 0.02, 0.24);
-    R.part(head, prim.slab(0.55), { p: [0, 0.01, 0.66], r: [-1.44, 0, 0], s: [0.155, 0.30, 0.145], color: HIDE });          // skull, narrow to the snout
-    R.mirror(head, prim.slab(0.5), { p: [0.075, 0.09, 0.60], r: [0.2, 0, 1.05], s: [0.075, 0.06, 0.20], color: PLATE, flat: true, mottle: 0.14 });   // brow ridges
+    R.part(head, prim.prism(0.55), { p: [0, 0.01, 0.66], r: [-1.44, 0, 0], s: [0.155, 0.30, 0.145], color: HIDE });          // skull, narrow to the snout
+    R.mirror(head, prim.prism(0.5), { p: [0.075, 0.09, 0.60], r: [0.2, 0, 1.05], s: [0.075, 0.06, 0.20], color: PLATE, flat: true, mottle: 0.14 });   // brow ridges
     R.mirror(head, prim.octa(), { p: [0.078, 0.055, 0.61], s: 0.030, color: GLOW, glow: 1, flat: true });                    // eyes
-    R.part(head, prim.slab(0.6), { p: [0, -0.065, 0.68], r: [-1.47, 0, 0], s: [0.115, 0.27, 0.065], color: HIDE2, mottle: 0.2 });   // lower jaw
+    R.part(head, prim.prism(0.6), { p: [0, -0.065, 0.68], r: [-1.47, 0, 0], s: [0.115, 0.27, 0.065], color: HIDE2, mottle: 0.2 });   // lower jaw
     for (let i = 0; i < 3; i++) {                                                                                            // jaw fangs + cheek spurs
-      for (const sx of [1, -1]) R.part(head, prim.cone(), { p: [sx * 0.055, -0.015 - i * 0.005, 0.72 - i * 0.06], r: [Math.PI, 0, 0], s: [0.016, 0.055, 0.016], color: CLAW, flat: true });
+      for (const sx of [1, -1]) R.part(head, prim.coneS(), { p: [sx * 0.055, -0.015 - i * 0.005, 0.72 - i * 0.06], r: [Math.PI, 0, 0], s: [0.016, 0.055, 0.016], color: CLAW, flat: true });
     }
-    for (const sx of [1, -1]) link(R, head, [sx * 0.10, 0.03, 0.55], [sx * 0.20, 0.11, 0.38], 0.032, { color: HORN, flat: true, geo: prim.cone(), w2: 0.024 });   // cheek horns
+    for (const sx of [1, -1]) link(R, head, [sx * 0.10, 0.03, 0.55], [sx * 0.20, 0.11, 0.38], 0.032, { color: HORN, flat: true, geo: prim.coneS(), w2: 0.024 });   // cheek horns
     // ---- legs: four, tucked and bent. No IK and no gait — it hovers; the paddle is in animate().
     for (const [n, sx, z, fwd] of [['FL', 1, 0.24, 1], ['FR', -1, 0.24, 1], ['HL', 1, -0.34, 0], ['HR', -1, -0.34, 0]]) {
       const hip = R.bone('hip' + n, body, sx * 0.15, -0.12, z), knee = R.bone('knee' + n, hip, 0, -0.24, 0);
-      R.part(hip, prim.limb(0.6), { p: [sx * 0.17, -0.10, z], r: [0, 0, -sx * 0.22], s: [0.070, 0.34, 0.075], color: HIDE2, mottle: 0.2 });
-      R.part(hip, prim.slab(0.6), { p: [sx * 0.19, -0.16, z], r: [0, 0, -sx * 0.3], s: [0.10, 0.16, 0.13], color: PLATE, flat: true, mottle: 0.16 });
-      R.part(knee, prim.limb(0.7), { p: [sx * 0.19, -0.40, z + (fwd ? 0.05 : -0.03)], r: [fwd ? 0.30 : -0.30, 0, 0], s: [0.050, 0.28, 0.052], color: HIDE });
-      R.part(knee, prim.slab(0.8), { p: [sx * 0.19, -0.66, z + (fwd ? 0.11 : -0.07)], s: [0.095, 0.055, 0.15], color: HIDE2, flat: true, mottle: 0.18 });   // paw
-      for (const dx of [0.030, 0, -0.030]) R.part(knee, prim.cone(), { p: [sx * 0.19 + dx, -0.685, z + (fwd ? 0.19 : -0.15)], r: [fwd ? 1.45 : -1.45, 0, 0], s: [0.015, 0.055, 0.015], color: CLAW, flat: true });
+      R.part(hip, prim.limbS(0.6), { p: [sx * 0.17, -0.10, z], r: [0, 0, -sx * 0.22], s: [0.070, 0.34, 0.075], color: HIDE2, mottle: 0.2 });
+      R.part(hip, prim.prism(0.6), { p: [sx * 0.19, -0.16, z], r: [0, 0, -sx * 0.3], s: [0.10, 0.16, 0.13], color: PLATE, flat: true, mottle: 0.16 });
+      R.part(knee, prim.limbS(0.7), { p: [sx * 0.19, -0.40, z + (fwd ? 0.05 : -0.03)], r: [fwd ? 0.30 : -0.30, 0, 0], s: [0.050, 0.28, 0.052], color: HIDE });
+      R.part(knee, prim.prism(0.8), { p: [sx * 0.19, -0.66, z + (fwd ? 0.11 : -0.07)], s: [0.095, 0.055, 0.15], color: HIDE2, flat: true, mottle: 0.18 });   // paw
+      for (const dx of [0.030, 0, -0.030]) R.part(knee, prim.coneS(), { p: [sx * 0.19 + dx, -0.685, z + (fwd ? 0.19 : -0.15)], r: [fwd ? 1.45 : -1.45, 0, 0], s: [0.015, 0.055, 0.015], color: CLAW, flat: true });
     }
     // ---- tail: four segments, spiked, ending in a blade
     const t0 = R.bone('tail0', body, 0, -0.04, -0.56), t1 = R.bone('tail1', t0, 0, 0.02, -0.26), t2 = R.bone('tail2', t1, 0, 0.04, -0.24), t3 = R.bone('tail3', t2, 0, 0.05, -0.22);
     link(R, t0, [0, -0.04, -0.56], [0, -0.02, -0.82], 0.070, { color: HIDE, flat: true, mottle: 0.2, taper: 0.7, w2: 0.062 });
     link(R, t1, [0, -0.02, -0.82], [0, 0.02, -1.06], 0.055, { color: HIDE2, flat: true, mottle: 0.2, taper: 0.7, w2: 0.048 });
     link(R, t2, [0, 0.02, -1.06], [0, 0.08, -1.28], 0.042, { color: HIDE, flat: true, mottle: 0.22, taper: 0.7, w2: 0.036 });
-    link(R, t3, [0, 0.08, -1.28], [0, 0.20, -1.46], 0.055, { color: PLATE, flat: true, mottle: 0.16, geo: prim.cone(), w2: 0.022 });   // blade fluke
+    link(R, t3, [0, 0.08, -1.28], [0, 0.20, -1.46], 0.055, { color: PLATE, flat: true, mottle: 0.16, geo: prim.coneS(), w2: 0.022 });   // blade fluke
     for (const [bn, z, y, h] of [[t0, -0.66, 0.02, 0.11], [t1, -0.90, 0.04, 0.10], [t2, -1.14, 0.08, 0.085]]) {
-      link(R, bn, [0, y, z], [0, y + h, z - h * 0.8], 0.030, { color: HORN, flat: true, geo: prim.cone(), w2: 0.02 });
+      link(R, bn, [0, y, z], [0, y + h, z - h * 0.8], 0.030, { color: HORN, flat: true, geo: prim.coneS(), w2: 0.02 });
     }
     return R.build();
   },
@@ -1191,27 +1191,27 @@ const sprite = {
     const R = new Rig(), { root } = R;      // root = body centre (flyer)
     const FLUFF = 0xdfe6f2, FLUFF2 = 0xc4d2e8, CLOAK = 0xb4c4dc, TRIM = 0xe8dfc0, WING = 0xf2f6ff, EYE = 0x3a3450, GLOW = 0xffffff;
     const body = R.bone('body', root, 0, 0, 0);
-    R.part(body, prim.sphereLo(), { p: [0, -0.02, 0], s: [0.26, 0.25, 0.27], color: FLUFF, mottle: 0.22 });                     // fluffy abdomen
-    R.part(body, prim.sphereLo(), { p: [0, -0.20, -0.02], s: [0.19, 0.15, 0.19], color: FLUFF2, mottle: 0.30 });                // under-fluff
-    R.part(body, prim.sphereLo(), { p: [0, 0.10, 0.13], s: [0.20, 0.18, 0.19], color: FLUFF2, mottle: 0.2 });                   // thorax
+    R.part(body, prim.sphereMid(), { p: [0, -0.02, 0], s: [0.26, 0.25, 0.27], color: FLUFF, mottle: 0.22 });                     // fluffy abdomen
+    R.part(body, prim.sphereMid(), { p: [0, -0.20, -0.02], s: [0.19, 0.15, 0.19], color: FLUFF2, mottle: 0.30 });                // under-fluff
+    R.part(body, prim.sphereMid(), { p: [0, 0.10, 0.13], s: [0.20, 0.18, 0.19], color: FLUFF2, mottle: 0.2 });                   // thorax
     // hooded mantle: a cowl over the back and shoulders with a trim edge and two filigree scrolls
-    R.part(body, prim.cone(), { p: [0, 0.10, -0.10], r: [-0.30, 0, 0], s: [0.30, 0.36, 0.28], color: CLOAK, flat: true, mottle: 0.16 });
+    R.part(body, prim.coneS(), { p: [0, 0.10, -0.10], r: [-0.30, 0, 0], s: [0.30, 0.36, 0.28], color: CLOAK, flat: true, mottle: 0.16 });
     R.part(body, prim.hex(), { p: [0, -0.06, -0.06], r: [0.2, 0.5, 0], s: [0.30, 0.05, 0.29], color: TRIM, flat: true, mottle: 0.08 });
-    R.mirror(body, prim.slab(0.5), { p: [0.20, 0.02, 0.02], r: [0, 0, 0.9], s: [0.14, 0.20, 0.20], color: CLOAK, flat: true, mottle: 0.16 });  // shoulder lappets
+    R.mirror(body, prim.prism(0.5), { p: [0.20, 0.02, 0.02], r: [0, 0, 0.9], s: [0.14, 0.20, 0.20], color: CLOAK, flat: true, mottle: 0.16 });  // shoulder lappets
     R.mirror(body, prim.ring(), { p: [0.16, 0.06, -0.14], r: [0.4, 0.6, 0], s: 0.10, color: TRIM, mottle: 0.06 });                             // filigree scrolls
     // ---- head: small, mostly eye
     const head = R.bone('head', body, 0, 0.16, 0.20);
-    R.part(head, prim.sphereLo(), { p: [0, 0.17, 0.30], s: [0.150, 0.140, 0.140], color: FLUFF, mottle: 0.18 });
-    R.part(head, prim.cone(), { p: [0, 0.27, 0.20], r: [-0.30, 0, 0], s: [0.135, 0.17, 0.14], color: CLOAK, mottle: 0.14 });                   // hood peak, pulled BACK off the brow
-    R.mirror(head, prim.sphereLo(), { p: [0.098, 0.165, 0.375], s: [0.098, 0.105, 0.092], color: EYE, mottle: 0.06 });                         // huge domed eyes — the whole face read
+    R.part(head, prim.sphereMid(), { p: [0, 0.17, 0.30], s: [0.150, 0.140, 0.140], color: FLUFF, mottle: 0.18 });
+    R.part(head, prim.coneS(), { p: [0, 0.27, 0.20], r: [-0.30, 0, 0], s: [0.135, 0.17, 0.14], color: CLOAK, mottle: 0.14 });                   // hood peak, pulled BACK off the brow
+    R.mirror(head, prim.sphereMid(), { p: [0.098, 0.165, 0.375], s: [0.098, 0.105, 0.092], color: EYE, mottle: 0.06 });                         // huge domed eyes — the whole face read
     R.mirror(head, prim.octa(), { p: [0.115, 0.195, 0.445], s: 0.030, color: GLOW, glow: 1, flat: true });                                     // catchlight
     for (const sx of [1, -1]) {                                                                                                                // antennae, curling up and out
       link(R, head, [sx * 0.06, 0.28, 0.26], [sx * 0.13, 0.44, 0.20], 0.014, { color: FLUFF2, flat: true });
-      link(R, head, [sx * 0.13, 0.44, 0.20], [sx * 0.20, 0.53, 0.10], 0.011, { color: FLUFF2, flat: true, geo: prim.cone() });
+      link(R, head, [sx * 0.13, 0.44, 0.20], [sx * 0.20, 0.53, 0.10], 0.011, { color: FLUFF2, flat: true, geo: prim.coneS() });
       R.part(head, prim.octa(), { p: [sx * 0.20, 0.53, 0.10], s: 0.022, color: GLOW, glow: 0.8, flat: true });
     }
     // two long straight quills swept back over the mantle — the reference's odd, memorable detail
-    for (const sx of [1, -1]) link(R, body, [sx * 0.05, 0.16, -0.05], [sx * 0.12, 0.62, -0.34], 0.014, { color: TRIM, flat: true, geo: prim.cone(), w2: 0.008 });
+    for (const sx of [1, -1]) link(R, body, [sx * 0.05, 0.16, -0.05], [sx * 0.12, 0.62, -0.34], 0.014, { color: TRIM, flat: true, geo: prim.coneS(), w2: 0.008 });
     // ---- four wings. membrane() is a cambered scalloped panel (x = span, z = chord, +Z leading edge).
     for (const [n, sx, fore] of [['FR', 1, 1], ['FL', -1, 1], ['HR', 1, 0], ['HL', -1, 0]]) {
       const w = R.bone('w' + n, body, sx * 0.13, fore ? 0.10 : -0.02, fore ? 0.04 : -0.10);
@@ -1227,7 +1227,7 @@ const sprite = {
       }
     }
     for (const sx of [1, -1]) for (let i = 0; i < 3; i++) {                   // six tucked legs
-      link(R, body, [sx * 0.10, -0.18, 0.10 - i * 0.10], [sx * 0.15, -0.30, 0.06 - i * 0.11], 0.014, { color: FLUFF2, flat: true, geo: prim.cone() });
+      link(R, body, [sx * 0.10, -0.18, 0.10 - i * 0.10], [sx * 0.15, -0.30, 0.06 - i * 0.11], 0.014, { color: FLUFF2, flat: true, geo: prim.coneS() });
     }
     return R.build();
   },

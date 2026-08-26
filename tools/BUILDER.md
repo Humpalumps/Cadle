@@ -42,6 +42,14 @@ If your task involves a creature, an NPC, or a landmark, **read `docs/CREATURE-P
   box with more triangles on its flat faces. That is why the pipeline's detail inventory refuses
   prose and demands each feature resolve to a real component. See the table in
   `docs/CREATURE-PIPELINE.md`.
+- **Optimise the right axis.** Measured on this build: ten treants cost **+159 draw calls** (~16 each)
+  while their geometry is only ~2.3k tris — 45% of the 350-call budget for almost no vertex work. So
+  **spend triangles freely and meshes/materials carefully**: merge each animated group into ONE mesh
+  (`BufferGeometryUtils.mergeGeometries`), cap materials at ~3 per creature and use vertex colours for
+  the rest, allow at most one transparent element, share geometry across instances, and make sure the
+  type is in `Enemies.warm()` so its materials do not link mid-play. **Target <= 4 draw calls per
+  creature at LOD0** and report the measured number — see the cost model in
+  `docs/CREATURE-PIPELINE.md`.
 - **Massing is not detail.** A hero asset is judged at THREE distances and must be captured at all
   three before you report done: silhouette at 200 m, ornament hierarchy at 40 m (is the cornice
   actually carved? are the columns actually fluted?), material truth at 8 m (veining, chipped

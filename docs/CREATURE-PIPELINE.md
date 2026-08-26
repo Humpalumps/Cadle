@@ -99,6 +99,60 @@ entry. If a feature is not in the inventory, no triangle budget will conjure it.
 effort enumerating the inventory — then check the 8 m frame, which is where missing chamfers and
 missing material announce themselves.
 
+### AAA *and* cheap — the cost model, measured on this build
+
+**Measured 2026-08-26, live:** empty meadow 179 draw calls / 1.85 M tris. Spawn **ten treants** and it
+goes to **338 calls** — about **16 draw calls per creature**, for a body whose geometry is only ~2,300
+triangles. Ten creatures ate 45% of the entire 350-call budget while contributing almost nothing in
+vertex cost.
+
+That is the whole lesson: **our creatures are currently optimised in exactly the wrong direction.**
+They are starved of triangles and extravagant with meshes.
+
+**What actually costs, worst first**
+
+1. **Draw calls.** Every separate mesh, and every extra material on a mesh, is a call. This is the
+   binding constraint at 72 alive.
+2. **Shader programs.** Each new material links on first draw, inside the driver, where neither
+   `cpuMs` nor `gpuMs` can see it — that is the 514 ms frame in `tools/out/props2-hitch`.
+   `Enemies.warm()` building one of every type at boot is what keeps those links out of gameplay.
+3. **Transparency and alpha-test.** Blended shells (wraith, wisp) and alpha-tested cards (treant
+   foliage) break early-Z and overdraw each other. An ethereal creature can cost more than a solid
+   15k one.
+4. **Triangles — nearly free.** This project measured terrain as NEGATIVE cost (HANDOVER 4i): hiding
+   it makes the frame slower because it is the primary depth occluder. We are fragment-bound, not
+   vertex-bound. A dozen near bodies at 15k adds ~140k tris against a 4 M budget.
+   *Caveat:* GPUs shade in 2x2 quads, so a 15k body 20 px tall wastes enormous coverage — which is
+   what the LOD ladder is for, and why LOD1/LOD2 matter more than LOD0.
+5. **Chamfers are free, arguably a win.** A few dozen triangles, no extra call, no texture fetch, and
+   they replace a hard normal discontinuity with a lit transition — cheaper than faking it with a
+   normal map.
+
+**The rules that follow**
+
+- **Spend triangles freely; spend meshes and materials carefully.** A 15k single-mesh creature with
+  chamfered edges is cheaper to render than today's 2.3k sixteen-piece treant.
+- **Merge per animated group, not globally.** A rig poses sub-objects, so everything that moves
+  together is one mesh: merge each bone's static parts with `BufferGeometryUtils.mergeGeometries`.
+  A limb is one mesh, not eleven plates.
+- **Cap materials per creature at ~3** — body, accent/metal, glow. Use **vertex colours** for colour
+  variation instead of another material; that is free and costs no call.
+- **At most ONE transparent element per creature**, and keep it small on screen. The shield shell
+  already learned this the hard way (screen-coverage cull in `Enemy.js`).
+- **Share geometry and materials across every instance of a type**, and keep the LOD ladder falling
+  hard: LOD1 should drop material count as well as triangles, not just decimate.
+- **Warm it.** A new material that is not built at boot links during play. Confirm your type still
+  appears in `Enemies.warm()`.
+
+**Acceptance — report calls, not just triangles.** Before reporting done, measure per-creature cost
+the way it was measured above and put the numbers in your report:
+
+```
+{"eval":"(()=>{const s=window.__game.stats();return 'calls='+s.calls+' tris='+s.tris;})()"}
+```
+empty scene → spawn 10 of your type → read again → divide the delta by 10.
+**Target: <= 4 draw calls per creature at LOD0.** Sixteen is a failure however good it looks.
+
 ## Step 3 — img2threejs → procedural code
 
 Invoke the `img2threejs` skill on the GLB (its GLB-mediated track: the mesh is a structural baseline,

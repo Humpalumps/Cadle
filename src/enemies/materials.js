@@ -6,6 +6,9 @@ import * as THREE from 'three';
  * telegraph glow, dissolve) are per creature while draw calls stay at 1 per creature.
  * Vertex attributes baked into the shared geometry: color (stone/shell base), aGlow (0..1 aether crystal mask).
  * Procedural 3D value noise in the fragment gives stone grain + the dissolve pattern (no textures).
+ * ETHEREAL types (def.ghost > 0, def.hem = [solidY, goneY]): wraith / voidhorror / riftling / sprite are
+ * sculpted as opaque statues and turned into ghosts HERE — hollow interior, hue rim, drifting hem dissolve,
+ * hard channel ceiling. It is a uniform branch, not a second program, so the whole bestiary still shares one.
  */
 const NOISE_GLSL = /* glsl */`
 float ehash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
