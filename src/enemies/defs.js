@@ -107,7 +107,7 @@ const BIOME_DEFS = {
     projectile: { speed: 26, radius: 0.19, element: 'strand', life: 4 },
     fleeAt: 0.3, fleeTime: 2.8, strafe: 1, stagger: 0.28, staggerTime: 0.35,
     radius: 0.42, height: 0, center: 0, weakPoints: null,
-    palette: [[0x7cff9c, 0x1e3324], [0xc8ff7a, 0x263320], [0x5effc8, 0x1c3330]], glow: 0.9, rim: 0.6, bump: 0,
+    palette: [[0x7cff9c, 0xcfe4c6], [0xc8ff7a, 0xdae6bc], [0x5effc8, 0xc6e8da]], glow: 0.9, rim: 0.6, bump: 0.03,
     deathTime: 1.0, xp: 14,
   },
   treant: {
@@ -271,14 +271,14 @@ const BIOME_DEFS = {
     // hover 2.1 -> 1.4 and scale 1.05 -> 0.85: an ORB can float at head height, a 1.9 m armoured quadruped
     // cannot — at 2.1 m its paws hung level with the player's eyes. 1.4 puts the paws ~0.8 m off the ground,
     // which is a beast prowling the air. AI, ranges, projectile and standoff are untouched.
-    name: 'Riftling', body: 'riftling', element: 'void', role: 'ranged', flying: true, hover: 1.4, scale: 0.85,
+    name: 'Riftling', body: 'riftling', element: 'void', role: 'ranged', flying: true, hover: 1.4, scale: 1.0,
     health: 140, shield: 40, shieldElement: 'void', damage: 9, speed: 7.8, turn: 8, accel: 15,
     perception: 34, fov: 3.4, attackRange: 24, band: [10, 19], attackWindup: 0.4, attackCooldown: 1.6, attackRecover: 0.2, standoff: 2.6,
     projectile: { speed: 30, radius: 0.21, element: 'void', life: 4 },
     fleeAt: 0.18, fleeTime: 1.8, strafe: 1, stagger: 0.26, staggerTime: 0.32,
     radius: 0.45, height: 0, center: 0, weakPoints: null,
     palette: [[0xb070ff, 0x8a7ba8], [0x8a3dff, 0x7d6fa0], [0xd070ff, 0x9484ae]], glow: 1.05, rim: 0.7, bump: 0.05,
-    ghost: 0.5, hem: [-0.40, -0.82],
+    ghost: 0.40, hem: [-0.56, -0.88],
     signature: { blink: { cd: 3.2, dist: 9 } },
     deathTime: 1.1, xp: 90,
   },

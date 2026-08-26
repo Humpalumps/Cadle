@@ -887,12 +887,19 @@ JS bundles differ by 1004 bytes with identical chunking. **Cross-run boot compar
 worthless (4d), and 18 orphaned `chrome-headless-shell` processes were inflating everything (4b).** Kill the
 orphans, then interleave, before believing any boot number.
 
-## 4m-bis. CREATURE TRI BUDGET RAISED TO 15k AT LOD0 (user, 2026-08-26)
+## 4m-bis. CREATURE TRI BUDGET IS TIERED (user, 2026-08-26)
 
-Was ~3.5k. The user raised it 4.3x so converted creatures can carry real detail: "we don't need to
-stick to a 3.5k triangle budget for these models we can go up to 15k". 15000 also sits inside the
-img2threejs generator's "standard" tessellation tier (<=60k), so specs get real segment counts
-instead of the low tier.
+Was a flat ~3.5k. Now tiered by FORM complexity: **~4k** small/ethereal (wisp, sprite), **~10k**
+standard creature (hound, frostwolf, drake, serpent, riftling, wraith), **~15k** complex/armoured
+(sentinel, golem, treant, warden, giant). Roughly where Destiny 2's own rank-and-file combatants sit.
+
+Triangles were never the reason our creatures looked bad — the sentinel reads as stacked slabs at 4k
+and would at 50k. Chamfered edges, relief and material are what was missing.
+
+**The trap, and it is not obvious:** `performanceBudget.targetTriangles` selects the img2threejs
+generator's tessellation tier (low <= 6000, standard <= 60000). Declaring the 4k target directly
+picks the LOW tier and coarsens every curve — which is precisely how a small creature comes out
+faceted. Always declare 10000/15000 and let a simple form land under its target.
 
 **What the deferred perf pass must therefore check** (it did not exist as a risk before): `MAX_ALIVE`
 is 72 and `Enemies` streams camps by distance, so a dense fight can put a lot of LOD0 bodies on

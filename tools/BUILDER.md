@@ -42,7 +42,12 @@ If your task involves a creature, an NPC, or a landmark, **read `docs/CREATURE-P
   honestly. "Improved" is not "done".
 - **Creatures additionally** keep the existing `src/enemies/` contract — same `BODIES` entry point,
   same bone names and animate hooks, same LOD ladder, `Enemies.warm()` still builds one of each at
-  boot — and fit **15k tris at LOD0** (raised from 3.5k by the user 2026-08-26 — spend them on the detail that
-  makes a creature read). The LOD ladder must still drop hard beyond LOD0, because up to 72 enemies are
-  alive at once: LOD0 is for the near few, not the crowd. Share geometry across instances, and report
-  what your LOD1/LOD2 come out at.
+  boot — hit the TIERED LOD0 triangle budget: **~4k** small/ethereal (wisp, sprite), **~10k** standard
+  creature (hound, frostwolf, drake, serpent, riftling, wraith), **~15k** complex/armoured (sentinel,
+  golem, treant, warden, giant). **Never declare `performanceBudget.targetTriangles` <= 6000** - that
+  selects the generator's *low* tessellation tier and coarsens every curve, so a 4k declaration is how
+  a small creature comes out faceted; declare 10000 (or 15000) and let a simple form land under target,
+  using `geometryDescriptor.decimate` only where a component genuinely overshoots. Spend the triangles
+  on curvature (12-16 radial segments), silhouette (horns, spines, claws, folds) and **chamfered edges**
+  - a sharp 90 deg edge is the loudest greybox tell there is. The LOD ladder must still drop hard past
+  LOD0 (72 alive; LOD0 is for the near few); report what LOD1/LOD2 come out at.

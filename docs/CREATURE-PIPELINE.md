@@ -75,11 +75,29 @@ a good creature reference lands around 55-60k tris with 4096 maps.
 Invoke the `img2threejs` skill on the GLB (its GLB-mediated track: the mesh is a structural baseline,
 its topology and materials are never copied). Requirements for a converted creature:
 
-- **Tri budget: 15k at LOD0** (user, 2026-08-26; was 3.5k). 15000 sits inside the skill's "standard"
-  tessellation tier (<=60k), so `performanceBudget.targetTriangles: 15000` buys real segment counts
-  rather than the low tier. Reach for `geometryDescriptor.decimate` only on a component that is
-  genuinely wasteful. The LOD ladder must still fall away hard past LOD0 — 72 enemies can be alive,
-  so LOD0 is for the near few.
+- **CREATURE TRIANGLE BUDGET - TIERED BY FORM COMPLEXITY (user, 2026-08-26).** Triangles were never
+  why our creatures looked bad: the sentinel read as stacked slabs at 4k and would read as stacked
+  slabs at 50k. What costs triangles and actually earns them is smooth curvature (12-16 radial
+  segments, or a limb facets at 3 m), silhouette detail (horns, spines, claws, jaw, cloth folds), and
+  **chamfered edges** - a sharp 90 deg edge is the single loudest greybox tell there is.
+
+  | tier | LOD0 target | bodies |
+  |---|---|---|
+  | small / ethereal | **~4k** | wisp, sprite |
+  | standard creature | **~10k** | hound, frostwolf, drake, serpent, riftling, wraith |
+  | complex / armoured | **~15k** | sentinel, golem, treant, warden, giant |
+
+  That is roughly where Destiny 2's own rank-and-file combatants sit, so it is a benchmark rather
+  than an indulgence.
+
+  **THE TRAP: never declare `performanceBudget.targetTriangles` at or below 6000.** That value selects
+  the img2threejs generator's *low* tessellation tier and coarsens every primitive's segment count, so
+  asking for a 4k budget is exactly how a small creature comes out faceted. **Always declare 10000 (or
+  15000 for the complex tier)** to stay in the *standard* tier and let a simple form land naturally
+  under its target; reach for `geometryDescriptor.decimate` only on a component that overshoots.
+
+  The LOD ladder must still fall away hard past LOD0 - up to 72 enemies are alive at once, so LOD0 is
+  for the near few, never the crowd. Share geometry across instances and report LOD1/LOD2 counts.
 - keeps the existing `Enemy` contract in `src/enemies/` — per-type procedural poses, walk/attack/
   stagger animation hooks, the same update signature; AI and combat must not change.
 - respects the intensity ceilings that `tools/invariants.mjs` greps (enemy emissive is capped; the

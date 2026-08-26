@@ -1095,7 +1095,9 @@ const treant = {
 const riftling = {
   build() {
     const R = new Rig(), { root } = R;      // root = body centre (flyer); mass hangs below it
-    const HIDE = 0x2a2438, HIDE2 = 0x3b3352, PLATE = 0x191426, HORN = 0x120e1c, CLAW = 0x0d0a14, GLOW = 0xffffff;
+    // values chosen against the ghost shader, not in isolation: uGhost multiplies the LIT terms down toward the
+    // centre, so a hide that starts at 0x2a2438 renders as a black cutout in a green meadow (first pass did).
+    const HIDE = 0x4c4468, HIDE2 = 0x635880, PLATE = 0x322a48, HORN = 0x272038, CLAW = 0x191322, GLOW = 0xffffff;
     const body = R.bone('body', root, 0, 0, 0);
     // ---- torso: shoulders high, waist pinched, haunch heavy — a stalking cat's line
     R.part(body, prim.sphereLo(), { p: [0, -0.06, 0.20], s: [0.23, 0.22, 0.30], color: HIDE });
@@ -1187,7 +1189,7 @@ const riftling = {
 const sprite = {
   build() {
     const R = new Rig(), { root } = R;      // root = body centre (flyer)
-    const FLUFF = 0xdfe6f2, FLUFF2 = 0xb9c8e2, CLOAK = 0x8fa6c8, TRIM = 0xe8dfc0, WING = 0xffffff, EYE = 0x2a2438, GLOW = 0xffffff;
+    const FLUFF = 0xdfe6f2, FLUFF2 = 0xc4d2e8, CLOAK = 0xb4c4dc, TRIM = 0xe8dfc0, WING = 0xf2f6ff, EYE = 0x3a3450, GLOW = 0xffffff;
     const body = R.bone('body', root, 0, 0, 0);
     R.part(body, prim.sphereLo(), { p: [0, -0.02, 0], s: [0.26, 0.25, 0.27], color: FLUFF, mottle: 0.22 });                     // fluffy abdomen
     R.part(body, prim.sphereLo(), { p: [0, -0.20, -0.02], s: [0.19, 0.15, 0.19], color: FLUFF2, mottle: 0.30 });                // under-fluff
@@ -1199,10 +1201,10 @@ const sprite = {
     R.mirror(body, prim.ring(), { p: [0.16, 0.06, -0.14], r: [0.4, 0.6, 0], s: 0.10, color: TRIM, mottle: 0.06 });                             // filigree scrolls
     // ---- head: small, mostly eye
     const head = R.bone('head', body, 0, 0.16, 0.20);
-    R.part(head, prim.sphereLo(), { p: [0, 0.18, 0.28], s: [0.135, 0.13, 0.13], color: FLUFF, mottle: 0.18 });
-    R.part(head, prim.cone(), { p: [0, 0.25, 0.24], r: [-0.45, 0, 0], s: [0.15, 0.20, 0.15], color: CLOAK, flat: true, mottle: 0.14 });        // hood peak over the brow
-    R.mirror(head, prim.sphereLo(), { p: [0.085, 0.175, 0.34], s: [0.075, 0.085, 0.070], color: EYE, mottle: 0.06 });                          // huge domed eyes
-    R.mirror(head, prim.octa(), { p: [0.098, 0.195, 0.395], s: 0.026, color: GLOW, glow: 1, flat: true });                                     // catchlight
+    R.part(head, prim.sphereLo(), { p: [0, 0.17, 0.30], s: [0.150, 0.140, 0.140], color: FLUFF, mottle: 0.18 });
+    R.part(head, prim.cone(), { p: [0, 0.27, 0.20], r: [-0.30, 0, 0], s: [0.135, 0.17, 0.14], color: CLOAK, mottle: 0.14 });                   // hood peak, pulled BACK off the brow
+    R.mirror(head, prim.sphereLo(), { p: [0.098, 0.165, 0.375], s: [0.098, 0.105, 0.092], color: EYE, mottle: 0.06 });                         // huge domed eyes — the whole face read
+    R.mirror(head, prim.octa(), { p: [0.115, 0.195, 0.445], s: 0.030, color: GLOW, glow: 1, flat: true });                                     // catchlight
     for (const sx of [1, -1]) {                                                                                                                // antennae, curling up and out
       link(R, head, [sx * 0.06, 0.28, 0.26], [sx * 0.13, 0.44, 0.20], 0.014, { color: FLUFF2, flat: true });
       link(R, head, [sx * 0.13, 0.44, 0.20], [sx * 0.20, 0.53, 0.10], 0.011, { color: FLUFF2, flat: true, geo: prim.cone() });
@@ -1213,12 +1215,15 @@ const sprite = {
     // ---- four wings. membrane() is a cambered scalloped panel (x = span, z = chord, +Z leading edge).
     for (const [n, sx, fore] of [['FR', 1, 1], ['FL', -1, 1], ['HR', 1, 0], ['HL', -1, 0]]) {
       const w = R.bone('w' + n, body, sx * 0.13, fore ? 0.10 : -0.02, fore ? 0.04 : -0.10);
-      const span = fore ? 0.62 : 0.40, chord = fore ? 0.46 : 0.34;
-      R.part(w, prim.membrane(fore ? 3 : 2), { p: [sx * (0.13 + span * 0.5), fore ? 0.16 : 0.00, fore ? 0.02 : -0.14], r: [0, sx > 0 ? 0 : Math.PI, sx * (fore ? 0.30 : 0.12)], s: [span, 0.10, chord], color: WING, glow: 0.30, flat: true });
+      const span = fore ? 0.46 : 0.31, chord = fore ? 0.36 : 0.27;
+      // glow 0.14, NOT 0.30: at 0.30 the wing's green emissive reached ~1.8 linear under the noon dayGlow
+      // multiplier and bloomed along the leading edge. And no `flat` — computeVertexNormals on a non-indexed
+      // membrane throws away the camber and leaves a flat-shaded sheet, which is what a paper wing looks like.
+      R.part(w, prim.membrane(fore ? 3 : 2), { p: [sx * (0.13 + span * 0.5), fore ? 0.24 : 0.04, fore ? 0.00 : -0.16], r: [0, sx > 0 ? -0.35 : Math.PI + 0.35, sx * (fore ? 0.62 : 0.34)], s: [span, 0.09, chord], color: WING, glow: 0.14 });
       for (let i = 0; i < 2; i++) {                                          // veins: two thin ribs per wing, no more — they are 2 px at combat range
         const u = 0.30 + i * 0.34;
         link(R, w, [sx * (0.13 + span * 0.06), fore ? 0.16 : 0.0, fore ? 0.16 : -0.02], [sx * (0.13 + span * 0.92), fore ? 0.16 + span * 0.30 * (u - 0.3) : 0.0, (fore ? 0.02 : -0.18) - chord * (u - 0.15)], 0.010,
-          { color: WING, glow: 0.22, flat: true, w2: 0.006 });
+          { color: WING, glow: 0.10, w2: 0.006 });
       }
     }
     for (const sx of [1, -1]) for (let i = 0; i < 3; i++) {                   // six tucked legs
