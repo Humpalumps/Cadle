@@ -316,8 +316,8 @@ function buildWayfinderRig() {
   R.part(head, prim.sphere(), { p: [0, 1.622, -0.052], s: [0.136, 0.146, 0.128], color: HOODL, mottle: 0.10 });                          // the cowl's dark interior, BEHIND the face: what makes the hood read as a cavity
   R.part(head, wfLathe(WF_HOOD, 16, 0.96, 6.2832 - 1.92), { color: HOODC, mottle: 0.13 });                                               // THE HOOD, open 110 deg at the front
   for (const s of [-1, 1]) {                                                                                                            // lappets closing the two open ends of the arc
-    R.part(head, prim.plate(), { p: [s * 0.150, 1.592, 0.086], r: [0.14, -s * 0.95, 0], s: [0.024, 0.140, 0.072], color: HOODC, mottle: 0.11 });
-    R.part(head, BOX1, { p: [s * 0.155, 1.592, 0.096], r: [0.14, -s * 0.95, 0], s: [0.008, 0.132, 0.062], color: TRIM, mottle: 0.05 });  // cream-gold hood edging: a LINE on the rim, not a gold ear-flap
+    R.part(head, prim.plate(), { p: [s * 0.146, 1.592, 0.052], r: [0.14, -s * 1.26, 0], s: [0.024, 0.140, 0.084], color: HOODC, mottle: 0.11 });
+    R.part(head, BOX1, { p: [s * 0.152, 1.592, 0.064], r: [0.14, -s * 1.26, 0], s: [0.008, 0.132, 0.072], color: TRIM, mottle: 0.05 });  // cream-gold hood edging: a LINE on the rim, not a gold ear-flap
   }
   R.part(head, prim.cone(), { p: [0, 1.742, -0.128], r: [-1.02, 0, 0], s: [0.092, 0.215, 0.086], color: HOODC, mottle: 0.11 });          // hood peak, flopped back (upright it read as a horn)
   R.part(head, wfLathe([[0.070, 1.512], [0.148, 1.470], [0.176, 1.408], [0.150, 1.392], [0.062, 1.436]], 12, 1.35, 3.58), { color: HOODC, mottle: 0.12 });  // the drape falling off the hood onto the back
@@ -493,7 +493,7 @@ export class Props {
     this.plasterMat = patchMaterial(new THREE.MeshStandardMaterial({ map: stoneTexture(aniso, [0.66, 0.62, 0.53], [0.95, 0.92, 0.84]), vertexColors: true, roughness: 0.95, metalness: 0.0, color: 0xffffff }),
       mergePatch(triplanarPatch(0.55, 0.16, [0.46, 0.52, 0.34]), { key: 'plaster' }));                    // noise slate, zero coursing: the stele recipe, cream
     this.thatchMat = patchMaterial(new THREE.MeshStandardMaterial({ map: thatchTexture(aniso), vertexColors: true, roughness: 0.98, metalness: 0.0, color: 0xffffff }),
-      mergePatch(triplanarPatch(1.15, 0.10, [0.44, 0.50, 0.30]), { key: 'thatch' }));                      // ~0.9 m tile: straw scale, not brick scale
+      mergePatch(triplanarPatch(1.90, 0.10, [0.44, 0.50, 0.30]), { key: 'thatch' }));                      // ~0.53 m tile: straw scale. 0.87 m read as woven basketry, which is a different wrong material
     this.timberMat = mkTri('rm-timber', 'bark_gnarled', 1.6, { rough: 0.94, color: 0x9a7c52 });             // bark IS wood grain; 0.6 m tile reads as sawn oak
     // Wayfinder Steles get their OWN material, not stoneMat/basaltMat: stoneMat's map is the sandstone
     // brick photo (or its brick-patterned procedural fallback) — a vertex tint can darken a brick texture
@@ -3165,7 +3165,7 @@ export class Props {
         const g = makeRockGeometry(0, 4471 + i * 131);
         g.scale(i ? 3.0 + rng() * 2.2 : 8.6, i ? 1.5 + rng() : 3.1, i ? 2.6 + rng() * 2.0 : 7.2); g.rotateY(a);
         g.translate(IX + 1.2 + Math.cos(a) * rr, iy + (i ? 0.15 : 0.35), IZ - 0.8 + Math.sin(a) * rr);
-        PR(g, [1.70 + rng() * 0.18, 1.58, 1.32]);
+        PR(g, [1.96 + rng() * 0.20, 1.80, 1.32]);
       }
       col.add({ type: 'sphere', pos: V3(IX + 1.2, iy + 1.2, IZ - 0.8), r: 7.0 });
       for (let i = 0; i < 4; i++) {                                             // the drowned shrine: four columns, two of them down, and the lintel that came off them
@@ -3184,7 +3184,7 @@ export class Props {
         const px = IX + Math.cos(a) * rr, pz = IZ + Math.sin(a) * rr, py = h(px, pz), sc = 0.28 + rng() * 0.66;
         const g = makeRockGeometry(0, (rng() * 1e6) | 0);
         g.scale(sc * 1.5, sc * 0.62, sc * 1.3); g.rotateY(rng() * 3); g.translate(px, py + sc * 0.20, pz);
-        PR(g, [1.16 + rng() * 0.24, 1.14, 1.02]);
+        PR(g, [1.90 + rng() * 0.26, 1.74, 1.26]);
       }
       for (let i = 0; i < 6; i++) { const a = rng() * 6.2832, len = 2.6 + rng() * 3.0, rr = 15 + rng() * 3;   // driftwood the lake pushed up
         PR(new THREE.CylinderGeometry(0.16, 0.24, len, 6).rotateZ(Math.PI / 2 - 0.12).rotateY(a).translate(IX + Math.cos(a) * rr, h(IX + Math.cos(a) * rr, IZ + Math.sin(a) * rr) + 0.22, IZ + Math.sin(a) * rr), [0.86, 0.72, 0.54]); }

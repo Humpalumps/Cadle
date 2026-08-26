@@ -96,3 +96,37 @@ carved *plinth*. Always pair that framing with the anti-base clause above.
 concepts in `tools/out/assetgen/creatures/`. Remaining solid types for later batches: warden,
 skyserpent, wyvern, forgeknight, imp, magmagolem, bogwitch, drowned, leviathan, voidhorror, archon,
 icegiant, seraph.
+
+## Machine setup — why every earlier "conversion" was hand-rolled (fixed 2026-08-26)
+
+The img2threejs skill is a **gated, multi-stage pipeline**, not a prompt: local state gate
+(`forge/next.py`), pre-spec assessment + quality contract, a **detail inventory** where every
+identity-defining detail must map to a `component.localFeatures` or `material.localOverrides` entry
+(prose does not count), staged build passes (blockout → structure → form → material → lighting →
+interaction → optimization), then review gates — turntable from four azimuths (never one frame),
+self-intersection, attachment-anchor, interior-difference, and per-feature fidelity scores with a
+bounded correction loop.
+
+**None of that had ever been run.** Builders wrote "img2threejs GLB-mediated track" in a code comment
+and hand-assembled primitives, which is why the results captured ~15-20% of their references.
+
+The mechanical cause: **every command in the skill's docs starts with `python3`, and this machine had
+no `python3`** — the name resolved to the Microsoft Store stub, which prints "Python was not found"
+and exits. The first command a builder copied failed instantly, so they improvised.
+
+Fixed by shimming, not installing (the skill is stdlib-only, Python 3.12.13 was already present as
+`python`):
+
+```
+C:\Users\ianca\bin\python3.cmd   ->  @echo off / python %*        (cmd + PowerShell)
+C:\Users\ianca\bin\python3       ->  #!/bin/sh / exec python "$@"  (Git Bash — .cmd is not executable there)
+```
+with `C:\Users\ianca\bin` prepended to the **user** PATH. `python` is untouched. Verified: `next.py`,
+`new_pre_spec_assessment.py`, `build_detail_inventory.py`, `generate_threejs_factory.py`,
+`turntable_gate.py` and `diagnose_render.py` all run, and PIL + numpy are importable for the
+optional helpers.
+
+Run skill scripts **from the skill root** (`C:/Users/ianca/.claude/skills/img2threejs`), writing
+artifacts into the game repo. `probe_glb.py` on a Tripo GLB returns `referenceReadiness: pass` with
+the expected warning that a merged single-mesh asset carries no semantic part boundaries — so
+per-region claims need browser ID-mask evidence rather than metadata.

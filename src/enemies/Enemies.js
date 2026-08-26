@@ -497,7 +497,7 @@ export class Enemies {
       // quality-scaled cast range: skinned shadow draws hit every CSM cascade, and at q=high the
       // 45 m ring meant a whole camp cast at once (~3 ms median at the ruins — perf audit round 3).
       // 25 m keeps the grounding shadow on whatever is actually near you.
-      e.mesh.castShadow = shadows && d2 < (this.castD2 ??= 625) && e.alive;
+      e.mesh.castShadow = shadows && e.castsShadow && d2 < (this.castD2 ??= 625) && e.alive;
       e.root.visible = d2 < 176400;                                                 // 420 m
       if (this.passive && e.alive) { e.alert = false; e.seen = false; }
       e.update(dt, t, lod, frame, d2);

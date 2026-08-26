@@ -1,0 +1,12 @@
+[
+  {"wait": 20},
+  {"eval": "__game.god(true); __game.passive(true); 1"},
+  {"hour": 13},
+  {"tp": [-545.9, null, -47.6]}, {"look": [1.4839, -0.13]}, {"wait": 3},
+  {"perfWindow": {"secs": 6, "label": "sunken-pass"}},
+  {"tp": [-690, null, -60]}, {"look": [1.4839, -0.22]}, {"wait": 3},
+  {"perfWindow": {"secs": 6, "label": "sunken-channel"}},
+  {"eval": "__game.goto('infernal', 60); 1"}, {"wait": 4},
+  {"perfWindow": {"secs": 6, "label": "infernal"}},
+  {"eval": "JSON.stringify(__game.stats().systems)"}
+]

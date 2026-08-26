@@ -36,7 +36,11 @@ const ELITE_TINT = new THREE.Color(0xd9a53a);   // saturated antique gold — di
  * bubble tells you what strips it, and faded out over SHIELD_FADE0..1 — it is a combat read, not scenery.
  */
 const IDENTITY = new THREE.Matrix4();
-const SHIELD_GEO = new THREE.IcosahedronGeometry(1, 2);
+// SphereGeometry, not IcosahedronGeometry(1, 2): a three icosahedron is non-indexed with FACE normals, so a
+// fresnel shell built on it renders as 320 flat facets — the "hard terminator banding on its surface" in the
+// wave-3 shadowfen Fen Wraith finding. A UV sphere has smooth vertex normals, which is the entire point of a
+// fresnel, and 480 tris of ONE shared geometry is not a budget line.
+const SHIELD_GEO = new THREE.SphereGeometry(1, 20, 14);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 const _res = { hit: false, normal: new THREE.Vector3() };
 const seg = (x, a, b) => THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -57,13 +61,19 @@ export class Enemy {
     const { root: boneRoot, bones, byName } = cloneBones(asset.bonesTemplate);
     this.boneRoot = boneRoot; this.bones = byName; this.boneList = bones;
     for (const b of bones) b.matrixAutoUpdate = false;       // we compose bone matrices ourselves after animating (LOD: far = no compose)
-    this.material = createCreatureMaterial({ roughness: 0.85 });
+    // `ghost`/`hem` are per-TYPE (an instance never stops being a wraith), so they are baked at construction
+    // rather than re-set every spawn. uGhost = 0 for everything solid, and the ethereal branch in the shader
+    // is a uniform branch: one program still serves the whole bestiary.
+    this.material = createCreatureMaterial({ roughness: def.ghost ? 0.95 : 0.85, ghost: def.ghost ?? 0, hem: def.hem ?? [0, -1] });
     this.u = this.material.userData.u;
     this.mesh = new THREE.SkinnedMesh(asset.geometry, this.material);
     this.mesh.add(boneRoot);
     this.mesh.bind(new THREE.Skeleton(bones, asset.boneInverses), IDENTITY);
     this.mesh.boundingSphere = asset.geometry.boundingSphere.clone();  // bind-pose sphere (+slack) follows root -> cheap, correct culling
-    this.mesh.castShadow = true; this.mesh.receiveShadow = true; this.mesh.name = 'enemy-mesh';
+    // a ghost casts no shadow: the shadow pass runs MeshDepthMaterial, which knows nothing about the hem
+    // discard, so an ethereal creature would drop a hard solid silhouette on the ground under a shredding robe.
+    this.castsShadow = !def.ghost;
+    this.mesh.castShadow = this.castsShadow; this.mesh.receiveShadow = true; this.mesh.name = 'enemy-mesh';
     this.root.add(this.mesh);
     if (def.shield > 0 && def.shieldRadius) {
       // colour BY ELEMENT, not a hardcoded arc blue: the bubble is the game telling you which damage type
@@ -146,13 +156,12 @@ export class Enemy {
     // pose
     this.root.position.copy(this.position); this.root.rotation.set(0, this.yaw, 0); this.root.scale.setScalar((def.scale ?? 1) * (elite ? ELITE_SCALE_MUL : 1)); this.root.visible = true;
     if (this.shieldMesh) this._shellR = def.shieldRadius * 1.3 * this.root.scale.x;   // elites scale the shell too
-    this.mesh.castShadow = true; this.mesh.visible = true;
+    this.mesh.castShadow = this.castsShadow; this.mesh.visible = true;
     for (const b of this.boneList) { b.position.copy(this.asset.bindPos[b.userData.index]); b.quaternion.identity(); b.scale.setScalar(1); b.updateMatrix(); }
     this.root.updateMatrixWorld(true);
     if (this.legs) plantLegs(this.legs, this.legParent, this.sys.heightAt);
     this.center.set(this.position.x, this.position.y + def.center, this.position.z);
-    this._sync(0, g.time, 0);
-    if (this.shieldMesh) this.shieldMesh.visible = this.shield > 0;
+    this._sync(0, g.time, 0);   // sets shieldMesh.visible itself (SHIELD_FADE * SHELL_COV) — do NOT re-enable it here
     if (this.type === 'wisp') { this._trail?.stop?.(); this._trail = g.vfx?.attach?.('trail', this, { rate: 18, color: this.glowColor.getHex(), scale: 0.7, until: () => this.alive }); } // burning-orb motes trail
     this.game.events.emit('enemy:spawn', { enemy: this });
     return this;

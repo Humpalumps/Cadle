@@ -1,0 +1,11 @@
+[{"wait":31},
+ {"eval":"window.__game.god(true);window.__game.passive(true);window.__game.clearEnemies();'ok'"},
+ {"hour":13},{"look":[0,-0.05]},
+ {"eval":"(()=>{const g=window.__game;const p=g.game.player.controller.position;g.spawn('hound',p.x,p.z-7,{});return 'ok';})()"},
+ {"wait":3},{"shot":"hound-7m"},
+ {"eval":"(()=>{const g=window.__game;const p=g.game.player.controller.position;g.clearEnemies();g.spawn('hound',p.x,p.z-3.2,{});return 'ok';})()"},
+ {"wait":3},{"look":[0,-0.16]},{"shot":"hound-3m"},
+ {"eval":"(()=>{const g=window.__game;const p=g.game.player.controller.position;g.clearEnemies();g.spawn('sentinel',p.x,p.z-7,{});return 'ok';})()"},
+ {"wait":3},{"look":[0,-0.05]},{"shot":"sentinel-7m"},
+ {"eval":"(()=>{const g=window.__game;const p=g.game.player.controller.position;g.clearEnemies();g.spawn('sentinel',p.x,p.z-3.5,{});return 'ok';})()"},
+ {"wait":3},{"look":[0,-0.14]},{"shot":"sentinel-3m"}]

@@ -108,18 +108,23 @@ const BIOME_DEFS = {
     deathTime: 1.0, xp: 14,
   },
   treant: {
-    name: 'Elder Treant', body: 'golem', element: 'strand', role: 'slam', flying: false, scale: 1.15,
+    name: 'Elder Treant', body: 'treant', element: 'strand', role: 'slam', flying: false, scale: 1.15,
     health: 700, shield: 0, damage: 24, speed: 2.2, turn: 2.0, accel: 5.5,
     perception: 38, fov: 2.3, attackRange: 4.6, attackWindup: 1.0, attackCooldown: 2.9, attackRecover: 0.65, slamRadius: 5.4, knockback: 9, standoff: 3.2,
     throwRange: [10, 26], throw: { speed: 21, radius: 0.5, gravity: 14, element: 'strand', life: 5, damage: 15, explodeRadius: 2.8 },
     stagger: 0.34, staggerTime: 0.6,
     radius: 1.0, height: 3.6, center: 1.9, weakPoints: [{ bone: 'core', radius: 0.38, mult: 3.0, off: [0, 0, 0.07] }],
-    palette: [[0x6a5a3a, 0x9cff7a], [0x5c5030, 0xd8ff8a]], glow: 1.6, rim: 0.4, bump: 0.085,
+    // palette is [EMISSIVE, TINT] (Enemy.spawn: uEmissive = pal[0], uTint = pal[1]) — this entry had the pair
+    // reversed, so the bark took the bright green as a body tint and the heartwood glowed dull brown.
+    // rim 0.40 -> 0.14 and a deeper sap green: `rim` multiplies the emissive at every grazing angle, and a
+    // creature built out of vine cords and leaf plates is nearly ALL grazing angle — at 0.40 the trunk came
+    // out as lime pinstripes (tools/out/c2-tt/shot-treant-close.png). Sap-light belongs in the heartwood.
+    palette: [[0x5fd06a, 0xe4dac2], [0x86dc72, 0xd8cfb6]], glow: 1.6, rim: 0.14, bump: 0.085,
     deathTime: 2.1, xp: 110,
   },
   // -------------------------------------------------- Frostveil Tundra
   frostwolf: {
-    name: 'Frostveil Wolf', body: 'hound', element: 'stasis', role: 'melee', flying: false, scale: 1.5,
+    name: 'Frostveil Wolf', body: 'frostwolf', element: 'stasis', role: 'melee', flying: false, scale: 1.5,
     health: 175, shield: 0, damage: 9, speed: 9.2, turn: 5.5, accel: 24,
     perception: 36, fov: 2.5, attackRange: 3.3, attackWindup: 0.34, attackCooldown: 1.25, attackRecover: 0.26, lungeSpeed: 8, standoff: 2.2,
     stagger: 0.16, staggerTime: 0.45, pack: true,
