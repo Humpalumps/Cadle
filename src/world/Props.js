@@ -287,10 +287,11 @@ export class Props {
     };
     this.regionMat = {
       forest: mkTri('rm-forest', 'granite_moss', 0.30, { moss: 0.35 }),                                    // elven ruins sinking under moss
-      // 0.55 (a ~1.8 m tile), not 0.28: on the Throne's 12 m slabs a 3.6 m tile put ONE big feature on each
+      // 0.40 (a 2.5 m tile), not 0.28: on the Throne's 12 m slabs a 3.6 m tile put ONE big feature on each
       // face and triplanar swapped axis at every corner, which is the wave-2 "per-face photo-vista seams
-      // that mismatch at every edge". At 1.8 m the same map reads as ice crystal instead of a pasted photo.
-      tundra: mkTri('rm-tundra', 'ice_glacial', 0.55, { rough: 0.45, moss: 0.45, mossCol: [0.62, 0.66, 0.78] }), // glacial ice, snow-dusted up-faces
+      // that mismatch at every edge". 2.5 m reads as ice strata; 0.55 (1.8 m) went the other way and the
+      // repeat became visible wallpaper on the same slabs.
+      tundra: mkTri('rm-tundra', 'ice_glacial', 0.40, { rough: 0.45, moss: 0.45, mossCol: [0.62, 0.66, 0.78] }), // glacial ice, snow-dusted up-faces
       celestial: mkTri('rm-celestial', 'marble_strata', 0.34),                                             // white marble + gold civilisation (0.20 = a 5 m tile: on a 25 m hero facade the strata read as plywood grain at 10 m)
       dragon: mkTri('rm-dragon', 'granite_carved', 0.12),                                                  // dwarven ashlar: ~2 m blocks on a 44 m gate
       infernal: mkTri('rm-infernal', 'basalt_columnar', 0.25, { rough: 0.95 }),
@@ -316,6 +317,12 @@ export class Props {
     this.barkMat = mkTri('rm-bark', 'bark_gnarled', 0.40, { rough: 0.92, moss: 0.30 });
     this.leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, color: 0xffffff });
     this.plinthMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, roughness: 0.7, metalness: 0.08, color: 0xe8e4f0 }), mergePatch(triplanarPatch(0.5, 0.0), { key: 'plinth' }));
+    // HEARTHFALL'S OWN STONE (wave-2 major "giant-brick kit boxes"): stoneMat runs the ruins_stone map at a
+    // 3 m tile, which on the Sundered Spire is a correct monumental block and on a 5 m cottage wall is a
+    // 0.5 m mega-brick. Same map, same shader program (customProgramCacheKey is still 'stone', and
+    // uTriScale is a per-material uniform), just a 1.3 m tile — cottage-scale coursing, zero extra cost.
+    this.villageMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: 0.92, metalness: 0.02, color: 0xf2ece0 }),
+      mergePatch(triplanarPatch(ruinsTex ? 0.78 : 1.0, 0.30, [0.52, 0.58, 0.38]), { key: 'stone' }));
     // Wayfinder Steles get their OWN material, not stoneMat/basaltMat: stoneMat's map is the sandstone
     // brick photo (or its brick-patterned procedural fallback) — a vertex tint can darken a brick texture
     // but can never remove the brick pattern, which is why the steles read as a chimney. This is a flat
@@ -830,7 +837,7 @@ export class Props {
         if (!bb || bb.id !== 'shadowfen' || bb.w < 0.55) continue;
         const y = h(x, z);
         if (y < WL - 2.6 || y > WL + 0.6) continue;                          // standing water through to the hummock edge
-        reedClump(x, y - 0.15, z, clamp(1 + (WL - y) * 0.5, 1, 2.1));        // taller stems where it is deeper
+        reedClump(x, y - 0.15, z, clamp(1 + (WL - y) * 0.4, 1, 1.6));        // taller stems where it is deeper (capped: an 8 m bulrush is a hedge, not a reed)
       }
     }
     const mkCards = (geos, gt, tex, name) => { if (!geos.length || !tex) return;
@@ -969,7 +976,9 @@ export class Props {
     }
     for (let i = 0; i < 5; i++) {                                                          // the clutch, clustered so it reads as a clutch
       const a = (i / 5) * 6.2832 + rng() * 0.5, d = (0.25 + rng() * 0.75) * s;
-      (this._eggs ??= []).push([x + Math.cos(a) * d, y + 0.78 * s, z + Math.sin(a) * d, (0.62 + rng() * 0.12) * s]);
+      // 1.28s, not 0.78s: the egg is a unit sphere scaled by its own radius, so at 0.78 two thirds of it
+      // sat inside the 0.62s scrape — the clutch was buried in the nest it is supposed to sit in.
+      (this._eggs ??= []).push([x + Math.cos(a) * d, y + 1.28 * s, z + Math.sin(a) * d, (0.62 + rng() * 0.12) * s]);
     }
     col.add({ type: 'sphere', pos: V3(x, y + 0.8 * s, z), r: R * 1.1 });
   }
@@ -1131,9 +1140,9 @@ export class Props {
       wmesh.name = 'village-windows'; wmesh.renderOrder = 1; scene.add(wmesh);
       this.villageWindows = wmesh;
     }
-    const wm = new THREE.Mesh(flat(mergeAll(walls, wallT)), this.stoneMat);
+    const wm = new THREE.Mesh(flat(mergeAll(walls, wallT)), this.villageMat);   // cottage-scale coursing, not Sundered-Spire blocks
     wm.castShadow = wm.receiveShadow = true; wm.name = 'village-walls'; scene.add(wm);
-    const rm = new THREE.Mesh(flat(mergeAll(roofs, roofT)), this.stoneMat);
+    const rm = new THREE.Mesh(flat(mergeAll(roofs, roofT)), this.villageMat);
     rm.castShadow = rm.receiveShadow = true; rm.name = 'village-thatch'; scene.add(rm);
     this.landmarks.village = V3(CX, wy, CZ);
   }
@@ -1289,7 +1298,12 @@ export class Props {
         col.add({ type: 'box', box: new THREE.Box3(V3(CX - 5.2, top - 2, CZ - 3.5), V3(CX + 5.2, top + 2.0, CZ + 4.0)), walkable: true });
         fringe(CX - 4.9, CZ + 3.9, CX + 4.9, CZ + 3.9, top + 2.0, 12);          // icicle fringes: seat lip,
         for (const sd of [-1, 1]) fringe(CX + sd * 5.5, CZ - 3.5, CX + sd * 5.5, CZ + 3.7, top + 4.2, 8);   // armrest edges,
-        fringe(CX - 3.9, CZ + BZ + 1.3, CX + 3.9, CZ + BZ + 1.3, by + 6.4, 9);  // and the crown of the back
+        { const cy2 = by + 6.4;                                                 // the crest: a stepped crown and two frost spires, so the back ends in a throne instead of a flat parapet
+          P(new THREE.BoxGeometry(9.0, 0.9, 3.0).translate(CX, cy2 + 0.45, CZ + BZ), ICE2);
+          P(new THREE.BoxGeometry(6.0, 0.9, 2.6).translate(CX, cy2 + 1.3, CZ + BZ), ICE);
+          P(new THREE.ConeGeometry(1.5, 5.2, 6).translate(CX, cy2 + 4.3, CZ + BZ), ICE);
+          for (const sd of [-1, 1]) P(new THREE.ConeGeometry(0.85, 3.2, 6).rotateZ(sd * 0.16).translate(CX + sd * 3.4, cy2 + 3.2, CZ + BZ), ICE2);
+          fringe(CX - 3.9, CZ + BZ + 1.3, CX + 3.9, CZ + BZ + 1.3, cy2, 9); }   // and icicles off the crown
         ring(4, 16, (a) => { const px = CX + Math.cos(a) * 16, pz = CZ + Math.sin(a) * 16, ph = 12 + rng() * 4;
           pillar(px, pz, ph, 1.2, 0.5, [0.74, 0.85, 0.98]);
           fringe(px - 1.0, pz, px + 1.0, pz, h(px, pz) + ph * 0.7, 5); });      // frost collars on the ring pillars
@@ -1555,7 +1569,7 @@ export class Props {
         // the gate. The approach bearing is the line goto('dragon')/&at=dragon arrives on.
         { let best = null;                                                                     // pick the flattest bench beside the arrival line
           for (let k2 = 0; k2 < 14; k2++) {
-            const back = 74 + (k2 % 7) * 9, off = (k2 < 7 ? 1 : -1) * (21 + (k2 % 3) * 6);
+            const back = 52 + (k2 % 7) * 8, off = (k2 < 7 ? 1 : -1) * (17 + (k2 % 3) * 5);   // beside the walk-in, not behind the arrival point
             const nx = CX - ux * back + tx * off, nz = CZ - uz * back + tz * off, ny = h(nx, nz);
             const rough = Math.abs(h(nx + 6, nz) - ny) + Math.abs(h(nx, nz + 6) - ny) + Math.abs(h(nx - 6, nz) - ny) + Math.abs(h(nx, nz - 6) - ny);
             if (!best || rough < best.rough) best = { nx, nz, ny, rough };
@@ -2611,7 +2625,10 @@ export class Props {
       const hue = rng();
       C.setRGB(0.34 + hue * 0.22, 0.80, 0.70 + (1 - hue) * 0.16);   // mint cap, not white: a white albedo in full sun is already at the bloom threshold before the glow is added
       lod.add(M, C);
-      if (s > 0.75 && glowPts.length < 450 && rng() < 0.6) glowPts.push([x, y + 0.06, z, 0.7 + s * 0.9]); };
+      // ONE pool per cluster, not one per cap, and a hard radius cap. With the fen's bracket-scale fungus
+      // the old 0.6-per-cap / 0.7+0.9s rule stacked ~450 overlapping 3.4 m additive discs into a flat
+      // teal SHEET on the water — a glowing puddle, not fungus, and one bad frame away from the blob law.
+      if (s > 0.75 && glowPts.length < 450 && rng() < 0.09) glowPts.push([x, y + 0.06, z, Math.min(0.7 + s * 0.4, 1.5)]); };
     for (const t of veg?.trees ?? []) { if (t.z > -175 || Math.abs(t.x) > 260 || rng() < 0.45) continue; const n = 1 + Math.floor(rng() * 4); for (let i = 0; i < n; i++) { const a = rng() * 6.28, d = t.r + 0.3 + rng() * 1.4; add(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.5 + rng() * 1.3); } }
     for (let i = 0; i < 700; i++) { const x = (rng() - 0.5) * 500, z = -190 - rng() * 230; if (Math.hypot(x, z + 28) < 10) continue; const n = 1 + Math.floor(rng() * 3); for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2, z + (rng() - 0.5) * 2, 0.4 + rng() * 1.0); }
     // The same fungus, in the two OUTER regions whose spec asks for it by name: Whisperwood Deep's fae lights
@@ -2663,7 +2680,11 @@ export class Props {
     for (const r of this._rot) r.rotation.y += dt * r.userData.speed;
     const dcam = this.game.camera.position.distanceTo(A.group.position);
     A.light.intensity = (55 + 12 * Math.sin(t * 1.1)) * clamp(1 - (dcam - 55) / 25, 0, 1); // distance-fade the only point light (radius 48; keeps the shader program stable)
-    if (this.mushGlow) this.mushGlow.material.opacity = clamp(1.15 - (this.game.sky?.sunIntensity ?? 1), 0.06, 0.85); // glow pools live at night, near-off at noon
+    // Glow pools live at night, near-off at noon. Ceiling dropped 0.85 -> 0.55 (BLOB LAW): Shadowfen's
+    // overcast key holds sunIntensity low at MIDDAY, so the "night" value was running at noon, and two
+    // overlapping 3.8 m discs at 0.85 additive stacked into a pale mint smear on the water — a blob by any
+    // reading. One pool per cluster (see glowPts above) plus this ceiling keeps a single disc hue-true.
+    if (this.mushGlow) this.mushGlow.material.opacity = clamp(1.15 - (this.game.sky?.sunIntensity ?? 1), 0.06, 0.55);
     if (this.villageWindows) this.villageWindows.material.opacity = clamp(1.05 - (this.game.sky?.sunIntensity ?? 1) * 1.6, 0, 0.9);   // hearths lit after dusk
     if (!this.game.world.vegetation?.lods && this._ownLods) { const p = this.game.camera.position; for (const l of this._ownLods) l.refresh(p.x, p.z); }
     if (!this.game.world.vegetation) this.U.uTime.value = t;

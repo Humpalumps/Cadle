@@ -21,8 +21,10 @@ import { BIOMES, RL_EDGE } from './Biomes.js';
  *   vegetation.uniforms  { uTime, uWind, uSunDirV, uSunColor, uSunI } shared by Props materials
  *   vegetation.setWind(w)
  *   vegetation.collisionSelfTest() -> {pass, tests[]}  deterministic sphere-walk into registered colliders (for critics)
- * Exports helpers for Props: InstLOD, patchMaterial, triplanarPatch, fadePatch, erodeFade, makeRockGeometry,
- *   noiseTexture, rgbaTexture, normalFromLuma
+ * Exports helpers for Props: InstLOD, patchMaterial, triplanarPatch, fadePatch, erodeFade, instTintPatch,
+ *   makeRockGeometry, noiseTexture, rgbaTexture, normalFromLuma
+ * NOTE for anyone building an InstancedMesh here: instanceColor does NOT reach the fragment shader on its
+ * own in three r185 — add `instTintPatch` (see its doc comment) or your per-instance tint is silently dead.
  */
 
 // ---------------------------------------------------------------- per-biome scatter tables (Biomes.js ids)
