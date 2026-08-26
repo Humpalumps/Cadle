@@ -14,56 +14,92 @@ const SW = (e) => (e.state === 'attack' ? e.attackT : 0); // attack progress 0..
 const seg = (x, a, b) => { const k = (x - a) / (b - a); return k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k); };
 
 // ---------------------------------------------------------------- HOUND: quadruped, 4-leg planted gait, head tracking, tail
+// Rebuilt from tools/out/assetgen/tripo/hound-hq.glb (concept hound-hq.webp, turntable hound-hq-render.jpg).
+// Identity-defining features the reference has and the wave-1 body did not, in priority order:
+//   1. SLOPED TOPLINE — withers well above the hips, hyena-shouldered. The old body was a level tube.
+//   2. A CRYSTAL MANE, not back plates: a ruff of pale shards behind the skull, biggest at the shoulder,
+//      running the spine and continuing along the top of the tail.
+//   3. Lean predator mass: deep narrow chest, tucked waist, defined haunch — not four fat spheres.
+//   4. A narrow wolf muzzle with a lipped snarl, ears swept BACK, tail carried up in an S.
+// Rebuilt procedurally at 1/3 the triangles (6584 -> see the budget note in rig.js prim): the reference is
+// a 57k-tri sculpt, this is a crowd enemy that can be on screen 20 at a time.
 const hound = {
   build() {
     const R = new Rig(), { root } = R;
-    const HIDE = 0x5a6a85, BELLY = 0x8a94a8, PLATE = 0x3a4252, GLOW = 0xffffff, CLAW = 0x2a2e38;
+    // deep indigo-violet hide with a colder belly; shards are the aether (glow channel, capped in materials.js)
+    const HIDE = 0x4a4468, HIDE2 = 0x3a3552, BELLY = 0x6f6a88, PLATE = 0x2e2b40, GLOW = 0xffffff, CLAW = 0x1c1a26;
     const body = R.bone('body', root, 0, 0.76, 0);
-    R.part(body, prim.sphere(), { p: [0, 0.78, 0.32], s: [0.3, 0.3, 0.42], color: HIDE });
-    R.part(body, prim.sphere(), { p: [0, 0.72, -0.18], s: [0.27, 0.26, 0.42], color: HIDE });
-    R.part(body, prim.sphere(), { p: [0, 0.74, -0.52], s: [0.24, 0.26, 0.26], color: HIDE });
-    R.part(body, prim.sphere(), { p: [0, 0.62, 0.05], s: [0.24, 0.2, 0.55], color: BELLY, mottle: 0.1 });
-    // chitin back plates + crystal spines
-    for (let i = 0; i < 4; i++) {
-      const z = 0.45 - i * 0.3;
-      R.part(body, prim.hex(), { p: [0, 1.02 - i * 0.02, z], r: [0.15, 0, 0], s: [0.17, 0.05, 0.15], color: PLATE, mottle: 0.06, flat: true });
-      R.part(body, prim.crystal(), { p: [0, 1.1 - i * 0.02, z + 0.02], r: [-0.35, 0, 0], s: [0.12, 0.2 + (i === 1 ? 0.07 : 0), 0.12], color: GLOW, glow: 1, flat: true });
+    // ---- torso: chest high and deep, waist tucked, croup dropping away behind
+    R.part(body, prim.sphereLo(), { p: [0, 0.82, 0.30], s: [0.30, 0.33, 0.42], color: HIDE });          // rib cage (deep, a touch wider than the first pass)
+    R.part(body, prim.sphereLo(), { p: [0, 0.93, 0.12], s: [0.27, 0.21, 0.32], color: HIDE });          // withers hump — the sloped topline
+    R.part(body, prim.sphereLo(), { p: [0, 0.74, -0.16], s: [0.22, 0.23, 0.34], color: HIDE2 });        // tucked waist
+    R.part(body, prim.sphereLo(), { p: [0, 0.72, -0.50], s: [0.27, 0.27, 0.31], color: HIDE });         // croup
+    R.part(body, prim.sphereLo(), { p: [0, 0.60, 0.06], s: [0.20, 0.16, 0.48], color: BELLY, mottle: 0.12 });
+    R.mirror(body, prim.sphereLo(), { p: [0.185, 0.75, -0.46], s: [0.15, 0.19, 0.21], color: HIDE });   // haunch muscle
+    R.mirror(body, prim.sphereLo(), { p: [0.165, 0.86, 0.26], s: [0.11, 0.15, 0.17], color: HIDE });    // shoulder blade mass
+    // No flank/scapula chitin discs here: on the narrower rebuilt torso they stood proud of the hide and read
+    // as floating tiles (visible in tools/out/c1-look/shot-pair-front.png). Flank definition comes from the
+    // material's `relief` bump, which is what the reference's normal map is doing anyway.
+    // ---- crystal mane: DENSE at the neck/shoulder and thinning down the spine (k^1.35 spacing), which is
+    // what makes it read as a mane rather than the evenly-spaced stegosaurus row the first pass produced.
+    // Bases are sunk below the back line on purpose: an embedded shard is always better than a floating one.
+    for (let i = 0; i < 8; i++) {
+      const k = i / 7, z = 0.54 - Math.pow(k, 1.35) * 1.12, y = 1.05 - k * 0.11;
+      const h = 0.36 - Math.abs(k - 0.12) * 0.30;                       // longest just behind the skull
+      R.part(body, prim.crystal(), { p: [0, y + h * 0.30, z], r: [-0.62 + k * 0.62, 0, 0], s: [0.115, h, 0.10], color: GLOW, glow: 1, flat: true });
+      if (i < 5) R.mirror(body, prim.crystal(), { p: [0.115 + k * 0.05, y + h * 0.16, z + 0.02], r: [-0.30, 0, 0.80], s: [0.085, h * 0.78, 0.08], color: GLOW, glow: 0.85, flat: true });
+      if (i < 3) R.mirror(body, prim.crystal(), { p: [0.175 - k * 0.10, y - 0.03, z + 0.03], r: [-0.25, 0, 1.10], s: [0.07, h * 0.52, 0.065], color: GLOW, glow: 0.8, flat: true });
     }
-    R.mirror(body, prim.hex(), { p: [0.27, 0.95, 0.38], r: [0, 0, 0.9], s: [0.14, 0.05, 0.16], color: PLATE, mottle: 0.06, flat: true });
-    // flank + haunch chitin (faceted detail that reads at point-blank — no smooth blob)
-    R.mirror(body, prim.hex(), { p: [0.27, 0.8, 0.02], r: [0, 0.15, 1.05], s: [0.17, 0.045, 0.22], color: PLATE, mottle: 0.09, flat: true });
-    R.mirror(body, prim.hex(), { p: [0.23, 0.82, -0.44], r: [0.25, 0, 1.15], s: [0.14, 0.04, 0.17], color: PLATE, mottle: 0.09, flat: true });
-    R.mirror(body, prim.crystal(), { p: [0.26, 0.93, -0.02], r: [0.3, 0, 1.0], s: [0.06, 0.11, 0.06], color: GLOW, glow: 0.7, flat: true });
-    // neck / head / jaw
+    // ---- neck / head / jaw
     const neck = R.bone('neck', body, 0, 0.14, 0.6);
-    R.part(neck, prim.cyl(), { p: [0, 1.0, 0.75], r: [-1.1, 0, 0], s: [0.12, 0.32, 0.12], color: HIDE });
+    R.part(neck, prim.limb(0.85), { p: [0, 1.10, 0.74], r: [-1.02, 0, 0], s: [0.125, 0.32, 0.14], color: HIDE });
+    R.part(neck, prim.hex(), { p: [0, 1.02, 0.66], r: [-0.5, 0, 0], s: [0.19, 0.05, 0.20], color: HIDE2, mottle: 0.14, flat: true });   // neck ruff base
     const head = R.bone('head', neck, 0, 0.15, 0.26);
-    R.part(head, prim.sphere(), { p: [0, 1.07, 0.9], s: [0.19, 0.17, 0.22], color: HIDE });
-    R.part(head, prim.boxB(), { p: [0, 1.03, 1.1], r: [0.1, 0, 0], s: [0.16, 0.115, 0.26], color: HIDE, mottle: 0.14 });   // beveled muzzle, narrow + tipped down (no toy-pug snout)
-    R.part(head, prim.hex(), { p: [0, 1.0, 1.26], r: [1.62, 0, 0], s: [0.06, 0.1, 0.05], color: CLAW, flat: true });        // dark nose tip
-    R.part(head, prim.hex(), { p: [0, 1.1, 1.1], r: [1.68, 0, 0], s: [0.07, 0.26, 0.055], color: PLATE, mottle: 0.08, flat: true }); // nasal ridge
-    R.mirror(head, prim.hex(), { p: [0.1, 1.03, 1.0], r: [0.2, 0, 1.25], s: [0.075, 0.05, 0.15], color: PLATE, mottle: 0.08, flat: true }); // cheek plates
-    R.mirror(head, prim.boxB(), { p: [0.07, 1.15, 1.04], r: [0.35, 0, 0.35], s: [0.1, 0.05, 0.19], color: PLATE, mottle: 0.06 }); // angled brow ridges
-    R.mirror(head, prim.sphere(), { p: [0.085, 1.1, 1.06], s: 0.04, color: GLOW, glow: 1 });                           // eyes
-    R.mirror(head, prim.cone(), { p: [0.13, 1.27, 0.85], r: [-0.3, 0, 0.45], s: [0.05, 0.18, 0.04], color: HIDE });      // ears
-    R.part(head, prim.crystal(), { p: [0, 1.24, 1.0], r: [-0.9, 0, 0], s: [0.08, 0.18, 0.08], color: GLOW, glow: 0.8, flat: true }); // horn
-    R.mirror(head, prim.cone(), { p: [0.07, 0.96, 1.3], r: [Math.PI, 0, 0], s: [0.025, 0.08, 0.02], color: CLAW });     // fangs
-    const jaw = R.bone('jaw', head, 0, -0.08, 0.1);
-    R.part(jaw, prim.boxB(), { p: [0, 0.94, 1.1], s: [0.13, 0.055, 0.26], color: 0x424c60, mottle: 0.12 });  // dark under-jaw (the grey band read as a toy grin)
-    // tail (3 segments)
-    const t0 = R.bone('tail0', body, 0, 0.1, -0.72), t1 = R.bone('tail1', t0, 0, 0.04, -0.28), t2 = R.bone('tail2', t1, 0, 0.03, -0.26);
-    R.part(t0, prim.cyl(), { p: [0, 0.88, -0.86], r: [1.45, 0, 0], s: [0.06, 0.3, 0.06], color: HIDE });
-    R.part(t1, prim.cyl(), { p: [0, 0.9, -1.13], r: [1.5, 0, 0], s: [0.045, 0.28, 0.045], color: HIDE });
-    R.part(t2, prim.crystal(), { p: [0, 0.92, -1.4], r: [1.6, 0, 0], s: [0.09, 0.2, 0.09], color: GLOW, glow: 0.9, flat: true });
-    // legs: hips are children of body (follow bob); knees too (IK sets their position)
-    const legs = [['FL', 0.22, 0.4, 0], ['FR', -0.22, 0.4, 1], ['HL', 0.2, -0.5, 1], ['HR', -0.2, -0.5, 0]];
+    R.part(head, prim.sphereLo(), { p: [0, 1.09, 0.89], s: [0.155, 0.15, 0.20], color: HIDE });                                          // narrow skull
+    // slab's long axis is local +Y; rotating -1.45 about X lays it along -Z and points its NARROW end
+    // forward-and-slightly-down, which is the whole difference between a wolf muzzle and a pug snout.
+    R.part(head, prim.slab(0.60), { p: [0, 1.045, 1.11], r: [-1.45, 0, 0], s: [0.145, 0.30, 0.115], color: HIDE, mottle: 0.16 });
+    R.part(head, prim.octa(), { p: [0, 1.055, 1.27], s: [0.05, 0.042, 0.042], color: CLAW, flat: true });                                 // nose leather
+    R.part(head, prim.hex(), { p: [0, 1.115, 1.06], r: [1.66, 0, 0], s: [0.055, 0.24, 0.05], color: PLATE, mottle: 0.1, flat: true });    // nasal ridge
+    R.mirror(head, prim.hex(), { p: [0.078, 1.155, 1.00], r: [0.28, 0, 0.92], s: [0.075, 0.04, 0.15], color: PLATE, mottle: 0.1, flat: true });  // brow
+    R.mirror(head, prim.hex(), { p: [0.105, 1.055, 0.98], r: [0.15, 0, 1.28], s: [0.075, 0.045, 0.15], color: HIDE2, mottle: 0.12, flat: true }); // cheek
+    R.mirror(head, prim.octa(), { p: [0.085, 1.125, 1.03], s: 0.036, color: GLOW, glow: 1, flat: true });                                 // eyes
+    R.mirror(head, prim.cone(), { p: [0.098, 1.26, 0.80], r: [-0.42, 0, 0.34], s: [0.05, 0.21, 0.035], color: HIDE });                    // ears swept BACK
+    R.mirror(head, prim.crystal(), { p: [0.075, 1.21, 0.92], r: [-0.6, 0, 0.5], s: [0.05, 0.14, 0.05], color: GLOW, glow: 0.8, flat: true }); // skull shards
+    R.mirror(head, prim.cone(), { p: [0.062, 1.00, 1.20], r: [Math.PI, 0, 0], s: [0.021, 0.075, 0.02], color: CLAW });                    // upper fangs
+    const jaw = R.bone('jaw', head, 0, -0.075, 0.10);
+    R.part(jaw, prim.slab(0.68), { p: [0, 0.972, 1.09], r: [-1.48, 0, 0], s: [0.115, 0.27, 0.055], color: 0x322e44, mottle: 0.14 });
+    R.mirror(jaw, prim.cone(), { p: [0.052, 1.005, 1.16], s: [0.018, 0.06, 0.018], color: CLAW });                                        // lower fangs
+    // ---- tail: carried UP in an S, shards along the top, tuft at the tip
+    // prim.cyl is CENTRED on its origin (prim.limb hangs from it) — mixing the two is what left the first
+    // rebuild's tail as three capsules floating off behind the hound. Each segment centre sits on the arc
+    // and its rotation aims the +Y axis along the arc tangent, so the segments meet end to end.
+    // The BONE chain follows the same arc as the parts (offsets are the arc's own steps), so a tail wave
+    // rotates each segment about a point that is actually on the tail instead of shearing it sideways.
+    const t0 = R.bone('tail0', body, 0, 0.10, -0.72), t1 = R.bone('tail1', t0, 0, 0.045, -0.297), t2 = R.bone('tail2', t1, 0, 0.126, -0.232);
+    R.part(t0, prim.cyl(), { p: [0, 0.883, -0.869], r: [-1.42, 0, 0], s: [0.080, 0.30, 0.080], color: HIDE });
+    R.part(t1, prim.cyl(), { p: [0, 0.968, -1.142], r: [-1.10, 0, 0], s: [0.062, 0.28, 0.062], color: HIDE });
+    R.part(t2, prim.cyl(), { p: [0, 1.117, -1.332], r: [-0.76, 0, 0], s: [0.048, 0.24, 0.048], color: HIDE2 });
+    R.part(t2, prim.cone(), { p: [0, 1.26, -1.47], r: [-0.76, 0, 0], s: [0.072, 0.21, 0.058], color: HIDE2, mottle: 0.26 });              // tuft
+    R.part(t0, prim.crystal(), { p: [0, 0.95, -0.82], r: [-0.55, 0, 0], s: [0.058, 0.14, 0.055], color: GLOW, glow: 0.9, flat: true });
+    R.part(t0, prim.crystal(), { p: [0, 0.98, -0.95], r: [-0.50, 0, 0], s: [0.054, 0.13, 0.052], color: GLOW, glow: 0.9, flat: true });
+    R.part(t1, prim.crystal(), { p: [0, 1.05, -1.09], r: [-0.42, 0, 0], s: [0.050, 0.12, 0.048], color: GLOW, glow: 0.9, flat: true });
+    R.part(t1, prim.crystal(), { p: [0, 1.10, -1.20], r: [-0.36, 0, 0], s: [0.046, 0.11, 0.045], color: GLOW, glow: 0.9, flat: true });
+    R.part(t2, prim.crystal(), { p: [0, 1.19, -1.33], r: [-0.28, 0, 0], s: [0.042, 0.10, 0.042], color: GLOW, glow: 0.9, flat: true });
+    // ---- legs: hips are children of body (follow bob); knees too (IK sets their position)
+    // front pair is straighter and set under the deep chest; hind pair carries the haunch. Slimmer than the
+    // wave-1 tubes — the reference's legs are long and wiry, which is most of why it reads as fast.
+    const legs = [['FL', 0.20, 0.42, 0], ['FR', -0.20, 0.42, 1], ['HL', 0.19, -0.50, 1], ['HR', -0.19, -0.50, 0]];
     for (const [n, x, z] of legs) {
+      const front = z > 0;
       const hip = R.bone('hip' + n, body, x, 0, z), knee = R.bone('knee' + n, body, x, -0.4, z);
-      R.part(hip, prim.limb(0.7), { p: [x, 0.76, z], s: [0.085, 0.4, 0.085], color: HIDE });
-      R.part(hip, prim.sphere(), { p: [x, 0.76, z], s: 0.1, color: PLATE, mottle: 0.05 });
-      R.part(knee, prim.limb(0.8), { p: [x, 0.36, z], s: [0.06, 0.36, 0.06], color: HIDE });
-      R.part(knee, prim.box(), { p: [x, 0.03, z + 0.05], s: [0.12, 0.06, 0.2], color: PLATE, mottle: 0.05 });
-      R.mirror(knee, prim.cone(), { p: [x + 0.03, 0.02, z + 0.17], r: [1.5, 0, 0], s: [0.02, 0.06, 0.02], color: CLAW });
+      R.part(hip, prim.limb(0.58), { p: [x, 0.78, z], s: [front ? 0.095 : 0.11, 0.42, front ? 0.10 : 0.12], color: HIDE });
+      R.part(hip, prim.sphereLo(), { p: [x, 0.73, z], s: [0.10, 0.13, 0.13], color: HIDE2, mottle: 0.14 });                           // shoulder / thigh mass
+      R.part(knee, prim.limb(0.78), { p: [x, 0.36, z], s: [0.062, 0.36, 0.066], color: HIDE2 });
+      R.part(knee, prim.slab(0.80), { p: [x, 0.042, z + 0.045], s: [0.135, 0.085, 0.24], color: HIDE2, mottle: 0.12 });               // paw
+      // claws: two explicit parts, NOT R.mirror — mirror negates x about the body centreline, which on a
+      // quadruped welds the twin to this leg's bone over on the OTHER leg's side of the body.
+      for (const dx of [0.032, -0.032]) R.part(knee, prim.cone(), { p: [x + dx, 0.022, z + 0.15], r: [1.45, 0, 0], s: [0.019, 0.06, 0.019], color: CLAW });
     }
     return { ...R.build(), legDefs: legs.map(([n, x, z, g]) => ({ n, x, z, g })) };
   },
@@ -102,10 +138,13 @@ const wisp = {
       const a = i / 4 * Math.PI * 2 + 0.4;
       R.part(core, prim.hex(), { p: [Math.cos(a) * 0.3, (i % 2 ? 0.1 : -0.08), Math.sin(a) * 0.3], r: [0.5 + i * 0.3, a, 0.9], s: [0.14, 0.05, 0.17], color: 0x2c3550, glow: 0.1, flat: true, mottle: 0.3 });
     }
+    // halo rings: glow pulled back from 0.9/0.7 so they read as thin arcs of the creature's own hue rather
+    // than the flat pale loops of the wave-3 void verdict (the hue itself is now held by the channel cap in
+    // materials.js — this just stops them being the brightest thing in the region).
     const halo = R.bone('halo', core, 0, 0, 0);
-    R.part(halo, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2, 0, 0], s: [0.44, 0.44, 0.44], color: 0xffffff, glow: 0.9 });
+    R.part(halo, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2, 0, 0], s: [0.44, 0.44, 0.44], color: 0xffffff, glow: 0.75 });
     const halo2 = R.bone('halo2', core, 0, 0, 0);
-    R.part(halo2, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2 + 0.6, 0.3, 0], s: [0.34, 0.34, 0.34], color: 0xffffff, glow: 0.7 });
+    R.part(halo2, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2 + 0.6, 0.3, 0], s: [0.34, 0.34, 0.34], color: 0xffffff, glow: 0.55 });
     for (let i = 0; i < 6; i++) {
       const piv = R.bone('sh' + i, core, 0, 0, 0); const a = i / 6 * Math.PI * 2;
       R.part(piv, prim.crystal(), { p: [Math.cos(a) * 0.55, Math.sin(i * 1.7) * 0.08, Math.sin(a) * 0.55], r: [0.4, -a, 0.2], s: [0.11, 0.21 + (i % 2) * 0.07, 0.11], color: 0xdde8ff, glow: 0.9, flat: true });
@@ -131,77 +170,128 @@ const wisp = {
 };
 
 // ---------------------------------------------------------------- SENTINEL: tall biped, spear + orb, shield bubble
+// Rebuilt from tools/out/assetgen/tripo/sentinel-hq.glb (concept sentinel-hq.webp, turntable
+// sentinel-hq-render.jpg). What the reference is and the wave-1 body was not:
+//   1. STONE, not gold. A granite golem-knight with gold filigree TRIM; the old one was a gold mannequin
+//      ("gold blocky spear bipeds ... flat-shaded voxel mannequins", wave-3 dragon verdict).
+//   2. BROAD AND SHORT-LEGGED. Hip line at ~44% of height, huge layered pauldrons, big bare stone feet.
+//      The old one was a thin 5-head figure with a level stick body.
+//   3. A violet HEART GEM in a gold cartouche, twin visor eyes, and a stone GREATSWORD with a gold fuller
+//      — instead of a 2.6 m broom-handle spear that was most of its silhouette.
+// 11784 -> ~2.9k tris: the old body spent 8k of that on boxB (588 tris each). Same bone names, same
+// contract, so defs/weakPoints/AI/animation hooks are untouched.
 const sentinel = {
   build() {
     const R = new Rig(), { root } = R;
-    const STONE = 0xd9c9a8, DARK = 0x6b6055, GOLD = 0xe6b45c, GLOW = 0xffffff, CLOTH = 0x4656a8;   // warmer stone, brighter gold, saturated cloth (drab-cardboard fix)
-    const pelvis = R.bone('pelvis', root, 0, 1.45, 0);
-    R.part(pelvis, prim.boxB(), { p: [0, 1.5, 0], s: [0.42, 0.24, 0.3], color: DARK, mottle: 0.1 });
-    for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.55; R.part(pelvis, prim.box(), { p: [Math.sin(a) * 0.24, 1.2, Math.cos(a) * 0.2 - 0.02], r: [0.1, a, 0], s: [0.14, 0.5, 0.04], color: i % 2 ? STONE : CLOTH, mottle: 0.1 }); } // skirt plates
-    const torso = R.bone('torso', pelvis, 0, 0.22, 0);
-    // layered armor mass (beveled plates + octagonal core — no single cardboard box)
-    R.part(torso, prim.hex(), { p: [0, 1.98, 0], r: [0, 0.52, 0], s: [0.29, 0.6, 0.24], color: STONE, mottle: 0.16, flat: true }); // octagonal core
-    R.part(torso, prim.boxB(), { p: [0, 2.14, 0.02], s: [0.52, 0.4, 0.33], color: STONE, mottle: 0.16 });                 // chest block
-    R.part(torso, prim.boxB(), { p: [0, 1.8, 0], s: [0.4, 0.3, 0.27], color: DARK, mottle: 0.12 });                       // waist taper
-    R.mirror(torso, prim.boxB(), { p: [0.25, 2.16, 0.02], r: [0, 0, 0.28], s: [0.13, 0.36, 0.3], color: STONE, mottle: 0.16 }); // angled side plates
-    R.part(torso, prim.boxB(), { p: [0, 2.2, -0.15], r: [-0.3, 0, 0], s: [0.38, 0.32, 0.1], color: GOLD, mottle: 0.06 });  // back plate
-    for (let i = 0; i < 3; i++) R.part(torso, prim.crystal(), { p: [0, 2.38 - i * 0.15, -0.24], r: [0.6, 0, 0], s: [0.05, 0.11, 0.05], color: GLOW, glow: 0.7, flat: true }); // spine studs
-    R.part(torso, prim.boxB(), { p: [0, 2.1, 0.17], s: [0.36, 0.28, 0.07], color: GOLD, mottle: 0.05 });                  // chest plate
-    R.part(torso, prim.box(), { p: [0, 2.1, 0.2], s: [0.05, 0.22, 0.02], color: GLOW, glow: 1 });                          // aether line
-    R.part(torso, prim.box(), { p: [0, 2.0, 0.2], s: [0.22, 0.04, 0.02], color: GLOW, glow: 1 });
-    R.mirror(torso, prim.sphere(), { p: [0.34, 2.26, 0], s: [0.14, 0.1, 0.14], color: GOLD, mottle: 0.04 });               // pauldrons
-    R.mirror(torso, prim.crystal(), { p: [0.36, 2.4, 0], r: [0, 0, -0.3], s: [0.08, 0.16, 0.08], color: GLOW, glow: 0.8, flat: true });
-    const head = R.bone('head', torso, 0, 0.6, 0);
-    R.part(head, prim.boxB(), { p: [0, 2.44, 0], s: [0.26, 0.32, 0.28], color: STONE, mottle: 0.12 });
-    R.part(head, prim.box(), { p: [0, 2.46, 0.15], s: [0.2, 0.05, 0.03], color: GLOW, glow: 1 });                          // visor slit (thicker: must read at noon)
-    R.part(head, prim.crystal(), { p: [0, 2.7, -0.02], s: [0.1, 0.2, 0.1], color: GLOW, glow: 0.7, flat: true });            // crest
-    R.mirror(head, prim.boxB(), { p: [0.16, 2.5, 0], r: [0, 0, 0.12], s: [0.07, 0.24, 0.22], color: GOLD, mottle: 0.05 });   // cheek guards
-    // arms: shoulder -> elbow -> hand (children chain)
-    for (const [n, sx] of [['R', 0.36], ['L', -0.36]]) {
-      const sh = R.bone('sh' + n, torso, sx, 0.48, 0), el = R.bone('el' + n, sh, 0, -0.42, 0), hd = R.bone('hd' + n, el, 0, -0.4, 0);
-      R.part(sh, prim.limb(0.75), { p: [sx, 2.15, 0], s: [0.08, 0.42, 0.08], color: STONE, mottle: 0.1 });
-      R.part(el, prim.limb(0.8), { p: [sx, 1.73, 0], s: [0.065, 0.4, 0.065], color: DARK });
-      R.part(el, prim.sphere(), { p: [sx, 1.73, 0], s: 0.08, color: GOLD, mottle: 0.04 });
-      R.part(hd, prim.box(), { p: [sx, 1.3, 0.02], s: [0.1, 0.12, 0.12], color: DARK });
-      if (n === 'R') { // spear held vertically in right hand
-        R.part(hd, prim.cyl(), { p: [sx, 1.65, 0.12], s: [0.025, 2.6, 0.025], color: DARK, mottle: 0.05 });
-        R.part(hd, prim.torus(), { p: [sx, 2.75, 0.12], r: [Math.PI / 2, 0, 0], s: 0.08, color: GOLD });
-        R.part(hd, prim.crystal(), { p: [sx, 3.15, 0.12], s: [0.12, 0.38, 0.12], color: GLOW, glow: 1, flat: true });
-        R.part(hd, prim.crystal(), { p: [sx, 2.9, 0.12], r: [Math.PI, 0, 0], s: [0.06, 0.15, 0.06], color: GLOW, glow: 0.7, flat: true });
-      } else { const orb = R.bone('orb', hd, 0, 0.3, 0.1); R.part(orb, prim.ico(), { p: [sx, 1.6, 0.12], s: 0.12, color: GLOW, glow: 1, flat: true }); R.part(orb, prim.torus(), { p: [sx, 1.6, 0.12], r: [0.5, 0, 0], s: 0.2, color: GOLD, glow: 0.3 }); }
+    const STONE = 0xa9a496, STONE2 = 0x8a8472, DARK = 0x67614f, GOLD = 0xd8ac5c, GLOW = 0xffffff;
+    const pelvis = R.bone('pelvis', root, 0, 1.15, 0);
+    // ---- hips, belt, tassets
+    R.part(pelvis, prim.plate(), { p: [0, 1.20, 0], s: [0.58, 0.30, 0.40], color: STONE2, mottle: 0.14 });
+    R.part(pelvis, prim.hex(), { p: [0, 1.36, 0], r: [0, 0.39, 0], s: [0.32, 0.09, 0.24], color: GOLD, mottle: 0.05, flat: true });
+    R.part(pelvis, prim.crystal(), { p: [0, 1.36, 0.25], r: [1.57, 0, 0], s: [0.075, 0.07, 0.075], color: GLOW, glow: 0.85, flat: true });  // buckle gem
+    R.part(pelvis, prim.slab(0.62), { p: [0, 1.02, 0.20], r: [0.10, 0, 0], s: [0.28, 0.50, 0.12], color: STONE, mottle: 0.14 });            // front apron
+    R.mirror(pelvis, prim.slab(0.70), { p: [0.31, 1.04, 0.01], r: [0, 0, 0.16], s: [0.19, 0.46, 0.28], color: STONE, mottle: 0.14 });       // side tassets
+    R.part(pelvis, prim.slab(0.66), { p: [0, 1.03, -0.19], r: [-0.09, 0, 0], s: [0.26, 0.44, 0.11], color: STONE2, mottle: 0.12 });
+    R.mirror(pelvis, prim.hex(), { p: [0.115, 0.84, 0.215], r: [0.10, 0, 0], s: [0.075, 0.035, 0.07], color: GOLD, mottle: 0.05, flat: true }); // apron trim
+    // ---- legs (IK): short and thick, ending in bare stone feet with toes
+    for (const [n, x] of [['L', 0.27], ['R', -0.27]]) {
+      const hip = R.bone('hip' + n, pelvis, x, 0, 0), knee = R.bone('knee' + n, pelvis, x, -0.60, 0);
+      R.part(hip, prim.limb(0.80), { p: [x, 1.15, 0], s: [0.19, 0.60, 0.20], color: STONE2, mottle: 0.14 });
+      R.part(hip, prim.slab(0.76), { p: [x, 1.02, 0.04], r: [0.05, 0, 0], s: [0.25, 0.40, 0.23], color: STONE, mottle: 0.14 });   // cuisse
+      R.part(hip, prim.hex(), { p: [x, 1.21, 0.06], r: [1.57, 0, 0], s: [0.135, 0.04, 0.115], color: GOLD, mottle: 0.05, flat: true });
+      R.part(knee, prim.limb(0.92), { p: [x, 0.55, 0], s: [0.155, 0.55, 0.165], color: DARK });
+      R.part(knee, prim.slab(0.86), { p: [x, 0.50, 0.03], s: [0.23, 0.40, 0.21], color: STONE, mottle: 0.14 });                   // greave
+      R.part(knee, prim.hex(), { p: [x, 0.70, 0.10], r: [1.45, 0, 0], s: [0.125, 0.055, 0.125], color: GOLD, mottle: 0.05, flat: true }); // knee cop
+      R.part(knee, prim.plate(), { p: [x, 0.09, 0.09], s: [0.28, 0.18, 0.44], color: STONE2, mottle: 0.13 });                     // bare stone foot
+      for (const dx of [0.065, -0.065]) R.part(knee, prim.slab(0.78), { p: [x + dx, 0.07, 0.28], s: [0.09, 0.11, 0.15], color: STONE2, mottle: 0.1 }); // toes
     }
-    // legs (IK): hips children of pelvis
-    for (const [n, x] of [['L', 0.17], ['R', -0.17]]) {
-      const hip = R.bone('hip' + n, pelvis, x, 0, 0), knee = R.bone('knee' + n, pelvis, x, -0.75, 0);
-      R.part(hip, prim.limb(0.7), { p: [x, 1.45, 0], s: [0.1, 0.75, 0.1], color: STONE, mottle: 0.1 });
-      R.part(hip, prim.box(), { p: [x, 1.25, 0.06], s: [0.14, 0.34, 0.1], color: GOLD, mottle: 0.04 });                  // thigh plate
-      R.part(knee, prim.limb(0.75), { p: [x, 0.7, 0], s: [0.08, 0.66, 0.08], color: DARK });
-      R.part(knee, prim.box(), { p: [x, 0.05, 0.06], s: [0.14, 0.1, 0.32], color: DARK, mottle: 0.05 });                 // foot
+    // ---- torso: deep cuirass, gold trim following the plate edges, heart gem at the sternum
+    const torso = R.bone('torso', pelvis, 0, 0.36, 0);
+    R.part(torso, prim.plate(), { p: [0, 1.66, 0.01], s: [0.50, 0.34, 0.40], color: STONE2, mottle: 0.14 });
+    R.part(torso, prim.plate(), { p: [0, 1.98, 0.02], s: [0.78, 0.48, 0.48], color: STONE, mottle: 0.16 });
+    R.part(torso, prim.slab(0.88), { p: [0, 2.20, 0.01], s: [0.70, 0.20, 0.44], color: STONE, mottle: 0.16 });                    // clavicle shelf
+    R.part(torso, prim.slab(0.82), { p: [0, 2.02, -0.23], r: [-0.10, 0, 0], s: [0.58, 0.44, 0.12], color: STONE2, mottle: 0.14 });
+    R.part(torso, prim.hex(), { p: [0, 2.02, 0.245], r: [1.57, 0.39, 0], s: [0.20, 0.05, 0.20], color: GOLD, mottle: 0.05, flat: true }); // cartouche
+    R.part(torso, prim.ico(), { p: [0, 2.02, 0.275], s: [0.115, 0.13, 0.085], color: GLOW, glow: 1, flat: true });                // HEART GEM
+    R.part(torso, prim.hex(), { p: [0, 2.21, 0.03], r: [0, 0.39, 0], s: [0.36, 0.04, 0.24], color: GOLD, mottle: 0.05, flat: true });
+    R.part(torso, prim.hex(), { p: [0, 1.79, 0.02], r: [0, 0.39, 0], s: [0.28, 0.045, 0.23], color: GOLD, mottle: 0.05, flat: true });
+    R.mirror(torso, prim.hex(), { p: [0.27, 2.00, 0.20], r: [0.10, 0, 0.5], s: [0.07, 0.03, 0.17], color: GOLD, mottle: 0.05, flat: true });
+    R.part(torso, prim.hex(), { p: [0, 2.29, 0.02], r: [0, 0.39, 0], s: [0.21, 0.07, 0.18], color: GOLD, mottle: 0.05, flat: true }); // gorget (kept smaller than the helm so the head still reads)
+    for (let i = 0; i < 3; i++) R.part(torso, prim.crystal(), { p: [0, 2.16 - i * 0.15, -0.28], r: [0.55, 0, 0], s: [0.05, 0.12, 0.05], color: GLOW, glow: 0.7, flat: true });
+    // ---- pauldrons: three lames each, gold rolled edge. This is the silhouette read at 60 m.
+    R.mirror(torso, prim.plate(), { p: [0.56, 2.22, 0], r: [0, 0, 0.32], s: [0.38, 0.28, 0.46], color: STONE, mottle: 0.16 });
+    R.mirror(torso, prim.hex(), { p: [0.565, 2.33, 0], r: [0, 0, 0.32], s: [0.20, 0.045, 0.245], color: GOLD, mottle: 0.05, flat: true });
+    R.mirror(torso, prim.slab(0.88), { p: [0.62, 2.03, 0], r: [0, 0, 0.46], s: [0.32, 0.15, 0.42], color: STONE, mottle: 0.16 });
+    R.mirror(torso, prim.slab(0.88), { p: [0.64, 1.88, 0], r: [0, 0, 0.56], s: [0.27, 0.13, 0.36], color: STONE2, mottle: 0.14 });
+    R.mirror(torso, prim.crystal(), { p: [0.58, 2.42, 0], r: [0, 0, -0.30], s: [0.055, 0.12, 0.055], color: GLOW, glow: 0.8, flat: true });
+    // ---- helm
+    const head = R.bone('head', torso, 0, 0.76, 0);
+    R.part(head, prim.plate(), { p: [0, 2.41, 0.01], s: [0.38, 0.36, 0.38], color: STONE, mottle: 0.14 });
+    R.part(head, prim.hex(), { p: [0, 2.455, 0.01], r: [0, 0.39, 0], s: [0.205, 0.05, 0.205], color: GOLD, mottle: 0.05, flat: true });
+    R.part(head, prim.slab(0.92), { p: [0, 2.35, 0.185], s: [0.21, 0.21, 0.06], color: 0x3e392f, mottle: 0.10 });                  // visor recess
+    R.part(head, prim.slab(0.80), { p: [0, 2.33, 0.215], s: [0.045, 0.19, 0.05], color: STONE, mottle: 0.1 });                    // nose ridge splitting the eyes
+    R.mirror(head, prim.crystal(), { p: [0.085, 2.37, 0.222], r: [0, 0, 1.57], s: [0.05, 0.09, 0.035], color: GLOW, glow: 1, flat: true }); // eyes
+    R.part(head, prim.slab(0.72), { p: [0, 2.21, 0.11], r: [-0.14, 0, 0], s: [0.22, 0.15, 0.22], color: STONE2, mottle: 0.12 });   // jaw guard
+    R.mirror(head, prim.slab(0.84), { p: [0.17, 2.34, 0.01], r: [0, 0, 0.10], s: [0.08, 0.26, 0.26], color: GOLD, mottle: 0.05 }); // cheek guards
+    R.part(head, prim.crystal(), { p: [0, 2.63, -0.02], r: [-0.15, 0, 0], s: [0.062, 0.13, 0.062], color: GLOW, glow: 0.7, flat: true });
+    R.mirror(head, prim.cone(), { p: [0.215, 2.52, -0.02], r: [-0.10, 0, -0.62], s: [0.038, 0.16, 0.038], color: GOLD, mottle: 0.05 });
+    // ---- arms: shoulder -> elbow -> hand (children chain). Greatsword right, aether orb left.
+    for (const [n, sx] of [['R', 0.47], ['L', -0.47]]) {
+      const sh = R.bone('sh' + n, torso, sx, 0.52, 0), el = R.bone('el' + n, sh, 0, -0.44, 0), hd = R.bone('hd' + n, el, 0, -0.42, 0);
+      R.part(sh, prim.limb(0.82), { p: [sx, 2.03, 0], s: [0.14, 0.44, 0.15], color: STONE2, mottle: 0.12 });
+      R.part(sh, prim.slab(0.82), { p: [sx * 1.03, 2.00, 0.01], s: [0.20, 0.32, 0.21], color: STONE, mottle: 0.16 });   // rerebrace
+      R.part(el, prim.limb(0.92), { p: [sx, 1.59, 0], s: [0.125, 0.42, 0.13], color: DARK });
+      R.part(el, prim.slab(0.86), { p: [sx * 1.02, 1.55, 0.01], s: [0.21, 0.34, 0.21], color: STONE, mottle: 0.16 });   // vambrace
+      R.part(el, prim.hex(), { p: [sx, 1.73, 0], r: [0, 0, 1.57], s: [0.135, 0.06, 0.145], color: GOLD, mottle: 0.05, flat: true }); // couter
+      R.part(hd, prim.plate(), { p: [sx, 1.15, 0.02], s: [0.21, 0.19, 0.23], color: STONE2, mottle: 0.12 });
+      R.part(hd, prim.hex(), { p: [sx, 1.15, 0.13], r: [1.50, 0, 0], s: [0.11, 0.04, 0.10], color: GOLD, mottle: 0.05, flat: true }); // knuckle plate
+      if (n === 'R') {
+        // greatsword, held forward and down along the body. Gold parts protrude through the blade rather
+        // than being offset onto its face — the blade tilts 0.42 rad, and a face offset would z-fight.
+        // Carried upright and canted 0.22 rad FORWARD so the blade passes in front of the pauldron instead
+        // of through it, and reads as a held weapon rather than a plank strapped to the shoulder.
+        R.part(hd, prim.cyl(), { p: [sx, 1.10, 0.160], r: [0.22, 0, 0], s: [0.038, 0.34, 0.038], color: 0x4a4539, mottle: 0.06 });
+        R.part(hd, prim.octa(), { p: [sx, 0.915, 0.118], s: 0.062, color: GOLD, mottle: 0.05, flat: true });                          // pommel
+        R.part(hd, prim.slab(0.85), { p: [sx, 1.31, 0.206], r: [0.22, 0, 1.57], s: [0.07, 0.32, 0.11], color: GOLD, mottle: 0.05 });  // crossguard
+        R.part(hd, prim.slab(0.55), { p: [sx, 1.80, 0.313], r: [0.22, 0, 0], s: [0.21, 0.90, 0.075], color: STONE, mottle: 0.14 });   // blade
+        R.part(hd, prim.cone(), { p: [sx, 2.28, 0.418], r: [0.22, 0, 0], s: [0.115, 0.26, 0.05], color: STONE, mottle: 0.12 });       // tip
+        R.part(hd, prim.slab(0.50), { p: [sx, 1.80, 0.313], r: [0.22, 0, 0], s: [0.06, 0.82, 0.095], color: GOLD, mottle: 0.05 });    // fuller inlay
+        R.part(hd, prim.crystal(), { p: [sx, 1.76, 0.304], r: [0.22, 0, 0], s: [0.028, 0.50, 0.11], color: GLOW, glow: 0.85, flat: true });
+      } else {
+        const orb = R.bone('orb', hd, 0, 0.30, 0.12);
+        R.part(orb, prim.ico(), { p: [sx, 1.45, 0.14], s: 0.115, color: GLOW, glow: 1, flat: true });
+        R.part(orb, prim.ring(), { p: [sx, 1.45, 0.14], r: [0.5, 0, 0], s: 0.19, color: GOLD, glow: 0.25 });
+        for (let i = 0; i < 3; i++) {                                        // gold prongs cradling the orb
+          const a = i / 3 * Math.PI * 2 + 0.5;
+          R.part(orb, prim.cone(), { p: [sx + Math.cos(a) * 0.115, 1.45 + Math.sin(a) * 0.115, 0.14], r: [0, 0, a - Math.PI / 2], s: [0.03, 0.10, 0.03], color: GOLD, mottle: 0.05 });
+        }
+      }
     }
     return R.build();
   },
   setup(e) {
     const b = e.bones;
-    e.legs = [makeLeg(b, 'hipL', 'kneeL', [0.17, 0, 0], [0.19, -1.45, 0.05], 0.75, 0.75, [0, 0, 1], 0), makeLeg(b, 'hipR', 'kneeR', [-0.17, 0, 0], [-0.19, -1.45, 0.05], 0.75, 0.75, [0, 0, 1], 1)];
-    e.legParent = b.pelvis; e.gait = { stepLen: 0.55, stepTime: 0.26, lift: 0.18, lead: 0.18 };
+    e.legs = [makeLeg(b, 'hipL', 'kneeL', [0.27, 0, 0], [0.29, -1.15, 0.06], 0.6, 0.6, [0, 0, 1], 0), makeLeg(b, 'hipR', 'kneeR', [-0.27, 0, 0], [-0.29, -1.15, 0.06], 0.6, 0.6, [0, 0, 1], 1)];
+    e.legParent = b.pelvis; e.gait = { stepLen: 0.44, stepTime: 0.24, lift: 0.15, lead: 0.16 };
   },
   animate(e, dt, t, A) {
     const b = e.bones, ph = e.phase, sp = e.speedN, sw = SW(e), tg = e.telegraph;
-    b.pelvis.position.y = 1.45 + Math.sin(ph * 2) * 0.03 * sp + (e.state === 'stagger' ? -0.12 : 0);
+    b.pelvis.position.y = 1.15 + Math.sin(ph * 2) * 0.03 * sp + (e.state === 'stagger' ? -0.12 : 0);
     b.pelvis.rotation.y = Math.sin(ph) * 0.06 * sp; b.pelvis.rotation.x = e.tilt;
     const raise = seg(sw, 0, 0.3), thrust = seg(sw, 0.33, 0.42), rec = seg(sw, 0.6, 1);
     b.torso.rotation.x = damp(b.torso.rotation.x, 0.05 + sp * 0.08 - 0.15 * raise + 0.35 * thrust - 0.2 * rec, 10, dt);
     b.torso.rotation.y = -Math.sin(ph) * 0.08 * sp + e.strafeLean * 0.1;
     if (e.alert) aimAt(b.head, A.eye, 1.1, 0.6, 8, dt); else { relaxBone(b.head, 3, dt); b.head.rotation.y = Math.sin(t * 0.5 + e.seedT) * 0.5; }
-    // arms: walk swing; telegraph raises the spear arm + orb hand; release thrusts forward
+    // arms: walk swing; the telegraph cocks the sword arm back and brings the orb hand up; release thrusts
+    // the orb forward (it is the muzzle — _muzzle() reads the `orb` bone) and swings the sword through.
     const swing = Math.sin(ph) * 0.35 * sp;
-    b.shR.rotation.x = damp(b.shR.rotation.x, swing * 0.5 - 1.9 * raise + 1.3 * thrust + 0.6 * rec, 12, dt);
-    b.shR.rotation.z = damp(b.shR.rotation.z, -0.15 - 0.6 * raise + 0.6 * rec, 8, dt);
-    b.elR.rotation.x = damp(b.elR.rotation.x, -0.3 - 0.6 * raise + 0.6 * rec, 8, dt);
-    b.hdR.rotation.x = damp(b.hdR.rotation.x, 1.2 * raise - 1.2 * rec, 8, dt);   // tip spear toward target
+    b.shR.rotation.x = damp(b.shR.rotation.x, swing * 0.5 - 1.4 * raise + 1.1 * thrust + 0.5 * rec, 12, dt);
+    b.shR.rotation.z = damp(b.shR.rotation.z, -0.14 - 0.5 * raise + 0.5 * rec, 8, dt);
+    b.elR.rotation.x = damp(b.elR.rotation.x, -0.12 - 0.5 * raise + 0.5 * rec, 8, dt);   // sword arm hangs straighter than the old spear grip
+    b.hdR.rotation.x = damp(b.hdR.rotation.x, 0.9 * raise - 0.9 * rec, 8, dt);   // tip the blade toward the target
     b.shL.rotation.x = damp(b.shL.rotation.x, -swing * 0.5 - 1.3 * raise + 1.3 * rec - (e.alert ? 0.5 : 0), 8, dt);
     b.shL.rotation.z = damp(b.shL.rotation.z, 0.2 + 0.3 * raise - 0.3 * rec, 8, dt); b.elL.rotation.x = damp(b.elL.rotation.x, -0.5 - 0.4 * raise + 0.4 * rec - (e.alert ? 0.6 : 0), 8, dt);
-    b.orb.position.y = 0.3 + Math.sin(t * 3 + e.seedT) * 0.04; b.orb.rotation.y = t * 2; b.orb.scale.setScalar(1 + tg * 0.6 + Math.sin(t * 6) * 0.05 * tg);
+    b.orb.position.y = 0.30 + Math.sin(t * 3 + e.seedT) * 0.04; b.orb.rotation.y = t * 2; b.orb.scale.setScalar(1 + tg * 0.6 + Math.sin(t * 6) * 0.05 * tg);
     if (e.onGround) stepLegs(e.legs, b.pelvis, e.velocity, dt, t, A.heightAt, e.gait);
   },
 };

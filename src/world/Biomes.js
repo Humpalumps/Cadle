@@ -139,6 +139,12 @@ export const BIOMES = {
   tundra: {
     name: 'Frostveil Tundra', short: 'Frostveil', zone: 'tundra', level: [11, 17],
     fog: 0xc8e4f4, fogMul: 1.5, skyVeil: 0.24, sun: 0xdcecff, amb: 1.2,     // Winterspring: bright, snow-bounced, hazy with falling ice
+    // "Golden hour turns the entire snowfield into beige desert sand" (major): snow is the one surface that
+    // cannot take a full-strength warm key — it has no albedo of its own to fight back with, so the
+    // extinction-orange key + the same orange arriving through hemi/env painted the whole plane khaki.
+    // keyLow pulls key AND fill to effective 1 : 1.023 : 1.143 at low sun, luminance untouched, so the frame
+    // reads peach-highlight-over-blue-shadow (the FF14 golden-hour-on-snow read) instead of a dune field.
+    keyLow: 0xe0e1e6,
     ground: 'snow', grass: { d: 0.03, tint: 0xa8c0d8 }, music: 'frost',
     enemies: [['frostwolf', 5, 12, 110], ['icegiant', 2, 30, 120], ['wisp', 3, 20, 110]],
     landmark: 'The Glacier Throne',
@@ -170,11 +176,28 @@ export const BIOMES = {
     //   took the marble to 1 : 0.49 : 0.34 — traffic-cone terracotta. 0xa2a09a is effective 1 : 0.945 :
     //   0.794, a divine cold-white: the GOLD then comes from the dome, the `glow` band, the PostFX grade
     //   and the gold props, which is the "white marble and gold" read the zone is supposed to have.
-    fog: 0xf0e6d2, fogMul: 0.60, sun: 0xa2a09a, amb: 1.22, glow: 0xe0aa50, glowI: 0.16,
-    // keyLow grades the FILL (Sky._gradeFog): 0xe3ded8 -> effective 1 : 0.894 : 0.779. The two earlier
-    // picks read 1:0.75:0.41 and 1:0.67:0.33 effective — both still oranges, which is why two waves of
-    // "cool the golden hour" changed nothing. The DOME and the PostFX golden grade still carry the gold.
-    keyLow: 0xe3ded8, ambNight: 0.30,
+    // FOURTH ATTEMPT at "golden hour crushes the zone to one sepia hue" (major, three waves). Measured at
+    // hour 18: floor R/B 1.45 vs 1.07 at noon, hue spread 63 -> 28.5 deg, saturation 0.16 -> 0.43. The three
+    // warm multipliers were STACKING, and every one of them was still warm after wave 3 "cooled" them:
+    //   key   `sun` 0xa2a09a = effective 1 : 0.945 : 0.794 -> R/B 1.26 on its own, at EVERY hour
+    //   fill  keyLow 0xe3ded8 = effective 1 : 0.894 : 0.779 -> R/B 1.28 on hemi + env + ground bounce
+    //   haze  fog 0xf0e6d2 = effective 1 : 0.805 : 0.510 -> R/B 1.96, i.e. the "ivory" haze was a tan
+    // On top of that PostFX's golden grade multiplies (1.075, 0.96, 0.84) and pushes saturation to 1.23 —
+    // that transform is the intended FF14 look and is not mine to move, so everything I own has to be
+    // NEUTRAL and let PostFX supply the whole of the gold. It now is: key 1 : 1.000 : 1.088 (a hair cool,
+    // pre-compensating the grade), fill dead neutral, haze near-neutral ivory. The zone's gold comes from
+    // the dome, the `glow` band, the PostFX grade and the gold props — which is the "white marble and gold"
+    // read it is supposed to have. `sun`'s LUMINANCE is unchanged (0.108) because it is also 45% of
+    // hemi.color and after dark that 45% IS the fill — read the hue here, ignore the value.
+    // !! READ THE "SRGB IS APPLIED TWICE" NOTE ABOVE THE TABLE BEFORE TOUCHING ANY OF THESE THREE !!
+    // glow 0.16 -> 0.26 (cap 0.3) with a true gold hue (was effective 1 : 0.260 : 0.014, a red-orange):
+    // "the zone emits no light after dark" — the sky's half of that is a gold horizon memory under a cold
+    // clear star field (celestial has no skyVeil, so stars/moon/aurora all read at full strength).
+    fog: 0xf0efed, fogMul: 0.60, sun: 0xa2a2a5, amb: 1.22, glow: 0xe0c78f, glowI: 0.26,
+    // keyLow is the ONLY one of the three that acts at low sun and nowhere else, so it is where the last of
+    // the pre-compensation goes: effective 1 : 1.000 : 1.093, a faintly cool ivory. Measured on the plaza
+    // floor at hour 18 it took R/B from 1.45 (wave 3) to 1.18 while noon is untouched at 1.01.
+    keyLow: 0xe3e3e7, ambNight: 0.30,
     ground: 'stone', grass: { d: 0.05, tint: 0xd8e8c0 }, music: 'choir',
     enemies: [['seraph', 3, 16, 100], ['skyserpent', 2, 30, 120], ['wisp', 4, 14, 110]],
     landmark: 'The Empyrean Gate', float: true,
@@ -201,7 +224,14 @@ export const BIOMES = {
     // (dome AND distance) by ~40%; fogMul 1.85 -> 2.30 pulls the haze IN so the ring is ~60% eaten at 500 m
     // instead of 42%. Neither touches the near field: at 150 m the density is still only ~8%, so the Cinder
     // Maw ring resolves on the approach (props-A's constraint) — verified in sky3-d/shot-inf13-maw150+45.
-    fog: 0x4a423c, fogMul: 2.30, fogLum: 0.10, skyVeil: 0.92, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
+    // fogMul 2.30 -> 3.00. Two wave-3 majors want the same thing: white SNOWCAPS on the shared mountain ring
+    // survive at 250-500 m inside Infernal weight, and neighbour splat (a violet crystal valley, an olive
+    // band, a candy-pink band) reads straight through the "smoke" at 300-500 m. The albedo half of both is
+    // Terrain's (see the report's ask), but the air has to do its share: 3.00 takes 300 m from 26% to 36%
+    // and 500 m from 57% to 71% of near-black basalt murk, while 150 m stays at ~11% so the Cinder Maw ring
+    // still resolves on the approach (props-A's constraint). Height-graded fog costs the ring tops ~20% of
+    // that, which is deliberate — a summit poking out of the murk is a silhouette, not a wallpaper.
+    fog: 0x4a423c, fogMul: 3.00, fogLum: 0.10, skyVeil: 0.92, sun: 0xffd2b0, amb: 0.62, glow: 0xff5a1c, glowI: 0.26,   // Burning Steppes: black rock, red cracks, smoke you look through
     // fog was 0x4a1f11 (saturated red-brown): through the 0.72 veil it MIXED with the blue zenith into candy
     // pink — the smoke has to be warm grey-brown and near-total (0.88) to read as a ceiling, not a tint.
     // glow: ember-orange horizon band after dark (capped, saturated — the lava fields lighting the smoke).
@@ -220,6 +250,11 @@ export const BIOMES = {
   lost: {
     name: 'The Lost Realm', short: 'Lost Realm', zone: 'lost', level: [40, 50],
     fog: 0xb4a0dc, fogMul: 0.95, skyVeil: 0.20, sun: 0xfff2f8, amb: 1.15,   // the key was 0xffe0ff: a pink light on pink ground under a pink haze, and the whole region read as candy. The violet belongs to the flagstone and the shards
+    // "Golden hour deletes the violet identity — the zone turns pink-brown desert" (major). Same mechanism
+    // as celestial: the low-sun key and the fill it feeds (hemi + env + ground bounce) both go extinction-
+    // orange and the flagstone's violet has nothing left to reflect. Effective 1 : 0.893 : 1.094 keeps the
+    // hour readable (luminance is preserved) while the blue side survives, so dusk reads violet-and-amber.
+    keyLow: 0xe0dbe4,
     ground: 'stone', grass: { d: 0.05, tint: 0xc0b8d8 }, music: 'convergence',
     enemies: [['archon', 1, 0, 3], ['sentinel', 3, 24, 120], ['golem', 2, 30, 120], ['wraith', 3, 20, 110]],
     landmark: 'The Convergence',
@@ -270,7 +305,17 @@ export const BIOMES = {
     // keep their material and the far world dissolves. 0.20 + veil 0.84 then pull the dome down to the same
     // violet-black, so ground and sky converge on one value and the horizon LINE stops existing. The veil
     // also costs the key another 15% (Sky squares it into sunIntensity) — the Void is lit by almost nothing.
-    fog: 0x2c2040, fogMul: 2.6, fogLum: 0.20, skyVeil: 0.84, sun: 0xd6c6f0, amb: 0.78,
+    // Wave 3, measured again from the heart at noon (crit3-void-c/shot-heart-noon): the ENTIRE mountain ring
+    // was still crisp, pale and fully readable, with both neighbours in plain view — "the opposite of no
+    // horizon". 2.6 is simply not enough reach: the near ring sits only 160-300 m from the region heart, so
+    // it was eating 16-32% air. 5.0 puts the ring base past 50% by 300 m and ~88% by 500 m while 100 m (isle
+    // and encounter range) is still only 16% and 40 m is 3% — near play keeps its material, the far world
+    // dissolves. 0.20 -> 0.13 crushes what is left toward violet-black so ground and sky converge on ONE
+    // value and the horizon LINE stops existing.
+    // The pit's depth read is the OTHER half of this, and it comes from Sky's height-graded fog (FOG_H):
+    // below the shelf the air gets thicker, so the shaft floor eats ~35% more haze than level ground at the
+    // same distance and the drop darkens with depth instead of being uniformly lit nothing.
+    fog: 0x2c2040, fogMul: 5.0, fogLum: 0.13, skyVeil: 0.84, sun: 0xd6c6f0, amb: 0.78,
     ground: 'voidstone', grass: { d: 0, tint: 0x000000 }, dry: true, float: true, gravity: 0.55, music: 'void',
     enemies: [['riftling', 5, 12, 110], ['voidhorror', 3, 24, 120], ['wraith', 2, 20, 110]],
     landmark: 'The Unmaking',

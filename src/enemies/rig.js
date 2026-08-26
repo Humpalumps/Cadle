@@ -20,11 +20,21 @@ export const prim = {
   sphereLo: () => PRIM.sphereLo ??= new THREE.SphereGeometry(1, 8, 6),
   box: () => PRIM.box ??= new RoundedBoxGeometry(1, 1, 1, 2, 0.09),   // beveled: soft edge highlights, no cardboard look
   boxB: () => PRIM.boxB ??= new RoundedBoxGeometry(1, 1, 1, 3, 0.22), // heavy bevel: armor plates / organic chunks that read at close range
+  // THE COST TABLE MATTERS: boxB is 588 tris and sphere is 192, which is why the wave-1 bodies came out at
+  // 6-12k each against a 3.5k crowd budget. These three are the cheap workhorses — a chamfered slab reads
+  // as forged armour at 108, a 4-sided taper reads as a plate/blade/tasset at 16, and a coarse band is a
+  // gold trim ring at 96 instead of the 240 the smooth torus costs.
+  plate: () => PRIM.plate ??= new RoundedBoxGeometry(1, 1, 1, 1, 0.12),          // 108 tris: chamfered armour slab
+  // tapered 4-sided prism, unit box footprint (-0.5..0.5 in x/z, y too). `taper` = bottom width / top width.
+  slab: (taper = 0.7) => PRIM['slab' + taper] ??= new THREE.CylinderGeometry(1, taper, 1, 4, 1).rotateY(Math.PI / 4).scale(0.70711, 1, 0.70711),
+  ring: () => PRIM.ring ??= new THREE.TorusGeometry(1, 0.06, 4, 12),             // 96 tris: trim band / halo
   cyl: () => PRIM.cyl ??= new THREE.CylinderGeometry(1, 1, 1, 8, 1),          // unit cylinder, y -0.5..0.5
   cone: () => PRIM.cone ??= new THREE.ConeGeometry(1, 1, 7, 1),
   octa: () => PRIM.octa ??= new THREE.OctahedronGeometry(1, 0),
   ico: () => PRIM.ico ??= new THREE.IcosahedronGeometry(1, 1),
-  torus: () => PRIM.torus ??= new THREE.TorusGeometry(1, 0.06, 6, 20),
+  // thinner tube than the original 0.06/6x20: at 0.045 the wisp/riftling halo reads as an arc of light
+  // instead of the "hula-hoop rings" the wave-3 void verdict called out — and costs 180 tris, not 240.
+  torus: () => PRIM.torus ??= new THREE.TorusGeometry(1, 0.045, 5, 18),
   hex: () => PRIM.hex ??= new THREE.CylinderGeometry(1, 1, 1, 6, 1),
   // tapered limb segment: top radius 1, bottom radius `taper`, y from 0 down to -1 (so a bone at the top aims -Y along it)
   limb: (taper = 0.7) => PRIM['limb' + taper] ??= new THREE.CylinderGeometry(1, taper, 1, 8, 1).translate(0, -0.5, 0),

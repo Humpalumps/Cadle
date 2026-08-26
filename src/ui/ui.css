@@ -185,8 +185,10 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #minimap .rim { position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid var(--gold);
   box-shadow: 0 0 14px rgba(216,189,122,0.22), inset 0 0 10px rgba(0,0,0,0.55); }
 #minimap .rim::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid rgba(216,189,122,0.28); }
+/* N marker: dark-ink-on-parchment died the moment the sheet started carrying region colour — it now sits
+   over forest green, void near-black and infernal ash as often as over tan. Ivory + ink shadow works on all ten. */
 #minimap .np { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font: 600 10px var(--serif);
-  letter-spacing: 0.16em; color: #6b5424; text-shadow: 0 1px 0 rgba(255,244,214,0.5); }
+  letter-spacing: 0.16em; color: rgba(248,238,212,0.94); text-shadow: 0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.7); }
 #minimap .zone { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap;
   font: 500 13px var(--serif); font-variant: small-caps; letter-spacing: 0.2em; color: var(--gold-hi); text-shadow: 0 1px 4px #000, 0 0 10px rgba(0,0,0,0.8); }
 #minimap .wpd { position: absolute; left: 50%; top: 172px; transform: translateX(-50%); white-space: nowrap;
@@ -446,6 +448,47 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   backdrop-filter: blur(4px); animation: ctaIn .6s var(--spring), lowpulse 2.4s ease-in-out infinite 1s; }
 @keyframes ctaIn { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
 #start .controls { max-width: 720px; }
+
+/* ==========================================================================================
+   HUD v4 — the Destiny legibility pass (wave-3 HUD audit at 1080p).
+   ========================================================================================== */
+
+/* ---- damage numbers: they were 17 px of white text with a blur shadow, which is invisible over
+   snow, marble and the celestial plain — exactly where the highest-level fights are. A real
+   outline (paint-order: stroke fill, so the stroke sits BEHIND the glyph instead of eating it)
+   plus a size bump makes them read against any ground at any exposure. ---- */
+#dnums b { font: 800 20px 'Segoe UI', system-ui, sans-serif; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;   /* the `font:` shorthand above resets it — a merged number that
+                                           grows while it floats must not re-space its own digits */
+  -webkit-text-stroke: 3.2px rgba(6,4,2,.80); paint-order: stroke fill;
+  text-shadow: 0 2px 5px rgba(0,0,0,.7); }
+#dnums b.crit { font-size: 30px; font-weight: 900; -webkit-text-stroke: 3.8px rgba(30,10,0,.85); }
+
+/* ---- reticle: a 3 px pure-white dot with no keyline vanishes on the tundra snowfield and the
+   celestial marble. A hairline of ink around it costs nothing and holds on every backdrop. ---- */
+#ch .dot { width: 4px; height: 4px; margin: -2px; box-shadow: 0 0 0 1px rgba(4,4,8,.8); }
+#ch .tk { box-shadow: 0 0 0 1px rgba(4,4,8,.55); }
+/* the hand-cannon/shotgun ring is the ONLY spread feedback those two archetypes have (their ticks are
+   hidden) and it was a 1.4 px hairline at 85% — it disappeared into foliage. Thicker, opaque, keylined. */
+#ch .ring { border-width: 1.8px; opacity: 1; box-shadow: 0 0 0 1px rgba(4,4,8,.45), inset 0 0 0 1px rgba(4,4,8,.35); }
+/* reserve ammo was 0.72 alpha with no shadow — the one number that dropped out over a bright sky */
+#res { color: rgba(244,240,228,.86); text-shadow: 0 1px 4px rgba(0,0,0,.95); }
+
+/* ---- NAMED RARE (enemy.namedRare): a wandering elite gets the gold treatment, never the boss bar.
+   Same nameplate element, three changes — a "Rare" tag, gold name, and a gold-keylined bar. ---- */
+#tgt .tname { white-space: nowrap; }
+#tgt.rare { width: 440px; }   /* the tag + a full rare name + "Lv nn" wrapped inside the 300 px plate */
+#tgt .trare { display: none; }
+#tgt.rare .trare { display: inline; margin-right: 9px; font: 600 11px var(--serif); font-style: normal;
+  font-variant: small-caps; letter-spacing: .18em; color: #f6d98a; text-shadow: 0 0 10px rgba(216,160,60,.6), 0 1px 3px #000; }
+#tgt.rare .tn { color: #ffe6ad; text-shadow: 0 0 14px rgba(226,168,64,.55), 0 1px 4px rgba(0,0,0,.95); }
+#tgt.rare .bar { height: 8px; border-color: rgba(233,196,106,.85); box-shadow: 0 0 14px rgba(216,160,60,.28), inset 0 2px 5px rgba(0,0,0,.85); }
+#tgt.rare .tfill { background: linear-gradient(180deg, #ffc98a, #d2482e 55%, #8e2b16); }
+
+/* rare kill banner: the zone card, re-keyed warm gold (its subtitle is normally aether blue) */
+#notify.rare h2 { color: #ffe0a2; text-shadow: 0 0 26px rgba(226,168,64,.6), 0 2px 6px rgba(0,0,0,.9); }
+#notify.rare p { color: #e9c46a; text-shadow: 0 0 12px rgba(216,160,60,.5), 0 1px 4px #000; }
+#notify.rare .fl { background: linear-gradient(90deg, transparent, #e9c46a, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
   #ui * { animation-duration: .01ms !important; transition-duration: .06s !important; }

@@ -887,6 +887,26 @@ JS bundles differ by 1004 bytes with identical chunking. **Cross-run boot compar
 worthless (4d), and 18 orphaned `chrome-headless-shell` processes were inflating everything (4b).** Kill the
 orphans, then interleave, before believing any boot number.
 
+## 4m. PERFORMANCE IS A DEFERRED PASS (user call, 2026-08-26)
+
+During the Destiny-2-polish campaign the user decided **not** to gate each wave on performance:
+"none of that seems majorly over, we can tidy up with performance and hitch afterwards." Builders
+still carry the budget in their briefs and self-report, but the perf leg of the three-gate sign-off
+is deliberately deferred to ONE dedicated wave at the end of the visual/content campaign.
+
+What that wave owes, measured 2026-08-26 and not yet fixed:
+- **Vegetation reports 4.2-5.0 M tris** on the densest forest views (budget 4 M). The forest south
+  view was already 4.4 M before this campaign; the canopy has since been closed, so it is worse.
+- **One 514 ms frame** in `tools/out/props2-hitch` with cpu 513 ms, gpu 6.3 ms and a moving program
+  count — the shader-link-during-play signature (4j). Every wave has added material variants
+  (per-region prop albedos, converted creature bodies); they need boot prewarm through
+  `compileForComposer`, or they link on first draw mid-play.
+- **hitchhunt mean 7.56 ms vs the 7 ms budget, p99 18.2 vs 14, 152 spikes (50/min)** on that run.
+- Individual probes reported p99 39.7 ms (terrain) and p99 176 ms (vegetation, life) — unattributed.
+
+Do NOT let a builder spend a wave on this before the visuals are signed off; equally, do not let the
+campaign end without it.
+
 ## 5. Everything else open
 
 **Performance**

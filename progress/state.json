@@ -1,10 +1,10 @@
 {
  "updated": "2026-08-26",
- "status": "<b>Wave 2 complete: every region moved +1.5 to +2.5 points, none at bar yet.</b> All 10 builders landed (brick kill, isle rebuilds, 5 landmark rebuilds, canopy, winter pines, cursed atmospheres, underwater basics, ADS+recoil, map icons). Fresh critics re-judged all 9: best forest/tundra 6, vale 7; worst celestial 4.5 (Empyrean Gate still missing as a hero). One new blocker (shadowfen water glints white) + one regression (oak through Aetheryte pedestal). Gate running, then commit, then WAVE 3: Sunken above-water redesign + Tripo hero props + region loop-backs.",
+ "status": "<b>Wave 3 landed the big structural work; wave-4 critics went harder and the average dipped.</b> Sunken is a real cascade gorge in the height field (max wading depth 0.9 m), the Void abyss is carved 82 m deep, the Lost rampart has a gate notch, the Frostveil lake is walkable ice. But three <b>blob-decree violations</b> are open (shadowfen witchlight, the Aetheryte crystal, a full-screen white blowout when an enemy closes), and two textures I shipped were bad — ice_glacial was a literal landscape photograph, cliff_strata is brickwork, which is why 'the mountain is made of bricks'. Both replaced. Wave 4: blob emergency first, then the creature pipeline lands in-game.",
  "kpis": [
   {
    "label": "wave",
-   "value": "3 — terrain landed, builders re-running"
+   "value": "4 — blob emergency + creatures"
   },
   {
    "label": "regions at bar",
@@ -12,19 +12,23 @@
   },
   {
    "label": "avg score",
-   "value": "3.9 → 5.7"
+   "value": "5.7 → 5.2 (critics got harsher)"
   },
   {
-   "label": "best",
-   "value": "vale 7"
+   "label": "blob violations",
+   "value": "3 OPEN (auto-LOSE)"
   },
   {
-   "label": "Magnific credits (live)",
-   "value": "5539"
+   "label": "Magnific credits",
+   "value": "~4200"
   },
   {
-   "label": "Tripo credits (live)",
-   "value": "6200"
+   "label": "Tripo credits",
+   "value": "5240"
+  },
+  {
+   "label": "perf",
+   "value": "deferred to a dedicated pass (user call)"
   }
  ],
  "pieces": [
@@ -32,101 +36,101 @@
    "key": "vale",
    "name": "🌾 The Vale",
    "files": "Grass, Props",
-   "status": "building",
-   "score": 7,
-   "verdict": "TOSSUP",
-   "gap": "NEW REGRESSION: oak through the Aetheryte pedestal; voxel NPC; windowless cottages",
-   "round": 2
+   "status": "fixing",
+   "score": 5,
+   "verdict": "LOSE",
+   "gap": "BLOB VIOLATION in the Aetheryte crystal + the Wayfinder NPC is still a voxel mannequin",
+   "round": 3
   },
   {
    "key": "forest",
    "name": "🌲 Whisperwood Deep",
    "files": "Vegetation, Props, Terrain, Grass",
-   "status": "building",
+   "status": "fixing",
    "score": 6,
-   "verdict": "TOSSUP",
-   "gap": "Elderheart has no mid-range/skyline read — findable only by its UI marker",
-   "round": 2
+   "verdict": "LOSE",
+   "gap": "Elderheart crown renders as flat-shaded low-poly boulders instead of foliage",
+   "round": 3
   },
   {
    "key": "tundra",
    "name": "❄️ Frostveil Tundra",
    "files": "Vegetation, Terrain, Props",
-   "status": "building",
-   "score": 6,
-   "verdict": "TOSSUP",
-   "gap": "ice shards still opaque royal-blue; floating boulders litter the lake bowl",
-   "round": 2
+   "status": "fixing",
+   "score": 5,
+   "verdict": "LOSE",
+   "gap": "hero landmark wallpapered in a literal landscape PHOTO (ice_glacial.jpg) + LOD dither regression",
+   "round": 3
   },
   {
    "key": "celestial",
    "name": "✨ Celestial Isles",
    "files": "Props, Sky",
-   "status": "building",
-   "score": 4.5,
+   "status": "fixing",
+   "score": 6,
    "verdict": "LOSE",
-   "gap": "Empyrean Gate still not a readable hero landmark; golden hour still terracotta",
-   "round": 2
+   "gap": "Empyrean Gate STILL invisible on the 250 m approach (3rd failure); gold reads as flat orange tape",
+   "round": 3
   },
   {
    "key": "dragon",
    "name": "🏔️ Dragon Peaks",
    "files": "Props, Terrain, Vegetation",
-   "status": "building",
-   "score": 5,
+   "status": "fixing",
+   "score": 4,
    "verdict": "LOSE",
-   "gap": "mountain rock fails at every distance: smear close, corduroy mid, masonry tiling far",
-   "round": 2
+   "gap": "the mountain is made of bricks (cliff_strata) + full-screen white blowout when an enemy closes to melee",
+   "round": 3
   },
   {
    "key": "infernal",
    "name": "🔥 Infernal Wastes",
    "files": "Terrain, Vegetation, Sky, Water",
-   "status": "building",
-   "score": 5.5,
+   "status": "fixing",
+   "score": 6,
    "verdict": "LOSE",
-   "gap": "distant ground still Mars-brown, zero smoke anywhere, Maw has no approach draw",
-   "round": 2
+   "gap": "convincing within 50 m of lava and at night; falls apart at distance — no smoke ceiling, Maw has no draw",
+   "round": 3
   },
   {
    "key": "lost",
    "name": "🏰 The Lost Realm",
    "files": "Props, Terrain",
-   "status": "building",
-   "score": 5,
+   "status": "fixing",
+   "score": 6,
    "verdict": "LOSE",
-   "gap": "rampart ring still a bare cobble berm — walk-in is 100% featureless",
-   "round": 2
+   "gap": "fortification finally built, bolted onto un-art-directed cream-tan rampart earth",
+   "round": 3
   },
   {
    "key": "shadowfen",
    "name": "🌑 Shadowfen",
    "files": "Sky, Water, Props",
-   "status": "building",
-   "score": 5.5,
+   "status": "fixing",
+   "score": 5,
    "verdict": "LOSE",
-   "gap": "BLOCKER: washed-white sun-glint blobs on the murk water; fen flooded not choked",
-   "round": 2
+   "gap": "BLOB DECREE VIOLATION: witchlight fungus is a field of washed-white glowing blobs",
+   "round": 3
   },
   {
    "key": "sunken",
    "name": "🌊 The Sunken Kingdom (REDESIGN: above-water)",
    "files": "Water, Props",
-   "status": "building",
-   "score": 3,
+   "status": "fixing",
+   "score": 4,
    "verdict": "LOSE",
-   "gap": "REDESIGN IN FLIGHT: terraces + waterfalls + wading streets + court re-staged above water",
-   "round": 1
+   "gap": "cascade vista promise not delivered — reads beige desert; Court has no arches, falls invisible",
+   "round": 3
   },
   {
    "key": "void",
    "name": "🕳️ The Void",
    "files": "Props, Terrain",
-   "status": "building",
-   "score": 5.5,
+   "status": "fixing",
+   "score": 5,
    "verdict": "LOSE",
-   "gap": "abyss still absent (kernel untouched); forest impostors render as green voxel cubes",
-   "round": 2
+   "gap": "abyss carved into the height field but renders nowhere a player stands",
+   "round": 3
   },
   {
    "key": "feel",
@@ -183,6 +187,8 @@
   }
  ],
  "log": [
+  "2026-08-26 — USER CALL: performance is a DEFERRED DEDICATED PASS, not a per-wave gate. Current readings are close enough (typical 154-340 calls / 1.8-3.0M tris; outliers: vegetation 4.2-5.0M tris on the densest forest view, one 514 ms shader-link spike, hitchhunt mean 7.56 vs 7 budget, p99 18.2 vs 14). Keep building visuals/content; a perf+hitch wave cleans all of it up at the end (budget enforcement, boot prewarm for the new creature/prop materials, forest tri density).",
+  "2026-08-26 — WAVE 3 COMPLETE (18 agents, 0 errors; critic phase parallelised mid-wave — GPU lock now serialises only captures, not agents). Structural wins landed. Critics harsher: avg 5.7 -> 5.2 with 3 BLOB VIOLATIONS open. Two of my own textures failed inspection (landscape photo used as ice; brickwork used as cliff) — both replaced and now judged 2x2 tiled. Verdicts: tools/out/wave3-summary.txt.",
   "2026-08-26 — gallery now shows REAL renders: the previous thumbnails were Tripo's 12-34 KB preview images upscaled 4x, which made excellent assets look like Minecraft. Built tools/out/assetgen/glbview.html (dev-only three.js GLB inspector, ACES + PBR env) and re-rendered all 11 at 1100px. Verified geometry directly: 57-58k tris and 4096x4096 PBR textures per creature, 139k for the gate.",
   "2026-08-26 — Fae Sprite regenerated hovering: Tripo had modelled the 'carved as a statue' framing literally and welded it to a stone plinth. Anti-base clause (NO pedestal/plinth/base/rock/stand) added to docs/CREATURE-PIPELINE.md. Drake + frostwolf restyled models landed — drake now reads matte dark scales with gold filigree horns and an ember chest glow.",
   "2026-08-26 — STYLE COHERENCE CATCH (user spotted it): the first drake concept was a glossy metallic collectible figurine — monochrome copper, mirror sheen, no gold filigree, no aether — clashing with the sentinel/golem/treant. Root cause was the CONCEPT prompt, not Tripo. Re-concepted drake + frostwolf with mandatory matte/dark-material/filigree/anti-gloss clauses and regenerated both models. The recipe is now pinned in docs/CREATURE-PIPELINE.md so future batches cannot drift.",

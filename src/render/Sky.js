@@ -45,6 +45,41 @@ const OBS_H = 150;          // observer altitude used by the model (player heigh
 const CLOUD_TILE = 5500;    // meters per repeat of the 3D shape texture
 const WIND = [0.93, 0.37];  // cloud drift direction (normalized-ish)
 
+// ---------------- height-graded aerial perspective (ONE global curve, patched into three's fog chunk) ----------------
+// FogExp2 has UNIFORM density, so a 160 m peak and its own foot eat exactly the same haze and a whole range
+// converges to ONE value. That is the single most-repeated verdict in the game: "a strip of identical white
+// paper triangles" (vale), "visibly wallpapered" (celestial), "whites out instead of teal depth" (forest),
+// "clips to a flat near-white cutout" (dragon, tundra) — five regions, one cause. Real air thins with
+// altitude, and that is exactly what gives a range its value steps: summits read darker and more saturated
+// than their bases, near ranges darker than far ones. It is also the only honest way the Void's pit can read
+// as DEPTH — below the shelf the air gets THICKER, not merely longer.
+// So keep FogExp2's cheap exp(-(rho*d)^2) and scale d by the analytic mean of exp(-(y-Y0)/H) along the view
+// ray (exact for exponential-height fog, one exp pair per vertex). Patched at MODULE LOAD, before any
+// program is assembled; per-vertex, no new uniforms, no per-material work — `mvPosition`, `viewMatrix` and
+// `cameraPosition` are all in scope everywhere three includes <fog_vertex> (it already reads mvPosition.z).
+// Sky owns scene.fog, so this is Sky's curve; materials that roll their own fog (grass, water, the dome) sit
+// at/near ground level or handle elevation themselves, where the factor is ~1 anyway.
+// Y0/H are art constants: world ground sits ~10-40 m, ring summits ~150-200 m, the Void floor ~-80 m.
+// H is the CONTRAST knob and it is worth tuning against a ridge, not derived: at 180 m a 150 m summit ate
+// 79% of its base's haze (a visible but soft ramp); 140 m takes that to 68%, which is where the mountain
+// ring stops sharing one luminance in the Vale/dragon/tundra frames. It also puts a floating isle at 250 m
+// down to ~44%, so the celestial and void isles keep their material instead of flattening into cutouts,
+// and it deepens the Void pit's gradient. Do not push it below ~110: the ramp starts showing up as a
+// horizontal band across a single tall cliff face.
+const FOG_Y0 = 30, FOG_H = 140;
+// Haze luminance ceiling (see _refreshColors): knee + how much headroom is left above it.
+const FOG_KNEE = 0.80, FOG_HEAD = 0.22;
+THREE.ShaderChunk.fog_vertex = /* glsl */`
+#ifdef USE_FOG
+	float fogY1 = cameraPosition.y + dot( vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] ), mvPosition.xyz );
+	float fogA = - ( fogY1 - ${FOG_Y0}.0 ) / ${FOG_H}.0;
+	float fogB = - ( cameraPosition.y - ${FOG_Y0}.0 ) / ${FOG_H}.0;
+	float fogDy = fogA - fogB;
+	float fogK = abs( fogDy ) < 1e-3 ? exp( fogB ) : ( exp( fogA ) - exp( fogB ) ) / fogDy;
+	vFogDepth = - mvPosition.z * clamp( fogK, 0.42, 2.4 );
+#endif
+`;
+
 const ATMO_GLSL = /* glsl */`
 const float Rg = 6360e3, Rt = 6460e3, HR = 8000.0, HM = 1200.0, PI = 3.14159265;
 const vec3 betaR = vec3(5.802e-6, 13.558e-6, 33.1e-6), betaO = vec3(0.65e-6, 1.881e-6, 0.085e-6);
@@ -461,7 +496,7 @@ void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix)
 
 const DOME_FRAG = /* glsl */`
 uniform sampler2D uLut, uNoise, uClouds;
-uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow, uGlow;
+uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow, uGlow, uCloudLightCol;
 uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil, uFogD;
 uniform vec2 uTan, uCloudTexel;
 uniform mat3 uStarMat, uCamRot;
@@ -584,11 +619,24 @@ void main() {
                  + texture2D(uClouds, cuv + vec2(o.x, -o.y)) + texture2D(uClouds, cuv + vec2(-o.x, -o.y)));
     }
   }
-  // Under a smoke/reek ceiling (uVeil) the cumulus read must FLIP: not friendly white puffs punching
-  // through, but darker billows hanging under the lit haze — so dim the cloud light with the veil.
-  // The post-composite veil mix below cannot do this: it pulls clouds TOWARD the haze colour, which
-  // leaves anything brighter than the haze reading as white cumulus (the infernal noon giveaway).
-  cl.rgb *= 1.0 - uVeil * 0.72;
+  // ORDER IS THE WHOLE FIX. The region veil (Biomes.skyVeil: smoke / peat reek / void murk that reaches the
+  // sky itself) used to be mixed in AFTER the clouds, so at the fen's 0.85 and the Wastes' 0.92 it simply
+  // repainted the deck with the haze colour and every cloud vanished — "a flat untextured gradient at every
+  // hour" (shadowfen) and "an empty flat cold-lavender dome, no clouds, no ash, no smoke ceiling"
+  // (infernal), both majors, both for three waves. Smoke hangs BETWEEN the eye and the atmosphere, so it
+  // veils the SKY; the deck then sits in front of it and must keep its structure.
+  // Thickest at the horizon, thinner overhead — but only just: a ceiling is a CEILING, and the old 22%
+  // overhead window kept the Wastes/Void domes reading as bright haze rather than weather.
+  col = mix(col, fogCol, uVeil * mix(1.0, 0.92, smoothstep(0.0, 0.80, d.y)));
+  // The deck under a veil is not cumulus, it is the underside of the ceiling: hue forced to the region's own
+  // smoke, VALUE spread around the haze by how lit each billow is (dark bellies ~0.4x, lit tops ~1.35x), so
+  // it reads as weather instead of white puffs punching through hell. Normalising by the cloud light keeps
+  // that spread independent of how bright the sun happens to be — the absolute cloud radiance is 10-30x the
+  // haze in a veiled region, which is why a straight "pull toward fogCol" flattened it to nothing.
+  float cA = max(cl.a, 1e-3);
+  float shade = clamp(dot(cl.rgb, vec3(0.2126, 0.7152, 0.0722)) / (cA * max(dot(uCloudLightCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3)), 0.0, 1.6);
+  vec3 deck = fogCol * (0.34 + 0.86 * shade) * cA;                 // premultiplied, like cl.rgb
+  cl.rgb = mix(cl.rgb * (1.0 - uVeil * 0.45), deck, uVeil);
   col = col * (1.0 - cl.a) + cl.rgb;
 
   // ---- horizon haze (tinted by the actual sky at that azimuth: amber toward a low sun, cool away) & ground ----
@@ -605,12 +653,6 @@ void main() {
   float pl = 1500.0 / (1.0 + max(d.y, 0.0) * 26.0);
   float fmz = 1.0 - exp(-pow(uFogD * pl, 2.0));
   col = mix(col, fogCol, fmz * smoothstep(-0.10, 0.015, d.y));
-  // Region veil (Biomes.skyVeil): smoke / peat reek / void murk that reaches the SKY, not just the aerial
-  // perspective. Without it the Wastes and the fen sit under a clean blue noon dome, which is the single
-  // loudest "this is a tinted meadow" cue left in those regions. Thickest at the horizon, thinner overhead.
-  // zenith factor 0.92 (was 0.78): a smoke ceiling is a CEILING — the leak of clean bright noon sky
-  // through the old 22% overhead window kept the Wastes/Void domes reading as bright haze, not weather.
-  col = mix(col, fogCol, uVeil * mix(1.0, 0.92, smoothstep(0.0, 0.80, d.y)));
   // Region horizon glow (Biomes.glow/glowI): ember light off the Wastes' lava fields, the Isles' gold memory
   // at night. A broad saturated band, intensity premultiplied and capped ≤0.3 — never a point source (blob law).
   col += uGlow * exp(-max(d.y, 0.0) * 5.5);
@@ -635,6 +677,19 @@ const CLOUD_Q = {
   medium: { scale: 0.52, steps: 36, light: 3 },
   high: { scale: 0.58, steps: 44, light: 3 },   // measured q=high 1080p: 16.3 ms -> 8.0 ms, with a 16% larger cloud buffer and 22% longer marches
 };
+// Which regions get light shafts, and what the light is coming THROUGH.
+//   r/n/gap  scatter disc radius, target point count, gap-rejection (higher = clumpier, fewer)
+//   canopy   the altitude the beam enters at — a shaft is solved for this height, never a fixed length
+//   tint/i   filter colour and peak radiance (additive, stacks; ceiling is the 1.2 bloom threshold)
+//   wet      how far below terrain.waterLevel a point may sit and still get a pool (fen: on the murk)
+// The fen is not a canopy: its shafts are the sun finding a break in a 0.85 skyVeil, so they are fewer,
+// weaker and sicklier than the Whisperwood's — enough to give the reek a source, which is the whole
+// "no cloud, no shaft, no weather" verdict.
+const SHAFTS = {
+  forest: { r: 240, n: 190, gap: 0.42, canopy: 24, tint: [0.85, 1.00, 0.62], i: 0.50, wet: 0 },
+  shadowfen: { r: 240, n: 110, gap: 0.66, canopy: 17, tint: [0.86, 0.94, 0.58], i: 0.34, wet: 3 },
+};
+
 // 2x2 temporal phase order (Bayer): consecutive frames land in opposite corners, so a turn never
 // leaves a whole row stale. A static camera re-marches the same pixel with the same result every 4th
 // frame, so the resolved image is bit-stable — no temporal shimmer for the jitter gate to catch.
@@ -890,8 +945,17 @@ export class Sky {
     // the dome's horizon haze and the region veil read the GRADED fog, so the sky over a region is made of
     // the same air the distance is (in the Vale _fogC === fogColor, so nothing changes there)
     u.uFogColor.value.copy(this._fogC);
-    u.uVeil.value = this._veilE ?? 0;
+    const veil = this._veilE ?? 0;
+    u.uVeil.value = veil;
     u.uFogD.value = this._fogD;   // graded density: the dome's aerial-perspective match mirrors FogExp2 exactly
+    // A smoke / reek / ash ceiling is OVERCAST and LOW. Without this a veiled region inherited the Vale's
+    // fair-weather cumulus field (cover ~0.46, base 1.45 km) — a handful of puffs with big blue gaps, which
+    // the veil then flattened into nothing. Cover goes near-full so the lid is continuous, the base drops to
+    // ~700 m so it hangs just over the ridge line, and the top comes down with it so the deck reads as a
+    // ceiling rather than as towers. Derived per frame because the veil eases with the player's position.
+    u.uCloudCover.value = Math.min(1, (this._coverBase ?? 0.5) * (1 + 0.45 * veil) + 0.40 * veil);
+    u.uCloudH0.value = (this._h0Base ?? 1450) * (1 - 0.52 * veil);
+    u.uCloudH1.value = (this._h1Base ?? 4200) * (1 - 0.44 * veil);
     // the physical HDR sun mesh (40x, feeds god rays + bloom) dims through the smoke ceiling like the dome's
     // disc does — an undimmed mesh through a 0.88 veil is a washed-white ball over the Wastes (blob law)
     this.sunMat.color.copy(this.sunDiscColor).multiplyScalar(40 * (1 - (this._veilE ?? 0)));
@@ -1001,14 +1065,22 @@ export class Sky {
     return c.setRGB(c.r + (kc.r * k - c.r) * e, c.g + (kc.g * k - c.g) * e, c.b + (kc.b * k - c.b) * e);
   }
 
-  // ---------------- forest sun shafts + ground dapple ----------------
+  // ---------------- sun shafts + ground dapple (forest canopy, fen overcast breaks) ----------------
   // Midday under the Whisperwood canopy read as flat near-dusk with zero light play (crit2-forest-b/
   // shot-interior-70). These are FF14's cathedral shafts: camera-facing additive ribbons dropped where
   // a deterministic "canopy gap" scatter allows, each with a broken light pool at its foot. They are
   // LIGHT, not glow: broad and soft, colour = the real key filtered through leaves, peak added radiance
   // ~0.45 per shaft (bloom threshold is 1.2 — nothing here can bloom, per the blob decree), and they
-  // fade out entirely when the sun is low (dapple is a high-sun read) or the camera leaves the forest.
-  // Cost: 2 draw calls, ~1.4k tris, forest-only (group hidden elsewhere).
+  // fade out entirely once the sun is under ~6 deg or the camera leaves the region.
+  // Cost: 2 draw calls, ~1.4k tris; only the region the camera stands in is visible.
+  //
+  // THE BEAM IS EXTRUDED TO A HEIGHT, NOT TO A LENGTH — that is what unlocked golden hour. Wave 3 shipped a
+  // FIXED 26 m extrusion from the ground along sunDir, so below ~16 deg of sun the quad lay down and read as
+  // a horizontal bar, and the visibility window had to stop at sunDir.y 0.28 to hide it (the ceiling the
+  // previous builder marked in this file). Solving for the canopy height instead — len = canopy / sunDir.y —
+  // keeps the beam's TOP at the gap it comes through and its FOOT on the light pool at every elevation: at
+  // noon it is a short vertical column, at 10 deg it is a 100 m raking bar of light through the trunks,
+  // which is the shot the region was actually asked for. Capped at 110 m so a grazing sun stays sane.
   //
   // DENSITY IS THE WHOLE FEATURE. At 44 points over a 240 m disc the spacing is ~64 m, so the visible
   // annulus (the 14..70 m band the fade keeps, across a ~100 deg fov) held ONE shaft on average — which is
@@ -1020,17 +1092,24 @@ export class Sky {
     const T = this.game.terrain;
     if (!T?.heightAt) return;                                 // terrain not up yet: retry next frame
     this._shaftsBuilt = true;                                 // past here every exit is PERMANENT (the scatter is seeded, so an empty result stays empty) — do not retry per frame
-    const F = BIOMES.forest;                                  // cx/cz resolved by Biomes at module load
-    const rnd = mulberry32(((this.game.seed ?? 1) | 0) + 777);
+    this._shaftSets = {};
+    for (const [id, prof] of Object.entries(SHAFTS)) this._buildShaftSet(id, prof, T);
+  }
+
+  /** One region's shaft scatter + its two meshes. `prof` is a SHAFTS entry. */
+  _buildShaftSet(id, prof, T) {
+    const F = BIOMES[id];                                     // cx/cz resolved by Biomes at module load
+    const rnd = mulberry32(((this.game.seed ?? 1) | 0) + 777 + (F.k ?? 0) * 31);
     const pts = [];
-    for (let i = 0; i < 1100 && pts.length < 190; i++) {
-      const a = rnd() * PI * 2, r = Math.sqrt(rnd()) * 240;
+    for (let i = 0; i < prof.n * 6 && pts.length < prof.n; i++) {
+      const a = rnd() * PI * 2, r = Math.sqrt(rnd()) * prof.r;
       const g = rnd();                                          // gap acceptance BEFORE the position is used
       const x = F.cx + Math.cos(a) * r, z = F.cz + Math.sin(a) * r;
-      if (g < 0.42) continue;                                   // clustered gaps, not a lawn of shafts
+      if (g < prof.gap) continue;                               // clustered gaps, not a lawn of shafts
       const y = T.heightAt(x, z);
-      if (y < (T.waterLevel ?? 4) + 0.5) continue;
-      pts.push([x, y + 0.05, z, rnd()]);
+      // the fen's light pools land ON the murk, so its floor is the water line, not 0.5 m above it
+      if (y < (T.waterLevel ?? 4) - (prof.wet ?? 0)) continue;
+      pts.push([x, Math.max(y, (T.waterLevel ?? 4)) + 0.05, z, rnd()]);
     }
     if (!pts.length) return;
     const mkGeo = (corners) => {
@@ -1052,24 +1131,29 @@ export class Sky {
       geo.setIndex(idx);
       return geo;
     };
-    this._shaftU = {
+    const u = {
       uSunDirW: { value: this.sunDir }, uCol: { value: new THREE.Color() }, uI: { value: 0 },
-      uTime: { value: 0 }, uLen: { value: 26 }, uNoise: { value: this.noiseRT.texture },
+      uTime: { value: 0 }, uCanopy: { value: prof.canopy }, uNoise: { value: this.noiseRT.texture },
     };
-    const common = { uniforms: this._shaftU, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false };
+    const common = { uniforms: u, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false };
     const shaftMat = new THREE.ShaderMaterial({ ...common,
       vertexShader: /* glsl */`
         attribute vec3 aOrigin; attribute vec2 aCorner; attribute float aRand;
-        uniform vec3 uSunDirW; uniform float uLen;
+        uniform vec3 uSunDirW; uniform float uCanopy;
         varying vec2 vUv; varying float vRand, vFade;
         void main() {
           vec3 axis = normalize(uSunDirW);
-          vec3 toCam = cameraPosition - aOrigin;
+          // extrude to the CANOPY HEIGHT, not to a fixed length: the top always sits in the gap the light
+          // comes through, so a low sun gives a long raking bar instead of a beam lying on the floor.
+          float len = min(uCanopy / max(axis.y, 0.18), 110.0);
+          vec3 toCam = cameraPosition - (aOrigin + axis * (len * 0.5));   // billboard about the beam's middle
           vec3 side = cross(axis, toCam);
           side = normalize(dot(side, side) > 1e-6 ? side : vec3(1.0, 0.0, 0.0));
-          vec3 p = aOrigin + axis * (aCorner.y * uLen) + side * (aCorner.x * (1.0 + aRand * 1.8));
+          // a raking beam is wider than a vertical one (same gap, shallower cut through the canopy)
+          float wide = 1.0 + 0.9 * (1.0 - clamp(axis.y * 2.2, 0.0, 1.0));
+          vec3 p = aOrigin + axis * (aCorner.y * len) + side * (aCorner.x * (1.0 + aRand * 1.8) * wide);
           vUv = aCorner; vRand = aRand;
-          float d = length(toCam);
+          float d = length(cameraPosition - aOrigin);
           vFade = (1.0 - smoothstep(70.0, 150.0, d)) * smoothstep(2.5, 9.0, d);    // gone far away, gone right on top of it
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
@@ -1103,42 +1187,46 @@ export class Sky {
         }`,
     });
     const quad = [[-1, 0], [1, 0], [-1, 1], [1, 1]], dquad = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
-    this.shafts = new THREE.Group(); this.shafts.name = 'sunShafts'; this.shafts.visible = false;
+    const group = new THREE.Group(); group.name = 'sunShafts-' + id; group.visible = false;
     for (const [geo, mat] of [[mkGeo(quad), shaftMat], [mkGeo(dquad), discMat]]) {
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false; m.renderOrder = 900;
-      this.shafts.add(m);
+      group.add(m);
     }
-    this.game.scene.add(this.shafts);
+    this.game.scene.add(group);
+    this._shaftSets[id] = { group, u, prof };
+    if (id === 'forest') this.shafts = group;                 // back-compat handle
   }
 
   _updateShafts(t) {
     if (!this._shaftsBuilt) { this._buildShafts(); if (!this._shaftsBuilt) return; }
-    if (!this._shaftU) return;
+    const sets = this._shaftSets;
+    if (!sets) return;
     const bb = this._bb;                                        // region blend cached by _gradeFog this frame
-    // 0.28..0.52 (was 0.35..0.60): the shafts now carry the whole afternoon, half-strength by ~15:30 and
-    // gone by ~16:30. They cannot go lower than that — the quad is extruded from the ground ALONG sunDir,
-    // so under a 15-degree sun it lies down and reads as a horizontal beam instead of light coming through
-    // the canopy. A real low-sun shaft needs a different anchor (canopy-height origin, extruded downward).
-    const tgt = (bb?.id === 'forest' && bb.w > 0.02 ? bb.w : 0) * THREE.MathUtils.smoothstep(this.sunDir.y, 0.28, 0.52);
-    this._shaftE = (this._shaftE ?? 0) + (tgt - (this._shaftE ?? 0)) * 0.04;
-    const on = this._shaftE > 0.015;
-    this.shafts.visible = on;
-    if (!on) return;
-    const su = this._shaftU;
-    su.uI.value = this._shaftE; su.uTime.value = t;
-    // sun through leaves: the graded key filtered warm-green, scaled so stacked shafts stay under bloom.
-    // 0.50 (was 0.60) buys headroom for the 4x denser scatter: peak per shaft ~0.28 luminance, so it takes
-    // four at full centre-line alpha to reach the 1.2 bloom threshold, and `across*across` means the centre
-    // line is a sliver. Saturate the colour, cap the intensity.
-    su.uCol.value.copy(this.sunColor).multiply(this._leafF ??= new THREE.Color(0.85, 1.0, 0.62)).multiplyScalar(0.50);
+    // 0.10..0.24 (was 0.28..0.52): with the beam solved for the canopy height instead of a fixed 26 m the
+    // low-sun failure mode is gone, so the window now opens at ~6 deg of elevation and the shafts carry the
+    // whole afternoon INCLUDING golden hour — which is the shot the region was asked for two waves running.
+    const sunW = THREE.MathUtils.smoothstep(this.sunDir.y, 0.10, 0.24);
+    for (const [id, s] of Object.entries(sets)) {
+      const tgt = (bb?.id === id && bb.w > 0.02 ? bb.w : 0) * sunW;
+      s.e = (s.e ?? 0) + (tgt - (s.e ?? 0)) * 0.04;
+      const on = s.e > 0.015;
+      s.group.visible = on;
+      if (!on) continue;
+      s.u.uI.value = s.e; s.u.uTime.value = t;
+      // sun through leaves / through a break in the reek: the graded key, filtered, scaled so stacked shafts
+      // stay under bloom. Forest 0.50 buys headroom for the dense scatter — peak per shaft ~0.28 luminance,
+      // so it takes four at full centre-line alpha to reach the 1.2 threshold and `across*across` makes the
+      // centre line a sliver. Saturate the colour, cap the intensity; do not fix a thin read by raising it.
+      s.u.uCol.value.copy(this.sunColor).multiply(s.tint ??= new THREE.Color(...s.prof.tint)).multiplyScalar(s.prof.i);
+    }
   }
 
   dispose() {
     for (const rt of [this.noiseRT, this.lutRT, this.cloudRT, this.cloudRTB, this.cloudLoRT, this.shapeRT, this.detailRT, ...(this.occRT ?? [])]) rt?.dispose();
     this.material?.dispose(); this.cloudMat?.dispose(); this.lutMat?.dispose(); this.sunMat?.dispose();
     this.resolveMat?.dispose(); this.occMat?.dispose();
-    if (this.shafts) for (const m of this.shafts.children) { m.geometry.dispose(); m.material.dispose(); }
+    for (const s of Object.values(this._shaftSets ?? {})) for (const m of s.group.children) { m.geometry.dispose(); m.material.dispose(); }
   }
 
   // ---------------- CPU twin of the atmosphere (colors for the other systems) ----------------
@@ -1216,6 +1304,15 @@ export class Sky {
     // fog: a little desaturated + lifted so far terrain melts into the haze rather than going grey-dark
     const lum = c1.r * 0.2126 + c1.g * 0.7152 + c1.b * 0.0722;
     this.fogColor.setRGB(c1.r + (lum - c1.r) * 0.15, c1.g + (lum - c1.g) * 0.15, c1.b + (lum - c1.b) * 0.15);
+    // AERIAL PERSPECTIVE MUST LAND DISTANT GEOMETRY *UNDER* A SUNLIT WHITE SURFACE, NEVER OVER IT.
+    // The 1.5-deg ring is the brightest band of the whole sky — measured 1.28 linear at noon, 1.44 at 09:00 —
+    // while Lighting's sunPeak is calibrated so sunlit white sits at ~1.0 pre-tonemap. So every far ridge was
+    // being mixed toward something BRIGHTER than anything in front of it: the ring came out lighter than the
+    // sky it was silhouetted against, which is what actually made it read as pasted-on white paper rather
+    // than as mountains in haze. Soft knee, so dusk (0.71) and night (0.02) are untouched and only the
+    // runaway daytime values are compressed; hue is preserved exactly (uniform scale).
+    const fl = this.fogColor.r * 0.2126 + this.fogColor.g * 0.7152 + this.fogColor.b * 0.0722;
+    if (fl > FOG_KNEE) { const e = fl - FOG_KNEE; this.fogColor.multiplyScalar((FOG_KNEE + e / (1 + e / FOG_HEAD)) / fl); }
     const nf = this.night;
     // ambient: hemispheric mix of zenith and the 30° ring (night indigo floor comes from the model itself now)
     this.ambientColor.setRGB(this.skyColor.r * 0.4 + c2.r * 0.6, this.skyColor.g * 0.4 + c2.g * 0.6, this.skyColor.b * 0.4 + c2.b * 0.6);
@@ -1261,12 +1358,14 @@ export class Sky {
     uc.uBeltCol.value.setRGB(0.42, 0.20, 0.26).multiplyScalar(0.35 + 0.65 * Math.max(beltW, uc.uBelt.value));
     const h = this.hour;
     const autoCover = 0.50 + 0.06 * Math.exp(-((h - 6.5) ** 2) / 3.0) + 0.10 * Math.exp(-((h - 17.8) ** 2) / 3.2) - 0.04 * Math.exp(-((h - 12.5) ** 2) / 6.0) - 0.08 * nf;
-    uc.uCloudCover.value = this.cloudCover ?? autoCover;
+    // BASES, not final values: update() re-derives these every frame from the region veil, which moves with
+    // the player while _refreshColors only runs when the sun does.
+    this._coverBase = this.cloudCover ?? autoCover;
     uc.uCirrusCover.value = 0.45 + 0.25 * Math.exp(-((h - 17) ** 2) / 6.0);
     // towering at golden hour / dawn: the layer gets deeper (real cumulus congestus grow through the afternoon)
     const goldT = Math.exp(-((h - 17.7) ** 2) / 3.0) + 0.7 * Math.exp(-((h - 6.4) ** 2) / 2.5);
-    uc.uCloudH0.value = 1450 - 180 * goldT;
-    uc.uCloudH1.value = 4200 + 900 * goldT;
+    this._h0Base = 1450 - 180 * goldT;
+    this._h1Base = 4200 + 900 * goldT;
     uc.uHaze.value = 0.16 + 0.18 * dawn + 0.07 * golden + 0.10 * nf;
     uc.uStarVis.value = 1 - THREE.MathUtils.smoothstep(elD, -14, -8);   // stars only after civil twilight (~-8°), full by -14°
     uc.uAurora.value = (1 - THREE.MathUtils.smoothstep(elD, -14, -7)) * 1.0;

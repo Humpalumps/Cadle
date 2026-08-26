@@ -30,6 +30,23 @@ function stoneTexture(aniso, base, tint) {
     return base.map((c, i) => clamp(lerp(c, tint[i], t) * (1 - cr) * (1 - grime * 0.22) + sp, 0, 1));
   }, { aniso });
 }
+/**
+ * LAID THATCH. The wave-3 vale major is literally "a thatched roof rendered in masonry" — every cottage
+ * surface wore the one sandstone-brick map, and no tint can remove a brick joint. This is straw: fibre
+ * streaks smeared ALONG the slope (average three v-offsets of the same tileable noise — cheap anisotropy
+ * that stays tileable) crossed by the horizontal bands of the laid courses. No coursing, no mortar, no
+ * rectangles anywhere in it.
+ */
+function thatchTexture(aniso) {
+  return noiseTexture(256, 256, (u, v) => {
+    const s = (tn(u, v, 26, 71) + tn(u, (v + 0.31) % 1, 26, 71) + tn(u, (v + 0.63) % 1, 26, 71)) / 3;   // vertical smear -> straw (tn only tiles on [0,1])
+    const fine = tn(u, v, 74, 73) * 0.28, course = Math.pow(0.5 + 0.5 * Math.sin(v * Math.PI * 12), 0.4);
+    const dirt = smoothstep(-0.35, 0.55, tfbm(u, v, 3, 72, 3));
+    const t = clamp(0.5 + (s + fine) * 1.5, 0, 1);
+    const base = [0.26, 0.19, 0.09], tip = [0.80, 0.63, 0.31];
+    return base.map((c, i) => clamp(lerp(c, tip[i], t) * (0.70 + 0.30 * course) * (1 - dirt * 0.24), 0, 1));
+  }, { aniso });
+}
 /** Ring of rune glyphs on black (additive). band = [inner, outer] fractions of the canvas half-size. */
 function glyphTexture(size, rIn, rOut, rng, ticks = true) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size; const c = cv.getContext('2d'); c.fillStyle = '#000'; c.fillRect(0, 0, size, size);
@@ -148,11 +165,27 @@ function bigCrystalGeometry() {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(P), 3)); g.computeVertexNormals(); return g;
 }
 function mushroomGeometry() {
-  const cap = new THREE.LatheGeometry([V3(0, 0.3, 0), V3(0.11, 0.29, 0), V3(0.2, 0.24, 0), V3(0.25, 0.17, 0), V3(0.23, 0.13, 0), V3(0.12, 0.12, 0), V3(0.07, 0.13, 0)].map((v) => new THREE.Vector2(v.x, v.y)), 10);
-  const stem = new THREE.CylinderGeometry(0.05, 0.075, 0.16, 7).translate(0, 0.08, 0);
-  const col = (g, c, glow) => { const n = g.attributes.position.count, a = new Float32Array(n * 3), gl = new Float32Array(n); for (let i = 0; i < n; i++) { a.set(c, i * 3); gl[i] = glow; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); g.setAttribute('aGlow', new THREE.BufferAttribute(gl, 1)); return g; };
-  col(cap, [0.32, 0.85, 0.88], 1.0); col(stem, [0.75, 0.75, 0.68], 0.12);
-  const g = mergeGeometries([cap.toNonIndexed(), stem.toNonIndexed()]); g.computeVertexNormals(); return g;
+  // Wave-3 verdict, shadowfen major: "untextured plastic pillows, not fungus" — a single smooth lathe with
+  // no underside and one flat colour. The shape now has the three things that make a cap read at 10 m:
+  // a DARK RIM (colour ramps by radius, so the silhouette edge is not the same value as the dome), a GILL
+  // SKIRT under the cap (open cylinder, darker still, barely glowing) and a longer tapered stem.
+  const capProfile = [V3(0, 0.30, 0), V3(0.09, 0.293, 0), V3(0.17, 0.262, 0), V3(0.226, 0.205, 0), V3(0.245, 0.158, 0), V3(0.228, 0.134, 0), V3(0.13, 0.126, 0), V3(0.07, 0.135, 0)];
+  const cap = new THREE.LatheGeometry(capProfile.map((v) => new THREE.Vector2(v.x, v.y)), 11);
+  const gills = new THREE.CylinderGeometry(0.222, 0.085, 0.05, 11, 1, true).translate(0, 0.128, 0);   // the underside: reads as a shadow line that separates cap from stem
+  const stem = new THREE.CylinderGeometry(0.038, 0.062, 0.20, 7).translate(0, 0.10, 0);
+  const col = (g, c, glow, ramp) => {
+    const n = g.attributes.position.count, pos = g.attributes.position, a = new Float32Array(n * 3), gl = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      // ramp: darken toward the cap rim (r -> 0.245) so the edge is not the same value as the dome
+      const k = ramp ? 1 - 0.45 * clamp(Math.hypot(pos.getX(i), pos.getZ(i)) / 0.245, 0, 1) : 1;
+      a[i * 3] = c[0] * k; a[i * 3 + 1] = c[1] * k; a[i * 3 + 2] = c[2] * k; gl[i] = glow * (ramp ? 0.55 + 0.45 * k : 1);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3)); g.setAttribute('aGlow', new THREE.BufferAttribute(gl, 1)); return g;
+  };
+  // BLOB LAW: deep witch-teal albedo, not a pale mint. R <= 0.10 and B <= 0.55 of the product (this x the
+  // per-instance tint in _buildMushrooms) so what survives ACES is a HUE, never a value.
+  col(cap, [0.30, 0.90, 0.62], 1.0, true); col(gills, [0.13, 0.34, 0.26], 0.30); col(stem, [0.50, 0.55, 0.44], 0.08);
+  const g = mergeGeometries([cap.toNonIndexed(), gills.toNonIndexed(), stem.toNonIndexed()]); g.computeVertexNormals(); return g;
 }
 
 // ---------------------------------------------------------------- the Wayfinder (quest giver)
@@ -172,73 +205,164 @@ function mushroomGeometry() {
  * follow you. Everything past 150 m is `visible = false` and never animates, and the regions are 400+ m
  * apart, so in practice ONE skinned mesh is ever in the frame.
  *
- * BLOB LAW: the only emissive element is the staff finial, and it is not a new emissive recipe — it is the
+ * BLOB LAW: the only emissive element is the lantern glass, and it is not a new emissive recipe — it is the
  * shared creature material, whose fragment shader already caps aether luminance at 0.62 (hue-preserving)
- * against a ~1.2 bloom threshold. uGlow is pulled to 1.3 and uRim to 0.15 (a calm NPC, not a telegraphing
- * enemy). Roughness 0.85 everywhere: no point glints. Region character is COLOUR (uTint + a saturated
- * finial hue per region), never brightness.
+ * AND caps the max channel, against a ~1.2 bloom threshold. uGlow is pulled to 1.3 and uRim to 0.15 (a calm
+ * NPC, not a telegraphing enemy). Roughness 0.85 everywhere: no point glints. Region character is COLOUR
+ * (uTint + a saturated lantern hue per region), never brightness.
  *
- * Authored in root space: Y up, +Z forward, root at the feet. ~1.80 m to the crown of the hood, staff 2.47.
+ * WAVE-3 REBUILD (blocker: "still a blocky voxel mannequin ... box shoulders, a hard-faceted cylinder robe
+ * with visible flat sides and no hem flare, straight rectangular-prism arms, two yellow rectangular blocks
+ * for hands, a BOX head wearing a box hood"). Reconstructed off tools/out/assetgen/tripo/wayfinder-hq-render.jpg
+ * (GLB is reference ONLY, never loaded) with the img2threejs discipline — classify each region's TOPOLOGY
+ * before picking a primitive. The three defects all had one cause: every soft cloth form was being built out
+ * of a hard primitive whose segment count was its silhouette.
+ *   - cloak, hood: CONTINUOUS DRAPED SURFACE -> LatheGeometry off a hand-authored profile, 24/16 segments,
+ *     smooth normals. The hem flare, the shoulder fall and the hood's fabric THICKNESS are in the profile,
+ *     which is the one thing a scaled cylinder can never have. The hood profile turns back on itself so the
+ *     cowl is a real shell with an inner lining you can see into, and it is opened over 82 deg at the front
+ *     (phiStart/phiLength) so the face sits in a cavity instead of behind a sphere.
+ *   - identity features, in the reference's own order of legibility: the LANTERN staff (the old rig had a
+ *     crystal shard — the lamp is the single most recognisable thing about this character), the cream-gold
+ *     trim as a THIN LINE down the cloak opening and around a DAGGED hem (the old rig wore a fat gold cross
+ *     on the chest, which is what made it read as a mannequin in a tabard), the tan satchel on a crossbody
+ *     strap, and boots under the hem.
+ *   - hands: palm + thumb + three fingers that curl round the shaft, not a yellow block.
+ * Bone layout is UNCHANGED (pelvis/torso/head/sh|el|hd x2) so _updateWayfinders' idle, stance and head-track
+ * keep working untouched, and so do all eleven placements and the quest-stele hookup.
+ *
+ * Authored in root space: Y up, +Z forward, root at the feet. ~1.80 m to the crown of the hood, staff 2.68.
  */
 const BOX1 = new THREE.BoxGeometry(1, 1, 1);   // plain 12-tri box for flat gold inlays (prim.box is a 300-tri RoundedBox)
 const _WF_EYE = new THREE.Vector3();           // scratch: no per-frame allocation in the idle/look path
+/** Lathe off a [radius, y] profile. `phi0/phiLen` cut an opening (hood). Radius is clamped off zero so the
+ *  degenerate pole ring three.js emits at r=0 never produces NaN normals after the rig's matrix compose.
+ *  ORIENTATION IS NOT OPTIONAL: three's LatheGeometry derives each normal as (dy, -dx) along the profile, so
+ *  a profile authored top-to-bottom comes out with every normal pointing INWARD and every triangle wound
+ *  backwards — under the FrontSide creature material the near half of the garment is culled and you look
+ *  straight through it at whatever is underneath. (That is exactly what the first cut of this rig did: the
+ *  cloak's front vanished and the tunic showed through as a grey slab.) Profiles are readable authored from
+ *  the collar down, so the fix lives here, once, instead of in every caller. */
+const wfLathe = (pts, seg, phi0 = 0, phiLen = Math.PI * 2) => {
+  const p = pts[0][1] > pts[pts.length - 1][1] ? [...pts].reverse() : pts;
+  return new THREE.LatheGeometry(p.map(([r, y]) => new THREE.Vector2(Math.max(r, 1e-4), y)), seg, phi0, phiLen);
+};
+// 120 tris. prim.torus's tube is 4.5% of its radius, which at a 3 cm ring is a 1.3 mm thread — invisible.
+// Anything that has to read as a metal RING at NPC scale needs its tube ratio, not a scaled-down thin one.
+const WF_RING = new THREE.TorusGeometry(1, 0.20, 5, 12);
+// The cloak profile, shoulder -> hem, with the last three points rolling the hem back UP and IN: that is what
+// gives the hem an edge you can see under instead of an open-ended cone, and it is where the flare lives.
+// It also stops at MID-CALF, not at the floor: a cone that reaches the ground with nothing under it is the
+// "chess bishop" the first pass produced. Boots, shins and a dagged hem below it are what give the figure
+// legs, and the upper body is deliberately narrow (0.26-0.27) so the sleeves emerge instead of being eaten.
+const WF_CLOAK = [[0.232, 1.452], [0.262, 1.372], [0.268, 1.214], [0.272, 1.036], [0.286, 0.860], [0.318, 0.660],
+  [0.360, 0.470], [0.410, 0.330], [0.442, 0.262], [0.416, 0.244], [0.330, 0.290]];
+// The hood: outer surface up over the crown and down to the rim, then BACK along the inner lining. A closed
+// profile means every face is front-facing, so opening the arc cannot show sky through the back of the cowl.
+const WF_HOOD = [[0.018, 1.800], [0.082, 1.786], [0.131, 1.750], [0.163, 1.700], [0.181, 1.638], [0.185, 1.570],
+  [0.172, 1.508], [0.149, 1.462], [0.119, 1.468], [0.140, 1.516], [0.152, 1.574], [0.148, 1.636],
+  [0.129, 1.694], [0.099, 1.742], [0.058, 1.774], [0.015, 1.788]];
 function buildWayfinderRig() {
   const R = new Rig(), { root } = R;
-  const ROBE = 0x39325a, ROBE2 = 0x4b4272, DARK = 0x241f38, HOOD = 0x2c2542, TRIM = 0xc2913f,
-    LEATHER = 0x4a3a2a, SKIN = 0xc39a74, SKIN_DK = 0x9c7a5c, WOOD = 0x9a8763, PAPER = 0xd8c9a4, GLOW = 0xffffff;
+  // Palette sampled off the reference render: a desaturated indigo wool, cream-gold trim (NOT yellow gold —
+  // the reference trim is bone/cream), taupe tunic, tan leather. Values kept mid so ACES has somewhere to go.
+  const ROBE = 0x515b87, ROBE2 = 0x3f4870, LINE = 0x272c49, HOODC = 0x4a5480, HOODL = 0x1d2138, TRIM = 0xc9ab6a,
+    TUNIC = 0x7d7a6c, LEATHER = 0xb59a72, LEATHER2 = 0x8f7852, BOOT = 0x8a7a63, BOOT2 = 0x6f6250,
+    SKIN = 0xc39a74, SKIN_DK = 0x9c7a5c, BEARD = 0x8f8896, WOOD = 0x8a7355, IRON = 0x5b5a63, PAPER = 0xd8c9a4, GLOW = 0xffffff;
 
-  // ---- pelvis: the floor-length robe (no leg bones at all — the hem hides them, so no gait, no IK, no cost)
+  // ---- pelvis: the floor-length cloak (no leg bones at all — the hem hides the gait, so no IK, no cost)
   const pelvis = R.bone('pelvis', root, 0, 0.95, 0);
-  R.part(pelvis, prim.limb(1.45), { p: [0, 1.06, 0], s: [0.215, 1.06, 0.185], color: ROBE, mottle: 0.12 });      // skirt. Flare kept MODEST on purpose: at taper 1.85 the cone swallowed both arms and he read as a chess bishop
-  R.part(pelvis, prim.hex(), { p: [0, 0.055, 0], s: [0.325, 0.11, 0.285], color: DARK, mottle: 0.1, flat: true }); // heavy hem
-  R.part(pelvis, prim.hex(), { p: [0, 0.155, 0], s: [0.318, 0.028, 0.280], color: TRIM, mottle: 0.04, flat: true });
-  R.part(pelvis, BOX1, { p: [0, 0.62, 0.238], r: [0.10, 0, 0], s: [0.035, 0.86, 0.018], color: TRIM, mottle: 0.04 }); // gold conduit down the front
-  for (const s of [-1, 1]) R.part(pelvis, prim.limb(1.35), { p: [s * 0.135, 0.98, 0.075], r: [0, 0, s * 0.06], s: [0.046, 0.94, 0.043], color: DARK, mottle: 0.1 }); // two shadow folds: the skirt is a cone otherwise
-  R.part(pelvis, prim.hex(), { p: [0, 1.04, 0], s: [0.225, 0.075, 0.195], color: DARK, mottle: 0.08, flat: true });   // belt
-  R.part(pelvis, prim.hex(), { p: [0, 1.078, 0], s: [0.232, 0.022, 0.201], color: TRIM, mottle: 0.04, flat: true });
-  R.part(pelvis, prim.box(), { p: [-0.215, 0.90, 0.045], r: [0, 0.25, 0.1], s: [0.085, 0.105, 0.05], color: LEATHER, mottle: 0.14 }); // satchel: he carries the catalogue
-  R.part(pelvis, BOX1, { p: [-0.225, 0.945, 0.10], s: [0.03, 0.016, 0.012], color: TRIM, mottle: 0.04 });
+  R.part(pelvis, prim.limb(0.88), { p: [0, 1.24, 0], s: [0.140, 0.86, 0.126], color: TUNIC, mottle: 0.16 });      // the tunic under it: what you see through the opening
+  for (const s of [-1, 1]) {                                                                                      // legs and boots, below the mid-calf hem
+    R.part(pelvis, prim.limb(0.82), { p: [s * 0.086, 0.360, 0.006], s: [0.062, 0.190, 0.058], color: TUNIC, mottle: 0.14 });   // shin
+    R.part(pelvis, prim.cyl(), { p: [s * 0.086, 0.178, 0.010], s: [0.072, 0.115, 0.072], color: BOOT2, mottle: 0.16 });        // rolled boot cuff
+    R.part(pelvis, prim.plate(), { p: [s * 0.086, 0.058, 0.052], r: [0, s * 0.11, 0], s: [0.092, 0.112, 0.190], color: BOOT, mottle: 0.14 });
+    R.part(pelvis, prim.plate(), { p: [s * 0.086, 0.018, 0.070], r: [0, s * 0.11, 0], s: [0.098, 0.036, 0.212], color: BOOT2, mottle: 0.10 });  // sole
+  }
+  R.part(pelvis, wfLathe(WF_CLOAK, 24), { color: ROBE, mottle: 0.15 });                                           // THE CLOAK
+  // the front opening, as a thin re-lathed shell a centimetre proud of the cloak: a dark seam flanked by two
+  // cream-gold trim lines. A LINE of trim is the reference's read; the old fat chest cross was not.
+  R.part(pelvis, wfLathe(WF_CLOAK, 3, -0.105, 0.21), { s: [1.032, 1, 1.032], color: LINE, mottle: 0.10 });
+  for (const s of [-1, 1]) R.part(pelvis, wfLathe(WF_CLOAK, 2, s * 0.128 - 0.021, 0.042), { s: [1.038, 1, 1.038], color: TRIM, mottle: 0.05 });
+  R.part(pelvis, wfLathe([[0.418, 0.318], [0.436, 0.286], [0.443, 0.262], [0.424, 0.246]], 24), { s: [1.012, 1, 1.012], color: TRIM, mottle: 0.05 });   // gold hem band: a LINE round the edge, not a saucer
+  for (let i = 0; i < 13; i++) {                                                                                  // DAGGED hem: pointed lobes hanging BELOW the hem edge (reference)
+    const a = (i / 13) * 6.2832 + 0.242, cx = Math.sin(a), cz = Math.cos(a);
+    R.part(pelvis, prim.cone(), { p: [cx * 0.424, 0.196, cz * 0.424], r: [Math.PI, -a, 0], s: [0.084, 0.104, 0.032], color: ROBE, mottle: 0.10, flat: true });
+    R.part(pelvis, prim.cone(), { p: [cx * 0.430, 0.238, cz * 0.430], r: [Math.PI, -a, 0], s: [0.090, 0.046, 0.036], color: TRIM, mottle: 0.05, flat: true });
+  }
+  // satchel on a crossbody strap, worn OVER the cloak on the left hip — he carries the catalogue
+  R.part(pelvis, prim.plate(), { p: [-0.238, 0.930, 0.168], r: [0.08, -0.46, 0.04], s: [0.196, 0.168, 0.098], color: LEATHER, mottle: 0.14 });
+  R.part(pelvis, prim.plate(), { p: [-0.246, 1.006, 0.176], r: [0.08, -0.46, 0.04], s: [0.212, 0.070, 0.112], color: LEATHER2, mottle: 0.12 });   // flap
+  R.part(pelvis, BOX1, { p: [-0.268, 0.948, 0.212], r: [0.08, -0.46, 0.04], s: [0.042, 0.058, 0.012], color: TRIM, mottle: 0.04 });               // buckle strap
 
-  // ---- torso: chest + shoulder mantle. The mantle is the 30 m silhouette cue (a wide dark shoulder line).
+  // ---- torso: shoulders under the cloak + the collar roll the hood falls out of
   const torso = R.bone('torso', pelvis, 0, 0.30, 0);
-  R.part(torso, prim.hex(), { p: [0, 1.28, 0], r: [0, 0.39, 0], s: [0.215, 0.30, 0.175], color: ROBE, mottle: 0.14, flat: true });
-  R.part(torso, prim.sphereLo(), { p: [0, 1.37, 0], s: [0.255, 0.085, 0.205], color: DARK, mottle: 0.1 });
-  R.part(torso, prim.sphereLo(), { p: [0, 1.428, 0], s: [0.268, 0.115, 0.215], color: ROBE2, mottle: 0.14 });   // mantle: WIDE and FLAT, not a fur boa — it has to read as shoulders
-  for (const s of [-1, 1]) R.part(torso, BOX1, { p: [s * 0.09, 1.36, 0.16], r: [0, 0, -s * 0.6], s: [0.16, 0.022, 0.014], color: TRIM, mottle: 0.04 }); // mantle chevron
-  R.part(torso, BOX1, { p: [0, 1.20, 0.168], s: [0.055, 0.42, 0.015], color: TRIM, mottle: 0.05 });              // stole
-  R.part(torso, prim.torus(), { p: [0, 1.50, 0], r: [Math.PI / 2, 0, 0], s: 0.135, color: TRIM, mottle: 0.03 }); // collar ring
+  R.part(torso, prim.sphere(), { p: [0, 1.396, -0.006], s: [0.226, 0.100, 0.186], color: ROBE, mottle: 0.15 });    // shoulder fall — kept INSIDE the cloak's collar radius so the cloak drapes over it
+  R.part(torso, prim.sphere(), { p: [0, 1.318, 0], s: [0.206, 0.108, 0.172], color: ROBE2, mottle: 0.14 });
+  R.part(torso, prim.sphere(), { p: [0, 1.464, -0.010], s: [0.138, 0.062, 0.122], color: ROBE2, mottle: 0.12 });                         // collar roll
+  R.part(torso, prim.torus(), { p: [0, 1.436, -0.010], r: [Math.PI / 2, 0, 0], s: 0.142, color: TRIM, mottle: 0.04 });                   // its cream-gold edge (a thin LINE is what prim.torus is for)
+  R.part(torso, BOX1, { p: [0.018, 1.262, 0.152], r: [0, 0.16, -0.86], s: [0.40, 0.048, 0.014], color: LEATHER2, mottle: 0.10 });        // the satchel strap across the chest
 
-  // ---- head: cowl open at the front. A FACE, not a void — you take quests from people, not from wraiths.
+  // ---- head: a cowl you can see INTO, and a face inside it. You take quests from people, not from wraiths.
   const head = R.bone('head', torso, 0, 0.35, 0);
-  R.part(head, prim.cyl(), { p: [0, 1.525, 0], s: [0.055, 0.09, 0.055], color: SKIN_DK });
-  R.part(head, prim.sphereLo(), { p: [0, 1.615, 0.012], s: [0.098, 0.115, 0.105], color: SKIN, mottle: 0.08 });
-  R.part(head, prim.sphereLo(), { p: [0, 1.565, 0.055], s: [0.062, 0.048, 0.055], color: 0x6f6576, mottle: 0.12 });   // short grey beard: reads "elder" instantly
-  R.part(head, prim.sphereLo(), { p: [0, 1.642, -0.078], s: [0.162, 0.168, 0.156], color: HOOD, mottle: 0.12 });      // cowl shell (pushed back so the face clears it)
-  R.part(head, prim.cone(), { p: [0, 1.735, -0.105], r: [-0.75, 0, 0], s: [0.105, 0.17, 0.105], color: HOOD, mottle: 0.1, flat: true }); // hood peak (laid back: upright it read as a horn)
-  R.mirror(head, prim.hex(), { p: [0.113, 1.628, 0.005], r: [0, 0, 0], s: [0.045, 0.145, 0.115], color: HOOD, mottle: 0.1, flat: true }); // cowl cheek panels frame the face
-  R.part(head, BOX1, { p: [0, 1.688, 0.072], r: [-0.25, 0, 0], s: [0.115, 0.035, 0.055], color: HOOD, mottle: 0.08 }); // brow lip: casts the face into shadow
-  R.mirror(head, prim.sphereLo(), { p: [0.038, 1.628, 0.098], s: 0.0135, color: 0x15111c, mottle: 0 });
+  R.part(head, prim.cyl(), { p: [0, 1.512, 0], s: [0.052, 0.10, 0.052], color: SKIN_DK });
+  R.part(head, prim.sphere(), { p: [0, 1.606, 0.014], s: [0.092, 0.111, 0.100], color: SKIN, mottle: 0.08 });
+  R.part(head, prim.cone(), { p: [0, 1.598, 0.094], r: [1.62, 0, 0], s: [0.020, 0.036, 0.026], color: SKIN, mottle: 0.05 });             // nose: the one feature that turns a ball into a head
+  R.part(head, prim.sphere(), { p: [0, 1.552, 0.054], s: [0.070, 0.056, 0.062], color: BEARD, mottle: 0.16 });                           // short grey beard: reads "elder" instantly
+  R.part(head, BOX1, { p: [0, 1.588, 0.094], s: [0.034, 0.008, 0.016], color: 0x6b5344, mottle: 0.05 });                                 // the mouth line, inside the beard
+  R.mirror(head, prim.sphereLo(), { p: [0.037, 1.620, 0.088], s: 0.0135, color: 0x15111c, mottle: 0 });
+  R.mirror(head, BOX1, { p: [0.041, 1.648, 0.084], r: [0, 0, -0.24], s: [0.050, 0.011, 0.022], color: 0x6f6a66, mottle: 0.06 });         // brows
+  R.part(head, BOX1, { p: [0, 1.672, 0.070], r: [-0.30, 0, 0], s: [0.130, 0.026, 0.062], color: HOODL, mottle: 0.06 });                  // the hood's brow lip: what actually puts the face in shadow
+  R.part(head, prim.sphere(), { p: [0, 1.622, -0.052], s: [0.136, 0.146, 0.128], color: HOODL, mottle: 0.10 });                          // the cowl's dark interior, BEHIND the face: what makes the hood read as a cavity
+  R.part(head, wfLathe(WF_HOOD, 16, 0.96, 6.2832 - 1.92), { color: HOODC, mottle: 0.13 });                                               // THE HOOD, open 110 deg at the front
+  for (const s of [-1, 1]) {                                                                                                            // lappets closing the two open ends of the arc
+    R.part(head, prim.plate(), { p: [s * 0.150, 1.592, 0.086], r: [0.14, -s * 0.95, 0], s: [0.024, 0.140, 0.072], color: HOODC, mottle: 0.11 });
+    R.part(head, BOX1, { p: [s * 0.155, 1.592, 0.096], r: [0.14, -s * 0.95, 0], s: [0.008, 0.132, 0.062], color: TRIM, mottle: 0.05 });  // cream-gold hood edging: a LINE on the rim, not a gold ear-flap
+  }
+  R.part(head, prim.cone(), { p: [0, 1.742, -0.128], r: [-1.02, 0, 0], s: [0.092, 0.215, 0.086], color: HOODC, mottle: 0.11 });          // hood peak, flopped back (upright it read as a horn)
+  R.part(head, wfLathe([[0.070, 1.512], [0.148, 1.470], [0.176, 1.408], [0.150, 1.392], [0.062, 1.436]], 12, 1.35, 3.58), { color: HOODC, mottle: 0.12 });  // the drape falling off the hood onto the back
 
-  // ---- arms: shoulder -> elbow -> hand, bell sleeves
+  // ---- arms: shoulder -> elbow -> hand. Bell sleeves; the stance is posed in _updateWayfinders.
   for (const [n, sx] of [['R', 0.235], ['L', -0.235]]) {
+    const sd = n === 'R' ? 1 : -1;
     const sh = R.bone('sh' + n, torso, sx, 0.155, 0), el = R.bone('el' + n, sh, 0, -0.27, 0), hd = R.bone('hd' + n, el, 0, -0.26, 0);
-    R.part(sh, prim.sphereLo(), { p: [sx, 1.405, 0], s: 0.075, color: ROBE2, mottle: 0.12 });
-    R.part(sh, prim.limb(0.95), { p: [sx, 1.405, 0], s: [0.062, 0.28, 0.062], color: ROBE2, mottle: 0.12 });   // sleeve is the LIGHTER cloth: a same-tone arm on a same-tone robe is one blob
-    R.part(el, prim.limb(1.5), { p: [sx, 1.125, 0], s: [0.056, 0.255, 0.056], color: ROBE2, mottle: 0.12 });      // bell sleeve
-    R.part(el, prim.hex(), { p: [sx, 0.875, 0], s: [0.088, 0.024, 0.088], color: TRIM, mottle: 0.04, flat: true });
-    R.part(hd, prim.sphereLo(), { p: [sx, 0.838, 0.015], s: [0.044, 0.057, 0.042], color: SKIN, mottle: 0.08 });
-    if (n === 'R') {   // the staff: the vertical that breaks the skyline and says "someone is standing there"
-      // PALE shaft, not dark wood: at 30 m the whole site is dark-on-green and a dark stick simply is not
-      // there. A bleached-ash vertical is the one high-value line in the silhouette and it is what carries
-      // the "someone is standing here" read at range — the same job the 5.4 m slab used to do.
-      R.part(hd, prim.cyl(), { p: [0.295, 1.36, 0.075], s: [0.024, 2.42, 0.024], color: WOOD, mottle: 0.16 });
-      R.part(hd, prim.hex(), { p: [0.295, 0.85, 0.075], s: [0.032, 0.15, 0.032], color: LEATHER, flat: true });
-      R.part(hd, prim.hex(), { p: [0.295, 1.66, 0.075], s: [0.030, 0.038, 0.030], color: TRIM, mottle: 0.04, flat: true });
-      R.part(hd, prim.hex(), { p: [0.295, 2.42, 0.075], r: [Math.PI / 2, 0, 0], s: [0.105, 0.030, 0.105], color: TRIM, mottle: 0.04, flat: true }); // gold medallion
-      R.part(hd, prim.crystal(), { p: [0.295, 2.55, 0.075], s: [0.052, 0.16, 0.052], color: GLOW, glow: 0.85, flat: true });   // capped at 0.62 luminance by the shared shader
-      R.part(hd, prim.crystal(), { p: [0.295, 2.35, 0.075], r: [Math.PI, 0, 0], s: [0.030, 0.075, 0.030], color: GLOW, glow: 0.55, flat: true });
+    R.part(sh, prim.sphere(), { p: [sx, 1.405, 0], s: [0.078, 0.076, 0.078], color: ROBE, mottle: 0.13 });
+    R.part(sh, prim.limb(0.92), { p: [sx, 1.400, 0], s: [0.063, 0.28, 0.063], color: ROBE2, mottle: 0.13 });   // upper sleeve is the LIGHTER cloth: a same-tone arm on a same-tone cloak is one blob
+    // bell sleeve: a lathe, so the cuff FLARES. This is the same defect as the cloak at 1/4 scale.
+    R.part(el, wfLathe([[0.052, 1.128], [0.056, 1.020], [0.066, 0.930], [0.086, 0.876], [0.078, 0.866], [0.050, 0.900]], 12),
+      { color: ROBE2, mottle: 0.13, p: [sx, 0, 0] });
+    R.part(el, wfLathe([[0.080, 0.898], [0.090, 0.876], [0.082, 0.866]], 12), { p: [sx, 0, 0], color: TRIM, mottle: 0.05 });   // cuff band
+    // the hand sits ON the thing it holds (the staff runs at x 0.300, z 0.062), not beside it
+    const hx = n === 'R' ? 0.288 : sx, hz = n === 'R' ? 0.052 : 0.014;
+    R.part(hd, prim.plate(), { p: [hx, 0.836, hz], r: [0.16, 0, 0], s: [0.042, 0.058, 0.060], color: SKIN, mottle: 0.08 }); // palm
+    for (let f = 0; f < 3; f++) R.part(hd, prim.cyl(), { p: [hx - sd * 0.014, 0.822 - f * 0.014, hz + 0.030], r: [1.42, 0, 0], s: [0.0105, 0.052, 0.0105], color: SKIN, mottle: 0.06 });  // fingers, curled forward round the shaft
+    R.part(hd, prim.cyl(), { p: [hx + sd * 0.028, 0.848, hz + 0.022], r: [1.12, 0, sd * 0.5], s: [0.011, 0.048, 0.011], color: SKIN, mottle: 0.06 });   // thumb over the top
+    if (n === 'R') {
+      // THE LANTERN STAFF. Value kept mid (weathered ash, not the reference's near-black wood): at 30 m the
+      // whole site is dark-on-green and a dark stick simply is not there — the staff is the vertical that
+      // says "someone is standing here", the job the old 5.4 m slab used to do.
+      R.part(hd, prim.cyl(), { p: [0.300, 1.300, 0.062], s: [0.0225, 2.36, 0.0225], color: WOOD, mottle: 0.17 });
+      R.part(hd, prim.hex(), { p: [0.300, 0.150, 0.062], s: [0.030, 0.13, 0.030], color: IRON, mottle: 0.08, flat: true });           // iron ferrule in the dirt
+      for (const cy of [0.86, 1.52]) R.part(hd, prim.hex(), { p: [0.300, cy, 0.062], s: [0.031, 0.045, 0.031], color: LEATHER2, mottle: 0.08, flat: true }); // grip wraps
+      R.part(hd, prim.hex(), { p: [0.300, 2.055, 0.062], s: [0.034, 0.080, 0.034], color: TRIM, mottle: 0.05, flat: true });          // filigree boss under the lamp
+      R.part(hd, WF_RING, { p: [0.300, 2.140, 0.062], r: [Math.PI / 2, 0, 0], s: 0.044, color: TRIM, mottle: 0.04 });
+      // the lamp head: hex base, four corner posts, four amber panes, a pitched cap and a ring finial.
+      R.part(hd, prim.hex(), { p: [0.300, 2.238, 0.062], s: [0.078, 0.034, 0.078], color: IRON, mottle: 0.07, flat: true });
+      R.part(hd, prim.hex(), { p: [0.300, 2.262, 0.062], s: [0.062, 0.020, 0.062], color: TRIM, mottle: 0.04, flat: true });
+      for (let k = 0; k < 4; k++) {
+        const a = k * Math.PI / 2, px = 0.300 + Math.sin(a) * 0.055, pz = 0.062 + Math.cos(a) * 0.055;
+        R.part(hd, BOX1, { p: [px, 2.400, pz], r: [0, -a, 0], s: [0.014, 0.270, 0.014], color: TRIM, mottle: 0.05 });                 // corner post
+        // the glass. SATURATE THE COLOUR, CAP THE VALUE: the hue is uEmissive (the region's own, normalised),
+        // the value goes through the creature shader's hue-preserving luminance AND max-channel cap. 0.09 x
+        // 0.24 m panes are ~30 px at the 3 m talk range, not sub-pixel points.
+        R.part(hd, BOX1, { p: [0.300 + Math.sin(a + 0.785) * 0.041, 2.400, 0.062 + Math.cos(a + 0.785) * 0.041], r: [0, -a - 0.785, 0], s: [0.086, 0.238, 0.008], color: GLOW, glow: 0.52 });
+      }
+      R.part(hd, prim.hex(), { p: [0.300, 2.552, 0.062], s: [0.080, 0.026, 0.080], color: IRON, mottle: 0.07, flat: true });
+      R.part(hd, prim.cone(), { p: [0.300, 2.612, 0.062], s: [0.086, 0.098, 0.086], color: TRIM, mottle: 0.05, flat: true });         // pitched cap
+      R.part(hd, WF_RING, { p: [0.300, 2.706, 0.062], s: 0.032, color: TRIM, mottle: 0.04 });                                        // the carry ring
     } else {           // a rolled charter in the off hand
-      R.part(hd, prim.cyl(), { p: [-0.245, 0.845, 0.065], r: [0, 0, 1.35], s: [0.027, 0.20, 0.027], color: PAPER, mottle: 0.1 });
+      R.part(hd, prim.cyl(), { p: [-0.252, 0.836, 0.052], r: [0, 0, 1.35], s: [0.026, 0.19, 0.026], color: PAPER, mottle: 0.1 });
+      R.part(hd, BOX1, { p: [-0.252, 0.836, 0.052], r: [0, 0, 1.35], s: [0.030, 0.036, 0.030], color: TRIM, mottle: 0.05 });
     }
   }
   return R.build();
@@ -279,11 +403,11 @@ export class Props {
     // survives (scaled along their own hue ray, never flattened toward grey). uTriScale is per material so
     // block/strata size reads plausibly on monument-scale pieces (dragon gate = the biggest blocks).
     // The `moss` channel doubles as SNOW on tundra (whitens up-faces) and lichen on shadowfen basalt.
-    const mkTri = (key, texName, scale, { color = 0xffffff, rough = 0.9, moss = 0, mossCol } = {}) => {
+    const mkTri = (key, texName, scale, { color = 0xffffff, rough = 0.9, moss = 0, mossCol, extra } = {}) => {
       const t = game.assets?.tex?.(texName) ?? null;
       if (!t) console.warn(`[props] ${texName} missing, procedural fallback`);
       return patchMaterial(new THREE.MeshStandardMaterial({ map: t ?? basalt, vertexColors: true, roughness: rough, metalness: 0.02, color }),
-        mergePatch(triplanarPatch(t ? scale : 0.42, moss, mossCol), { key }));
+        mergePatch(triplanarPatch(t ? scale : 0.42, moss, mossCol), extra ?? {}, { key }));
     };
     this.regionMat = {
       forest: mkTri('rm-forest', 'granite_moss', 0.30, { moss: 0.35 }),                                    // elven ruins sinking under moss
@@ -291,11 +415,29 @@ export class Props {
       // face and triplanar swapped axis at every corner, which is the wave-2 "per-face photo-vista seams
       // that mismatch at every edge". 2.5 m reads as ice strata; 0.55 (1.8 m) went the other way and the
       // repeat became visible wallpaper on the same slabs.
-      tundra: mkTri('rm-tundra', 'ice_glacial', 0.40, { rough: 0.45, moss: 0.45, mossCol: [0.62, 0.66, 0.78] }), // glacial ice, snow-dusted up-faces
-      celestial: mkTri('rm-celestial', 'marble_strata', 0.34),                                             // white marble + gold civilisation (0.20 = a 5 m tile: on a 25 m hero facade the strata read as plywood grain at 10 m)
+      // ...and re-tuned again this wave: ice_glacial was REPLACED (it used to be a perspective landscape
+      // PHOTO — sky, clouds and a mountain range — which is the wave-3 tundra blocker) and is now a true
+      // top-down sheet with a pressure-crack web. A crack web needs a bigger cell than a strata band did:
+      // 0.30 is a ~3.3 m tile, which puts 3-4 whole cracks across a throne course and stops the new map
+      // reading as a repeated wallpaper on the 42 m terrace the throne now stands on.
+      tundra: mkTri('rm-tundra', 'ice_glacial', 0.30, { rough: 0.45, moss: 0.45, mossCol: [0.62, 0.66, 0.78] }), // glacial ice, snow-dusted up-faces
+      // 0.85 (a ~1.2 m tile), not 0.34 (3 m): the wave-3 verdict measured the Empyrean Gate's strata as
+      // "heavy horizontal sedimentary banding that reads as plywood layers". A 3 m band on a 24 m facade is
+      // eight courses of plywood; a 1.2 m one is marble veining. Same map, same program, one uniform.
+      celestial: mkTri('rm-celestial', 'marble_strata', 0.85, { rough: 0.8 }),                              // white marble + gold civilisation
       dragon: mkTri('rm-dragon', 'granite_carved', 0.12),                                                  // dwarven ashlar: ~2 m blocks on a 44 m gate
       infernal: mkTri('rm-infernal', 'basalt_columnar', 0.25, { rough: 0.95 }),
-      lost: mkTri('rm-lost', 'megalith_violet', 0.25),
+      // WAVE-3 lost major: "monolith kit is value-crushed to near-black past ~30 m — spire face rgb(55,51,88),
+      // lum 27% against an 84%-lum sky, no lit face, no shaded face, no rim ... the midground is a paper
+      // cutout". Two levers, because the vertex tints were already lifted and it was not enough: the base
+      // albedo goes up ~40% (an HDR material colour multiplies the map, exactly what the verdict asked for),
+      // and VERTICAL faces get a small violet sky-bounce so a face turned away from the sun still separates
+      // from the sky instead of clamping to black. The bounce is a hemispheric fake, so it is scaled by
+      // daylight (night keeps its silhouette) and its absolute ceiling is 0.092 — 13x under the bloom
+      // threshold, and it lands on 13 m monoliths, never on anything sub-pixel.
+      lost: mkTri('rm-lost', 'megalith_violet', 0.25, { color: new THREE.Color(1.40, 1.30, 1.52),
+        extra: { uniforms: { uSunI: this.U.uSunI ?? { value: 1 } }, fHead: 'uniform float uSunI;',
+          fEmissive: 'totalEmissiveRadiance += vec3(0.055, 0.042, 0.092) * (1.0 - abs(vWNormal.y)) * clamp(uSunI, 0.18, 1.0);' } }),
       shadowfen: mkTri('rm-shadowfen', 'basalt_columnar', 0.32, { rough: 0.95, moss: 0.5 }),               // Hagstone: dark basalt under lichen
       sunken: mkTri('rm-sunken', 'marble_strata', 0.24),                                                   // the Drowned Court was marble once
       void: mkTri('rm-void', 'voidstone', 0.22),
@@ -306,11 +448,31 @@ export class Props {
     // Exactly the mushroom recipe: night-boosted emissive closed by a HUE-PRESERVING luminance cap that
     // tightens in daylight (BLOB LAW: saturate the COLOUR, cap the INTENSITY — never white). These are
     // metre-scale bands on a 37 m monument, not sub-pixel points; night cap 0.85 stays a warm sheen.
-    this.divineMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xcfa14e, vertexColors: true, roughness: 0.5, metalness: 0.3, emissive: 0xff9a2e, emissiveIntensity: 0.9 }), {
+    // metalness 0.8 / roughness 0.40, not 0.3/0.5 (wave-3: "zero specular response, zero relief — it reads as
+    // decal stickers on stone"). A METAL tints its own specular by its albedo, so unlike a dielectric
+    // highlight this cannot go white: gold reflects gold. That is the whole reason the fix here is metalness
+    // and geometry rather than a brighter emissive.
+    this.divineMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xd8a13e, vertexColors: true, roughness: 0.40, metalness: 0.8, emissive: 0xff9a2e, emissiveIntensity: 0.9 }), {
       key: 'divine-gold', uniforms: { uSunI: this.U.uSunI ?? { value: 1 } }, fHead: 'uniform float uSunI;',
-      fEmissive: 'totalEmissiveRadiance *= 0.10 + 1.0 * (1.0 - clamp(uSunI, 0.0, 1.0)); float dLum = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722)); float dCap = mix(0.85, 0.14, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= dCap / max(dLum, dCap);',
+      // pow(...,2.5), not a linear ramp: at golden hour sunI is still ~0.35, and a LINEAR ramp had the gold
+      // already running at 3/4 lamp brightness with the sun up — which flattens the metal's shading back into
+      // exactly the "solid orange band" the verdict is about. The boost now belongs to dusk and after.
+      fEmissive: 'totalEmissiveRadiance *= 0.06 + 1.05 * pow(1.0 - clamp(uSunI, 0.0, 1.0), 2.5); float dMax = max(max(totalEmissiveRadiance.r, totalEmissiveRadiance.g), totalEmissiveRadiance.b); float dCap = mix(0.85, 0.14, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= dCap / max(dMax, dCap);',
     });
     this._divine = { parts: [], tints: [] };   // collected by the gate + isles, built into one mesh after _buildIsles
+    // REGION AETHER — the same night-waking recipe as divineMat, but the HUE comes from the vertex tint, so
+    // one material and one draw call serve every region's ceremonial light (lost violet, tundra ice-cyan,
+    // infernal ember). Wave-3 asked for exactly this three times: "The Convergence has no ornament and no
+    // light", "the throne carries no aether at 22.5h", "no glow spill at the Cinder Maw at night".
+    // BLOB LAW, both halves: the tints below are SATURATED (a hue that survives ACES), and the cap is on the
+    // MAX CHANNEL — the half a luminance cap cannot see, because a cyan sits near the ceiling in two
+    // channels at once. Night ceiling 0.80, day 0.15, both well under the ~1.2 bloom threshold, and every
+    // piece that wears this is a metre-scale band on a monument, never a sub-pixel point.
+    this.aetherMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15, color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.0 }), {
+      key: 'region-aether', uniforms: { uSunI: this.U.uSunI ?? { value: 1 } }, fHead: 'uniform float uSunI;',
+      fEmissive: 'totalEmissiveRadiance *= vColor.rgb * (0.05 + 1.15 * pow(1.0 - clamp(uSunI, 0.0, 1.0), 2.2)); float aM = max(max(totalEmissiveRadiance.r, totalEmissiveRadiance.g), totalEmissiveRadiance.b); float aCap = mix(0.80, 0.15, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= aCap / max(aM, aCap);',
+    });
+    this._aether = { parts: [], tints: [] };
     // The Elderheart's own skin (wave-1 blocker: its organic forms wore the brick map): gnarled bark,
     // moss creeping up the weather side. Crown foliage is flat-shaded painterly blobs — vertex colour IS
     // the albedo, deep teal-greens, zero emissive (ground-adjacent foliage never glows: BLOB LAW).
@@ -323,6 +485,16 @@ export class Props {
     // uTriScale is a per-material uniform), just a 1.3 m tile — cottage-scale coursing, zero extra cost.
     this.villageMat = patchMaterial(new THREE.MeshStandardMaterial({ map: sand, vertexColors: true, roughness: 0.92, metalness: 0.02, color: 0xf2ece0 }),
       mergePatch(triplanarPatch(ruinsTex ? 0.78 : 1.0, 0.30, [0.52, 0.58, 0.38]), { key: 'stone' }));
+    // ...and villageMat is now only the STONE of Hearthfall (plinth, quoins, chimney, well, field walls).
+    // Wave-3 vale major: "walls, thatch roof, well, shutters, doors and field walls all wear the same
+    // terracotta brick — a thatched roof rendered in masonry". Four materials, because a village is four
+    // materials: lime plaster over a timber frame, oak joinery, laid straw. Three extra draw calls for the
+    // whole hamlet, and it is nine cottages inside one 60 m disc, so they frustum-cull together.
+    this.plasterMat = patchMaterial(new THREE.MeshStandardMaterial({ map: stoneTexture(aniso, [0.66, 0.62, 0.53], [0.95, 0.92, 0.84]), vertexColors: true, roughness: 0.95, metalness: 0.0, color: 0xffffff }),
+      mergePatch(triplanarPatch(0.55, 0.16, [0.46, 0.52, 0.34]), { key: 'plaster' }));                    // noise slate, zero coursing: the stele recipe, cream
+    this.thatchMat = patchMaterial(new THREE.MeshStandardMaterial({ map: thatchTexture(aniso), vertexColors: true, roughness: 0.98, metalness: 0.0, color: 0xffffff }),
+      mergePatch(triplanarPatch(1.15, 0.10, [0.44, 0.50, 0.30]), { key: 'thatch' }));                      // ~0.9 m tile: straw scale, not brick scale
+    this.timberMat = mkTri('rm-timber', 'bark_gnarled', 1.6, { rough: 0.94, color: 0x9a7c52 });             // bark IS wood grain; 0.6 m tile reads as sawn oak
     // Wayfinder Steles get their OWN material, not stoneMat/basaltMat: stoneMat's map is the sandstone
     // brick photo (or its brick-patterned procedural fallback) — a vertex tint can darken a brick texture
     // but can never remove the brick pattern, which is why the steles read as a chimney. This is a flat
@@ -616,15 +788,30 @@ export class Props {
             P(cyl(0.20, 0.30, len, 6).rotateZ(Math.PI / 2 - (0.14 + rng() * 0.36)).rotateY(aa)
               .translate(x + Math.cos(aa) * i * 0.7, y + 0.42 + i * 0.38, z + Math.sin(aa) * i * 0.7), [0.46, 0.39, 0.30]); }
           col.add({ type: 'sphere', pos: V3(x, y + 0.8, z), r: 2.3 });
-        } else {                                                            // hull ribs — an arch of them, so a wreck reads as a span you could cross under
+        } else {
+          // WAVE-3 minor: "five to seven hull-rib fans sit high on dry sand 40-80 m from the nearest water,
+          // several of them halfway up the dune. At distance they read as dead spider legs on a beach."
+          // The brief wants ribs as spans over rapids, and the two deliberate spans at r=700/736 do that —
+          // so the SCATTER copies now check whether they are actually in the water. Standing arcs only
+          // within 0.6 m of the waterline; on dry ground the wreck is beached, laid over on its side and
+          // half-buried, which is what a hull 60 m from a river actually looks like.
           const a = rng() * Math.PI, ca = Math.cos(a), sa = Math.sin(a), ribs = 4 + ((rng() * 3) | 0), SPN = 3.4 + rng() * 2.2;
+          const wet = y < (terrain.waterLevel ?? 4) + 0.6;
           for (let i = 0; i < ribs; i++) {
             const t = (i - (ribs - 1) / 2) * 1.5;
-            P(new THREE.TorusGeometry(SPN, 0.24, 5, 11, Math.PI).scale(1, 0.5, 1).rotateY(a + Math.PI / 2)
-              .translate(x + ca * t, y - 0.25, z + sa * t), [0.40, 0.33, 0.26]);
+            const g = new THREE.TorusGeometry(SPN, 0.24, 5, 11, Math.PI).scale(1, wet ? 0.5 : 0.62, 1);
+            if (wet) g.rotateY(a + Math.PI / 2).translate(x + ca * t, y - 0.25, z + sa * t);
+            else g.rotateZ(1.42 + (rng() - 0.5) * 0.25).rotateY(a).translate(x + ca * t * 0.9, y + 0.12 + rng() * 0.1, z + sa * t * 0.9);   // keeled over, ribs raking the sand
+            P(g, [0.40, 0.33, 0.26]);
           }
-          P(cyl(0.24, 0.28, (ribs - 1) * 1.5 + 1.2, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + SPN * 0.5 - 0.3, z), [0.44, 0.36, 0.28]);   // keel along the crown
-          col.add({ type: 'sphere', pos: V3(x, y + 1.2, z), r: SPN * 0.8 });
+          const kl = (ribs - 1) * 1.5 + 1.2;
+          if (wet) P(cyl(0.24, 0.28, kl, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + SPN * 0.5 - 0.3, z), [0.44, 0.36, 0.28]);      // keel along the crown
+          else {
+            P(cyl(0.26, 0.34, kl, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x - sa * SPN * 0.55, y + 0.30, z + ca * SPN * 0.55), [0.44, 0.36, 0.28]);   // keel on the sand
+            for (let i = 0; i < 3; i++) P(box(1.9 + rng(), 0.22, 0.55).rotateY(a + (rng() - 0.5) * 0.4).rotateZ((rng() - 0.5) * 0.2)
+              .translate(x + (rng() - 0.5) * 4, y + 0.11, z + (rng() - 0.5) * 4), [0.42, 0.35, 0.27]);                                       // strakes shed into the dune
+          }
+          col.add({ type: 'sphere', pos: V3(x, y + (wet ? 1.2 : 0.5), z), r: SPN * 0.8 });
         }
       } },
       void: { mat: 'void', n: 190, tint: [1.05, 0.95, 1.3], build: (x, y, z, P) => {   // voidstone map carries the dark violet; near-neutral tints keep its veining readable
@@ -861,12 +1048,14 @@ export class Props {
    * Nothing here is hardcoded to a radius: the crest jitters +-12 m from the kernel's noise, so every bay
    * probes the ground along its own bearing and plants itself on the local high point.
    */
-  _lostRampart(P, rng, h, col, CX, CZ, VIO, VIO2, GLD) {
+  _lostRampart(P, rng, h, col, CX, CZ, VIO, VIO2, GLD, PA = () => {}, AETH = [1, 1, 1]) {
     const nb = THETA0 + 5 * STEP;                                              // the arrival bearing the notch was cut on
     const yaw = (tx, tz) => Math.atan2(-tz, tx);                               // box/torus local +X -> (tx, tz)
     // ---- the gatehouse. Walk the bearing out from the origin and take the sill (the saddle's high point).
+    // Window widened to 566..650: terrain reports the rampart CROSSING at r0 568..642 this wave, and the old
+    // 584..664 probe could miss the saddle's real crest on a jittered bearing and plant the gate on a flank.
     let sill = { r: 620, y: -1e9 };
-    for (let r = 584; r <= 664; r += 2) { const y = h(Math.cos(nb) * r, Math.sin(nb) * r); if (y > sill.y) sill = { r, y }; }
+    for (let r = 566; r <= 650; r += 2) { const y = h(Math.cos(nb) * r, Math.sin(nb) * r); if (y > sill.y) sill = { r, y }; }
     const gx = Math.cos(nb) * sill.r, gz = Math.sin(nb) * sill.r;
     const gtx = -Math.sin(nb), gtz = Math.cos(nb), ryG = yaw(gtx, gtz);        // wall runs across the approach
     const GAP = 9.0;                                                           // half-width of the opening
@@ -890,6 +1079,26 @@ export class Props {
       P(new THREE.BoxGeometry(GAP * 2 + 9, 2.4, 7.0).rotateY(ryG).translate(gx, spr + GAP + 1.6, gz), VIO);                     // lintel band over the head
       P(new THREE.BoxGeometry(GAP * 2 + 4, 1.0, 7.4).rotateY(ryG).translate(gx, spr + GAP + 3.2, gz), GLD);
       P(new THREE.BoxGeometry(GAP * 0.9, 2.6, 6.6).rotateZ(0.30).rotateY(ryG).translate(gx - gtx * GAP * 0.5, spr + GAP + 4.4, gz - gtz * GAP * 0.5), VIO2);   // the parapet, snapped off over half the span
+      PA(new THREE.BoxGeometry(GAP * 2 + 3, 0.7, 7.2).rotateY(ryG).translate(gx, spr + GAP + 3.9, gz), AETH);   // the lit lintel band: the gate is the zone's night beacon from the plain
+      for (const sd of [-1, 1]) PA(new THREE.BoxGeometry(0.8, spr - sill.y + 2.2, 0.8).rotateY(ryG)
+        .translate(gx + gtx * sd * (GAP + 3.9), sill.y - 0.6 + (spr - sill.y + 2.2) / 2, gz + gtz * sd * (GAP + 3.9)), AETH);
+    }
+    // ---- THE APPROACH AVENUE (terrain builder's ask: "frame the LOST gate notch with architecture").
+    // The notch is a 31-35 m sill between 46-49 m shoulders, so the road through it is a real defile — and
+    // a defile with nothing in it reads as a gap in a hill, not as a way in. Six paired pylons walking OUT
+    // from the gate down the approach turn it into a processional, and each pair steps down with the ground
+    // (probed per pylon), so the avenue converges on the arch from 90 m away.
+    for (let i = 1; i <= 6; i++) {
+      const r = sill.r + 14 + i * 13, ax = Math.cos(nb) * r, az = Math.sin(nb) * r;
+      for (const sd of [-1, 1]) {
+        const px = ax + gtx * sd * (GAP + 2.4 + i * 0.55), pz = az + gtz * sd * (GAP + 2.4 + i * 0.55), py = h(px, pz) - 1.2;
+        const ph = 11.5 - i * 0.75;
+        P(new THREE.BoxGeometry(3.4, 1.1, 3.4).rotateY(ryG).translate(px, py + 0.55, pz), VIO2);
+        P(new THREE.CylinderGeometry(0.85, 1.35, ph, 7).rotateY(ryG).translate(px, py + 1.1 + ph / 2, pz), VIO);
+        P(new THREE.BoxGeometry(2.4, 1.0, 2.4).rotateY(ryG).translate(px, py + 1.6 + ph, pz), GLD);
+        PA(new THREE.OctahedronGeometry(0.85).scale(1, 1.5, 1).translate(px, py + 3.1 + ph, pz), AETH);
+        col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + ph, pz), r: 1.5 });
+      }
     }
     // ---- the curtain: one bay every ~5 deg around the crest, probed per bearing.
     const N = 72; let bays = 0;
@@ -1042,9 +1251,16 @@ export class Props {
   _buildVillage(rng, h, col) {
     const { scene } = this.game;
     const CX = 118, CZ = -96;                       // meadow, clear of the aetheryte (0,-28) and the lake
-    const walls = [], wallT = [], roofs = [], roofT = [];
-    const W = (g, t) => { walls.push(g); wallT.push(t); };
-    const R = (g, t) => { roofs.push(g); roofT.push(t); };
+    // FOUR BUCKETS, FOUR MATERIALS (wave-3 vale major: "walls, thatch roof, well, shutters, doors and field
+    // walls all wear the same terracotta brick ... a thatched roof rendered in masonry"). A village is lime
+    // plaster on a timber frame, over a stone footing, under laid straw — and a vertex tint can darken a
+    // brick photo but can never remove the brick. Nine cottages sit inside one 60 m disc so the four meshes
+    // frustum-cull as one; +2 draw calls buys the whole hamlet a material read.
+    const walls = [], wallT = [], roofs = [], roofT = [], stone = [], stoneT = [], wood = [], woodT = [];
+    const W = (g, t) => { walls.push(g); wallT.push(t ?? [1, 1, 1]); };          // plaster
+    const R = (g, t) => { roofs.push(g); roofT.push(t ?? [1, 1, 1]); };          // thatch
+    const S = (g, t) => { stone.push(g); stoneT.push(t ?? [0.92, 0.90, 0.86]); };// masonry: footing, quoins, chimney, sills
+    const K = (g, t) => { wood.push(g); woodT.push(t ?? [1, 1, 1]); };           // oak: frame, joinery, shutters
 
     this._cottages = [];
     // WAVE-3 (major "Hearthfall cottages are windowless giant-brick kit boxes ... no windows, no door
@@ -1054,49 +1270,75 @@ export class Props {
     // all of them — the door and both lit windows hung in mid-air off the gable end, facing the wrong way.
     // They are now placed on the real faces, and each opening got the joinery a 10 m inspection wants:
     // reveal, sill, lintel, jambs, shutters, a framed door, and an eaves board under the thatch.
-    const OAK = [0.42, 0.30, 0.18], TRIM = [0.74, 0.66, 0.52], STN = [0.66, 0.63, 0.58], DARK = [0.10, 0.08, 0.07];
+    const OAK = [0.72, 0.62, 0.46], OAK2 = [0.52, 0.44, 0.32], TRIM = [0.80, 0.70, 0.54], STN = [0.86, 0.84, 0.80],
+      PLA = [1.00, 0.98, 0.94], THA = [1.00, 0.96, 0.88], THA2 = [0.80, 0.76, 0.66], DARK = [0.06, 0.05, 0.045];
     const cottage = (x, z, ry, w, d, wh) => {
       const y = h(x, z) - 0.15;
       const ex = [Math.cos(ry), -Math.sin(ry)], ez = [Math.sin(ry), Math.cos(ry)];   // width axis / depth axis, in world
       const wins = [];
       this._cottages.push({ x, y, z, ry, d, wh, wins });
-      W(new THREE.BoxGeometry(w, wh, d).rotateY(ry).translate(x, y + wh / 2, z), [0.86, 0.82, 0.72]);
+      W(new THREE.BoxGeometry(w, wh, d).rotateY(ry).translate(x, y + wh / 2, z), PLA);           // limewashed plaster
       // plinth course: a stone footing stops the walls looking like they were dropped on the grass
-      W(new THREE.BoxGeometry(w + 0.35, 0.45, d + 0.35).rotateY(ry).translate(x, y + 0.22, z), [0.62, 0.60, 0.56]);
-      // thatched hip roof: a 4-sided pyramid. (A pair of leaning slabs needs the pitch maths to be exactly
-      // right from every yaw; a cone with 4 segments is correct by construction and one geometry cheaper.)
-      R(new THREE.ConeGeometry(Math.hypot(w, d) * 0.60, 2.4, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + 1.15, z), [0.50, 0.38, 0.21]);
-      R(new THREE.ConeGeometry(Math.hypot(w, d) * 0.30, 0.9, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + 2.6, z), [0.42, 0.32, 0.17]);
+      S(new THREE.BoxGeometry(w + 0.35, 0.55, d + 0.35).rotateY(ry).translate(x, y + 0.27, z), [0.80, 0.78, 0.74]);
+      // TIMBER FRAME over the plaster: corner posts, a mid rail and two braces per long face. This is the
+      // silhouette half of the fix — a smooth plaster box at 30 m is a smooth box whatever map is on it.
+      for (const sd of [-1, 1]) for (const sd2 of [-1, 1])
+        K(new THREE.BoxGeometry(0.20, wh - 0.5, 0.20).rotateY(ry).translate(x + ex[0] * sd * (w / 2 - 0.02) + ez[0] * sd2 * (d / 2 - 0.02), y + 0.55 + (wh - 0.5) / 2, z + ex[1] * sd * (w / 2 - 0.02) + ez[1] * sd2 * (d / 2 - 0.02)), OAK2);
+      for (const [ax, sx2, hw, off] of [[ez, ex, w, d / 2], [ex, ez, d, w / 2]]) for (const sd of [-1, 1]) {
+        const bx = x + ax[0] * sd * off, bz = z + ax[1] * sd * off, ry2 = ry + (ax === ez ? 0 : Math.PI / 2);
+        K(new THREE.BoxGeometry(hw, 0.17, 0.13).rotateY(ry2).translate(bx + ax[0] * sd * 0.06, y + wh * 0.72, bz + ax[1] * sd * 0.06), OAK2);   // mid rail
+        for (const sd3 of [-1, 1]) K(new THREE.BoxGeometry(hw * 0.42, 0.15, 0.12).rotateZ(sd3 * 0.62).rotateY(ry2)
+          .translate(bx + sx2[0] * sd3 * hw * 0.28 + ax[0] * sd * 0.06, y + wh * 0.40, bz + sx2[1] * sd3 * hw * 0.28 + ax[1] * sd * 0.06), OAK2);  // braces
+      }
+      // THATCHED HIP ROOF, four laid COURSES (was two cones — the upper one hung 6x wider than the lower one
+      // was at that height, which is the wave-3 "the upper roof cone floats clear with sky visible in the
+      // gap, reading as a flying saucer"). Each course's bottom radius is 4% wider than the course below it
+      // is at its own top, so every joint is an overhanging straw lip and no face can ever bound air.
+      { const rr = Math.hypot(w, d) * 0.60, RH = 3.0, NC = 4;
+        for (let c = 0; c < NC; c++) {
+          const r0 = rr * (1 - (c / NC) * 0.90), r1 = rr * (1 - ((c + 1) / NC) * 0.90);
+          R(new THREE.CylinderGeometry(r1, r0 * 1.04, RH / NC + 0.06, 4).rotateY(Math.PI / 4 + ry)
+            .translate(x, y + wh - 0.05 + (c / NC) * RH + RH / (NC * 2), z), c % 2 ? THA2 : THA);
+        }
+        R(new THREE.ConeGeometry(rr * 0.13, 0.55, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + RH + 0.16, z), THA2);   // ridge cap
+      }
       // eaves board: the line where thatch meets wall. Without it the roof looks dropped on the box.
       for (const [ax, hw, off] of [[ex, w, d / 2], [ez, d, w / 2]]) for (const sd of [-1, 1]) {
         const bx = x + (ax === ex ? ez[0] : ex[0]) * sd * off, bz = z + (ax === ex ? ez[1] : ex[1]) * sd * off;
         const g = new THREE.BoxGeometry(hw + 0.5, 0.26, 0.34); if (ax === ez) g.rotateY(Math.PI / 2);
-        W(g.rotateY(ry).translate(bx, y + wh - 0.05, bz), TRIM);
+        K(g.rotateY(ry).translate(bx, y + wh - 0.12, bz), TRIM);
       }
       // chimney + the front door, both on real faces
-      W(new THREE.BoxGeometry(0.7, wh + 2.6, 0.7).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + (wh + 2.6) / 2, z + ez[1] * (d * 0.30)), [0.58, 0.54, 0.5]);
+      S(new THREE.BoxGeometry(0.7, wh + 3.2, 0.7).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + (wh + 3.2) / 2, z + ez[1] * (d * 0.30)), [0.78, 0.75, 0.72]);
+      S(new THREE.BoxGeometry(0.92, 0.26, 0.92).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + wh + 3.3, z + ez[1] * (d * 0.30)), [0.72, 0.70, 0.68]);
       { const fo = d / 2, dx = x + ez[0] * fo, dz = z + ez[1] * fo;
-        W(new THREE.BoxGeometry(1.15, 2.05, 0.30).rotateY(ry).translate(dx, y + 1.02, dz), DARK);          // the opening, recessed
-        W(new THREE.BoxGeometry(0.98, 1.92, 0.12).rotateY(ry).translate(dx + ez[0] * 0.12, y + 0.98, dz + ez[1] * 0.12), OAK);   // the leaf, planked oak
-        for (const sd of [-1, 1]) W(new THREE.BoxGeometry(0.24, 2.25, 0.30).rotateY(ry).translate(dx + ex[0] * sd * 0.68, y + 1.12, dz + ex[1] * sd * 0.68), STN);   // jambs
-        W(new THREE.BoxGeometry(1.75, 0.30, 0.42).rotateY(ry).translate(dx, y + 2.32, dz), STN);           // lintel
-        W(new THREE.BoxGeometry(1.6, 0.22, 0.8).rotateY(ry).translate(dx + ez[0] * 0.3, y + 0.09, dz + ez[1] * 0.3), STN); }   // doorstep
+        W(new THREE.BoxGeometry(1.15, 2.05, 0.34).rotateY(ry).translate(dx - ez[0] * 0.10, y + 1.02, dz - ez[1] * 0.10), DARK);  // the opening, recessed INTO the wall
+        K(new THREE.BoxGeometry(0.98, 1.92, 0.10).rotateY(ry).translate(dx + ez[0] * 0.04, y + 0.98, dz + ez[1] * 0.04), OAK);   // the leaf, planked oak
+        for (const sd of [-1, 1]) K(new THREE.BoxGeometry(0.09, 1.86, 0.13).rotateY(ry).translate(dx + ex[0] * sd * 0.36 + ez[0] * 0.09, y + 0.98, dz + ex[1] * sd * 0.36 + ez[1] * 0.09), OAK2);  // door battens
+        for (const sd of [-1, 1]) S(new THREE.BoxGeometry(0.24, 2.25, 0.34).rotateY(ry).translate(dx + ex[0] * sd * 0.68, y + 1.12, dz + ex[1] * sd * 0.68), STN);   // jambs
+        S(new THREE.BoxGeometry(1.75, 0.30, 0.46).rotateY(ry).translate(dx, y + 2.32, dz), STN);           // lintel
+        S(new THREE.BoxGeometry(1.6, 0.22, 0.8).rotateY(ry).translate(dx + ez[0] * 0.3, y + 0.09, dz + ez[1] * 0.3), STN); }   // doorstep
       // windows: two on each long face, one on each gable, all with reveal + sill + lintel + shutters
       const win = (fx, fz, ax, sgn, wy) => {
         const px = x + fx, pz = z + fz, ry2 = ry + (ax === ez ? 0 : Math.PI / 2);
         const bx = ax === ez ? ez : ex, sx = ax === ez ? ex : ez;               // out-of-wall axis / along-wall axis
-        const B = (gw, gh, gd, ox, oy, oz2, t) => W(new THREE.BoxGeometry(gw, gh, gd).rotateY(ry2)
+        const B = (put, gw, gh, gd, ox, oy, oz2, t) => put(new THREE.BoxGeometry(gw, gh, gd).rotateY(ry2)
           .translate(px + sx[0] * ox + bx[0] * oz2 * sgn, y + wy + oy, pz + sx[1] * ox + bx[1] * oz2 * sgn), t);
-        B(0.98, 0.86, 0.26, 0, 0, 0, DARK);                                     // the reveal: a dark opening, not a painted rectangle
-        B(1.32, 0.24, 0.34, 0, 0.55, 0.02, STN);                                // lintel
-        B(1.32, 0.20, 0.46, 0, -0.53, 0.06, STN);                               // sill, projecting so it throws a shadow line
+        // THE REVEAL IS NOW RECESSED (wave-3: "not one lit window in Hearthfall at night"). It was a 0.26 m
+        // block centred ON the wall face, so its own front face at +0.13 sat in FRONT of the hearth quad at
+        // +0.05 and occluded it from outside — the glow was built, placed and driven correctly and simply
+        // walled in. The block now runs -0.27..+0.07 and the quad sits proud of it at +0.10.
+        B(W, 0.98, 0.86, 0.34, 0, 0, -0.10, DARK);
+        B(S, 1.32, 0.24, 0.34, 0, 0.55, 0.02, STN);                             // lintel
+        B(S, 1.32, 0.20, 0.46, 0, -0.53, 0.06, STN);                            // sill, projecting so it throws a shadow line
         for (const sd of [-1, 1]) {
-          B(0.22, 0.94, 0.28, sd * 0.60, 0, 0.02, STN);                         // jambs
-          W(new THREE.BoxGeometry(0.40, 0.88, 0.09).rotateY(ry2 + sgn * sd * 0.55)
+          B(S, 0.22, 0.94, 0.28, sd * 0.60, 0, 0.02, STN);                      // jambs
+          K(new THREE.BoxGeometry(0.40, 0.88, 0.09).rotateY(ry2 + sgn * sd * 0.55)
             .translate(px + sx[0] * sd * 0.86 + bx[0] * 0.19 * sgn, y + wy, pz + sx[1] * sd * 0.86 + bx[1] * 0.19 * sgn), OAK);   // shutters, thrown open
         }
-        B(0.12, 0.86, 0.10, 0, 0, 0.12, TRIM);                                  // the mullion — one pane becomes two
-        wins.push([px + bx[0] * 0.05 * sgn, y + wy, pz + bx[1] * 0.05 * sgn, ry2]);   // inside the reveal, behind the mullion
+        B(K, 0.10, 0.86, 0.10, 0, 0, 0.13, OAK2);                               // the mullion — one pane becomes two
+        B(K, 0.98, 0.09, 0.09, 0, 0, 0.13, OAK2);                               // the transom
+        wins.push([px + bx[0] * 0.10 * sgn, y + wy, pz + bx[1] * 0.10 * sgn, ry2]);   // proud of the reveal, behind the mullion
       };
       for (const sd of [-1, 1]) {
         win(ez[0] * (d / 2) + ex[0] * w * 0.26 * sd, ez[1] * (d / 2) + ex[1] * w * 0.26 * sd, ez, 1, wh * 0.55);
@@ -1112,19 +1354,23 @@ export class Props {
       cottage(CX + Math.cos(a) * r, CZ + Math.sin(a) * r, a + Math.PI / 2 + (rng() - 0.5) * 0.5,
         4.6 + rng() * 2.2, 5.6 + rng() * 2.4, 3.0 + rng() * 0.9);
     }
-    // the well the whole place is built around
+    // the well the whole place is built around: dressed stone kerb, oak frame, thatched cap
     const wy = h(CX, CZ);
-    W(new THREE.CylinderGeometry(1.5, 1.65, 1.1, 12).translate(CX, wy + 0.5, CZ), [0.6, 0.58, 0.54]);
-    W(new THREE.CylinderGeometry(1.15, 1.15, 0.9, 12).translate(CX, wy + 0.7, CZ), [0.10, 0.10, 0.12]);
-    for (const s of [1, -1]) W(new THREE.BoxGeometry(0.22, 2.6, 0.22).translate(CX + s * 1.3, wy + 2.0, CZ), [0.45, 0.34, 0.2]);
-    R(new THREE.BoxGeometry(3.6, 0.26, 2.4).rotateX(0.35).translate(CX, wy + 3.5, CZ + 0.35), [0.5, 0.38, 0.2]);
-    R(new THREE.BoxGeometry(3.6, 0.26, 2.4).rotateX(-0.35).translate(CX, wy + 3.5, CZ - 0.35), [0.5, 0.38, 0.2]);
+    S(new THREE.CylinderGeometry(1.5, 1.65, 1.1, 12).translate(CX, wy + 0.5, CZ), [0.82, 0.80, 0.76]);
+    S(new THREE.CylinderGeometry(1.15, 1.15, 0.9, 12).translate(CX, wy + 0.7, CZ), [0.09, 0.09, 0.11]);
+    for (const s of [1, -1]) K(new THREE.BoxGeometry(0.22, 2.6, 0.22).translate(CX + s * 1.3, wy + 2.0, CZ), OAK2);
+    K(new THREE.CylinderGeometry(0.13, 0.13, 2.5, 8).rotateZ(Math.PI / 2).translate(CX, wy + 3.05, CZ), OAK);   // the windlass
+    R(new THREE.BoxGeometry(3.6, 0.30, 2.4).rotateX(0.35).translate(CX, wy + 3.5, CZ + 0.35), THA);
+    R(new THREE.BoxGeometry(3.6, 0.30, 2.4).rotateX(-0.35).translate(CX, wy + 3.5, CZ - 0.35), THA2);
     col.add({ type: 'sphere', pos: V3(CX, wy + 0.6, CZ), r: 1.8 });
-    // low field walls between the nearest cottages: the hamlet reads as enclosed, not as scattered sheds
+    // low field walls between the nearest cottages: the hamlet reads as enclosed, not as scattered sheds.
+    // Dry-stone, so they belong to the masonry bucket — and they get a coping course, which is what stops a
+    // 0.9 m box reading as a kerb.
     for (let i = 0; i < 7; i++) {
-      const a = i / 7 * Math.PI * 2 + 0.2, r = 27 + rng() * 4;
+      const a = i / 7 * Math.PI * 2 + 0.2, r = 27 + rng() * 4, L = 7 + rng() * 5;
       const x = CX + Math.cos(a) * r, z = CZ + Math.sin(a) * r, y = h(x, z);
-      W(new THREE.BoxGeometry(7 + rng() * 5, 0.9, 0.6).rotateY(a + Math.PI / 2).translate(x, y + 0.35, z), [0.58, 0.56, 0.5]);
+      S(new THREE.BoxGeometry(L, 0.85, 0.58).rotateY(a + Math.PI / 2).translate(x, y + 0.34, z), [0.78, 0.76, 0.70]);
+      S(new THREE.BoxGeometry(L + 0.2, 0.16, 0.74).rotateY(a + Math.PI / 2).translate(x, y + 0.82, z), [0.70, 0.68, 0.63]);
     }
 
     // warm windows: additive quads that only light up as the sun goes down (same trick the mushrooms use).
@@ -1132,18 +1378,23 @@ export class Props {
     // ...now sitting exactly inside the reveals built above (`c.wins` carries their real world placement),
     // instead of hanging off the gable ends on the wrong axis at the wrong offset.
     const winGeo = [], WIN = new THREE.PlaneGeometry(0.92, 0.80);
-    for (const c of this._cottages ?? []) for (const [wx, wy, wz, wry] of c.wins ?? [])
-      winGeo.push(WIN.clone().rotateY(wry).translate(wx, wy, wz));
+    for (const c of this._cottages ?? []) for (const [wx, wy2, wz, wry] of c.wins ?? [])
+      winGeo.push(WIN.clone().rotateY(wry).translate(wx, wy2, wz));
     if (winGeo.length) {
-      const wmat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.95, 0.45), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, side: THREE.DoubleSide });
+      // saturated warm hearth, capped: 1.55/0.92/0.36 tone-maps to amber, not to white, and the driver in
+      // update() tops out at 0.9 opacity. Additive on a 0.9 x 0.8 m quad seated in a masonry reveal.
+      const wmat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.55, 0.92, 0.36), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, side: THREE.DoubleSide });
       const wmesh = new THREE.Mesh(mergeGeometries(winGeo), wmat);
       wmesh.name = 'village-windows'; wmesh.renderOrder = 1; scene.add(wmesh);
       this.villageWindows = wmesh;
     }
-    const wm = new THREE.Mesh(flat(mergeAll(walls, wallT)), this.villageMat);   // cottage-scale coursing, not Sundered-Spire blocks
-    wm.castShadow = wm.receiveShadow = true; wm.name = 'village-walls'; scene.add(wm);
-    const rm = new THREE.Mesh(flat(mergeAll(roofs, roofT)), this.villageMat);
-    rm.castShadow = rm.receiveShadow = true; rm.name = 'village-thatch'; scene.add(rm);
+    for (const [list, tl, mat, nm, shadow] of [[walls, wallT, this.plasterMat, 'village-walls', true],
+      [stone, stoneT, this.villageMat, 'village-stone', true], [wood, woodT, this.timberMat, 'village-timber', true],
+      [roofs, roofT, this.thatchMat, 'village-thatch', true]]) {
+      if (!list.length) continue;
+      const m = new THREE.Mesh(flat(mergeAll(list, tl)), mat);
+      m.castShadow = m.receiveShadow = shadow; m.name = nm; scene.add(m);
+    }
     this.landmarks.village = V3(CX, wy, CZ);
   }
 
@@ -1168,6 +1419,7 @@ export class Props {
       let LM = null, GLP = null;
       const P = (g, t) => { parts.push(g); tints.push(t ?? B.stone ?? [0.8, 0.78, 0.74]); };
       const P2 = (g, t) => { parts2.push(g); tints2.push(t ?? B.stone ?? [0.8, 0.78, 0.74]); };
+      const PA = (g, t) => { this._aether.parts.push(g); this._aether.tints.push(t); };   // ceremonial light, see aetherMat
       const T = LANDMARK_STONE[B.id];
       // ---- kit -------------------------------------------------------------
       const pillar = (x, z, ph, r = 1.1, taper = 0.82, tint) => {
@@ -1274,39 +1526,79 @@ export class Props {
         // seat, arm and back into one mass; (3) an 11 m four-step dais under a 7.6 m seat is a ziggurat
         // with a chair on it, so the dais came down and the throne went up. Per-face "photo vista" seams
         // are the ice_glacial triplanar tile — halved to ~1.8 m in init(), see regionMat.tundra.
-        const top = dais(9.5, 3, 0.62, [0.78, 0.86, 0.96]);
-        const ICE = [0.74, 0.85, 1.04], ICE2 = [0.66, 0.79, 1.02];
-        const fringe = (x0, z0, x1, z1, yy, n) => { for (let i = 0; i < n; i++) { const f = (i + 0.5) / n, il = 0.5 + rng() * 1.3;
-          P(new THREE.ConeGeometry(0.10 + rng() * 0.07, il, 5).rotateX(Math.PI)
-            .translate(lerp(x0, x1, f) + (rng() - 0.5) * 0.3, yy - il * 0.5 + 0.1, lerp(z0, z1, f) + (rng() - 0.5) * 0.3), [0.90, 0.96, 1.12]); } };
-        const BZ = -3.6;                                                        // ONE z for the whole back: the seams were three different ones
-        slab(CX, top + 1.0, CZ + 0.3, 10.2, 2.0, 7.4, 0, ICE);                  // seat: a solid block, deep enough to meet the back
-        slab(CX, top + 2.45, CZ - 0.2, 8.6, 0.9, 5.6, 0, ICE2);                 // cushion course
-        let by = top + 1.4;                                                     // the back: stacked, welded, tapering
-        for (const [w, hh2, d2] of [[12.4, 6.0, 3.0], [10.4, 5.6, 2.7], [8.0, 6.4, 2.4]]) {
+        // WAVE-3, TWO ITEMS, ONE REBUILD. (a) blocker: "still a pile of disconnected slabs with a cap block
+        // hanging in mid-air ... four tall thin fins + one stacked column + a low stepped disc. No back, no
+        // armrests, no seat, no tier that reads as a throne — it reads as a broken clock tower". (b) major:
+        // "no approach read at all — it sits at the bottom of a 23 m bowl and is invisible until you crest
+        // the rim". Probed: bowl floor 4.22 m, rim 27.3 m at r=104, approach ground 24.9 m at 150 m and
+        // 34.8 m at 280 m. So a 29 m crown was BELOW the horizon from every walk-in, and no amount of
+        // silhouette work on it could have shown. It is now staged on a five-tier ice terrace with a stair
+        // on the home bearing: seat at 20 m, crown at ~44 m world, i.e. 17 m clear of the rim.
+        // WELDED, and the rule this time is mechanical rather than by eye: every course of the back overlaps
+        // the one under it by at least a THIRD of its own height, they share one Z and no rotation, a
+        // full-height spine closes them from behind, and the crest's base is narrower than the back top it
+        // sits on — a face may never bound air.
+        const ICE = [0.74, 0.85, 1.04], ICE2 = [0.66, 0.79, 1.02], ICE3 = [0.82, 0.90, 1.08];
+        const AETH = [0.22, 1.34, 1.62];                                        // saturated ice-cyan: the night read, capped by aetherMat
+        const bh = Math.atan2(-CZ, -CX), bx0 = Math.cos(bh), bz0 = Math.sin(bh);   // the home-pass bearing: the stair faces the walk-in
+        let top = CY;                                                           // ---- the terrace
+        for (let i = 0; i < 5; i++) {
+          const r = 21.0 - i * 2.4, th = 2.8;
+          P(new THREE.CylinderGeometry(r - 0.5, r, th, 16).translate(CX, top + th / 2, CZ), i % 2 ? ICE2 : ICE3);
+          col.add({ type: 'box', box: new THREE.Box3(V3(CX - r * 0.70, CY - 2, CZ - r * 0.70), V3(CX + r * 0.70, top + th, CZ + r * 0.70)), walkable: true });
+          top += th;
+        }
+        { const nst = 20, ryS = Math.atan2(-bz0, bx0);                          // ...and the stair up it, so the terrace is an APPROACH and not a wall
+          for (let i = 0; i < nst; i++) { const f = i / nst, sy = CY + f * (top - CY), sr = 22.5 - f * 9.0;
+            P(new THREE.BoxGeometry(7.6, 0.9, 1.5).rotateY(ryS).translate(CX + bx0 * sr, sy + 0.45, CZ + bz0 * sr), ICE3);
+            col.add({ type: 'box', box: new THREE.Box3(V3(CX + bx0 * sr - 3.9, sy - 1.4, CZ + bz0 * sr - 3.9), V3(CX + bx0 * sr + 3.9, sy + 0.9, CZ + bz0 * sr + 3.9)), walkable: true }); }
+          for (const sd of [-1, 1]) P(new THREE.BoxGeometry(1.6, 3.4, 20.0).rotateY(ryS)   // the cheek walls that make it a stair and not a ramp of steps
+            .translate(CX + bx0 * 14.0 - bz0 * sd * 4.4, CY + (top - CY) * 0.44, CZ + bz0 * 14.0 + bx0 * sd * 4.4), ICE2);
+        }
+        const fringe = (x0, z0, x1, z1, yy, n) => { for (let i = 0; i < n; i++) { const f = (i + 0.5) / n, il = 0.8 + rng() * 2.0;
+          P(new THREE.ConeGeometry(0.16 + rng() * 0.11, il, 5).rotateX(Math.PI)
+            .translate(lerp(x0, x1, f) + (rng() - 0.5) * 0.4, yy - il * 0.5 + 0.1, lerp(z0, z1, f) + (rng() - 0.5) * 0.4), [0.90, 0.96, 1.12]); } };
+        const BZ = -4.6;                                                        // ONE z for the whole back
+        slab(CX, top + 1.3, CZ + 0.4, 13.6, 2.6, 9.6, 0, ICE);                  // seat: a solid block, deep enough to meet the back
+        slab(CX, top + 3.1, CZ - 0.3, 11.4, 1.2, 7.2, 0, ICE2);                 // cushion course
+        let by = top + 1.8;                                                     // ---- the back: five welded courses, each overlapping the last by 1/3 of its height
+        const CRS = [[16.4, 6.4, 4.2], [15.0, 6.0, 3.9], [13.4, 5.8, 3.6], [11.6, 5.6, 3.3], [9.6, 5.4, 3.0]];
+        for (const [w, hh2, d2] of CRS) {
           P(new THREE.BoxGeometry(w, hh2, d2).translate(CX, by + hh2 / 2, CZ + BZ), ICE);
-          by += hh2 - 1.6;                                                      // 1.6 m of shared stone per joint (was 0.55: that gap WAS the seam)
+          by += hh2 * 0.66;                                                     // >= 1/3 of the course shared with the one under it: no joint can open
         }
-        const BH = by + 6.4 - (top + 1.4);
-        P(new THREE.BoxGeometry(6.8, BH + 1.2, 1.5).translate(CX, top + 1.4 + (BH + 1.2) / 2, CZ + BZ - 1.9), ICE2);   // the spine behind: no daylight through any joint
+        const BTOP = by + CRS[4][1] * 0.34, BH = BTOP - (top + 1.8);
+        P(new THREE.BoxGeometry(8.8, BH + 1.6, 2.0).translate(CX, top + 1.8 + (BH + 1.6) / 2, CZ + BZ - 2.6), ICE2);   // the spine behind: no daylight through any joint
+        PA(new THREE.BoxGeometry(1.5, BH * 0.80, 0.42).translate(CX, top + 2.6 + BH * 0.40, CZ + BZ + 2.0), AETH);     // the rune conduit up the back — the night read
+        for (let i = 0; i < 6; i++) PA(new THREE.BoxGeometry(3.6 - i * 0.28, 0.42, 0.38).translate(CX, top + 4.0 + i * BH * 0.135, CZ + BZ + 2.0), AETH);
         for (const sd of [-1, 1]) {                                             // cheeks: seat -> armrest -> back, one mass
-          P(new THREE.BoxGeometry(1.5, 4.6, 7.2).translate(CX + sd * 4.6, top + 2.6, CZ - 0.4), ICE2);
-          P(new THREE.BoxGeometry(2.1, 1.5, 8.0).translate(CX + sd * 4.5, top + 3.5, CZ - 0.1), ICE);   // armrest, running INTO the back
-          col.add({ type: 'box', box: new THREE.Box3(V3(CX + sd * 4.5 - 1.1, top, CZ - 4.2), V3(CX + sd * 4.5 + 1.1, top + 4.3, CZ + 3.9)) });
+          P(new THREE.BoxGeometry(2.0, 6.4, 9.4).translate(CX + sd * 6.2, top + 3.6, CZ - 0.5), ICE2);
+          P(new THREE.BoxGeometry(2.8, 2.0, 10.4).translate(CX + sd * 6.1, top + 5.0, CZ - 0.2), ICE);   // armrest, running INTO the back
+          P(new THREE.CylinderGeometry(1.1, 1.3, 2.4, 8).translate(CX + sd * 6.1, top + 6.6, CZ + 4.2), ICE3);        // the arm's end boss
+          col.add({ type: 'box', box: new THREE.Box3(V3(CX + sd * 6.1 - 1.5, top, CZ - 5.6), V3(CX + sd * 6.1 + 1.5, top + 6.2, CZ + 5.2)) });
         }
-        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 6.3, top, CZ + BZ - 2.7), V3(CX + 6.3, top + BH + 3, CZ + BZ + 1.6)) });
-        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 5.2, top - 2, CZ - 3.5), V3(CX + 5.2, top + 2.0, CZ + 4.0)), walkable: true });
-        fringe(CX - 4.9, CZ + 3.9, CX + 4.9, CZ + 3.9, top + 2.0, 12);          // icicle fringes: seat lip,
-        for (const sd of [-1, 1]) fringe(CX + sd * 5.5, CZ - 3.5, CX + sd * 5.5, CZ + 3.7, top + 4.2, 8);   // armrest edges,
-        { const cy2 = by + 6.4;                                                 // the crest: a stepped crown and two frost spires, so the back ends in a throne instead of a flat parapet
-          P(new THREE.BoxGeometry(9.0, 0.9, 3.0).translate(CX, cy2 + 0.45, CZ + BZ), ICE2);
-          P(new THREE.BoxGeometry(6.0, 0.9, 2.6).translate(CX, cy2 + 1.3, CZ + BZ), ICE);
-          P(new THREE.ConeGeometry(1.5, 5.2, 6).translate(CX, cy2 + 4.3, CZ + BZ), ICE);
-          for (const sd of [-1, 1]) P(new THREE.ConeGeometry(0.85, 3.2, 6).rotateZ(sd * 0.16).translate(CX + sd * 3.4, cy2 + 3.2, CZ + BZ), ICE2);
-          fringe(CX - 3.9, CZ + BZ + 1.3, CX + 3.9, CZ + BZ + 1.3, cy2, 9); }   // and icicles off the crown
-        ring(4, 16, (a) => { const px = CX + Math.cos(a) * 16, pz = CZ + Math.sin(a) * 16, ph = 12 + rng() * 4;
-          pillar(px, pz, ph, 1.2, 0.5, [0.74, 0.85, 0.98]);
-          fringe(px - 1.0, pz, px + 1.0, pz, h(px, pz) + ph * 0.7, 5); });      // frost collars on the ring pillars
+        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 8.4, top, CZ + BZ - 3.6), V3(CX + 8.4, BTOP + 4, CZ + BZ + 2.2)) });
+        col.add({ type: 'box', box: new THREE.Box3(V3(CX - 6.8, top - 2, CZ - 4.6), V3(CX + 6.8, top + 2.6, CZ + 5.2)), walkable: true });
+        fringe(CX - 6.6, CZ + 5.1, CX + 6.6, CZ + 5.1, top + 2.6, 14);          // icicle fringes: seat lip,
+        for (const sd of [-1, 1]) fringe(CX + sd * 7.4, CZ - 4.8, CX + sd * 7.4, CZ + 4.9, top + 6.0, 9);   // armrest edges,
+        { const cy2 = BTOP;                                                     // the crest: each block NARROWER than the one under it, so nothing overhangs air
+          P(new THREE.BoxGeometry(8.4, 1.4, 3.4).translate(CX, cy2 + 0.7, CZ + BZ), ICE2);
+          P(new THREE.BoxGeometry(6.2, 1.4, 3.0).translate(CX, cy2 + 1.9, CZ + BZ), ICE);
+          // The crest ends in a NEEDLE, and that is a deliberate silhouette decision, not decoration: the
+          // walk-in bearing rolls over snow hummocks that sit within a few metres of eye height 30-40 m in
+          // front of the player, and a hummock that close occludes a huge elevation band however tall the
+          // monument is. A thin spire is the only shape that stays above that line the whole way in — and
+          // it is what the aether crystal sits on, which is the part that actually catches the eye at 280 m.
+          P(new THREE.ConeGeometry(2.2, 9.0, 6).translate(CX, cy2 + 6.8, CZ + BZ), ICE);
+          P(new THREE.ConeGeometry(1.05, 12.0, 6).translate(CX, cy2 + 15.6, CZ + BZ), ICE3);
+          for (const sd of [-1, 1]) P(new THREE.ConeGeometry(1.15, 5.4, 6).rotateZ(sd * 0.15).translate(CX + sd * 4.0, cy2 + 4.8, CZ + BZ), ICE2);
+          PA(new THREE.OctahedronGeometry(2.1).scale(0.72, 1.6, 0.72).translate(CX, cy2 + 23.4, CZ + BZ), AETH);      // the heart of the throne, above the crown
+          for (let i = 0; i < 4; i++) PA(new THREE.BoxGeometry(0.9 - i * 0.12, 0.44, 0.44).translate(CX, cy2 + 12.0 + i * 2.6, CZ + BZ), AETH);
+          fringe(CX - 5.4, CZ + BZ + 1.6, CX + 5.4, CZ + BZ + 1.6, cy2, 11); }  // and icicles off the crown
+        GLP = V3(CX + bx0 * 30, h(CX + bx0 * 30, CZ + bz0 * 30), CZ + bz0 * 30);   // the floor sigil moved to the foot of the stair: under the terrace it is buried
+        ring(6, 26, (a) => { const px = CX + Math.cos(a) * 26, pz = CZ + Math.sin(a) * 26, ph = 16 + rng() * 6;
+          pillar(px, pz, ph, 1.6, 0.5, [0.74, 0.85, 0.98]);
+          fringe(px - 1.3, pz, px + 1.3, pz, h(px, pz) + ph * 0.7, 5); });      // frost collars on the ring pillars
       } else if (B.id === 'celestial') {
         // THE EMPYREAN GATE (attempt 3 — img2threejs GLB-mediated track against the Tripo structural
         // baseline tools/out/assetgen/tripo/empyrean_gate.glb + the concept empyrean_gate_a.jpg; the GLB
@@ -1330,7 +1622,13 @@ export class Props {
         let gy = 1e9;                                                            // seat on the LOWEST footprint sample: no floating podium corner
         for (const s of [[0, 0], [17, 0], [-17, 0], [0, 8], [0, -8], [14, 7], [-14, 7], [14, -7], [-14, -7]]) { const p = WD(s[0], s[1]); gy = Math.min(gy, h(p[0], p[1])); }
         const ryG = Math.atan2(-ux, -uz);   // local +X -> tangent (the gate runs ACROSS the approach), +Z -> home: the front faces arrivals
-        const MARB = [0.97, 0.95, 0.87], MARB2 = [0.88, 0.86, 0.78], MARB3 = [0.76, 0.75, 0.70];
+        // Wave-3 celestial major: "gate mean RGB 0.497/0.507/0.439 (grey-green) against floor 0.693/0.691/0.648
+        // (warm ivory marble), same frame, same light — the hero object is a different, drabber material than
+        // the ground it stands on." Tints re-derived per channel against that measurement (x1.25, with the
+        // red bias the old tint was missing), landing the facade a step under the floor — correct for a
+        // vertical face at noon — instead of a different stone. The plywood banding is fixed on the material
+        // (regionMat.celestial uTriScale 0.34 -> 0.85: 1.2 m veining, not 3 m sedimentary courses).
+        const MARB = [1.22, 1.19, 1.15], MARB2 = [1.10, 1.07, 1.03], MARB3 = [0.95, 0.93, 0.92];
         const DV = (g, t) => { this._divine.parts.push(g); this._divine.tints.push(t ?? [1, 1, 1]); };
         // Podium top clears the surrounding grade by ~0.2 m, NOT 0.8: Colliders' walkable boxes only let
         // you step up 0.6 m, so a podium seated on the lowest footprint sample and raised 2.6 walls the
@@ -1359,7 +1657,7 @@ export class Props {
         };
         // ---- podium: three courses + the steps down toward home
         { let yy = -1.0;
-          for (const c of [[38, 23, 1.5], [34.5, 20.5, 1.0], [31, 18, 0.5]]) {
+          for (const c of [[43, 26, 1.6], [39, 23, 1.1], [35, 20, 0.55]]) {
             LG(new THREE.BoxGeometry(c[0], c[2], c[1]), 0, yy + c[2] / 2, 0, yy < -0.2 ? MARB3 : MARB2);
             LG(new THREE.BoxGeometry(c[0] + 0.7, 0.26, c[1] + 0.7), 0, yy + c[2] - 0.13, 0, MARB);   // projecting lip: the courses read as mouldings, not slabs, at 10 m
             yy += c[2];
@@ -1369,7 +1667,7 @@ export class Props {
           // middle — the first pass dropped the player 0.4 m into the marble). Runs out to the base-course
           // edge in front so the top tread of the stair is a single 0.5 m step away.
           const s = 1.8, sp = 2.6;
-          for (let lx = -13.3; lx <= 13.31; lx += sp) for (let lz = -6.8; lz <= 11.51; lz += sp) {
+          for (let lx = -15.1; lx <= 15.11; lx += sp) for (let lz = -7.6; lz <= 12.81; lz += sp) {
             const p = WD(lx, lz);
             col.add({ type: 'box', box: new THREE.Box3(V3(p[0] - s, gy - 3, p[1] - s), V3(p[0] + s, PY, p[1] + s)), walkable: true });
           } }
@@ -1377,16 +1675,16 @@ export class Props {
         // walked down the slope until it MEETS grade: 0.5 m risers because Colliders' walkable step-up is
         // 0.6, 1.5 m treads so the run reads monumental. Terrain-sampled per step, so it works on the
         // swale in front of the gate instead of ending in mid-air.
-        { let sy = PY, sz = 11.6;
+        { let sy = PY, sz = 12.9;
           for (let i = 0; i < 14; i++) {
             sz += 1.5; const p = WD(0, sz), gnd = h(p[0], p[1]);
             const next = Math.max(sy - 0.5, gnd + 0.2);
             if (next >= sy - 0.02) break;                                        // reached grade
             sy = next;
-            const w = 20 - i * 0.35, hgt = Math.max(2.2, sy - gnd + 1.5);        // each tread is a BLOCK down past grade: a stair on a slope that hangs in the air is the floater bug
+            const w = 23 - i * 0.4, hgt = Math.max(2.2, sy - gnd + 1.5);         // each tread is a BLOCK down past grade: a stair on a slope that hangs in the air is the floater bug
             P(new THREE.BoxGeometry(w, hgt, 1.7).rotateY(ryG).translate(p[0], sy - hgt / 2, p[1]), MARB2);
             P(new THREE.BoxGeometry(w + 0.5, 0.22, 1.85).rotateY(ryG).translate(p[0], sy - 0.11, p[1]), MARB);   // nosing
-            walkTop(0, sz, 13, 1.7, sy - 3.5, sy);       // 13 m of walkable tread, one square per 1.4 m: never overlaps the next riser
+            walkTop(0, sz, 15, 1.7, sy - 3.5, sy);       // 15 m of walkable tread, one square per 1.4 m: never overlaps the next riser
           } }
         // ---- the facade: a real pierced arch, standing on its own plinth course
         // FB stays 0: the archway floor IS the podium top, so you can walk through it. The plinth course
@@ -1394,103 +1692,171 @@ export class Props {
         // SPR 8.6 (not 9.9) on purpose: the Tripo baseline keeps a deep FIELD between the arch head and the
         // entablature, and that field is where its gold cartouche lives — the single loudest ornament at
         // 45 m. A taller opening eats the field and the facade goes blank above the arch again.
-        const W2 = 12.6, FB = 0, FH = 19.8, FD = 7.0, AR = 5.6, SPR = 8.6;       // half-width / facade base / height / depth, arch radius / springline
-        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(7.0, 1.15, 9.4), sd * 9.1, 0.575, 0, MARB2);   // flush with the jamb: no ledge inside the opening
+        // SCALED UP (wave-3 major, third wave running: "the gate only enters frame around 45-60 m and even
+        // there it subtends ~20 m, not the 35-45 m asked for twice"). Facade 19.8 -> 24.0 and the pediment
+        // pitch 18 -> 26 deg, which puts the apex ~43.8 m over the gate's own grade (y 109.9). Sightline
+        // maths from the arrival, done against terrainKernel rather than guessed: eye at goto('celestial',250)
+        // is y 36.2, the blocking escarpment lip is at d=135 y~61, so anything above y 76.5 at the gate is
+        // in frame — the new apex clears that by 33 m, a 10 deg silhouette instead of a sliver.
+        const W2 = 14.0, FB = 0, FH = 24.0, FD = 7.6, AR = 6.6, SPR = 10.2;      // half-width / facade base / height / depth, arch radius / springline
+        const PC = (W2 + AR) / 2, PW = W2 - AR;                                  // pier centre / pier width
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(PW, 1.25, 10.2), sd * PC, 0.625, 0, MARB2);   // flush with the jamb: no ledge inside the opening
         { const fs = new THREE.Shape();
           fs.moveTo(-W2, 0); fs.lineTo(W2, 0); fs.lineTo(W2, FH); fs.lineTo(-W2, FH); fs.closePath();
           const hp = new THREE.Path(); hp.moveTo(-AR, 0); hp.lineTo(-AR, SPR); hp.absarc(0, SPR, AR, Math.PI, 0, true); hp.lineTo(AR, 0); hp.closePath();
           fs.holes.push(hp);
           L(new THREE.ExtrudeGeometry(fs, { depth: FD, bevelEnabled: false, curveSegments: 20 }).translate(0, 0, -FD / 2), 0, FB, 0, MARB); }
-        for (const sd of [-1, 1]) boxCol(sd * (W2 + AR) / 2, 0, W2 - AR, FD + 2.4, PY - 2, PY + FH, false);   // pier colliders (deep enough to cover the plinth blocks) — the archway stays walk-through
-        // pier faces: a recessed panel frame + a gold inlay line, front and back (the 10 m read)
+        for (const sd of [-1, 1]) boxCol(sd * PC, 0, PW, FD + 2.4, PY - 2, PY + FH, false);   // pier colliders (deep enough to cover the plinth blocks) — the archway stays walk-through
+        // PIER FACES. The old pass drew a horizontal marble bar plus a 0.22 x 6.4 gold stripe down the middle
+        // of it, which is why the wave-3 verdict read the ornament as "two crude plus-signs on the piers".
+        // Gold is now RELIEF, never a painted line: a bevelled panel frame in marble, a gold bead course
+        // running the frame, and a gold patera (disc + petal ring) bossed proud at the panel centre.
         for (const sd of [-1, 1]) for (const zf of [1, -1]) {
-          const t0 = sd * 9.1, zz = zf * (FD / 2 + 0.18);
-          L(new THREE.BoxGeometry(5.0, 0.34, 0.36), t0, FB + 4.2, zz, MARB2); L(new THREE.BoxGeometry(5.0, 0.34, 0.36), t0, FB + 13.4, zz, MARB2);
-          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.34, 9.2, 0.36), t0 + e * 2.33, FB + 8.8, zz, MARB2);
-          L(new THREE.BoxGeometry(0.22, 6.4, 0.30), t0, FB + 8.8, zz + zf * 0.06, [1, 1, 1], true);
+          const t0 = sd * PC, zz = zf * (FD / 2 + 0.18), CY1 = FB + 10.1;
+          L(new THREE.BoxGeometry(5.4, 0.40, 0.42), t0, FB + 4.6, zz, MARB2); L(new THREE.BoxGeometry(5.4, 0.40, 0.42), t0, FB + 15.6, zz, MARB2);
+          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.40, 11.0, 0.42), t0 + e * 2.5, CY1, zz, MARB2);
+          for (const e of [-1, 1]) {                                             // gold bead course inside the frame: 9 small spheres a side, real geometry with a highlight
+            for (let i = 0; i < 9; i++) L(new THREE.SphereGeometry(0.15, 6, 4), t0 + e * 2.5, CY1 - 4.4 + i * 1.1, zz + zf * 0.10, [1, 1, 1], true);
+          }
+          L(new THREE.CylinderGeometry(0.92, 0.92, 0.34, 14).rotateX(Math.PI / 2), t0, CY1, zz + zf * 0.16, [1, 1, 1], true);          // patera boss
+          for (let i = 0; i < 10; i++) { const a2 = i / 10 * 6.2832;             // petal ring around it
+            L(new THREE.BoxGeometry(0.20, 0.72, 0.24).rotateZ(a2), t0 + Math.cos(a2 + 1.5708) * 1.22, CY1 + Math.sin(a2 + 1.5708) * 1.22, zz + zf * 0.10, [1, 1, 1], true); }
         }
         // impost string course: PIER-ONLY, never across the void — a band spanning the opening reads as a
         // lintel dropped through the archway (it did: the first pass put a gold beam across the doorway)
         for (const sd of [-1, 1]) {
-          L(new THREE.BoxGeometry(7.6, 0.62, 7.9), sd * 9.1, FB + SPR + 0.31, 0, MARB2);
-          L(new THREE.BoxGeometry(7.7, 0.20, 8.0), sd * 9.1, FB + SPR - 0.10, 0, [1, 1, 1], true);
+          L(new THREE.BoxGeometry(PW + 0.3, 0.68, 8.6), sd * PC, FB + SPR + 0.34, 0, MARB2);
+          L(new THREE.BoxGeometry(PW + 0.4, 0.22, 8.7), sd * PC, FB + SPR - 0.11, 0, [1, 1, 1], true);   // a fillet UNDER a cornice is a moulding, not a stripe: it catches its own shadow
         }
-        // gold archivolt + keystone over the opening, both faces
+        // THE ARCHIVOLT, as mouldings rather than "an orange stroke hugging the arch": a marble voussoir ring
+        // carrying a gold torus, a finer gold bead-and-reel inside it, and a carved keystone with a boss.
+        // Ordered OUTWARD from the opening so the rings never intersect: gold lip torus, then a continuous
+        // marble voussoir ring, then the gold outer moulding carrying the bead-and-reel. The first pass
+        // interleaved them (voussoirs 6.6-8.1 straddling a torus at 6.9) and the arch head came out as gold
+        // arcs with marble teeth poking through — worse than the flat band it replaced.
+        const VR = AR + 0.85, OR2 = AR + 1.85;
         for (const zf of [1, -1]) {
-          L(new THREE.TorusGeometry(AR + 0.34, 0.34, 8, 26, Math.PI), 0, FB + SPR, zf * (FD / 2 + 0.14), [1, 1, 1], true);
-          L(new THREE.BoxGeometry(1.5, 2.6, 1.1), 0, FB + SPR + AR + 0.7, zf * (FD / 2 + 0.05), [1, 1, 1], true);
+          const zz = zf * (FD / 2 + 0.16);
+          L(new THREE.TorusGeometry(AR + 0.16, 0.22, 8, 30, Math.PI), 0, FB + SPR, zz, [1, 1, 1], true);        // gold lip on the intrados edge
+          for (let i = 0; i <= 17; i++) { const a2 = Math.PI * i / 17;           // voussoirs: 18 marble blocks, wide enough to CLOSE the ring
+            L(new THREE.BoxGeometry(1.32, 1.7, 0.46).rotateZ(a2 - Math.PI / 2), Math.cos(a2) * -VR, FB + SPR + Math.sin(a2) * VR, zf * (FD / 2 + 0.07), i % 2 ? MARB2 : MARB3); }
+          L(new THREE.TorusGeometry(OR2, 0.32, 8, 30, Math.PI), 0, FB + SPR, zz, [1, 1, 1], true);              // gold outer moulding
+          for (let i = 1; i < 14; i++) { const a2 = Math.PI * i / 14;            // bead-and-reel riding the outer moulding
+            L(new THREE.SphereGeometry(0.22, 6, 4), Math.cos(a2) * -OR2, FB + SPR + Math.sin(a2) * OR2, zz + zf * 0.10, [1, 1, 1], true); }
+          // KEYSTONE: a stepped wedge that STRADDLES the arch head (the first pass floated a 1.8 m cube 0.3 m
+          // clear above the extrados — a white block hanging over the arch, which is exactly the floater read
+          // this landmark keeps getting docked for). It now overlaps both rings and breaks the skyline of the
+          // moulding, which is what a keystone is for.
+          L(new THREE.BoxGeometry(1.7, 2.4, 1.35), 0, FB + SPR + AR + 1.1, zf * (FD / 2 + 0.05), MARB);
+          L(new THREE.BoxGeometry(2.5, 1.3, 1.45), 0, FB + SPR + AR + 2.95, zf * (FD / 2 + 0.05), MARB2);
+          L(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 12).rotateX(Math.PI / 2), 0, FB + SPR + AR + 1.0, zz + 0.4 * zf, [1, 1, 1], true);
         }
         for (let i = 0; i < 4; i++)                                              // barrel-vault ribs inside the archway: it is coffered when you walk through.
-          L(new THREE.TorusGeometry(AR - 0.14, 0.24, 6, 22, Math.PI), 0, FB + SPR, -2.6 + i * 1.75, i % 2 ? MARB2 : MARB3);   // MARBLE, not gold: gold ribs behind the gold archivolt read as concentric rainbow arcs
+          L(new THREE.TorusGeometry(AR - 0.14, 0.24, 6, 22, Math.PI), 0, FB + SPR, -2.8 + i * 1.9, i % 2 ? MARB2 : MARB3);   // MARBLE, not gold: gold ribs behind the gold archivolt read as concentric rainbow arcs
         // THE CARTOUCHE: the gold-framed relief field over the arch — the baseline's signature, and what
         // carries the "ornate" read at 45 m. Front face only; the back gets the frame without the emblem.
         for (const zf of [1, -1]) {
-          const zz = zf * (FD / 2 + 0.22), CY0 = FB + SPR + AR + 2.9;            // centred in the field between arch head and entablature
-          L(new THREE.BoxGeometry(13.0, 4.2, 0.5), 0, CY0, zf * (FD / 2 + 0.1), MARB3);          // recessed field
-          L(new THREE.BoxGeometry(13.6, 0.38, 0.42), 0, CY0 + 2.05, zz, [1, 1, 1], true);        // gold frame
-          L(new THREE.BoxGeometry(13.6, 0.38, 0.42), 0, CY0 - 2.05, zz, [1, 1, 1], true);
-          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.38, 4.5, 0.42), e * 6.6, CY0, zz, [1, 1, 1], true);
-          for (const e of [-1, 1]) L(new THREE.BoxGeometry(1.5, 0.3, 0.34).rotateZ(e * 0.5), e * 4.4, CY0 + 1.2, zz, [1, 1, 1], true);   // scroll corners
+          // Sits in the 5 m field between the arch's outer moulding (top 18.97) and the architrave (24.0),
+          // so the keystone engages its lower rail instead of floating in front of it.
+          const zz = zf * (FD / 2 + 0.24), CY0 = FB + SPR + AR + 5.1;
+          L(new THREE.BoxGeometry(14.6, 4.0, 0.55), 0, CY0, zf * (FD / 2 + 0.1), MARB3);         // recessed field
+          for (const dy of [1.95, -1.95]) {                                      // gold frame: a fillet + a bead run INSIDE it, i.e. two planes of relief, not one flat outline
+            L(new THREE.BoxGeometry(15.2, 0.40, 0.46), 0, CY0 + dy, zz, [1, 1, 1], true);
+            for (let i = 0; i < 15; i++) L(new THREE.SphereGeometry(0.16, 6, 4), -6.3 + i * 0.9, CY0 + dy - Math.sign(dy) * 0.36, zz + zf * 0.04, [1, 1, 1], true);
+          }
+          for (const e of [-1, 1]) L(new THREE.BoxGeometry(0.40, 4.3, 0.46), e * 7.4, CY0, zz, [1, 1, 1], true);
+          for (const e of [-1, 1]) for (const dy of [1, -1]) {                   // corner rosettes, all four. The wave-3 verdict called the old diagonal ticks "unexplained"; a
+            const cx2 = e * 6.05, cy2 = CY0 + dy * 1.35;                         // disc with a petal ring is a thing an eye can name at 45 m, and it is relief, not a stroke.
+            L(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10).rotateX(Math.PI / 2), cx2, cy2, zz + zf * 0.12, [1, 1, 1], true);
+            for (let i = 0; i < 6; i++) { const a2 = i / 6 * 6.2832;
+              L(new THREE.BoxGeometry(0.14, 0.38, 0.20).rotateZ(a2), cx2 + Math.cos(a2 + 1.5708) * 0.48, cy2 + Math.sin(a2 + 1.5708) * 0.48, zz + zf * 0.06, [1, 1, 1], true); }
+          }
           if (zf > 0) {                                                          // the sunburst emblem, arrivals side
-            L(new THREE.CylinderGeometry(1.05, 1.05, 0.4, 16).rotateX(Math.PI / 2), 0, CY0, zz + 0.12, [1, 1, 1], true);
-            for (let i = 0; i < 14; i++) { const a2 = i / 14 * 6.2832 + 0.22;
-              L(new THREE.BoxGeometry(0.26, 1.9 + (i % 2) * 0.7, 0.28).rotateZ(a2), Math.cos(a2 + 1.5708) * 1.6, CY0 + Math.sin(a2 + 1.5708) * 1.6, zz + 0.06, [1, 1, 1], true); }
+            L(new THREE.CylinderGeometry(1.25, 1.25, 0.44, 16).rotateX(Math.PI / 2), 0, CY0, zz + 0.14, [1, 1, 1], true);
+            L(new THREE.SphereGeometry(0.78, 12, 9), 0, CY0, zz + 0.30, [1, 1, 1], true);        // domed centre: the emblem catches a moving highlight instead of sitting flat
+            for (let i = 0; i < 16; i++) { const a2 = i / 16 * 6.2832 + 0.22;
+              L(new THREE.BoxGeometry(0.30, 1.9 + (i % 2) * 0.8, 0.32).rotateZ(a2), Math.cos(a2 + 1.5708) * 1.75, CY0 + Math.sin(a2 + 1.5708) * 1.75, zz + 0.06, [1, 1, 1], true); }
           }
         }
         // ---- four free-standing great columns on pedestals, proud of the facade
-        const CH = 16.65, CS = 1.55, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
-        for (const t of [-13.4, -9.2, 9.2, 13.4]) {
-          const brk = t === 13.4;                                                // one snapped column: a RUIN, not a mint
-          L(new THREE.BoxGeometry(3.6, 3.1, 3.6), t, 1.55, 5.0, MARB2);          // pedestal
-          L(new THREE.BoxGeometry(4.1, 0.4, 4.1), t, 3.3, 5.0, MARB3);           // pedestal cap moulding
-          const p = WD(t, 5.0);
+        // CH set so the abacus lands exactly on the architrave top: 3.5 (pedestal) + CH + 1.15 (capital) = FH + 1.5.
+        const CH = FH + 1.5 - 4.65, CS = 1.5, colI = columnGeometry(CH, false, rng), colB = columnGeometry(CH, true, rng);
+        const COLT = [-15.0, -10.2, 10.2, 15.0];
+        for (const t of COLT) {
+          const brk = t === 15.0;                                                // one snapped column: a RUIN, not a mint
+          L(new THREE.BoxGeometry(3.9, 3.1, 3.9), t, 1.55, 5.4, MARB2);          // pedestal
+          L(new THREE.BoxGeometry(4.4, 0.4, 4.4), t, 3.3, 5.4, MARB3);           // pedestal cap moulding
+          const p = WD(t, 5.4);
           const g = (brk ? colB : colI).clone().scale(CS, brk ? 0.52 : 1, CS).rotateY(ryG).translate(p[0], PY + 3.5, p[1]);
           P(g, MARB);
-          col.add({ type: 'capsule', a: V3(p[0], PY - 1, p[1]), b: V3(p[0], PY + (brk ? 12 : 20), p[1]), r: 2.1 });   // r covers the pedestal corners, not just the shaft
+          if (!brk) L(new THREE.TorusGeometry(1.28, 0.13, 6, 20), t, 3.5 + CH * 0.995, 5.4, [1, 1, 1], true);   // gold astragal under each capital
+          col.add({ type: 'capsule', a: V3(p[0], PY - 1, p[1]), b: V3(p[0], PY + (brk ? 12 : 23), p[1]), r: 2.1 });   // r covers the pedestal corners, not just the shaft
         }
         // ---- entablature: architrave, GOLD frieze, dentils, cornice — breaking forward over every column
-        const EB = FB + FH;                                                      // 20.9: entablature springs off the facade head
-        L(new THREE.BoxGeometry(27.8, 1.5, 8.8), 0, EB + 0.75, 0.3, MARB);
-        L(new THREE.BoxGeometry(28.1, 1.6, 9.0), 0, EB + 2.3, 0.3, [1, 1, 1], true);       // gold frieze (divine bucket: warm sheen at night)
-        for (let i = 0; i < 22; i++) L(new THREE.BoxGeometry(0.62, 0.62, 0.55), -13.1 + i * 1.25, EB + 3.4, 4.9, MARB2);   // dentil course
-        L(new THREE.BoxGeometry(29.2, 1.3, 9.8), 0, EB + 4.35, 0.3, MARB);                 // cornice
-        for (const t of [-13.4, -9.2, 9.2, 13.4]) {                              // the ressaut: entablature steps out over each column
-          L(new THREE.BoxGeometry(4.0, 1.5, 2.8), t, EB + 0.75, 5.3, MARB);
-          L(new THREE.BoxGeometry(4.2, 1.6, 2.9), t, EB + 2.3, 5.35, [1, 1, 1], true);
-          L(new THREE.BoxGeometry(4.6, 1.3, 3.3), t, EB + 4.35, 5.5, MARB);
+        const EB = FB + FH;                                                      // 24.0: entablature springs off the facade head
+        L(new THREE.BoxGeometry(31.0, 1.7, 9.4), 0, EB + 0.85, 0.3, MARB);
+        // THE FRIEZE was a solid gold box 28 m long — the "solid orange band across the entablature". It is
+        // now a MARBLE band between two gold fillets, with a rhythm of gold paterae along it: the gold reads
+        // as ornament with spacing and shadow instead of masking tape, and at 250 m it is a glinting line
+        // under the cornice rather than a flat orange stripe.
+        L(new THREE.BoxGeometry(31.3, 1.9, 9.55), 0, EB + 2.7, 0.3, MARB2);
+        for (const dy of [-0.98, 0.98]) L(new THREE.BoxGeometry(31.5, 0.24, 9.7), 0, EB + 2.7 + dy, 0.3, [1, 1, 1], true);
+        for (let i = 0; i < 15; i++) { const t = -14.0 + i * 2.0;
+          L(new THREE.CylinderGeometry(0.46, 0.46, 0.3, 12).rotateX(Math.PI / 2), t, EB + 2.7, 5.05, [1, 1, 1], true);
+          L(new THREE.BoxGeometry(0.22, 1.5, 0.26), t + 1.0, EB + 2.7, 4.95, [1, 1, 1], true); }
+        for (let i = 0; i < 26; i++) L(new THREE.BoxGeometry(0.66, 0.66, 0.6), -15.0 + i * 1.2, EB + 4.15, 5.2, MARB2);   // dentil course
+        L(new THREE.BoxGeometry(32.6, 1.5, 10.4), 0, EB + 5.0, 0.3, MARB);                 // cornice
+        L(new THREE.BoxGeometry(32.7, 0.2, 10.5), 0, EB + 4.18, 0.3, [1, 1, 1], true);     // gold fillet under the corona
+        for (const t of COLT) {                                                  // the ressaut: entablature steps out over each column
+          L(new THREE.BoxGeometry(4.2, 1.7, 3.0), t, EB + 0.85, 5.7, MARB);
+          L(new THREE.BoxGeometry(4.4, 1.9, 3.1), t, EB + 2.7, 5.75, MARB2);
+          for (const dy of [-0.98, 0.98]) L(new THREE.BoxGeometry(4.5, 0.24, 3.2), t, EB + 2.7 + dy, 5.75, [1, 1, 1], true);
+          L(new THREE.BoxGeometry(4.9, 1.5, 3.5), t, EB + 5.0, 5.9, MARB);
         }
         // ---- attic band (LOW, per the baseline: the pediment sits nearly on the cornice — a tall attic is
         // what made attempt 2 read as a stepped ziggurat) with a gold inscription course
-        const AY = EB + 5.0;                                                     // attic base 24.8
-        L(new THREE.BoxGeometry(25.0, 2.8, 8.0), 0, AY + 1.4, 0.3, MARB);
-        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(1.1, 2.8, 8.2), sd * 12.0, AY + 1.4, 0.3, MARB2);   // corner pilaster strips
-        L(new THREE.BoxGeometry(18.0, 0.9, 0.34), 0, AY + 1.4, 4.25, [1, 1, 1], true);     // inscription band
-        for (let i = 0; i < 7; i++) L(new THREE.OctahedronGeometry(0.34), -7.2 + i * 2.4, AY + 1.4, 4.45, [1, 1, 1], true);   // rosettes along it
-        // ---- BROKEN PEDIMENT: the skyline. Left raker whole, right one snapped mid-air over a jagged
-        // stub, tympanum stopping at the wound — sky through the break from 200 m.
-        const PB = AY + 2.8;                                                     // 27.6 — pediment sits nearly on the cornice
-        L(new THREE.BoxGeometry(27.0, 1.0, 8.8), 0, PB + 0.5, 0.3, MARB);        // pediment base cornice
-        { const ty = new THREE.Shape();                                          // 18 deg pitch, broken right of the apex
-          ty.moveTo(-12.2, 0); ty.lineTo(-0.4, 4.0); ty.lineTo(2.9, 2.9); ty.lineTo(3.4, 1.8); ty.lineTo(4.8, 1.4); ty.lineTo(5.2, 0); ty.closePath();
-          L(new THREE.ExtrudeGeometry(ty, { depth: 6.6, bevelEnabled: false }).translate(0, 0, -3.3), 0, PB + 1.0, 0.3, MARB2); }
-        L(new THREE.BoxGeometry(14.2, 1.2, 8.6).rotateZ(0.317), -6.2, PB + 3.4, 0.3, MARB);       // left raking cornice, whole to the apex
-        L(new THREE.BoxGeometry(5.4, 1.2, 8.6).rotateZ(-0.317), 9.9, PB + 2.2, 0.3, MARB);        // right raker, BROKEN short
-        L(new THREE.BoxGeometry(1.6, 2.1, 6.2).rotateZ(0.36), 6.7, PB + 2.9, 0.3, MARB2);         // jagged stubs at the break
-        L(new THREE.BoxGeometry(1.2, 1.5, 4.8).rotateZ(-0.52), 3.6, PB + 4.0, 0.3, MARB2);
-        L(new THREE.BoxGeometry(2.0, 1.5, 2.2).rotateZ(0.2).rotateY(0.4), 12.4, PB + 0.9, 3.4, MARB3);   // and the corner chunk that fell off the cornice
+        const AY = EB + 5.75;                                                    // attic base 29.75
+        L(new THREE.BoxGeometry(27.5, 3.1, 8.6), 0, AY + 1.55, 0.3, MARB);
+        for (const sd of [-1, 1]) L(new THREE.BoxGeometry(1.2, 3.1, 8.8), sd * 13.2, AY + 1.55, 0.3, MARB2);   // corner pilaster strips
+        L(new THREE.BoxGeometry(20.0, 0.95, 0.36), 0, AY + 1.55, 4.6, [1, 1, 1], true);    // inscription band
+        for (let i = 0; i < 9; i++) L(new THREE.OctahedronGeometry(0.36), -8.0 + i * 2.0, AY + 1.55, 4.8, [1, 1, 1], true);   // rosettes along it
+        // ---- BROKEN PEDIMENT: the skyline, and the single biggest contributor to the 250 m read. Pitch
+        // raised 18 -> 26 deg (the Tripo baseline's is steeper still): a shallow gable disappears into the
+        // cornice line at distance, a steep one is a triangle you can name from the pass. Left raker whole,
+        // right one snapped mid-air over a jagged stub — sky through the break from 200 m.
+        const PB = AY + 3.1;                                                     // 32.85
+        L(new THREE.BoxGeometry(30.0, 1.1, 9.4), 0, PB + 0.55, 0.3, MARB);       // pediment base cornice
+        { const ty = new THREE.Shape();                                          // 26 deg pitch, broken right of the apex
+          ty.moveTo(-13.6, 0); ty.lineTo(-0.45, 6.64); ty.lineTo(3.23, 4.82); ty.lineTo(3.79, 2.99); ty.lineTo(5.35, 2.32); ty.lineTo(5.8, 0); ty.closePath();
+          L(new THREE.ExtrudeGeometry(ty, { depth: 7.0, bevelEnabled: false }).translate(0, 0, -3.5), 0, PB + 1.1, 0.3, MARB2); }
+        L(new THREE.BoxGeometry(15.9, 1.3, 9.2).rotateZ(0.4538), -6.9, PB + 4.3, 0.3, MARB);      // left raking cornice, whole to the apex
+        L(new THREE.BoxGeometry(6.2, 1.3, 9.2).rotateZ(-0.4538), 10.9, PB + 2.5, 0.3, MARB);      // right raker, BROKEN short
+        L(new THREE.BoxGeometry(1.8, 2.4, 6.6).rotateZ(0.36), 7.4, PB + 3.6, 0.3, MARB2);         // jagged stubs at the break
+        L(new THREE.BoxGeometry(1.3, 1.7, 5.2).rotateZ(-0.52), 4.0, PB + 5.4, 0.3, MARB2);
+        L(new THREE.BoxGeometry(2.2, 1.6, 2.4).rotateZ(0.2).rotateY(0.4), 13.6, PB + 0.95, 3.6, MARB3);  // and the corner chunk that fell off the cornice
+        // ACROTERIA at the surviving corners + the apex finial: the baseline has them, and they are what
+        // stops the roofline from ending in a bare 90 deg corner against the sky.
+        for (const [t, yy] of [[-13.9, PB + 1.1], [13.9, PB + 1.1], [-0.45, PB + 7.7]]) {
+          L(new THREE.BoxGeometry(1.5, 0.7, 1.5), t, yy + 0.35, 0.3, MARB2);
+          L(new THREE.ConeGeometry(0.62, 1.9, 6), t, yy + 1.65, 0.3, MARB);
+          L(new THREE.OctahedronGeometry(0.44).scale(1, 1.5, 1), t, yy + 2.9, 0.3, [1, 1, 1], true);
+        }
         // ---- ruined colonnade wings: low fluted rows running out along the tangent
-        const colW = columnGeometry(9.4, false, rng), colWB = columnGeometry(9.4, true, rng), wtops = [];
+        const WCH = 11.0, colW = columnGeometry(WCH, false, rng), colWB = columnGeometry(WCH, true, rng), wtops = [];
         for (const sd of [-1, 1]) for (let k = 0; k < 4; k++) {
-          const t = sd * (18.0 + k * 6.2), p = WD(t, 1.0), py = Math.min(h(p[0], p[1]), PY + 0.4) - 0.35;
+          const t = sd * (19.8 + k * 6.6), p = WD(t, 1.0), py = Math.min(h(p[0], p[1]), PY + 0.4) - 0.35;
           const brk = (k === 1 && sd < 0) || (k === 3 && sd > 0) || (k === 2 && sd > 0);
-          P(new THREE.BoxGeometry(2.6, 0.9, 2.6).rotateY(ryG).translate(p[0], py + 0.45, p[1]), MARB2);
-          P((brk ? colWB : colW).clone().scale(1.2, brk ? 0.35 + rng() * 0.35 : 1, 1.2).rotateY(ryG).translate(p[0], py + 0.9, p[1]), MARB);
-          col.add({ type: 'capsule', a: V3(p[0], py - 1, p[1]), b: V3(p[0], py + (brk ? 5 : 12), p[1]), r: 1.2 });
-          wtops.push(brk ? null : [t, py + 0.9 + 12.66]);                        // capital top ((9.4+1.15)*1.2): the architrave beams ride these
+          P(new THREE.BoxGeometry(2.8, 0.9, 2.8).rotateY(ryG).translate(p[0], py + 0.45, p[1]), MARB2);
+          P((brk ? colWB : colW).clone().scale(1.25, brk ? 0.35 + rng() * 0.35 : 1, 1.25).rotateY(ryG).translate(p[0], py + 0.9, p[1]), MARB);
+          col.add({ type: 'capsule', a: V3(p[0], py - 1, p[1]), b: V3(p[0], py + (brk ? 5 : 13), p[1]), r: 1.3 });
+          // columnGeometry's Y is NOT scaled by the .scale(1.25, 1, 1.25) above, so the capital top is
+          // py + 0.9 + WCH + 1.15. The old line used (9.4+1.15)*1.2, which sat the architrave beams 2.1 m
+          // ABOVE the capitals they are supposed to rest on — floating beams, the region's own floater bug.
+          wtops.push(brk ? null : [t, py + 0.9 + WCH + 1.15]);
         }
         for (let i = 0; i + 1 < wtops.length; i++) {                             // beam segments between surviving neighbours
           const a2 = wtops[i], b2 = wtops[i + 1];
-          if (!a2 || !b2 || Math.sign(a2[0]) !== Math.sign(b2[0]) || Math.abs(b2[0] - a2[0]) > 7.0) continue;
+          if (!a2 || !b2 || Math.sign(a2[0]) !== Math.sign(b2[0]) || Math.abs(b2[0] - a2[0]) > 7.4) continue;
           const tm = (a2[0] + b2[0]) / 2, ym = (a2[1] + b2[1]) / 2, pitch = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]), p = WD(tm, 1.0);
           P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 1.8, 1.05, 2.2).rotateZ(pitch).rotateY(ryG).translate(p[0], ym + 0.52, p[1]), MARB);
           P(new THREE.BoxGeometry(Math.abs(b2[0] - a2[0]) + 2.0, 0.5, 2.6).rotateZ(pitch).rotateY(ryG).translate(p[0], ym + 1.3, p[1]), MARB2);
@@ -1507,15 +1873,15 @@ export class Props {
         // to walk at before the arch itself clears the ridge (terrain probe: the spur is ~28 m wide there)
         for (const sd of [-1, 1]) {
           const px = CX - ux * 118 + tx * sd * 10.5, pz = CZ - uz * 118 + tz * sd * 10.5, py = h(px, pz);
-          P(new THREE.BoxGeometry(3.6, 1.1, 3.6).rotateY(ryG).translate(px, py + 0.4, pz), MARB2);
-          P(new THREE.CylinderGeometry(0.95, 1.45, 12.5, 8).rotateY(ryG).translate(px, py + 7.1, pz), MARB);
-          P(new THREE.BoxGeometry(2.9, 0.7, 2.9).rotateY(ryG).translate(px, py + 13.6, pz), MARB2);
-          DV(new THREE.BoxGeometry(3.1, 0.34, 3.1).rotateY(ryG).translate(px, py + 14.1, pz), [1, 1, 1]);
-          DV(new THREE.OctahedronGeometry(0.95).scale(1, 1.5, 1).rotateY(ryG).translate(px, py + 15.1, pz), [1, 1, 1]);
-          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + 13, pz), r: 1.5 });
+          P(new THREE.BoxGeometry(4.0, 1.2, 4.0).rotateY(ryG).translate(px, py + 0.45, pz), MARB2);
+          P(new THREE.CylinderGeometry(1.05, 1.6, 17.0, 8).rotateY(ryG).translate(px, py + 9.6, pz), MARB);
+          P(new THREE.BoxGeometry(3.2, 0.8, 3.2).rotateY(ryG).translate(px, py + 18.4, pz), MARB2);
+          DV(new THREE.BoxGeometry(3.4, 0.36, 3.4).rotateY(ryG).translate(px, py + 19.0, pz), [1, 1, 1]);
+          DV(new THREE.OctahedronGeometry(1.05).scale(1, 1.5, 1).rotateY(ryG).translate(px, py + 20.1, pz), [1, 1, 1]);
+          col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + 18, pz), r: 1.6 });
         }
         LM = V3(gx, gy, gz);                                                     // landmark + floor sigil follow the gate...
-        { const gp = WD(0, 24.0); GLP = V3(gp[0], h(gp[0], gp[1]), gp[1]); }     // ...the sigil onto the apron in front of the steps, clear of the podium
+        { const gp = WD(0, 27.0); GLP = V3(gp[0], h(gp[0], gp[1]), gp[1]); }     // ...the sigil onto the apron in front of the steps, clear of the podium
         this._celGate = LM;                                                      // _pruneCelestialRocks clears the plaza around it
         isles.push({ x: CX + 70, z: CZ - 55, y0: CY + 58, n: 7, spread: 95, tint: [1.0, 0.97, 0.90], kind: 'celestial' });   // near-neutral over marble_strata: the map carries the white, the tint only warms it
       } else if (B.id === 'dragon') {
@@ -1611,7 +1977,45 @@ export class Props {
             put(new THREE.BoxGeometry(2.5, 0.34, 0.14).translate(0, 0.45, zf * 0.94), EMB);   // the band round the foot: the read from the pit lip
           }
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.7 }); });
-        gate(17, 20, 1.9, MAW);
+        gate(22, 28, 1.9, MAW);
+        // THE CINDER STACK (wave-3 major, third wave running: "zero landmark draw at 250 m, 150 m, 60 m or
+        // at night ... a handful of 6-px dark sticks; only the '!' UI marker locates it"). Probed along the
+        // home-pass bearing: the ground is 29-34 m at 200-250 m out while the Maw's floor is 9.8 m, so the
+        // player APPROACHES DOWNHILL and a 31 m henge top sat below their own eye line — there was nothing
+        // to see, at any silhouette quality. The region needed one vertical big enough to clear that, so:
+        // a 62 m fractured vent stack behind the henge on the approach bearing, crown at ~72 m world, 38 m
+        // above the 250 m vantage. Welded drums (each course overlapping the last by a third), a broken
+        // throat, and ember rune bands that are ALBEDO by day and the aether material by night — which is
+        // the other half of the same finding, "no pit, no fire pool, no ember column, no glow spill".
+        { const bh = Math.atan2(-CZ, -CX), sx0 = CX - Math.cos(bh) * 34, sz0 = CZ - Math.sin(bh) * 34, sy0 = h(sx0, sz0);
+          const DRUM = [[13.6, 9.0, 14], [12.0, 8.4, 14], [10.2, 9.4, 13], [8.4, 10.4, 12], [6.6, 11.2, 11], [5.0, 12.0, 10], [3.6, 11.6, 9]];
+          const FOOT = sy0 - 2.5, band = [];                                   // band[] records (x, y, radius) up the stack so the ember courses hug the lean
+          let sy = FOOT, dx = 0, lean = 0;
+          for (const [r, dh, seg] of DRUM) {
+            P(new THREE.CylinderGeometry(r * 0.86, r, dh, seg).rotateZ(lean).translate(sx0 + dx, sy + dh / 2, sz0), MAW);
+            band.push([sx0 + dx, sy + dh * 0.30, r * 0.95]);
+            dx += Math.sin(lean) * dh * 0.70; sy += dh * 0.70; lean += 0.012;  // 30% of every course buried in the one below it
+          }
+          const CRW = sy + DRUM[6][1] * 0.30, CWX = sx0 + dx;
+          for (let i = 0; i < 8; i++) {                                        // the broken throat: fangs of the collapsed vent, not a flat cap
+            const a = i / 8 * 6.2832 + 0.3, fh = 5.5 + rng() * 7.5;
+            P(new THREE.ConeGeometry(1.7, fh, 5).rotateZ((rng() - 0.5) * 0.5).rotateY(-a)
+              .translate(CWX + Math.cos(a) * 3.1, CRW + fh * 0.35, sz0 + Math.sin(a) * 3.1), MAW);
+          }
+          for (const [bxx, byy, br] of band) {                                // ember courses climbing the stack
+            P(new THREE.CylinderGeometry(br * 1.03, br * 1.03, 0.9, 12).translate(bxx, byy, sz0), EMB);           // the DAY read: saturated ALBEDO
+            // ...and a narrower LIT course inside it. Infernal's haze is dense enough that a pure-albedo
+            // band greys out by 250 m, and at night albedo does nothing at all — which is both halves of
+            // "no landmark draw at 250 m ... or at night". aetherMat's day ceiling is 0.15 on the max
+            // channel, so this punches through fog without going anywhere near the bloom threshold.
+            PA(new THREE.CylinderGeometry(br * 1.05, br * 1.05, 0.44, 12).translate(bxx, byy, sz0), [1.75, 0.44, 0.07]);
+          }
+          PA(new THREE.CylinderGeometry(3.6, 3.6, 3.2, 10).translate(CWX, CRW - 0.9, sz0), [1.75, 0.42, 0.06]);   // the throat, lit: the NIGHT read
+          for (let i = 0; i < 9; i++) { const a = i / 9 * 6.2832;              // ...and the rune ring lifted onto the pit LIP so its light spills on the henge stones
+            const px = CX + Math.cos(a) * 12.5, pz = CZ + Math.sin(a) * 12.5, py = h(px, pz);
+            P(new THREE.BoxGeometry(4.4, 1.6, 1.9).rotateY(-a).translate(px, py + 0.6, pz), MAW);
+            PA(new THREE.BoxGeometry(3.6, 0.5, 1.1).rotateY(-a).translate(px, py + 1.5, pz), [1.75, 0.46, 0.08]); }
+          col.add({ type: 'capsule', a: V3(sx0, sy0 - 4, sz0), b: V3(CWX, CRW, sz0), r: 7.0 }); }
       } else if (B.id === 'lost') {
         // THE CONVERGENCE + THE RAMPART (wave-2: two majors, one cause). The heart was a 22 m cone inside a
         // 25 m earth berm, so from anywhere on the plain the landmark was SHORTER than the crust around it
@@ -1623,14 +2027,36 @@ export class Props {
         // buttresses on the crest, cut by a gatehouse framing the terrain notch the kernel opened this wave.
         const top = dais(24, 5, 0.7, [1.3, 1.2, 1.4], P2);                      // flat-lying slabs -> flagstone_violet
         const VIO = [1.18, 1.06, 1.34], VIO2 = [1.05, 0.94, 1.22], GLD = [1.45, 1.12, 0.48];
+        // WAVE-3 major: "The Convergence has no ornament and no light — an endgame landmark that is plain
+        // dark prisms ... at 23:00 the entire zone has zero light source". Ornament is DIFFUSE (gold
+        // filigree, a carved inscription register, dentil courses — things that catch a rim); the light is
+        // the shared region aether, whose hue is the vertex tint and whose ceiling is a MAX-CHANNEL cap:
+        // saturated violet at night, near-dormant by day, never white at either.
+        const AETH = [0.72, 0.34, 1.42];
+        for (let i = 0; i < 28; i++) {                                                                     // the inscription register: a carved rune band round the dais rim
+          const a = i / 28 * 6.2832, rr = 24 * 0.86;
+          P2(new THREE.BoxGeometry(2.0, 0.6, 0.5).rotateY(-a).translate(CX + Math.cos(a) * rr, top - 0.35, CZ + Math.sin(a) * rr), GLD);
+          if (i % 4 === 0) PA(new THREE.BoxGeometry(0.9, 0.34, 0.34).rotateY(-a).translate(CX + Math.cos(a) * (rr + 0.25), top - 0.35, CZ + Math.sin(a) * (rr + 0.25)), AETH);
+        }
         P(new THREE.CylinderGeometry(8.4, 10.6, 5.6, 10).translate(CX, top + 2.8, CZ), VIO2);              // the drum the spire stands on
+        for (let i = 0; i < 20; i++) { const a = i / 20 * 6.2832;                                          // dentil course + gold filigree pilasters on the drum
+          P(new THREE.BoxGeometry(0.85, 4.4, 0.55).rotateY(-a).translate(CX + Math.cos(a) * 9.8, top + 2.6, CZ + Math.sin(a) * 9.8), GLD);
+          P(new THREE.BoxGeometry(1.3, 0.7, 0.9).rotateY(-a).translate(CX + Math.cos(a) * 10.1, top + 5.2, CZ + Math.sin(a) * 10.1), VIO); }
         P(new THREE.CylinderGeometry(9.4, 9.4, 0.8, 10).translate(CX, top + 5.8, CZ), GLD);                // gold cap course: the one warm accent on a violet plain
+        PA(new THREE.CylinderGeometry(9.7, 9.7, 0.34, 10).translate(CX, top + 6.28, CZ), AETH);            // the aether course at the drum head — the focal light at night
         for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832;                                            // buttress fins off the drum
-          P(new THREE.BoxGeometry(2.2, 7.4, 5.0).rotateY(-a).translate(CX + Math.cos(a) * 9.6, top + 3.4, CZ + Math.sin(a) * 9.6), VIO2); }
+          P(new THREE.BoxGeometry(2.2, 7.4, 5.0).rotateY(-a).translate(CX + Math.cos(a) * 9.6, top + 3.4, CZ + Math.sin(a) * 9.6), VIO2);
+          PA(new THREE.BoxGeometry(0.55, 5.4, 0.55).rotateY(-a).translate(CX + Math.cos(a) * 12.0, top + 3.6, CZ + Math.sin(a) * 12.0), AETH); }
         P(new THREE.CylinderGeometry(1.7, 5.4, 44, 8).translate(CX, top + 6.2 + 22, CZ), VIO);             // the shaft
+        for (const sd of [-1, 1]) for (const ax of [0, 1]) {                                               // four aether conduits running the full height of the shaft
+          const cx2 = ax ? 0 : sd, cz2 = ax ? sd : 0;
+          PA(new THREE.BoxGeometry(ax ? 0.9 : 0.45, 42, ax ? 0.45 : 0.9).translate(CX + cx2 * 3.4, top + 6.2 + 21, CZ + cz2 * 3.4), AETH); }
         P(new THREE.CylinderGeometry(2.3, 2.3, 1.1, 8).translate(CX, top + 6.2 + 31, CZ), GLD);            // a gold band two thirds up: gives the shaft scale
+        for (let i = 0; i < 8; i++) { const a = i / 8 * 6.2832;                                            // a gold corona of ribs off that band
+          P(new THREE.BoxGeometry(2.6, 0.55, 0.7).rotateZ(0.34).rotateY(-a).translate(CX + Math.cos(a) * 3.5, top + 6.2 + 31.8, CZ + Math.sin(a) * 3.5), GLD); }
         P(new THREE.ConeGeometry(2.3, 12, 8).translate(CX, top + 6.2 + 44 + 5.4, CZ), VIO);                // pyramidion
-        P(new THREE.OctahedronGeometry(2.0).scale(1, 1.7, 1).translate(CX, top + 6.2 + 57.5, CZ), GLD);    // the keystone at the top of the world
+        PA(new THREE.OctahedronGeometry(2.1).scale(1, 1.9, 1).translate(CX, top + 6.2 + 57.5, CZ), AETH);  // the keystone at the top of the world, LIT
+        P(new THREE.OctahedronGeometry(2.6).scale(1, 0.42, 1).translate(CX, top + 6.2 + 55.2, CZ), GLD);   // its gold collar
         col.add({ type: 'capsule', a: V3(CX, top, CZ), b: V3(CX, top + 50, CZ), r: 5.6 });
         for (let i = 0; i < 4; i++) {                                                                      // four flanking pylons: verticals that frame the spire instead of competing with it
           const a = i / 4 * 6.2832 + 0.79, px = CX + Math.cos(a) * 19, pz = CZ + Math.sin(a) * 19, py = h(px, pz), ph = 26 + rng() * 5;
@@ -1639,13 +2065,18 @@ export class Props {
           P(new THREE.BoxGeometry(2.4, 0.9, 2.4).rotateY(-a).rotateZ(0.09).translate(px, py + ph + 1.4, pz), GLD);
           col.add({ type: 'capsule', a: V3(px, py - 1, pz), b: V3(px, py + ph, pz), r: 2.0 });
         }
+        // the 16 monoliths. Tints lifted along their own violet ray (with the +40% base albedo in the
+        // material, this is the "two readable values at 60 m" the verdict asks for), and each one caps with
+        // gold and a lit chip — a midground element needs a HIGH value on it somewhere or it is a cutout.
         ring(16, 34, (a) => { const x = CX + Math.cos(a) * 34, z = CZ + Math.sin(a) * 34, y = h(x, z), hh = 13 + rng() * 7;
-          P(monolithGeometry(hh, rng).rotateY(-a).translate(x, y, z), [1.15, 1.05, 1.3]);
+          P(monolithGeometry(hh, rng).rotateY(-a).translate(x, y, z), [1.34, 1.22, 1.50]);
+          P(new THREE.BoxGeometry(3.0, 0.55, 1.5).rotateY(-a).translate(x, y + hh - 0.5, z), GLD);
+          PA(new THREE.BoxGeometry(0.85, 2.2, 0.42).rotateY(-a).translate(x, y + hh - 2.2, z), AETH);
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 }); });
         // the rampart runs the SKYLINE, backlit by haze from every point on the plain — at the heart's own
         // tints it silhouettes to a black band. Lifted ~1.35x along the same violet ray so it reads as
         // built stone at 300 m and still belongs to the monolith field it rings.
-        this._lostRampart(P, rng, h, col, CX, CZ, [1.60, 1.44, 1.82], [1.42, 1.27, 1.65], GLD);
+        this._lostRampart(P, rng, h, col, CX, CZ, [1.60, 1.44, 1.82], [1.42, 1.27, 1.65], GLD, PA, AETH);
       } else if (B.id === 'shadowfen') {
         // THE HAGSTONE (wave-1 rebuild): leaning basalt trilithon — lichen-green tints over the dark
         // columnar-basalt map, a chipped lintel, and a wet peat-stained band at the waterline (the fen
@@ -1673,63 +2104,118 @@ export class Props {
         // pouring through their openings, and hull ribs spanning the rapid channel like footbridges.
         // Riser positions are PROBED, never hardcoded: the kernel jitters the riser lines by up to 14 m,
         // so each arch walks the ground down its own bearing and plants itself on the steepest step.
-        const top = dais(15, 3, 0.75, [0.72, 0.78, 0.74]);
-        ring(10, 22, (a, i) => pillar(CX + Math.cos(a) * 22, CZ + Math.sin(a) * 22, i % 4 === 1 ? 5 + rng() * 3 : 15 + rng() * 5, 1.35, 0.8, [0.70, 0.80, 0.76]));
-        slab(CX, top + 2.6, CZ - 4, 8, 5.2, 1.4, 0, [0.68, 0.78, 0.76]);        // the throne nobody sits on
-        const nbS = THETA0 + 7 * STEP, STONE = [0.86, 0.92, 0.90], STONE2 = [0.74, 0.82, 0.80], WORN = [0.62, 0.72, 0.72];
+        // THE DROWNED COURT (wave-3 blocker: "no arches and no water pouring through anything — the hero
+        // landmark is placeholder-grade ... two flat pale-marble slabs stacked into a dais, five plain
+        // rectangular prisms with no capitals, no flutes, no filigree, no wear, no breakage, plus a brown
+        // crate"). Rebuilt as what the name promises: a BROKEN ARCADE RING standing at the plaza's own
+        // break line, so the basin water sheets out through the arch openings, with the dais, the throne
+        // and the hoard riding above the waterline inside it.
+        const WLs = this.game.terrain.waterLevel ?? 4;
+        const STONE = [0.86, 0.92, 0.90], STONE2 = [0.74, 0.82, 0.80], WORN = [0.62, 0.72, 0.72];
+        const nbS = THETA0 + 7 * STEP;
         const hAt = (r, b) => { const a = nbS + b / r; return h(Math.cos(a) * r, Math.sin(a) * r); };
+        /** ONE ruined bay, in a local frame: `px,pz` its centre, `(ux,uz)` the direction the water leaves
+         *  through it (the arch spans ACROSS that), `base` the springing floor. `v` 0..1 seeds the variation
+         *  the wave-3 verdict asked for ("arcade bays repeat identically ... ~9 near-identical repeats in a
+         *  row, which reads as a modular kit, not a ruin"): span, rise, pier height, tilt, wear tint and
+         *  collapse state all come off it, so no two bays in the world are the same bay. */
+        const ruinArch = (px, pz, ux2, uz2, base, span, v) => {
+          const tx2 = -uz2, tz2 = ux2, ryA = Math.atan2(-tz2, tx2);              // torus/box local +X -> across the flow
+          const AR2 = span / 2, rise = 3.6 + v * 2.4, spr = base + rise;
+          const state = v < 0.30 ? 2 : v < 0.62 ? 1 : 0;                         // 2 = arch gone, 1 = head snapped, 0 = still standing
+          const wear = [lerp(STONE[0], WORN[0], v * 0.8), lerp(STONE[1], WORN[1], v * 0.8), lerp(STONE[2], WORN[2], v * 0.8)];
+          const tilt = (v - 0.5) * 0.10;
+          for (const sd of [-1, 1]) {                                            // piers. They run 3.5 m BELOW the shared base so a bay on a stepped floor buries instead of hovering
+            const jx = px + tx2 * sd * (AR2 + 1.5), jz = pz + tz2 * sd * (AR2 + 1.5);
+            const foot = Math.min(base, h(jx, jz)) - 3.5;
+            const cut = state === 2 && sd < 0 ? 0.42 + v * 0.3 : 1;              // a collapsed bay loses one pier down to a stump
+            const PH2 = (spr - foot + 1.2) * cut;
+            P(new THREE.BoxGeometry(2.6, PH2, 4.4).rotateZ(tilt * sd).rotateY(ryA).translate(jx, foot + PH2 / 2, jz), wear);
+            P(new THREE.BoxGeometry(3.0, 0.55, 4.9).rotateY(ryA).translate(jx, foot + 0.28, jz), STONE2);          // pier base course
+            if (cut === 1) {
+              P(new THREE.BoxGeometry(3.3, 0.7, 5.1).rotateY(ryA).translate(jx, spr - 0.2, jz), STONE);            // impost
+              P(new THREE.BoxGeometry(0.55, spr - foot - 1.6, 0.55).rotateY(ryA).translate(jx + ux2 * 2.3, foot + 0.9 + (spr - foot - 1.6) / 2, jz + uz2 * 2.3), STONE2);  // engaged shaft: the flute the verdict says is missing
+              P(new THREE.BoxGeometry(0.55, spr - foot - 1.6, 0.55).rotateY(ryA).translate(jx - ux2 * 2.3, foot + 0.9 + (spr - foot - 1.6) / 2, jz - uz2 * 2.3), STONE2);
+            }
+            col.add({ type: 'capsule', a: V3(jx, base - 1, jz), b: V3(jx, foot + PH2, jz), r: 1.9 });
+          }
+          if (state === 2) {                                                     // the bay came down: voussoirs in the water where the arch used to be
+            for (let i = 0; i < 4; i++) P(new THREE.BoxGeometry(1.9 + v, 1.1, 2.6).rotateZ((i - 1.5) * 0.42).rotateY(ryA + i * 0.7)
+              .translate(px + tx2 * (i - 1.5) * 2.4 + ux2 * (v - 0.5) * 4, base + 0.45, pz + tz2 * (i - 1.5) * 2.4 + uz2 * (v - 0.5) * 4), WORN);
+            return;
+          }
+          for (const zf of [-1, 1]) {                                            // the arch ring, both faces, plus the barrel between them
+            P(new THREE.TorusGeometry(AR2 + 0.45, 0.55, 6, 16, Math.PI).rotateY(ryA).translate(px + ux2 * zf * 1.9, spr, pz + uz2 * zf * 1.9), wear);
+            P(new THREE.TorusGeometry(AR2 + 0.05, 0.42, 5, 14, Math.PI).rotateY(ryA).translate(px + ux2 * zf * 0.7, spr, pz + uz2 * zf * 0.7), STONE2);
+          }
+          P(new THREE.BoxGeometry(1.1, 1.1, 5.6).rotateY(ryA).translate(px, spr + AR2 + 0.5, pz), STONE);          // keystone
+          const pw = state === 1 ? span * (0.40 + v * 0.3) : span + 3.6;         // parapet over the head — snapped short on the wounded ones
+          const po = state === 1 ? -tx2 * span * 0.24 : 0, po2 = state === 1 ? -tz2 * span * 0.24 : 0;
+          P(new THREE.BoxGeometry(pw, 1.5, 5.4).rotateY(ryA).translate(px + po, spr + AR2 + 1.5, pz + po2), STONE);
+          if (state === 1) {                                                     // the wound: a jagged stub and the block that came off it into the pool
+            P(new THREE.BoxGeometry(2.2, 2.0, 4.6).rotateZ(0.42).rotateY(ryA).translate(px + tx2 * span * 0.16, spr + AR2 + 2.1, pz + tz2 * span * 0.16), STONE2);
+            P(new THREE.BoxGeometry(3.4, 1.4, 3.0).rotateZ(0.28).rotateY(ryA + 0.6)
+              .translate(px + ux2 * 9 + tx2 * (AR2 * 0.4), Math.min(base, h(px + ux2 * 9, pz + uz2 * 9)) + 0.5, pz + uz2 * 9 + tz2 * (AR2 * 0.4)), WORN);
+          } else for (let i = 0; i < 5; i++)                                     // ...or a balustrade on the one still standing
+            P(new THREE.CylinderGeometry(0.30, 0.36, 1.3, 7).translate(px + tx2 * (i - 2) * 2.6, spr + AR2 + 2.85, pz + tz2 * (i - 2) * 2.6), STONE2);
+          // THE SPILL LIP. The plaza rim is 0.8-1.2 m proud of the basin, so the water leaves the Court
+          // THROUGH these openings — a chamfered sill and two cheek walls in the arch mouth turn a hole in
+          // a wall into a weir you can see the flow direction of. (Water builder ask: fall sites here.)
+          P(new THREE.BoxGeometry(span * 0.94, 0.42, 2.2).rotateX(-0.16).rotateY(ryA).translate(px + ux2 * 0.9, base + 0.20, pz + uz2 * 0.9), STONE2);
+          for (const sd of [-1, 1]) P(new THREE.BoxGeometry(0.5, 1.0, 2.6).rotateY(ryA).translate(px + tx2 * sd * (AR2 - 0.5) + ux2 * 0.9, base + 0.45, pz + tz2 * sd * (AR2 - 0.5) + uz2 * 0.9), STONE2);
+        };
         /** Where the terrace riser falls on bearing offset `b`: the radius with the biggest drop across a
-         *  16 m window. The riser is a 5.4 m fall smeared over ~18 m and its line MEANDERS +-14 m from the
+         *  16 m window. The riser is a fall smeared over ~18 m and its line MEANDERS +-14 m from the
          *  kernel's noise, so it has to be probed per bay, not assumed to be an arc of constant radius. */
         const riserAtB = (b, lo, hi) => { let best = { r: (lo + hi) / 2, d: 0 };
           for (let r = lo; r <= hi; r += 2) { const d2 = hAt(r - 8, b) - hAt(r + 8, b); if (d2 > best.d) best = { r, d: d2 }; }
           return best; };
-        /** One ruined arch of an arcade standing ON a riser, `b` metres off the gorge centreline. Piers run
-         *  3.5 m below `base` so a bay on a stepped floor buries instead of hovering. */
-        const cascadeArch = (r0c, b, base, span, broken) => {
-          const ang = nbS + b / r0c, ux2 = Math.cos(ang), uz2 = Math.sin(ang), tx2 = -uz2, tz2 = ux2;
-          const px = ux2 * r0c, pz = uz2 * r0c;
-          const ryA = Math.atan2(-tz2, tx2);                                     // torus/box local +X -> tangential (across the flow)
-          const AR2 = span / 2, spr = base + 4.6;                                // springline: 4.6 m of clear water under a half-round head
-          for (const sd of [-1, 1]) {                                            // piers, standing in the plunge (they run 3.5 m BELOW the shared base so an arcade on a stepped floor never hovers)
-            const jx = px + tx2 * sd * (AR2 + 1.5), jz = pz + tz2 * sd * (AR2 + 1.5);
-            const foot = Math.min(base, h(jx, jz)) - 3.5, PH2 = spr - foot + 1.2;
-            P(new THREE.BoxGeometry(2.6, PH2, 4.4).rotateY(ryA).translate(jx, foot + PH2 / 2, jz), STONE2);
-            P(new THREE.BoxGeometry(3.3, 0.7, 5.1).rotateY(ryA).translate(jx, spr - 0.2, jz), STONE);   // impost
-            col.add({ type: 'capsule', a: V3(jx, base - 1, jz), b: V3(jx, spr + 2, jz), r: 1.9 });
-          }
-          for (const zf of [-1, 1]) {                                            // the arch ring, both faces, plus the barrel between them
-            P(new THREE.TorusGeometry(AR2 + 0.45, 0.55, 6, 16, Math.PI).rotateY(ryA).translate(px + ux2 * zf * 1.9, spr, pz + uz2 * zf * 1.9), STONE);
-            P(new THREE.TorusGeometry(AR2 + 0.05, 0.42, 5, 14, Math.PI).rotateY(ryA).translate(px + ux2 * zf * 0.7, spr, pz + uz2 * zf * 0.7), STONE2);
-          }
-          const pw = broken ? span * 0.55 : span + 3.6;                          // parapet over the head — snapped short on the broken one
-          const po = broken ? -tx2 * span * 0.24 : 0, po2 = broken ? -tz2 * span * 0.24 : 0;
-          P(new THREE.BoxGeometry(pw, 1.5, 5.4).rotateY(ryA).translate(px + po, spr + AR2 + 1.5, pz + po2), STONE);
-          if (broken) {                                                          // the wound: a jagged stub and the block that came off it into the pool
-            P(new THREE.BoxGeometry(2.2, 2.0, 4.6).rotateZ(0.42).rotateY(ryA).translate(px + tx2 * span * 0.16, spr + AR2 + 2.1, pz + tz2 * span * 0.16), STONE2);
-            P(new THREE.BoxGeometry(3.4, 1.4, 3.0).rotateZ(0.28).rotateY(ryA + 0.6)
-              .translate(px + ux2 * 9 + tx2 * (AR2 * 0.4), base + 0.5, pz + uz2 * 9 + tz2 * (AR2 * 0.4)), WORN);
-          } else for (let i = 0; i < 5; i++)                                     // ...or a balustrade on the one still standing
-            P(new THREE.CylinderGeometry(0.30, 0.36, 1.3, 7).translate(px + tx2 * (i - 2) * 2.6, spr + AR2 + 2.85, pz + tz2 * (i - 2) * 2.6), STONE2);
-        };
-        // TWO ARCADES, one per riser, each a ROW across the gorge on a shared base — a single ruined
-        // arcade the cascade falls through reads as architecture; four arches scattered at their own
-        // heights read as debris. The centre bay always straddles the channel: on the centreline the
-        // kernel cuts the rapid flat through every tread, so there is no step to probe for there — the
-        // arcade's radius comes from the flanking probes and the middle arch spans the water.
-        for (const [lo, hi, span] of [[682, 734, 13], [626, 678, 12]]) {
+        // ---- THE COURT'S OWN ARCADE. Nine bays walked out from the centre on their own bearing until the
+        // ground BREAKS (the plaza rim), so every bay stands on a step by construction, not by hoping the
+        // kernel put one at a constant radius. Replaces the ten plain prisms the verdict called placeholder.
+        let onStep = 0;
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * 6.2832 + 0.35, ux2 = Math.cos(a), uz2 = Math.sin(a);
+          let best = { r: 24, d: -1e9 };
+          for (let r = 17; r <= 32; r += 1) { const d2 = h(CX + ux2 * (r - 5), CZ + uz2 * (r - 5)) - h(CX + ux2 * (r + 5), CZ + uz2 * (r + 5)); if (d2 > best.d) best = { r, d: d2 }; }
+          if (best.d > 0.35) onStep++;
+          const px = CX + ux2 * best.r, pz = CZ + uz2 * best.r;
+          ruinArch(px, pz, ux2, uz2, h(px, pz) + 0.15, 8.5 + ((i * 2.39996) % 1) * 5.0, (i * 0.6180339 + 0.17) % 1);
+        }
+        console.log(`[props] sunken court arcade: ${onStep}/9 bays on a probed rim break`);
+        const top = dais(15, 3, 0.75, [0.72, 0.78, 0.74]);
+        // the throne, with a back, arms and a canopy: "the throne slab is geometrically present but reads as
+        // another slab" was the whole note.
+        slab(CX, top + 2.6, CZ - 4, 8, 5.2, 1.4, 0, [0.68, 0.78, 0.76]);
+        for (const sd of [-1, 1]) {
+          P(new THREE.BoxGeometry(1.1, 2.2, 4.4).translate(CX + sd * 3.4, top + 1.1, CZ - 2.2), [0.72, 0.80, 0.78]);
+          P(new THREE.CylinderGeometry(0.55, 0.7, 6.6, 8).translate(CX + sd * 4.6, top + 3.3, CZ - 0.4), STONE2);
+          P(new THREE.BoxGeometry(1.5, 0.7, 1.5).translate(CX + sd * 4.6, top + 6.8, CZ - 0.4), STONE);
+        }
+        P(new THREE.BoxGeometry(11.4, 0.8, 2.2).rotateZ(0.04).translate(CX, top + 7.4, CZ - 1.2), STONE);          // the canopy lintel, settled off level
+        P(new THREE.BoxGeometry(6.4, 0.5, 4.4).translate(CX, top + 0.25, CZ - 1.4), [0.74, 0.82, 0.80]);           // the throne's own footpace
+        // TWO GORGE ARCADES upstream. WAVE-3: "only 2 of 5 bays per arcade actually land on a riser — the
+        // other three fall back to the averaged radius rMid, which is why arches stand in flat still water
+        // with no step under them". Fixed by REFUSING to place those bays: a ruined arcade with gaps in it
+        // is a ruined arcade, and an arch standing in flat water is a bug you can see. Only the deliberate
+        // channel span (b = 0, where the kernel cuts the rapid flat through every tread on purpose) is
+        // exempt. Windows widened to 60 m so a jittered riser line is still inside the search.
+        for (const [lo, hi, span] of [[676, 740, 13], [618, 682, 12]]) {
           const BS = [0, span + 9, -(span + 9), (span + 9) * 2.1, -(span + 9) * 2.1];
           const RS = BS.map((b) => riserAtB(b, lo, hi));
           const good = RS.filter((r) => r.d >= 2.0); if (!good.length) continue;
           const rMid = good.reduce((s, r) => s + r.r, 0) / good.length;
+          let placed = 0;
           BS.forEach((b, i) => {
+            if (i > 0 && RS[i].d < 2.0) return;                                   // no step here: this bay fell, centuries ago
             // +9 m: the bay stands at the FOOT of its riser, not on the slope — the fall lands just behind
-            // it and pours through the opening. Planted mid-riser (the first cut) the ground swallowed
-            // three quarters of the arch on the tread side.
-            const r = (RS[i].d >= 2.0 ? RS[i].r : rMid) + 9;                      // the channel bay has no step to find: it rides the arcade's line and spans the rapid
-            cascadeArch(r, b, hAt(r, b) - 0.4, span - (i >= 3 ? 4 : i >= 1 ? 2 : 0), i === 1 || i === 4);
+            // it and pours through the opening. Planted mid-riser the ground swallows three quarters of it.
+            const r = (i === 0 ? rMid : RS[i].r) + 9;
+            const ang = nbS + b / r, ux2 = Math.cos(ang), uz2 = Math.sin(ang);
+            ruinArch(ux2 * r, uz2 * r, ux2, uz2, hAt(r, b) - 0.4, span - (Math.abs(b) > span * 1.5 ? 3 : Math.abs(b) > 1 ? 1.5 : 0), ((i * 0.6180339 + 0.41 + lo * 0.001) % 1));
+            placed++;
           });
-          console.log(`[props] sunken arcade r0~${rMid.toFixed(0)}: ${good.length}/5 bays on a probed riser`);
+          console.log(`[props] sunken gorge arcade r0~${rMid.toFixed(0)}: ${placed} bays placed, ${good.length}/5 on a probed riser`);
         }
         // WRECK RIBS AS SPANS (brief: "wreck ribs become bridge-like spans over rapid channels"). Two hull
         // carcasses lie across the rapid where it runs into the Court — you cross the white water on them.
@@ -1750,10 +2236,48 @@ export class Props {
         // The hoard at the foot of the throne. The Sunken Kingdom is the one region you have to hold your
         // breath to reach the bottom of and there was nothing down there to find — so: spilled coin, a
         // broken chest, and the crown, all in gold that is saturated but nowhere near the bloom threshold.
-        for (let i = 0; i < 26; i++) {
-          const a = rng() * 6.2832, d = rng() * 5.5;
-          P(new THREE.CylinderGeometry(0.22 + rng() * 0.18, 0.24 + rng() * 0.2, 0.10, 10)
-            .rotateZ((rng() - 0.5) * 0.9).translate(CX + Math.cos(a) * d, top + 0.1 + rng() * 0.35, CZ + 2.5 + Math.sin(a) * d), [1.34, 0.80, 0.14]);   // gold reads GOLD: saturated warm albedo (marble map * this ≈ 0.95/0.57/0.10), never emissive
+        const GOLD = [1.34, 0.80, 0.14], GOLD2 = [1.40, 0.88, 0.22];            // gold reads GOLD: saturated warm ALBEDO (marble map * this ~ 0.95/0.57/0.10), never emissive
+        const coin = (px, py, pz, s = 1) => P(new THREE.CylinderGeometry((0.20 + rng() * 0.17) * s, (0.22 + rng() * 0.19) * s, 0.10 * s, 10)
+          .rotateZ((rng() - 0.5) * 0.9).translate(px, py, pz), rng() < 0.4 ? GOLD2 : GOLD);
+        for (let i = 0; i < 22; i++) { const a = rng() * 6.2832, d = rng() * 5.5; coin(CX + Math.cos(a) * d, top + 0.1 + rng() * 0.35, CZ + 2.5 + Math.sin(a) * d); }
+        // WAVE-3 major: "the gold hoard — the region's payoff — is not visible from any ground approach. The
+        // dais is 3.0 m + 0.75 m tall with a full-width parapet lip, so from the plaza floor the top surface
+        // is entirely occluded ... the one thing the player crosses the region for gives zero read until
+        // they have already climbed onto it." So the hoard SPILLS: down the three risers on the walk-in
+        // bearing, across the plaza and into the shallow water, where it is at eye level from 20 m out.
+        { const bhS = Math.atan2(-CZ, -CX), fx = Math.cos(bhS), fz = Math.sin(bhS), sx2 = -fz, sz2 = fx;
+          // WHAT SURFACE IS UNDER (x, z)? dais(15, 3, 0.75) is three cylinders at r 15 / 12.6 / 10.2 whose
+          // TOP faces sit at CY+0.75 / +1.5 / +2.25 — so a coin's height is a step function of its radius
+          // from the centre, and outside r=15 it is simply the ground. Getting this wrong is how the first
+          // cut had the whole spill hovering 2 m over the plaza.
+          const spillY = (px, pz) => { const d0 = Math.hypot(px - CX, pz - CZ);
+            return d0 < 10.2 ? top : d0 < 12.6 ? top - 0.75 : d0 < 15.0 ? top - 1.5 : h(px, pz); };
+          for (let i = 0; i < 88; i++) {
+            const t = Math.pow(rng(), 0.62);                                     // biased outward: the tail of the spill is what you see from the plaza
+            const d = 4.0 + t * 20.0, w = (rng() - 0.5) * (2.6 + t * 9.0);
+            const px = CX + fx * d + sx2 * w, pz = CZ + fz * d + sz2 * w;
+            coin(px, spillY(px, pz) + 0.06 + rng() * 0.10, pz, 0.9 + rng() * 0.5);
+          }
+          for (let i = 0; i < 5; i++) {                                          // heaped piles: a cone of coin reads at 40 m where loose ones do not
+            const d = 6.5 + rng() * 13, w = (rng() - 0.5) * 9, px = CX + fx * d + sx2 * w, pz = CZ + fz * d + sz2 * w;
+            const py = spillY(px, pz);
+            const ph = 0.55 + rng() * 0.75;
+            P(new THREE.ConeGeometry(0.95 + rng() * 0.8, ph, 9).translate(px, py + ph / 2, pz), GOLD);
+            for (let k = 0; k < 5; k++) { const qx = px + (rng() - 0.5) * 2.6, qz = pz + (rng() - 0.5) * 2.6; coin(qx, spillY(qx, qz) + 0.06, qz, 1.1); }
+          }
+          for (const sd of [-1, 1]) {                                            // two burst chests on the steps, their contents down the risers
+            const px = CX + fx * (7.5 + sd) + sx2 * sd * 4.4, pz = CZ + fz * (7.5 + sd) + sz2 * sd * 4.4;
+            const py = spillY(px, pz);
+            P(new THREE.BoxGeometry(2.2, 1.1, 1.4).rotateY(0.3 * sd + bhS).translate(px, py + 0.55, pz), [0.42, 0.30, 0.20]);
+            P(new THREE.BoxGeometry(2.3, 0.5, 1.5).rotateZ(sd * 0.6).rotateY(0.3 * sd + bhS).translate(px - fx * 1.4, py + 0.7, pz - fz * 1.4), [0.36, 0.26, 0.17]);   // the lid, off its hinges
+            for (let k = 0; k < 9; k++) { const qx = px + (rng() - 0.5) * 3.4, qz = pz + (rng() - 0.5) * 3.4; coin(qx, spillY(qx, qz) + 0.06, qz, 1.15); }
+          }
+          for (let i = 0; i < 7; i++) {                                          // ...and gold in the water, which is where the eye actually lands from a wade-in
+            const a = bhS + (rng() - 0.5) * 1.5, d = 22 + rng() * 12, px = CX + Math.cos(a) * d, pz = CZ + Math.sin(a) * d;
+            const py = h(px, pz); if (py > WLs) continue;
+            P(new THREE.CylinderGeometry(0.55, 0.72, 0.9, 8).rotateZ(0.4 + rng()).translate(px, py + 0.35, pz), GOLD2);   // an urn on its side, half in the current
+            for (let k = 0; k < 6; k++) coin(px + (rng() - 0.5) * 3.0, py + 0.05, pz + (rng() - 0.5) * 3.0, 1.2);
+          }
         }
         for (const sd of [-1, 1]) P(new THREE.BoxGeometry(2.2, 1.1, 1.4).rotateY(0.3 * sd).translate(CX + sd * 4.5, top + 0.55, CZ + 3.2), [0.42, 0.30, 0.20]);
         P(new THREE.TorusGeometry(0.62, 0.10, 6, 16).rotateX(Math.PI / 2).translate(CX, top + 0.14, CZ + 2.2), [1.38, 0.86, 0.18]);
@@ -1768,6 +2292,11 @@ export class Props {
       if (parts.length) {
         const m = new THREE.Mesh(flat(mergeAll(parts, tints)), this.regionMat[B.id] ?? this.stoneMat);
         m.castShadow = m.receiveShadow = true; m.name = 'landmark-' + B.id; scene.add(m);
+        // CROWN HEIGHT is the number every approach-read verdict is really about ("no landmark draw at 250 m"
+        // is always "its top is below the player's eye line on the walk-in"). Log it so the next person can
+        // check the silhouette against the terrain profile without taking a screenshot to find out.
+        m.geometry.computeBoundingBox();
+        console.log(`[props] landmark ${B.id}: crown y=${m.geometry.boundingBox.max.y.toFixed(1)} (ground ${CY.toFixed(1)}), ${(m.geometry.attributes.position.count / 3) | 0} tris`);
       }
       if (parts2.length) {
         const m2 = new THREE.Mesh(flat(mergeAll(parts2, tints2)), this.flagstoneMat);
@@ -1786,6 +2315,13 @@ export class Props {
     if (this._divine.parts.length) {
       const dm = new THREE.Mesh(flat(mergeAll(this._divine.parts, this._divine.tints)), this.divineMat);
       dm.castShadow = dm.receiveShadow = true; dm.name = 'celestial-divine'; dm.geometry.computeBoundingSphere(); scene.add(dm);
+    }
+    // ...and the same for the region aether (lost / tundra / infernal ceremonial light). Regions are 400+ m
+    // apart so a tight bounding sphere would be wrong here — this one mesh spans three of them, but it is a
+    // few hundred triangles, so one always-drawn call is cheaper than three culled ones.
+    if (this._aether.parts.length) {
+      const am = new THREE.Mesh(flat(mergeAll(this._aether.parts, this._aether.tints)), this.aetherMat);
+      am.castShadow = false; am.receiveShadow = false; am.name = 'region-aether'; am.geometry.computeBoundingSphere(); scene.add(am);
     }
     // Brazier flames (Kharaz-Dun): SAME material as the meadow lantern flames — same emissiveIntensity
     // cap (invariants rule g), same flicker program — just a bigger octahedron in an iron bowl.
@@ -2036,9 +2572,12 @@ export class Props {
     // The bind pose is a straight hanging arm chain (rig.js merges rigid parts, there is no authored pose),
     // so the STANCE is set here: both elbows bent so the forearms come forward past the robe, and hdR
     // counter-rotated by exactly the elbow bend so the staff it carries stays vertical anyway.
-    b.shR.rotation.x = -0.10 + Math.sin(ph) * 0.02; b.shR.rotation.z = -0.09;
-    b.elR.rotation.x = -0.42; b.hdR.rotation.x = 0.52;
-    b.shL.rotation.x = -0.14 + Math.sin(ph + 0.6) * 0.03; b.shL.rotation.z = 0.11;
+    // The staff arm comes FORWARD and slightly out so the sleeve clears the cloak and the hand reads as
+    // gripping rather than hiding — hdR is still counter-rotated by exactly the elbow bend (the three x
+    // rotations sum to zero) so the staff it carries stays vertical.
+    b.shR.rotation.x = -0.10 + Math.sin(ph) * 0.02; b.shR.rotation.z = -0.04;
+    b.elR.rotation.x = -0.62; b.hdR.rotation.x = 0.72;
+    b.shL.rotation.x = -0.14 + Math.sin(ph + 0.6) * 0.03; b.shL.rotation.z = 0.13;
     b.elL.rotation.x = -0.58; b.hdL.rotation.x = -0.15;
     // head tracking + body turn. Inside TURN m he squares up to you (the WoW "he noticed you" beat);
     // outside it he keeps facing the approach and just glances around.
@@ -2442,13 +2981,34 @@ export class Props {
     col.add({ type: 'capsule', a: V3(X, Y + 1.0, Z), b: V3(X, Y + 6.5, Z), r: 2.7 });
     for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI * 2; col.add({ type: 'capsule', a: V3(X + Math.cos(a) * 5.9, Y + 1, Z + Math.sin(a) * 5.9), b: V3(X + Math.cos(a) * 5.9, Y + 4, Z + Math.sin(a) * 5.9), r: 0.3 }); }
     // the crystal
-    const crystalMat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x4a38c8, roughness: 0.18, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.2, emissive: 0x3a1cff, emissiveIntensity: 1.2, flatShading: true }), {
+    // BLOB LAW, VALE BLOCKER (wave 3): "two perfectly round white-cored balls with radial violet-to-white
+    // falloff sit in the crystal body", core (255,249,248), and 5.3% of the crystal body washed at noon.
+    // Two causes, both the grass-tip failure mode transplanted onto the hero landmark:
+    //   1. roughness 0.18 + clearcoat 0.7/0.2 on FLAT facets, 2 m from a 60-intensity point light = point
+    //      glints. A specular highlight is WHITE regardless of albedo, so no amount of colour tuning fixes
+    //      it — the roughness has to go up and the clearcoat has to stop being a mirror.
+    //   2. the emissive/rim stack ran to B ~3.2 linear with R ~0.75, which ACES walks toward white.
+    // So: matte the specular, and close EVERYTHING (emissive + specular + clearcoat + exposure) with a
+    // hue-preserving cap on FINAL outgoing light, exactly the way GRASS_LUM_CAP closes the blades.
+    const crystalMat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0x4a38c8, roughness: 0.46, metalness: 0.0, clearcoat: 0.22, clearcoatRoughness: 0.5, emissive: 0x3a1cff, emissiveIntensity: 1.0, flatShading: true }), {
       key: 'aethcrystal', uniforms: { uTime: this.U.uTime }, fHead: 'uniform float uTime; varying vec3 vWPosA;',
       fEmissive: `{ float pulse = 0.8 + 0.2 * sin(uTime * 1.1); vec3 Vd = normalize(vViewPosition); float rim = pow(1.0 - abs(dot(Vd, normal)), 2.0);
         float core = smoothstep(0.9, 0.0, abs(vViewPosition.y) * 0.0 + length(vWPosA.xz) / 2.2);
-        totalEmissiveRadiance = totalEmissiveRadiance * pulse * (0.6 + core * 0.9) + vec3(0.5, 0.4, 1.0) * rim * (0.8 + 0.6 * pulse); }`,
+        totalEmissiveRadiance = totalEmissiveRadiance * pulse * (0.5 + core * 0.7) + vec3(0.32, 0.14, 1.0) * rim * (0.55 + 0.4 * pulse); }`,
       vHead: 'varying vec3 vWPosA;', vBegin: 'vWPosA = position;',
     });
+    // AETHERYTE_CAP: no channel above 1.45, and never more than 0.5 of PURE WHITE underneath the hue. The
+    // second line is the one that matters — subtracting the achromatic floor turns a would-be white highlight
+    // into a dim violet-grey while leaving an already-saturated violet completely untouched (its min channel
+    // is far below 0.5). Cap the CHANNEL, not the luminance: a luminance cap is 72% green and lets two
+    // channels clip at once, which is precisely how the mushrooms and this crystal both went white.
+    { const prev = crystalMat.onBeforeCompile;
+      crystalMat.onBeforeCompile = (sh, r) => { prev(sh, r); sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>',
+        `{ float aeM = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b);
+           outgoingLight *= 1.45 / max(aeM, 1.45);
+           float aeG = min(min(outgoingLight.r, outgoingLight.g), outgoingLight.b);
+           outgoingLight -= max(0.0, aeG - 0.50); }
+         #include <opaque_fragment>`); }; }
     this.crystalMat = crystalMat;
     const crystal = new THREE.Mesh(bigCrystalGeometry().scale(1.35, 1.35, 1.35), crystalMat); crystal.position.set(0, 13.0, 0); crystal.castShadow = true; crystal.name = 'aetheryte-crystal'; g.add(crystal);
     const shardGeos = []; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; shardGeos.push(new THREE.OctahedronGeometry(0.35 + rng() * 0.3).scale(1, 1.9, 1).rotateX(rng()).rotateZ(rng()).translate(Math.cos(a) * 4.6, 11.5 + Math.sin(a * 2) * 2.4, Math.sin(a) * 4.6)); }
@@ -2461,15 +3021,21 @@ export class Props {
     // motes: points orbiting in the vertex shader
     const N = 240, pos = new Float32Array(N * 3); for (let i = 0; i < N; i++) { pos[i * 3] = 2 + rng() * 8; pos[i * 3 + 1] = 2 + rng() * 19; pos[i * 3 + 2] = rng() * Math.PI * 2; }
     const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); pg.boundingSphere = new THREE.Sphere(V3(0, 9, 0), 12);
-    const dot = document.createElement('canvas'); dot.width = dot.height = 32; const dc = dot.getContext('2d'); const gr = dc.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(200,190,255,0.5)'); gr.addColorStop(1, 'rgba(150,130,255,0)'); dc.fillStyle = gr; dc.fillRect(0, 0, 32, 32);
-    const pm = new THREE.PointsMaterial({ size: 0.22, map: new THREE.CanvasTexture(dot), color: 0xb0a0ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+    // The motes are ADDITIVE, so a white core is a white ball no matter what colour surrounds it — and at
+    // 3 m a 0.22 mote in front of the crystal is exactly the "round white core with a violet falloff" the
+    // wave-3 verdict measured. Saturated violet all the way to the centre, and half the peak alpha.
+    const dot = document.createElement('canvas'); dot.width = dot.height = 32; const dc = dot.getContext('2d'); const gr = dc.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(168,126,255,0.85)'); gr.addColorStop(0.4, 'rgba(122,80,255,0.34)'); gr.addColorStop(1, 'rgba(90,60,230,0)'); dc.fillStyle = gr; dc.fillRect(0, 0, 32, 32);
+    const pm = new THREE.PointsMaterial({ size: 0.19, map: new THREE.CanvasTexture(dot), color: 0x8f6cff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
     pm.onBeforeCompile = (sh) => { sh.uniforms.uTime = this.U.uTime; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;').replace('#include <begin_vertex>',
       `float mr = position.x, mh = position.y, mp = position.z; float ma = mp + uTime * (0.25 + 0.6 / mr);
        vec3 transformed = vec3(cos(ma) * mr, mh + sin(uTime * 0.7 + mp * 3.0) * 0.8, sin(ma) * mr);`); };
     pm.customProgramCacheKey = () => 'motes';
     const motes = new THREE.Points(pg, pm); motes.frustumCulled = false; g.add(motes);
     // light
-    const light = new THREE.PointLight(0x7a5cff, 60, 48, 2); light.name = 'props-light'; light.position.set(0, 11, 0); g.add(light); this.lights.push(light);
+    // y 7.2, not 11: at 11 the light sat 2 m under a flat-facetted crystal, so with decay 2 the facets got
+    // ~15 units of irradiance and threw the two white specular balls the verdict measured. From the column
+    // neck it lights the plinth (which is its job) and the crystal gets a soft wash instead of a hotspot.
+    const light = new THREE.PointLight(0x7a5cff, 60, 48, 2); light.name = 'props-light'; light.position.set(0, 7.2, 0); g.add(light); this.lights.push(light);
     this.aetheryte = { group: g, crystal, shards, rings, light, pos: V3(X, Y, Z) };
   }
 
@@ -2582,6 +3148,49 @@ export class Props {
       for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; P(new THREE.BoxGeometry(0.035, 0.48, 0.035).translate(x + Math.cos(a) * 0.3, y + 1.97, z + Math.sin(a) * 0.3), [0.95, 0.92, 0.86]); }
       flames.push(V3(x, y + 1.97, z)); col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + 2.4, z), r: 0.32 });
     }
+    // MIRRORMERE'S ISLAND (wave-3 vale major: "a bare untextured mud dome, and it is the focal point of the
+    // Vale's best vista"). The composition already points the eye at it — real mountain reflections, a
+    // correct shallow-to-deep ramp — so the object at the middle has to be worth looking at. Terrain and
+    // Vegetation own the ground and the trees; what Props can put there is the SILHOUETTE and the shoreline:
+    // a rock crown, a drowned shrine broken off at three columns, and a pebble band that stops the khaki
+    // dome running straight into the water with no transition.
+    // The natural rock goes in its OWN bucket on basaltMat: stoneMat's map is the sandstone-BRICK photo, and
+    // a coursed boulder is the exact failure ("everything wears the same brick") one region over.
+    const iRock = [], iRockT = [], PR = (g, t) => { iRock.push(g); iRockT.push(t); };
+    { const IX = -150, IZ = -60, WL = this.game.terrain.waterLevel ?? 4, iy = h(IX, IZ);
+      // the island is a flat 6.5 m plateau out to r~13 that falls to the waterline at r~18-19, so everything
+      // here is sized to a 26 m table, and the shore band is PROBED out to 26 m rather than assumed.
+      for (let i = 0; i < 4; i++) {                                             // the rock knuckle the shrine stands on
+        const a = 1.1 + i * 1.5, rr = i ? 3.4 + rng() * 3.4 : 0;
+        const g = makeRockGeometry(0, 4471 + i * 131);
+        g.scale(i ? 3.0 + rng() * 2.2 : 8.6, i ? 1.5 + rng() : 3.1, i ? 2.6 + rng() * 2.0 : 7.2); g.rotateY(a);
+        g.translate(IX + 1.2 + Math.cos(a) * rr, iy + (i ? 0.15 : 0.35), IZ - 0.8 + Math.sin(a) * rr);
+        PR(g, [1.70 + rng() * 0.18, 1.58, 1.32]);
+      }
+      col.add({ type: 'sphere', pos: V3(IX + 1.2, iy + 1.2, IZ - 0.8), r: 7.0 });
+      for (let i = 0; i < 4; i++) {                                             // the drowned shrine: four columns, two of them down, and the lintel that came off them
+        const a = 0.5 + i * 1.32, cx2 = IX + Math.cos(a) * 7.4, cz2 = IZ + Math.sin(a) * 7.4, cy2 = h(cx2, cz2);
+        const ch = i === 1 ? 2.4 : 5.6 + rng() * 1.8;
+        P(new THREE.BoxGeometry(2.0, 0.5, 2.0).rotateY(a).translate(cx2, cy2 + 0.25, cz2), [0.80, 0.78, 0.72]);
+        P(columnGeometry(ch, i === 1, rng).rotateY(a).translate(cx2, cy2 + 0.5, cz2), [0.86, 0.84, 0.78]);
+        col.add({ type: 'capsule', a: V3(cx2, cy2 - 1, cz2), b: V3(cx2, cy2 + ch, cz2), r: 0.95 });
+      }
+      P(new THREE.BoxGeometry(7.2, 0.9, 1.4).rotateZ(0.22).rotateY(0.9).translate(IX - 3.4, iy + 0.6, IZ + 5.2), [0.78, 0.76, 0.70]);   // the fallen lintel
+      P(new THREE.BoxGeometry(4.2, 0.8, 1.3).rotateZ(-0.16).rotateY(2.3).translate(IX + 5.6, iy + 0.5, IZ - 6.4), [0.76, 0.74, 0.68]);
+      for (let i = 0; i < 44; i++) {                                            // shore band: cobbles and driftwood right at the waterline, so the dome has a BEACH
+        const a = rng() * 6.2832; let rr = 18.5;
+        for (let s = 0; s < 30; s++) { const t = 12.0 + s * 0.5; if (h(IX + Math.cos(a) * t, IZ + Math.sin(a) * t) < WL + 0.35) { rr = t; break; } }
+        rr += (rng() - 0.5) * 2.4;
+        const px = IX + Math.cos(a) * rr, pz = IZ + Math.sin(a) * rr, py = h(px, pz), sc = 0.28 + rng() * 0.66;
+        const g = makeRockGeometry(0, (rng() * 1e6) | 0);
+        g.scale(sc * 1.5, sc * 0.62, sc * 1.3); g.rotateY(rng() * 3); g.translate(px, py + sc * 0.20, pz);
+        PR(g, [1.16 + rng() * 0.24, 1.14, 1.02]);
+      }
+      for (let i = 0; i < 6; i++) { const a = rng() * 6.2832, len = 2.6 + rng() * 3.0, rr = 15 + rng() * 3;   // driftwood the lake pushed up
+        PR(new THREE.CylinderGeometry(0.16, 0.24, len, 6).rotateZ(Math.PI / 2 - 0.12).rotateY(a).translate(IX + Math.cos(a) * rr, h(IX + Math.cos(a) * rr, IZ + Math.sin(a) * rr) + 0.22, IZ + Math.sin(a) * rr), [0.86, 0.72, 0.54]); }
+    }
+    if (iRock.length) { const im = new THREE.Mesh(flat(mergeAll(iRock, iRockT)), this.basaltMat);
+      im.castShadow = im.receiveShadow = true; im.name = 'mirrormere-island'; scene.add(im); }
     const stones = new THREE.Mesh(flat(mergeAll(parts, tints)), this.stoneMat); stones.castShadow = stones.receiveShadow = true; stones.name = 'meadow-stones'; scene.add(stones);
     // user decree: 4.0 on a 0.1 m flickering octahedron = sub-pixel warm blobs at distance (blobcheck-gated).
     // 1.4 keeps the flame reading and its night halo (night bloom threshold 0.28) without daytime white balls.
@@ -2598,16 +3207,22 @@ export class Props {
 
   _buildMushrooms(rng, h, veg, Q) {
     const { scene } = this.game, U = this.U;
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0, emissive: 0x30ffd8, emissiveIntensity: 2.2 }), mergePatch(fadePatch, {
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, emissive: 0x18ffb4, emissiveIntensity: 2.2 }), mergePatch(fadePatch, {
       key: 'mushroom', uniforms: { uTime: U.uTime, uSunI: U.uSunI ?? { value: 1 } }, vHead: 'attribute float aGlow; varying float vGlow; varying float vPh;', vBegin: 'vGlow = aGlow; vPh = fract(instanceMatrix[3].x * 0.17 + instanceMatrix[3].z * 0.29);',
       fHead: 'uniform float uTime; uniform float uSunI; varying float vGlow; varying float vPh;',
-      // Night-boosted glow, but daylight-capped. A sunlit near-white cap already sits near 1.0 linear; the old
-      // 0.55 day term put another ~0.9 of cyan emissive on top, which crossed the 1.05 day bloom threshold and
-      // bloomed every cap into a washed-white ball (gate blobcheck). Same rule as everywhere else in this repo:
-      // saturate the COLOUR (the cap albedo below is now real mint, not white), cap the INTENSITY, and close it
-      // with a HUE-PRESERVING luminance cap (per-component min would clip cyan to grey) that tightens in
-      // daylight and opens up at night, where a glowing mushroom blooming its own colour is the point.
-      fEmissive: 'totalEmissiveRadiance *= vGlow * (0.75 + 0.25 * sin(uTime * 1.7 + vPh * 6.28)) * (0.14 + 2.1 * (1.0 - clamp(uSunI, 0.0, 1.0))); float mLum = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722)); float mCap = mix(1.15, 0.55, clamp(uSunI, 0.0, 1.0)); totalEmissiveRadiance *= mCap / max(mLum, mCap);',
+      // BLOB LAW, SIXTH RECURRENCE (wave-3 shadowfen blocker: "a field of washed-white glowing blobs, day and
+      // night", peak (224,248,232) = 10% saturation). The bug was the CAP, not the intensity: it capped
+      // LUMINANCE, and luminance is 72% green. A teal (0.06, 4.3, 3.0) has luminance 3.3, so scaling it to a
+      // luminance of 1.15 still leaves G=1.5 and B=1.02 — BOTH channels clipping, which is white by definition.
+      // Cap the MAX CHANNEL instead (then luminance as a second, looser belt), and pull the night ceiling down
+      // to 0.62: a saturated teal at 0.62 still blooms its own hue against the 0.28 night threshold, and no
+      // channel can ever reach 1.0. Roughness 0.9 kills the specular white the caps also carried in daylight.
+      fEmissive: `totalEmissiveRadiance *= vGlow * (0.75 + 0.25 * sin(uTime * 1.7 + vPh * 6.28)) * (0.10 + 2.1 * (1.0 - clamp(uSunI, 0.0, 1.0)));
+        float mCap = mix(0.62, 0.16, clamp(uSunI, 0.0, 1.0));
+        float mMax = max(max(totalEmissiveRadiance.r, totalEmissiveRadiance.g), totalEmissiveRadiance.b);
+        totalEmissiveRadiance *= mCap / max(mMax, mCap);
+        float mLum = dot(totalEmissiveRadiance, vec3(0.2126, 0.7152, 0.0722));
+        totalEmissiveRadiance *= mCap / max(mLum, mCap);`,
     }));
     const mesh = new THREE.InstancedMesh(mushroomGeometry(), mat, 1); mesh.receiveShadow = true; mesh.name = 'mushrooms'; scene.add(mesh);
     const lod = new InstLOD({ near: [mesh], nearDist: 64 * Q, band: 10, color: true });   // 52 m cut the fen's witchlight off inside the open-water gap the critics stand in
@@ -2620,51 +3235,53 @@ export class Props {
     // is why the effect half-existed at night and never had a cap to belong to. The call is code again.
     const add = (x, z, s, yOverride) => {
       const y = yOverride ?? h(x, z);
-      E.set((rng() - 0.5) * 0.3, rng() * 6.28, (rng() - 0.5) * 0.3); Qt.setFromEuler(E); S.setScalar(s);
+      E.set((rng() - 0.5) * 0.3, rng() * 6.28, (rng() - 0.5) * 0.3); Qt.setFromEuler(E);
+      S.set(s * (0.85 + rng() * 0.3), s * (0.72 + rng() * 0.55), s * (0.85 + rng() * 0.3));   // squash/stretch per cap: a cluster of identical lathes is what read as "pillows"
       M.compose(V3(x, y - 0.02, z), Qt, S);
       const hue = rng();
-      C.setRGB(0.34 + hue * 0.22, 0.80, 0.70 + (1 - hue) * 0.16);   // mint cap, not white: a white albedo in full sun is already at the bloom threshold before the glow is added
+      // DEEP witch-teal, not mint. This multiplies the geometry colour (cap [0.30,0.90,0.62]), so the product
+      // is R 0.07-0.10, G ~0.65, B ~0.40 — a hue that survives ACES instead of a value that clips through it.
+      C.setRGB(0.24 + hue * 0.10, 0.72, 0.62 + (1 - hue) * 0.10);
       lod.add(M, C);
       // ONE pool per cluster, not one per cap, and a hard radius cap. With the fen's bracket-scale fungus
       // the old 0.6-per-cap / 0.7+0.9s rule stacked ~450 overlapping 3.4 m additive discs into a flat
       // teal SHEET on the water — a glowing puddle, not fungus, and one bad frame away from the blob law.
-      if (s > 0.75 && glowPts.length < 450 && rng() < 0.09) glowPts.push([x, y + 0.06, z, Math.min(0.7 + s * 0.4, 1.5)]); };
+      if (s > 0.75 && glowPts.length < 170 && rng() < 0.035) glowPts.push([x, y + 0.06, z, Math.min(0.4 + s * 0.3, 0.85)]); };
     for (const t of veg?.trees ?? []) { if (t.z > -175 || Math.abs(t.x) > 260 || rng() < 0.45) continue; const n = 1 + Math.floor(rng() * 4); for (let i = 0; i < n; i++) { const a = rng() * 6.28, d = t.r + 0.3 + rng() * 1.4; add(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.5 + rng() * 1.3); } }
     for (let i = 0; i < 700; i++) { const x = (rng() - 0.5) * 500, z = -190 - rng() * 230; if (Math.hypot(x, z + 28) < 10) continue; const n = 1 + Math.floor(rng() * 3); for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2, z + (rng() - 0.5) * 2, 0.4 + rng() * 1.0); }
     // The same fungus, in the two OUTER regions whose spec asks for it by name: Whisperwood Deep's fae lights
     // between the trunks, and Shadowfen's witchlight. Both were written down as region identity and neither
     // existed — the glow only ever reached the home-bowl treeline. One instanced mesh serves all three.
     const WL2 = this.game.terrain?.waterLevel ?? 4;
-    // Wave-2 major "witchlight fungus still absent — dressing is reeds only": it WAS being placed, but at
-    // meadow scale (0.45-1.6 => a 25 cm cap) in ones and twos, on a band (WL+0.15..WL+2.2) that the fen's
-    // hummocks barely reach. At that size on dark peat it is invisible at any distance a player stands.
-    // Fen/forest witchlight now grows in CLUSTERS at bracket scale (caps up to ~0.5 m across), and the band
-    // opens down to the waterline where fungus actually grows. Same instanced mesh, same capped emissive.
+    // Wave-3 shadowfen: "hundreds of 3-4 m caps". `wet ? 1.25 + rng()*1.75` on a 0.245 m-radius lathe is a
+    // 1.5 m cap; three of them inside a 2.4 m jitter merge into one continuous pillow. REAL fungus scale
+    // (0.42-1.05 => caps 20-50 cm across), spread wider than the cap so silhouettes stay separate, and 40%
+    // fewer seed points — the fen keeps its witchlight without a square metre of it being glowing sheet.
     for (const [cx, cz, R, wet] of [[-66, -757, 190, false], [-623, 436, 185, true]]) {
-      for (let i = 0; i < (wet ? 900 : 620); i++) {
+      for (let i = 0; i < (wet ? 540 : 480); i++) {
         const a = rng() * 6.2832, d = Math.sqrt(rng()) * R;
         const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, y = h(x, z);
         if (wet ? y < WL2 - 0.55 || y > WL2 + 2.6 : y < WL2 + 0.4) continue;   // waterline shelf up to the hummock crown
-        const n = wet ? 3 + Math.floor(rng() * 5) : 1 + Math.floor(rng() * 4);
-        for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 2.4, z + (rng() - 0.5) * 2.4, wet ? 1.25 + rng() * 1.75 : 0.45 + rng() * 1.15);
+        const n = wet ? 3 + Math.floor(rng() * 4) : 1 + Math.floor(rng() * 3);
+        for (let k = 0; k < n; k++) add(x + (rng() - 0.5) * 3.2, z + (rng() - 0.5) * 3.2, wet ? 0.42 + rng() * 0.63 : 0.38 + rng() * 0.72);
       }
     }
     // ...and a cluster at the foot of every drowned snag in Shadowfen. The snags are scattered across the
     // whole fen (including the parts under water), so this is what actually puts witchlight in the frame a
     // player is standing in, instead of only on the few hummock crowns that clear the water line.
     for (const [sx, sy, sz] of this._fenSnags ?? []) {
-      const n = 3 + Math.floor(rng() * 4);
-      for (let k = 0; k < n; k++) { const a = rng() * 6.2832, d = 0.5 + rng() * 1.5;
-        add(sx + Math.cos(a) * d, sz + Math.sin(a) * d, 1.3 + rng() * 1.7, sy + 0.05); }
+      const n = 4 + Math.floor(rng() * 5);
+      for (let k = 0; k < n; k++) { const a = rng() * 6.2832, d = 0.55 + rng() * 1.9;
+        add(sx + Math.cos(a) * d, sz + Math.sin(a) * d, 0.45 + rng() * 0.6, sy + 0.05); }
     }
     lod.finalize(); (veg?.lods ?? (this._ownLods = [])).push(lod); this.mushroomCount = lod.n;
     console.log(`[props] glowing fungus: ${lod.n} instances (${this._fenSnags?.length ?? 0} fen snags seeded)`);
     // additive cyan ground-glow pools under the bigger mushrooms (bloom halo + light-pool read at night; 1 draw call)
     if (glowPts.length) {
       const gt = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c2 = cv.getContext('2d');
-        const gr = c2.createRadialGradient(32, 32, 1, 32, 32, 32); gr.addColorStop(0, 'rgba(120,255,230,0.65)'); gr.addColorStop(0.45, 'rgba(60,220,200,0.25)'); gr.addColorStop(1, 'rgba(40,200,190,0)');
+        const gr = c2.createRadialGradient(32, 32, 1, 32, 32, 32); gr.addColorStop(0, 'rgba(30,235,175,0.55)'); gr.addColorStop(0.45, 'rgba(20,190,150,0.20)'); gr.addColorStop(1, 'rgba(14,150,125,0)');
         c2.fillStyle = gr; c2.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-      const mg = new THREE.Mesh(mergeGeometries(glowPts.map(([x, y, z, r]) => new THREE.CircleGeometry(r, 14).rotateX(-Math.PI / 2).translate(x, y, z).toNonIndexed())), this.glyphMat(gt, 0x70ffe0));
+      const mg = new THREE.Mesh(mergeGeometries(glowPts.map(([x, y, z, r]) => new THREE.CircleGeometry(r, 14).rotateX(-Math.PI / 2).translate(x, y, z).toNonIndexed())), this.glyphMat(gt, 0x18d69a));
       mg.name = 'mushroom-glow'; mg.renderOrder = 1; scene.add(mg); this.mushGlow = mg;
     }
   }
@@ -2684,7 +3301,10 @@ export class Props {
     // overcast key holds sunIntensity low at MIDDAY, so the "night" value was running at noon, and two
     // overlapping 3.8 m discs at 0.85 additive stacked into a pale mint smear on the water — a blob by any
     // reading. One pool per cluster (see glowPts above) plus this ceiling keeps a single disc hue-true.
-    if (this.mushGlow) this.mushGlow.material.opacity = clamp(1.15 - (this.game.sky?.sunIntensity ?? 1), 0.06, 0.55);
+    // ...and wave 3 still found it too hot: 0.55 of additive teal under a 1.5 m cap on wet peat is what the
+    // planar reflection then smeared into a "green searchlight". Ceiling 0.34, and it goes to ZERO in real
+    // daylight instead of idling at 0.06 — a lit ground pool at noon is decoration, not witchlight.
+    if (this.mushGlow) this.mushGlow.material.opacity = clamp(0.95 - (this.game.sky?.sunIntensity ?? 1) * 1.4, 0, 0.22);
     if (this.villageWindows) this.villageWindows.material.opacity = clamp(1.05 - (this.game.sky?.sunIntensity ?? 1) * 1.6, 0, 0.9);   // hearths lit after dusk
     if (!this.game.world.vegetation?.lods && this._ownLods) { const p = this.game.camera.position; for (const l of this._ownLods) l.refresh(p.x, p.z); }
     if (!this.game.world.vegetation) this.U.uTime.value = t;

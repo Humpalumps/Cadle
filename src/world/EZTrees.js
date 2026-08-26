@@ -11,7 +11,25 @@ import * as THREE from 'three';
 import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Tree } from '@dgreenheck/ez-tree';
-import { patchMaterial, mergePatch, fadePatch, normalFromLuma, instTintPatch } from './Vegetation.js';
+import { patchMaterial, mergePatch, normalFromLuma, instTintPatch } from './Vegetation.js';
+
+// PER-CARD IDENTITY. ez-tree's leaf geometry carries nothing that varies per CARD — every quad's uv is the
+// same 0..1 and position varies per vertex — so under direct sun every card in a crown landed on the same
+// value and each one read as "a flat pale-green parallelogram with a hard straight edge, pasted across the
+// leaf mass" (crit3-forest-c/shot-west-band-canopy.png, the wave-2 'shredded plastic strips' defect).
+// A leaf card is 6 indices (2 tris) and no two cards share a vertex, so walking the INDEX in sixes gives a
+// card ordinal per vertex without duplicating anything — a hash of it rides along as an attribute and the
+// fragment breaks value, hue and (on the huge old-growth crown cards) the texture WINDOW per card. One
+// float per vertex, no extra vertices, no triangles, no draw calls. (Deliberately not toNonIndexed(): that
+// would be +50% vertices on the heaviest vertex load in the forest for the same information.)
+function withCardIds(geo) {
+  const n = geo.attributes.position?.count ?? 0, a = new Float32Array(n), idx = geo.index;
+  const h = (q) => { const s = Math.sin(q * 12.9898 + 4.1) * 43758.5453; return s - Math.floor(s); };
+  if (idx) { for (let i = 0; i + 5 < idx.count; i += 6) { const v = h(i / 6); for (let k = 0; k < 6; k++) a[idx.getX(i + k)] = v; } }
+  else for (let i = 0; i < n; i++) a[i] = h((i / 6) | 0);
+  geo.setAttribute('aCard', new THREE.BufferAttribute(a, 1));
+  return geo;
+}
 
 // species mapping: 0 slender birch-alike, 1 gnarled broadleaf, 2 shore willow (closest: droopy ash)
 const POOLS = [
@@ -41,8 +59,14 @@ const SPECIES_TUNE = {
   // Tuned against the south-view tri budget (2026-08-25): children x0.65 + sections x0.8 cut the giant from
   // ~2.2k to ~1.5k tris; card size 2.6 -> 3.1 holds crown COVERAGE neutral against the fewer tip leaves
   // (176 cards x 3.1^2 ~= 264 x 2.6^2), so the canopy-closure acceptance shot does not reopen.
+  // 2026-08-26: 0.55 x 3.1 -> 0.62 x 2.92. Crown COVERAGE is held exactly (0.62*2.92^2 = 5.29 vs
+  // 0.55*3.1^2 = 5.29) while each card drops from ~10 m to ~9 m and there are 13% more of them. The first
+  // attempt at this went to 1.0 x 2.4 and MEASURED 5.04 M tris at the Whisperwood heart looking south
+  // (tools/out/veg4-perf) against a 4 M budget — that view is entirely leaf-bound, so card COUNT is the
+  // dial and it has almost no slack. The card's hard rectangular edge, which is what the critic actually
+  // photographed, is killed by the radial alpha mask in the leaf shader, not by making cards smaller.
   5: (o) => {
-    if (o.leaves) { o.leaves.count = Math.max(10, Math.round((o.leaves.count ?? 20) * 0.55)); o.leaves.size = (o.leaves.size ?? 2) * 3.1; }
+    if (o.leaves) { o.leaves.count = Math.max(10, Math.round((o.leaves.count ?? 20) * 0.62)); o.leaves.size = (o.leaves.size ?? 2) * 2.92; }
     if (o.branch?.children) { for (const k in o.branch.children) o.branch.children[k] = Math.max(1, Math.round(o.branch.children[k] * 0.65)); }
     if (o.branch?.sections) { for (const k in o.branch.sections) o.branch.sections[k] = Math.max(3, Math.round(o.branch.sections[k] * 0.8)); }
   },
@@ -78,8 +102,14 @@ const LEAF_MAP = {
 // view is entirely near-tier-bound. The near tier is area-scaled, so 163/175 squared is ~13% fewer real
 // trees, and the band it gives up (163-175 m) is well past the ~140 m where the 3-quad impostor is already
 // what you are looking at. No visual change, ~0.5 M tris back.
-const NEAR = 163, FAR = 780;              // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
-const BAND = 26;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
+// 2026-08-26: 163 -> 152. Measured at the same camera (Whisperwood heart, facing SOUTH, hour 13,
+// tools/out/veg4-perf2): 4.44 M tris against the 4 M budget — and the leaf-count arithmetic in that run
+// puts the pre-existing frame at ~4.33 M, i.e. this view has been over budget on its own for a while and
+// the leaf work only moved it 2.5%. The near tier is area-scaled, so 152/163 squared is ~13% fewer real
+// trees; the band it gives up (152-163 m) is a full 25 m past the ~128 m where the 3-quad impostor is
+// already what you are looking at, and the impostor tier still carries the treeline to 780 m unchanged.
+const NEAR = 152, FAR = 780;              // tier split / hard cull (far tier is 6 tris an instance, so the treeline runs to the mountains instead of stopping at 540 m)
+const BAND = 24;                            // cross-fade band inside NEAR: real tree dissolves into its impostor
 const REBUCKET = 2.25;                      // metres of camera travel between rebuckets (was 6: too coarse once the
                                             // band fade rides on distance — the fade stepped instead of gliding)
 // Trunks only cast shadows inside this radius. Measured at Whisperwood: 887 near trees are ~1.5 M tris,
@@ -140,15 +170,25 @@ export function buildEZTrees(game, trees, vegetation) {
     fHead: 'varying float vFade;',
     fAlpha: 'float ezF = min(clamp(vFade, 0.0, 1.0), smoothstep(1.5, 4.6, length(vViewPosition))); if (diffuseColor.a < mix(1.01, 0.4, ezF)) discard;',
   };
-  // Impostor fade: COMPLEMENTARY to fadePatch's screen-door. The near tree discards the pixels where
-  // dither >= its fade; the impostor draws exactly those pixels and no others, so the band tiles to full
-  // coverage instead of showing white sky stipple through half-faded trunks.
+  // Impostor fade: ALPHA EROSION, complementary to the leaves' erodeNear — NOT a screen door.
+  // This was the tundra blocker, twice: "LOD-crossfade dither stipple is BACK on every mid-distance
+  // conifer ... a hard diagonal checkerboard screen-door pattern, not foliage" (crit3-tundra-b/
+  // crop-dither.png, and the same stipple in every frame with trees at 40-120 m). A dither is invisible
+  // on a busy background and maximally visible against a snowfield, and a camera that stops moving holds
+  // the half-resolved pattern forever. Erosion has no pattern to hold: the near canopy thins out leaf by
+  // leaf while the impostor's own alpha climbs in, so a mid-band tree is simply a slightly sparser tree.
+  // The two do not need to tile to exact coverage — they overlap, which is what the eye wants anyway.
   const impFade = {
     vHead: 'attribute float aFade; varying float vFade;',
     vBegin: 'vFade = aFade;',
-    fHead: 'varying float vFade; float ezDT(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
-    fAlpha: 'if (vFade < 0.999 && ezDT(gl_FragCoord.xy) <= 1.0 - vFade) discard;',
+    fHead: 'varying float vFade;',
+    fAlpha: 'if (diffuseColor.a < mix(1.01, 0.35, clamp(vFade, 0.0, 1.0))) discard;',
   };
+  // Trunks do NOT cross-fade at all any more. Bark is opaque, so its only option was the screen door, and
+  // a stippled trunk is the other half of what the tundra critic photographed. At the band's outer edge
+  // (163 m) a 13 m trunk is under 2 px wide and is already covered by its own impostor card, so a hard
+  // cut there is not visible — the pop the fade was added for was the CANOPY's, and that still cross-fades.
+  const barkNoFade = { key: 'eztree-bark' };
   // The leaf and impostor materials below both carry `instTintPatch` (Vegetation.js): without it three
   // r185 silently drops instanceColor before the fragment stage, and every `tr.c` region leaf colour
   // Vegetation._place computes (BTREE[].col — Whisperwood's deep teal-green, the enchanted blue-teal
@@ -251,12 +291,47 @@ export function buildEZTrees(game, trees, vegetation) {
     const barkMat = patchMaterial(new THREE.MeshStandardMaterial({
       map: gnBark ?? t.branchesMesh.material.map ?? null, normalMap: gnNormal, normalScale: gnNormal ? new THREE.Vector2(1.6, 1.6) : undefined,
       roughness: 0.94, metalness: 0, color: BARK_TINT[species] ?? BARK_TINT.default,
-    }), { ...fadePatch, key: 'eztree-bark' });
+    }), barkNoFade);
     const assetLeaf = LEAF_MAP[species] ? game.assets?.tex?.(LEAF_MAP[species]) : null;
+    const leafGeo = withCardIds(t.leavesMesh.geometry);
+    // Crop the painted CLUSTER asset per card. It is one dense round bush: stretched whole across a 6-10 m
+    // old-growth crown card every leaf is a metre wide, which mips to a filled quad — the critic's "no leaf
+    // alpha detail ... a filled quad". A ~1/3 window puts leaves at a real ~40 cm and, because every window
+    // straddles the bush's edge, hands each card a ragged silhouette. Same trick Vegetation.LEAF_CROPS uses.
+    // Only for leaf_card: ez-tree's own map and card_conifer_snow are single-motif textures, not atlases.
+    const crop = LEAF_MAP[species] === 'leaf_card' && assetLeaf ? `
+        float cs = 0.30 + 0.14 * fract(vCard * 5.17);
+        float ca = vCard * 6.2831853;
+        vec2 co = clamp(vec2(0.5) + vec2(cos(ca), sin(ca)) * (0.5 - cs * 0.46) - cs * 0.5, vec2(0.0), vec2(1.0 - cs));
+        luv = co + fract(luv) * cs;` : '';
+    // instTintPatch's own fMap re-includes <map_fragment>; this material samples the map itself (for the
+    // crop), so only its declarations are borrowed and the tint multiply is folded in below.
+    const instTintDecl = { vHead: instTintPatch.vHead, vBegin: instTintPatch.vBegin, fHead: instTintPatch.fHead };
     const leafMat = patchMaterial(new THREE.MeshStandardMaterial({
-      map: assetLeaf ?? t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
+      map: assetLeaf ?? t.leavesMesh.material.map ?? null, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.95, metalness: 0,
       color: assetLeaf ? 0xffffff : (LEAF_COL[species] ?? t.leavesMesh.material.color?.clone() ?? 0xffffff),   // the painted card carries its own colour — ez's preset green would re-summer the snow
-    }), mergePatch(erodeNear, sway, instTintPatch, {
+    }), mergePatch(erodeNear, sway, instTintDecl, {
+      // The leaf shader SOURCE now differs by species (only leaf_card gets the crop), so the program cache
+      // key has to differ too — patchMaterial hands `key` straight to customProgramCacheKey, and one shared
+      // key across variants with different source is how a material silently renders someone else's shader.
+      key: crop ? 'eztree-leaf-crop' : 'eztree-leaf',
+      fMap: `
+        #ifdef USE_MAP
+        { vec2 luv = vMapUv;${crop}
+          diffuseColor *= texture2D(map, luv);
+          // RADIAL CARD MASK. The crop alone was not enough: a window that lands in the dense middle of the
+          // painted bush is fully opaque, so the card still rendered as a hard-edged parallelogram slab
+          // (tools/out/veg4-after/shot-f-crown.png, before this line). Fading a card's alpha out toward its
+          // own border makes every card a ragged blob whatever texel it happened to sample — the card
+          // RECTANGLE stops existing. Corners go first, which is where the straight-edge read comes from.
+          float cardR = length(fract(vMapUv) - 0.5) * 2.0;
+          diffuseColor.a *= 1.0 - smoothstep(0.70, 1.28, cardR); }
+        #endif
+        diffuseColor.rgb *= vITint;
+        // per-card value + hue drift: the highlight is broken by card IDENTITY, not by anything
+        // screen-aligned or linear, so it holds still when the camera moves and never forms a pattern
+        diffuseColor.rgb *= mix(0.68, 1.08, fract(vCard * 7.31));
+        diffuseColor.rgb *= vec3(1.0 + (fract(vCard * 3.71) - 0.5) * 0.18, 1.0, 1.0 + (fract(vCard * 11.37) - 0.5) * 0.22);`,
       // Canopy-sphere shading: raw card normals point wherever the card faces, so a sun-aligned 10 m card
       // lit uniformly bright next to a dark neighbour read as long two-tone "plastic strip" slashes across
       // the crown (crit2-forest-b/shot-heart-side). Pulling normals toward up shades the canopy like a
@@ -271,13 +346,14 @@ export function buildEZTrees(game, trees, vegetation) {
       // neighbouring cards (3 random orientations per crown) cover the hole. Zero triangles, zero draw
       // calls, and it is the raw GEOMETRIC card normal that drives it — vNormal above is already bent
       // toward up, which is why this carries its own varying.
-      vHead: 'varying vec3 vCardN;',
+      vHead: 'varying vec3 vCardN; attribute float aCard; varying float vCard;',
       vBegin: `{ vec3 cardN0 = normal;
         #ifdef USE_INSTANCING
         cardN0 = mat3(instanceMatrix) * cardN0;
         #endif
-        vCardN = normalMatrix * cardN0; }`,
-      fHead: 'varying vec3 vCardN;',
+        vCardN = normalMatrix * cardN0; }
+        vCard = aCard;`,
+      fHead: 'varying vec3 vCardN; varying float vCard;',
       fAlpha: 'if (diffuseColor.a < mix(1.01, 0.42, smoothstep(0.09, 0.34, abs(dot(normalize(vCardN), normalize(vViewPosition)))))) discard;',
     }));
     // Impostor: three quads at 60 degrees, not two at 90. A 2-quad cross has two viewing azimuths per
@@ -290,7 +366,7 @@ export function buildEZTrees(game, trees, vegetation) {
     const cross = mergeGeometries([q0, q1, q2]);
     const nrm = cross.getAttribute('normal');
     for (let n = 0; n < nrm.count; n++) nrm.setXYZ(n, 0, 1, 0);   // light like ground: no dark backside quad
-    const v = { tree: t, species, branchGeo: withRootFlare(t.branchesMesh.geometry), leafGeo: t.leavesMesh.geometry, barkMat, leafMat, cross, impMat: null, w, h };
+    const v = { tree: t, species, branchGeo: withRootFlare(t.branchesMesh.geometry), leafGeo, barkMat, leafMat, cross, impMat: null, w, h };
     cache[key] = v;
     return v;
   };

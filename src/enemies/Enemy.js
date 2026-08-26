@@ -9,7 +9,15 @@ import { ELEMENT_COLORS } from '../combat/Combat.js';
 // up?" — and that question only exists inside shooting range. Past it the bubble is a translucent ball
 // parked on a hillside: the wave-2 tundra verdict called them "ghost soap-bubbles stuck in the snow" at
 // 60+ m. So it fades out over this band instead of being drawn on the skyline. Squared, for the hot loop.
-const SHIELD_FADE0 = 45 * 45, SHIELD_FADE1 = 80 * 80;
+const SHIELD_FADE0 = 28 * 28, SHIELD_FADE1 = 52 * 52;
+// NEAR-SHELL COVERAGE CULL (blob decree, wave-3 dragon blocker). r/d is the sine of the shell's silhouette
+// half-angle: at 0.26 it subtends ~30 deg, at 0.44 it is ~52 deg — wider than half the frame — and a
+// translucent fresnel shell that covers the frame stops being a bubble and becomes a full-screen wash that
+// tone-maps to cream-white (crit3-dragon-c/shot-aggro.png: 85% of the screen, scene invisible behind it).
+// A melee enemy parked on its standoff ring 2.2-3.4 m from the eye is the NORMAL state of every fight, not
+// an edge case, so this has to be structural: fade the shell out before it can ever fill frame, and the
+// nameplate keeps carrying the "shield still up" read at that range anyway.
+const SHELL_COV0 = 0.26, SHELL_COV1 = 0.44;
 
 // Elite modifier: a lightweight reskin of an existing body for slay-a-mini-boss quest objectives and the
 // loot builder's elite tier floor. Not a new creature — same rig, same AI, three numbers and a look tweak.
@@ -65,6 +73,7 @@ export class Enemy {
       this.shieldMesh = new THREE.Mesh(SHIELD_GEO, this.shieldMat);
       this.shieldMesh.scale.set(def.shieldRadius, def.shieldRadius * 1.3, def.shieldRadius); this.shieldMesh.position.y = def.center; // body-hugging ellipsoid, not a beach ball
       this.shieldMesh.renderOrder = 5; this.shieldMesh.visible = false; this.root.add(this.shieldMesh);
+      this._shellR = def.shieldRadius * 1.3;   // world half-height of the ellipsoid; rescaled per spawn (elites)
     }
     // ---- combat target ----
     this.target = { kind: 'enemy', team: 'enemy', position: this.center, radius: def.radius, height: def.height || undefined, alive: false, object: this.root,
@@ -136,6 +145,7 @@ export class Enemy {
     g.combat.register(this.target);
     // pose
     this.root.position.copy(this.position); this.root.rotation.set(0, this.yaw, 0); this.root.scale.setScalar((def.scale ?? 1) * (elite ? ELITE_SCALE_MUL : 1)); this.root.visible = true;
+    if (this.shieldMesh) this._shellR = def.shieldRadius * 1.3 * this.root.scale.x;   // elites scale the shell too
     this.mesh.castShadow = true; this.mesh.visible = true;
     for (const b of this.boneList) { b.position.copy(this.asset.bindPos[b.userData.index]); b.quaternion.identity(); b.scale.setScalar(1); b.updateMatrix(); }
     this.root.updateMatrixWorld(true);
@@ -185,13 +195,14 @@ export class Enemy {
       this._blinkT = t;
       const a = this.yaw + (this.sys.rnd() < 0.5 ? 1.9 : -1.9) + (this.sys.rnd() - 0.5);
       const nx = this.position.x + Math.sin(a) * sig.blink.dist, nz = this.position.z + Math.cos(a) * sig.blink.dist;
-      const g2 = this.game;
-      g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 14, scale: 0.9 });
+      const g2 = this.game, k0 = this._nearK(this.center);
+      if (k0 > 0.05) g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: Math.round(5 + 9 * k0), scale: 0.9 * (0.45 + 0.55 * k0) });
       this.position.x = nx; this.position.z = nz;
       if (!this.def.flying) this.position.y = this.sys.heightAt(nx, nz);
       else this.position.y = this.sys.heightAt(nx, nz) + this.def.hover;
       this.root.position.copy(this.position); this.wantPos.copy(this.position);
-      g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 14, scale: 0.9 });
+      const k1 = this._nearK(this.center);
+      if (k1 > 0.05) g2.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: Math.round(5 + 9 * k1), scale: 0.9 * (0.45 + 0.55 * k1) });
     }
     // wisps are cowards
     if (this.def.fleeAt && this.health < this.def.fleeAt * this.maxHealth && this.fleeCd <= 0 && this.state !== 'flee') { this._setState('flee'); this.fleeCd = this.def.fleeTime + 6; }
@@ -208,16 +219,20 @@ export class Enemy {
     if (this.health <= 0) this.sys._killFriendly(this);
   }
   _shieldBreak() {
-    this.game.vfx?.emit?.('ring', this.center, { color: this.glowColor.getHex(), scale: this.def.shieldRadius ?? 1 });
-    this.game.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: 24 });
+    const bk = this._nearK(this.center);   // point-blank shield break must not flash-bang the lens — see _nearK
+    this.game.vfx?.emit?.('ring', this.center, { color: this.glowColor.getHex(), scale: (this.def.shieldRadius ?? 1) * (0.35 + 0.65 * bk) });
+    this.game.vfx?.emit?.('aether-burst', this.center, { color: this.glowColor.getHex(), count: Math.round(8 + 16 * bk) });
     this.game.events.emit('enemy:shieldbreak', { enemy: this });
     if (!this.def.boss) { this._setState('stagger'); this.staggerT = 0.6; this.lastStagger = this.game.time; }
   }
   _phase() {
     this.phaseIdx++; this.shield = this.maxShield; this.target.shield = this.shield; this.phaseFlash = 1;
     this.game.combat.explode?.({ point: this.center, radius: 7, damage: 12, element: this.def.shieldElement ?? 'void', owner: this, team: 'enemy', knockback: 14, source: 'warden-phase' });
-    this.game.vfx?.shockwave?.(this.position, { radius: 8, color: this.glowColor.getHex(), duration: 0.6 });
-    this.game.vfx?.emit?.('sigil', this.position, { color: this.glowColor.getHex(), scale: 3 });
+    // A boss phase pops an 8 m dome; standing next to the boss when it triggers is the NORMAL case. Visuals
+    // scale with _nearK, the explode/knockback above does not.
+    const pk = this._nearK(this.position);
+    this.game.vfx?.shockwave?.(this.position, { radius: 8 * (0.30 + 0.70 * pk), color: this.glowColor.getHex(), duration: 0.6 });
+    this.game.vfx?.emit?.('sigil', this.position, { color: this.glowColor.getHex(), scale: 3 * (0.4 + 0.6 * pk) });
     this.game.events.emit('enemy:phase', { enemy: this, phase: this.phaseIdx });
     this.attackCd = 1.2;
   }
@@ -306,6 +321,24 @@ export class Enemy {
     else if (this.alert && t - this.lastSeenT > 9 && t - this.hurtT > 9) this.alert = false;
   }
   _alertPack(t) { if (this.camp) this.camp.alertT = t; }
+
+  /**
+   * NEAR-LENS SCALE for an effect about to be spawned at world point `p` — 0 right at the eye, 1 past ~6 m.
+   * THE WAVE-3 DRAGON BLOCKER LIVED HERE. A slam's shockwave is a 5-7 m additive dome and its origin is one
+   * body-radius in front of a creature standing on its 3.0-3.4 m standoff ring, so the dome does not appear
+   * "near the camera" — it CONTAINS the camera. Every pixel of the frame then gets an additive add, the raw
+   * scene render clips to white before postfx even runs (proved with bypassPostfx: the un-composited frame
+   * was already pure white), and auto-exposure drags the whole world dark for a second afterwards.
+   * The same trap catches the bite burst (spawned at the jaw, ~1 m from the eye) and a phase/shield-break
+   * ring on a boss you are standing next to. This is the identical rule the drake breath jet already
+   * follows — cap the on-screen SIZE of anything additive as it approaches the lens — just applied to
+   * every close-range effect instead of one of them. The hit, knockback, camera shake and audio are
+   * untouched: only the part that would swallow the lens is pulled in.
+   */
+  _nearK(p) {
+    const cam = this.game.camera?.position; if (!cam) return 1;
+    return THREE.MathUtils.clamp((p.distanceTo(cam) - 2.0) / 4.0, 0, 1);
+  }
 
   _setState(s) {
     // leaving the attack (staggered, killed, interrupted) stops _attack being called at all, so the breath jet has
@@ -468,7 +501,9 @@ export class Enemy {
         // band, but only in a ~115 deg cone — you can't be bitten by a hound facing away, and sidestepping still works
         const dx = pf.x - this.position.x, dz = pf.z - this.position.z, dh = Math.hypot(dx, dz);
         const facing = Math.abs(wrapAngle(Math.atan2(dx, dz) - this.yaw)) < 1.0;
-        this._muzzle(_w); g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 8, scale: 0.6 });
+        this._muzzle(_w);
+        const bk = this._nearK(_w);   // the jaw sits ~1 m from the eye at the standoff ring — see _nearK
+        if (bk > 0.05) g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: Math.round(3 + 5 * bk), scale: 0.6 * (0.45 + 0.55 * bk) });
         if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) {
         this._hitThreat(this.damage, 'kinetic');
         if (sig?.chill && atPlayer) g.player.controller?.chill?.(sig.chill.secs, sig.chill.mul);   // the bite is cold: you slow down (player-only — the guide has no controller)
@@ -476,8 +511,13 @@ export class Enemy {
       } else if (kind === 'slam') {
         _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)); _w.copy(this.position).addScaledVector(_v, def.radius + 1.2); _w.y = this.sys.heightAt(_w.x, _w.z);
         g.combat.explode?.({ point: _w, radius: def.slamRadius, damage: this.damage, element: 'kinetic', owner: this, team: 'enemy', knockback: def.knockback, source: this.type + '-slam' });
-        g.vfx?.shockwave?.(_w, { radius: def.slamRadius, color: this.glowColor.getHex(), duration: 0.5 });
-        g.vfx?.emit?.('dust', _w, { count: 30, scale: 2 });
+        // VISUALS ONLY are scaled by _nearK — the explode above (damage, radius, knockback) is untouched, so
+        // a slam you are standing inside hits exactly as hard; it just stops painting the whole screen white.
+        const sk = this._nearK(_w);
+        if (sk > 0.05) {
+          g.vfx?.shockwave?.(_w, { radius: def.slamRadius * (0.30 + 0.70 * sk), color: this.glowColor.getHex(), duration: 0.5 });
+          g.vfx?.emit?.('dust', _w, { count: Math.round(8 + 22 * sk), scale: 2 * (0.35 + 0.65 * sk) });
+        }
         // burning/freezing ground: the slam leaves a patch, so the arena shrinks while you fight
         if (def.signature?.ground) { const gr = def.signature.ground; this.sys.addHazard?.(_w, gr.r, gr.dps, gr.secs, gr.color, gr.element); }
         const dd = _w.distanceTo(g.player.position); g.player.view?.shake?.(THREE.MathUtils.clamp(1.2 - dd / 14, 0, 0.9));   // camera shake is always keyed to the REAL player, not the threat
@@ -534,14 +574,25 @@ export class Enemy {
     const dist = _v.length() || 1; _v.multiplyScalar(1 / dist);
     _v.x += (this.sys.rnd() - 0.5) * spread; _v.y += (this.sys.rnd() - 0.5) * spread * 0.6; _v.z += (this.sys.rnd() - 0.5) * spread; _v.normalize();
     const explode = pj.explodeRadius ? { radius: pj.explodeRadius, damage: damage * 0.8, knockback: 2 } : null;
-    // A `flame` def swaps the generic spark-trail emitter for a GPU ribbon: the whole trail becomes part of the one
-    // batched filament draw instead of a 70-particle-per-second stream, so this is a net REMOVAL of per-frame work.
-    const fl = this.def.flame;
+    // NO GPU RIBBON ON A BOLT AIMED AT THE PLAYER. A filament ribbon follows its projectile, and an enemy
+    // projectile ends its life AT the camera — so the ribbon is guaranteed to cross the near plane at full
+    // width every single volley, and the filament shader has no near-plane fade (uAlphaMul is global). That
+    // is a measured contributor to the wave-3 dragon full-frame cream-white blowout: over a 9-frame burst in
+    // the crit3 repro, ribbons visible = 4 washed frames, ribbons hidden = 1 (tools/out/c1-diag3). The drake
+    // and wyvern keep their fire identity through the held BREATH jet, which already fades by camera
+    // distance (see _breathe), plus the bolt's own saturated colour and spark trail (`trail: !fl` below).
+    // Re-enable per-bolt ribbons only once filaments fade by distance-to-camera — see the report's VFX ask.
+    const fl = null;
     const pr = g.combat.projectile?.({ origin: _w, dir: _v, speed: pj.speed, damage, element: pj.element, owner: this, team: 'enemy', radius: pj.radius, life: pj.life, explode, source: this.type,
       visual: { color: this.glowColor.getHex(), size: pj.radius * 1.1, trail: !fl } });
     if (fl && pr) g.vfx?.filaments?.spawn({ color: fl.color, width: fl.width, spread: fl.spread, strands: fl.strands })?.follow(pr, fl.lag);
-    g.vfx?.flash?.(_w, { color: this.glowColor.getHex(), intensity: 2.5, distance: 6, duration: 0.08 });
-    g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: 6, scale: 0.5 });
+    // Muzzle flash: a real PointLight, and with a full camp volleying there are several alive at once. The
+    // 4-config bisect in tools/out/c1-diag4 showed that zeroing the VFX flash lights alone removes the
+    // full-frame cream wash (washed frames 3/5 -> 0/7), so the enemy side keeps its flash small: lower peak,
+    // tighter falloff radius, and scaled down again by _nearK when the muzzle itself is at the lens.
+    const mk = this._nearK(_w);
+    g.vfx?.flash?.(_w, { color: this.glowColor.getHex(), intensity: 1.5 * (0.35 + 0.65 * mk), distance: 4.5, duration: 0.08 });
+    if (mk > 0.05) g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: Math.round(2 + 4 * mk), scale: 0.5 * (0.45 + 0.55 * mk) });
     g.audio?.play?.('enemy-shot', { pos: _w, vol: 0.7 });
   }
   _throwRock() {
@@ -723,8 +774,14 @@ export class Enemy {
     const wps = this.target.weakPoints;
     if (wps && lod < 2) for (let i = 0; i < wps.length; i++) { const w = wps[i]; w.position.copy(w.off).applyMatrix4(w.bone.matrixWorld); }
     if (this.shieldMesh) {
-      // SHIELD_FADE: full strength inside 45 m (where you are shooting it), gone by 80 m — see the constant.
-      const near = 1 - THREE.MathUtils.smoothstep(this._d2 ?? 0, SHIELD_FADE0, SHIELD_FADE1);
+      // SHIELD_FADE: full strength inside 28 m (where you are shooting it), gone by 52 m — a bubble on an
+      // idle creature across a valley is scenery, and the wave-2/3 tundra verdicts both called it a soap
+      // bubble stuck in the snow at ~55 m. Multiplied by the near-shell coverage cull (see SHELL_COV).
+      const cam = this.game.camera.position;
+      const dx = this.center.x - cam.x, dy = this.center.y - cam.y, dz = this.center.z - cam.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3;
+      const near = (1 - THREE.MathUtils.smoothstep(this._d2 ?? 0, SHIELD_FADE0, SHIELD_FADE1))
+                 * (1 - THREE.MathUtils.smoothstep(this._shellR / d, SHELL_COV0, SHELL_COV1));
       const on = this.shield > 0 && this.alive && near > 0.02; this.shieldMesh.visible = on;
       if (on) { this.su.uTime.value = t; this.su.uAlpha.value = (0.45 + 0.45 * (this.shield / this.maxShield) + phaseF) * near; this.shieldMesh.rotation.y = t * 0.3; }
     }

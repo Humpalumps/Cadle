@@ -5,8 +5,35 @@
 // The hillshade is built ONCE into paperCv and only ever blitted after that — nothing
 // per-frame touches heightAt().
 import { C, clamp } from './theme.js';
+import { blendAt, RING_IN } from '../world/Biomes.js';
 
 const PN = 512;                       // hillshade resolution (built once)
+// REGION WASH. Wave-3 verdict (forest minor): "the minimap draws the Whisperwood as a blank sand-tan
+// disc" — a desert-coloured map inside a closed canopy is a region-read failure. The sheet is shared by
+// the map screen AND the HUD minimap, so tinting it here fixes both with one pass.
+// Each entry is the region's MID-TONE colour. It is applied as a hue SUBSTITUTION scaled by the
+// pixel's own relative brightness (`k` below), not as a multiplier: multiplying cannot make a cool
+// region out of warm parchment (base blue is 150 against red 214, so a "snow" multiplier just came
+// out cream — measured, tools/out/hud4c/shot-tundra-hud.png). Scaling by k keeps every bit of the
+// sheet's structure — hillshade, contour lines, the engraver's water hatching, shorelines, the
+// elevation ramp — and only replaces the hue, so it still reads as a chart, not a paint-by-numbers
+// blob. Each one is that region's own palette (ground splat + haze); cross-check BIOMES[].fog /
+// .ground before changing one.
+const TINT = {
+  meadow:    [150, 168,  96],   // Vale grass
+  forest:    [ 86, 116,  70],   // Whisperwood: deep canopy green
+  tundra:    [206, 216, 232],   // snow, cool and pale
+  celestial: [240, 232, 214],   // marble ivory — deliberately LIGHTER and less saturated than the
+                                //   parchment itself (232,222,196 measured as "just the paper again")
+  dragon:    [186, 116,  74],   // rust-orange peaks
+  infernal:  [120,  70,  58],   // ash + ember
+  lost:      [150, 116, 178],   // violet flagstone
+  shadowfen: [ 96, 112,  92],   // peat murk, green-grey
+  sunken:    [104, 142, 158],   // cascade blue-teal
+  void:      [ 72,  58,  94],   // voidstone, near-black violet
+};
+const TINT_BASE = 214 + 194 + 150;    // the parchment's own mid land tone — the reference for k
+const TINT_A = 0.85;                  // how far the wash goes at full region weight (the rest keeps the paper)
 const FOG_N = 128;                    // fog-of-war grid
 const REVEAL = 115;                   // world units the player uncovers as they walk
 
@@ -48,11 +75,14 @@ export function build(ctx, budgetMs = 0) {
   const hs = bs.hs;
   bs.img ??= new ImageData(N, N);
   const d = bs.img.data;
+  const bl = bs.bl ??= { id: 'meadow', w: 0, k: -1 };   // reused: blendAt would otherwise allocate 262k objects
   while (bs.prow < N) {
     const j = bs.prow;
+    const wz = -half + (j + 0.5) / N * size;
     for (let i = 0; i < N; i++) {
       const o = j * N + i;
       const h = hs[o];
+      const wx = -half + (i + 0.5) / N * size;
       const hx = hs[j * N + Math.min(N - 1, i + 1)] - h;
       const hz = hs[Math.min(N - 1, j + 1) * N + i] - h;
       const sh = clamp(0.5 + (hz - hx) * 0.30, 0, 1);       // hillshade, light from NW
@@ -81,6 +111,16 @@ export function build(ctx, budgetMs = 0) {
           const k = Math.max(0, 1 - band / (0.6 + slope * 0.35));
           r -= 34 * k; g -= 33 * k; b -= 27 * k;
         }
+      }
+      // region wash (see TINT): the outer nine fade in on the SAME weight the music/name-card use, so
+      // the colour hands over exactly where the region does; the home bowl gets its own meadow green.
+      blendAt(wx, wz, bl);
+      let t = TINT[bl.id], a = bl.w;
+      if (a < 0.02) { const rr = Math.hypot(wx, wz); a = clamp((RING_IN + 60 - rr) / 120, 0, 1); t = TINT.meadow; }
+      if (a > 0.02 && t) {
+        const k = (r + g + b) / TINT_BASE;   // this pixel's shading, carried through the hue swap
+        a *= TINT_A;
+        r += (t[0] * k - r) * a; g += (t[1] * k - g) * a; b += (t[2] * k - b) * a;
       }
       const q = o * 4;
       d[q] = clamp(r, 0, 255); d[q + 1] = clamp(g, 0, 255); d[q + 2] = clamp(b, 0, 255); d[q + 3] = 255;
@@ -277,11 +317,22 @@ export function draw(ctx, cv) {
     if (e.dead) continue;
     const p = e.position || (e.mesh && e.mesh.position);
     if (!p || !inView(p.x, p.z, 20 / S)) continue;
-    const x = toX(p.x), y = toY(p.z), r = 5.5 * k;
+    const rare = !!(e.namedRare || (e.enemy && e.enemy.namedRare));   // Enemy, or a combat-target adapter
+    const x = toX(p.x), y = toY(p.z), r = (rare ? 8 : 5.5) * k;
     g.save(); g.translate(x, y);
     g.lineCap = 'round';
-    g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 4.2 * k; saltire(g, r); g.stroke();
-    g.strokeStyle = '#5e1a14'; g.lineWidth = 2 * k; saltire(g, r); g.stroke();
+    g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = (rare ? 5.4 : 4.2) * k; saltire(g, r); g.stroke();
+    g.strokeStyle = rare ? '#8a5a12' : '#5e1a14'; g.lineWidth = (rare ? 2.6 : 2) * k; saltire(g, r); g.stroke();
+    if (rare) {                                   // a named rare is a DESTINATION, not another mob: ringed + named
+      g.beginPath(); g.arc(0, 0, r * 1.5, 0, 7);
+      g.strokeStyle = C.gold; g.lineWidth = 1.6 * k; g.stroke();
+      if (view.zoom >= 2 && e.name) {
+        g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.font = `italic ${Math.round(10.5 * k)}px Georgia,serif`;
+        g.lineWidth = 3 * k; g.strokeStyle = 'rgba(240,228,198,.85)'; g.strokeText(e.name, 0, -r * 2.1);
+        g.fillStyle = 'rgba(96,66,28,.95)'; g.fillText(e.name, 0, -r * 2.1);
+      }
+    }
     g.restore();
   }
 
@@ -329,10 +380,10 @@ export function draw(ctx, cv) {
   legend(g, W, k);
 }
 
-// A four-row key, bottom-right (rose owns top-right, scale bar bottom-left): what a diamond, an X,
-// the flag and the chevron each mean. Same glyph functions as the live markers so it cannot drift.
+// A five-row key, bottom-right (rose owns top-right, scale bar bottom-left): what a diamond, an X, a
+// ringed X, the flag and the chevron each mean. Same glyph functions as the live markers so it cannot drift.
 function legend(g, W, k) {
-  const lh = 16 * k, pad = 8 * k, w = 96 * k, h = pad * 2 + 4 * lh;
+  const lh = 16 * k, pad = 8 * k, w = 100 * k, h = pad * 2 + 5 * lh;
   const x = W - w - 14 * k, y = W - h - 14 * k;
   g.save();
   g.fillStyle = 'rgba(240,228,198,.80)'; g.fillRect(x, y, w, h);
@@ -363,6 +414,12 @@ function legend(g, W, k) {
   g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 3 * k; saltire(g, 3.6 * k); g.stroke();
   g.strokeStyle = '#5e1a14'; g.lineWidth = 1.4 * k; saltire(g, 3.6 * k); g.stroke();
   g.restore(); label('foe');
+  // named rare — the same saltire inside a gold ring
+  g.save(); g.translate(gx, cy); g.lineCap = 'round';
+  g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 3 * k; saltire(g, 3.6 * k); g.stroke();
+  g.strokeStyle = '#8a5a12'; g.lineWidth = 1.4 * k; saltire(g, 3.6 * k); g.stroke();
+  g.beginPath(); g.arc(0, 0, 5.6 * k, 0, 7); g.strokeStyle = C.gold; g.lineWidth = 1.1 * k; g.stroke();
+  g.restore(); label('named rare');
   g.restore();
 }
 

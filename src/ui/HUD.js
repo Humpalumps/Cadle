@@ -11,6 +11,11 @@ import { BIOMES, regionAt } from '../world/Biomes.js';
  *   + ready pop; super meter), damage numbers (world->screen projection, float+fade, crit bigger/yellow, element colored; pooled), directional damage
  *   indicator arcs, enemy health bar above target under crosshir (name, level, shield bar), boss bar (top, with phase ticks),
  *   escort guide frame (world-tracked nameplate + health bar, green — see hud.showGuide/hideGuide),
+ *   NAMED RARES (`enemy.namedRare` / `enemy.name`, Enemies.js) — a wandering elite never steals the boss bar: it gets the
+ *     ordinary target nameplate re-keyed gold with a "Rare" tag (#tgt.rare), a gold ringed diamond on the minimap that
+ *     clamps to the rim when it is off the disc (so it reads as a destination you can choose to walk to), a ringed +
+ *     named saltire on the map screen (ui/mapscreen.js + its legend), and a gold centre banner on the kill — on top of
+ *     the "<NAME> FALLS" toast Enemies.js already feeds,
  *   loot markers (N simultaneous world-tracked nameplates, e.g. legendary+ drops — see hud.marker),
  *   toasts / quest tracker (right side), interaction prompt ("[E] Talk"), pickup feed, death screen + respawn, pause menu (ESC),
  *   settings (sensitivity, fov, quality), low-health vignette pulse (CSS), sniper scope overlay, fusion charge bar,
@@ -23,7 +28,7 @@ import { BIOMES, regionAt } from '../world/Biomes.js';
  *     boss is worse than no bar — own element, own green palette; auto-hides if `enemy.alive` goes false as a safety net, but the
  *     normal path is Enemies.despawnFriendly calling hideGuide itself), hud.marker({ id, text, sub, sub2, subKind,
  *     position, kind, color }) -> unmark() (world-tracked nameplate, N at once — content set once, position read
- *     live every frame; see its doc-comment), hud.notify(title, subtitle),
+ *     live every frame; see its doc-comment), hud.notify(title, subtitle, note, kind) (kind 'rare' re-keys the card gold),
  *   hud.pickup(text), hud.setPerfVisible(bool), hud.demo() (fires toasts/notify/numbers/boss for screenshots)
  *   hud.setQuest(title, objective, others) — the tracker (right side, under the minimap):
  *     title: falsy hides the tracker.
@@ -69,6 +74,10 @@ const MM_SPAN = 300;   // metres across the minimap disc — wide enough that th
 const RET_GAP = { handcannon: 10, autorifle: 7, pulse: 8, shotgun: 15, sniper: 6, fusion: 9, scout: 7, beam: 11 };
 const svg = (vb, inner) => `<svg viewBox="0 0 ${vb} ${vb}" fill="currentColor">${inner}</svg>`;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+// combat.list / the 'combat:hit' event carry Enemy.target — a COMBAT ADAPTER ({name, level, health, ...,
+// enemy: <the Enemy>}), not the Enemy itself. Only the Enemy has `namedRare`, so every rare check has to
+// hop the back-reference. Accepts either shape so callers holding a real Enemy (map screen) also work.
+const isRare = (t) => !!(t && (t.namedRare || t.enemy?.namedRare));
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // The quest engine's objective text already carries a baked-in "— h / n" (or a trailing "✓" when
 // h>=n===1) for the benefit of an old string-only HUD (see src/rpg/quest.js's own doc-comment). This
@@ -91,7 +100,7 @@ const TEMPLATE = `
   <div id="hitmark"><i style="transform:rotate(45deg) translateY(-13px)"></i><i style="transform:rotate(135deg) translateY(-13px)"></i><i style="transform:rotate(225deg) translateY(-13px)"></i><i style="transform:rotate(315deg) translateY(-13px)"></i></div>
 </div>
 <div id="scope"><div class="lens"></div><div class="lh"></div><div class="lv"></div><div class="ld"></div></div>
-<div id="tgt"><div class="tname"><span class="tn"></span><span class="tlvl"></span></div><div class="bar"><i class="ghost"></i><i class="tfill"></i><i class="tsh"></i></div></div>
+<div id="tgt"><div class="tname"><i class="trare">&#9670;&nbsp;Rare</i><span class="tn"></span><span class="tlvl"></span></div><div class="bar"><i class="ghost"></i><i class="tfill"></i><i class="tsh"></i></div></div>
 <div id="boss"><div class="bname"></div><div class="bar"><i class="bfill"></i><i class="bsh"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div></div>
 <div id="guide"><div class="gname"></div><div class="bar"><i class="gfill"></i></div></div>
 <div id="markers"></div>
@@ -200,6 +209,11 @@ export class HUD {
       if (e.owner !== g.player) return;
       this.hitMarker({ crit: e.crit, kill: e.killed });
       this._dnum(e.point, e.amount, e.crit, e.element, e.target);
+      // NAMED RARE kill banner. Enemies.js already drops a "<NAME> FALLS" line into the toast feed;
+      // this is the Destiny beat on top of it — the centre card the zone crossing uses, in the rare's
+      // own warm gold instead of the aether blue, so a wandering elite dying reads as an event and
+      // not as another line scrolling past the ability toasts.
+      if (e.killed && isRare(e.target)) this.notify(e.target.enemy?.name ?? e.target.name ?? 'Rare Slain', 'rare felled', '', 'rare');
     });
     ev.on('player:damaged', (e) => {
       const src = e.source?.position ?? e.info?.point;
@@ -229,8 +243,9 @@ export class HUD {
     t.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 180, easing: 'ease-out' });
     setTimeout(() => { t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 350 }).onfinish = () => t.remove(); }, ms);
   }
-  notify(title, subtitle = '', note = '') {
+  notify(title, subtitle = '', note = '', kind = '') {
     const n = this.notifyEl;
+    setCls(n, 'rare', kind === 'rare');
     n.querySelector('h2').textContent = title; n.querySelector('p').textContent = subtitle;
     // third line: the RULES of the place (low gravity, lava, swimming). Only regions that really change
     // something set it — see BIOMES[].passive. textContent, never innerHTML: this string is content, not markup.
@@ -372,7 +387,12 @@ export class HUD {
     }
     this.markersEl.appendChild(el);
     const key = id || el;
-    const rec = { el, pos: position, vis: false, detailEl, nearFade, _compact: false, _x: 0, _y: 0, _d: 0, _op: -1 };
+    // Quest glyphs anchor on the GIVER'S FEET (Props hands us the NPC's stand point, which is what the
+    // [E] radius and `steleAt` are measured from) — projected raw, the "!" then sits at ankle height and,
+    // wherever the giver is standing in water, on the water sheet itself (shadowfen verdict, 3 waves).
+    // Lift it a head-and-a-bit in WORLD space so it reads as the genre's over-the-head badge at every
+    // distance and angle. `_d` stays on the feet so nearFade's hand-off radii keep their tuning.
+    const rec = { el, pos: position, yOff: kind === 'quest' ? 2.4 : 0, vis: false, detailEl, nearFade, _compact: false, _x: 0, _y: 0, _d: 0, _op: -1 };
     rec.unmark = () => { if (rec.dead) return; rec.dead = true; el.remove(); if (this._markers.get(key) === rec) this._markers.delete(key); };
     this._markers.set(key, rec);
     return rec.unmark;
@@ -482,9 +502,24 @@ export class HUD {
       c.fillStyle = 'rgba(20,14,6,0.85)'; c.beginPath(); c.arc(x, y, 3.4, 0, 6.2832); c.fill();
       c.fillStyle = '#e9c46a'; c.beginPath(); c.arc(x, y, 2.1, 0, 6.2832); c.fill();
     }
-    // enemies you can already see on the tracker: red pips, cheap (list is short)
+    // enemies you can already see on the tracker: red pips, cheap (list is short).
+    // A NAMED RARE is the one enemy on this disc that is a destination, so it gets the treatment the
+    // genre gives a wandering elite: bigger, gold, ringed, and clamped to the rim with a chevron when
+    // it is off the disc — the whole point is that you can decide to go hunt it.
     for (const e of g.combat?.list ?? []) {
       if (!e.alive || e.team !== 'enemy') continue;
+      if (isRare(e)) {
+        const dx = e.position.x - p.x, dz = e.position.z - p.z, d = Math.hypot(dx, dz) || 1;
+        const inside = d * k < R - 8;
+        const x = inside ? toX(e.position.x) : R + dx / d * (R - 8), y = inside ? toY(e.position.z) : R + dz / d * (R - 8);
+        c.save(); c.translate(x, y);
+        c.beginPath(); c.moveTo(0, -5.6); c.lineTo(5.6, 0); c.lineTo(0, 5.6); c.lineTo(-5.6, 0); c.closePath();
+        c.fillStyle = '#e9c46a'; c.strokeStyle = 'rgba(24,12,4,0.92)'; c.lineWidth = 1.5; c.fill(); c.stroke();
+        c.beginPath(); c.moveTo(0, -2.4); c.lineTo(2.4, 0); c.lineTo(0, 2.4); c.lineTo(-2.4, 0); c.closePath();
+        c.fillStyle = '#8e2b16'; c.fill();
+        c.restore();
+        continue;
+      }
       const x = toX(e.position.x), y = toY(e.position.z);
       if (x < 4 || x > W - 4 || y < 4 || y > W - 4) continue;
       c.fillStyle = '#d8402a'; c.beginPath(); c.arc(x, y, 2.4, 0, 6.2832); c.fill();
@@ -684,7 +719,9 @@ export class HUD {
       const shown = this._mkScratch ??= [];
       shown.length = 0;
       for (const rec of this._markers.values()) {
-        const v = this._v.copy(rec.pos).project(cam);
+        const v = this._v.copy(rec.pos);
+        if (rec.yOff) v.y += rec.yOff;          // over-the-head anchor for quest glyphs (see marker())
+        v.project(cam);
         const vis = v.z > -1 && v.z < 1;
         rec.vis = vis;
         rec._d = rec.pos.distanceToSquared(cam.position);
@@ -750,6 +787,7 @@ export class HUD {
     if (showTgt !== this._tgtVis) { this._tgtVis = showTgt; this.tgtEl.style.opacity = showTgt ? 1 : 0; }
     if (showTgt) {
       const tg = this._tgt;
+      setCls(this.tgtEl, 'rare', isRare(tg));   // gold frame + "◆ Rare" tag; see #tgt.rare in ui.css
       setT(this.tgtName, tg.name ?? 'Enemy'); setT(this.tgtLvl, 'Lv ' + (tg.level ?? 1));
       const thp = tg.maxHealth ? tg.health / tg.maxHealth : 1;
       setX(this.tgtFill, thp); setX(this.tgtSh, tg.maxShield ? tg.shield / tg.maxShield : 0);

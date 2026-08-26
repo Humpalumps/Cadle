@@ -91,6 +91,13 @@ const BSPIRE = {
 // of: Whisperwood's fae lights, Frostveil's ice, the Lost Realm's arcane shards, the Void's splinters.
 // Everywhere else the region grows its own thing (Props._buildBiomeClutter) — the complaint that started
 // this was "trees and crystals in every biome", and re-tinting the same two props is not an answer to it.
+// LANDMARK CLEARANCE, metres from the region centre (Props builds every hero landmark centred on B.cx/B.cz).
+// Nothing this file scatters — tree, rock or spire — may stand inside it. "A full pine stands inside the black
+// doorway recess of the Kharaz-Dun Gate ... plus three more on the gate's own apron" (crit3-dragon-c/z_door.png)
+// is the shipped symptom; the cause is that scatter never knew the landmarks existed outside the home bowl.
+// Values are the built footprint plus a crown's worth of margin (a 13 m pine is ~7 m across at the top).
+const LM_CLEAR = { forest: 26, tundra: 30, celestial: 46, dragon: 56, infernal: 34, lost: 48, shadowfen: 28, sunken: 40, void: 34 };
+
 // grove noise for the outer regions (separate lattice from the home Whisperwood, so they clump differently)
 const grove2 = (x, z) => smoothstep(0.10, 0.52, fbm(x * 0.0075, z * 0.0075, { octaves: 3, seed: 41 }) * 0.5 + 0.5);
 
@@ -131,25 +138,39 @@ export const erodeFade = (at) => ({
   fHead: 'varying float vFade;',
   fAlpha: `if (diffuseColor.a < mix(1.01, ${at.toFixed(3)}, clamp(vFade, 0.0, 1.0))) discard;`,
 });
-/** World-space triplanar mapping of material.map (+ optional moss on up-facing surfaces). */
-export function triplanarPatch(scale = 0.3, moss = 0.0, mossColor = [0.45, 0.62, 0.28]) {
+/** World-space triplanar mapping of material.map (+ optional moss on up-facing surfaces, + optional SNOW).
+ *  `snow` (0..1) drives a real albedo/roughness swap on up-facing surfaces, not a tint multiply: a boulder
+ *  in a snowfield with a crisp snow-free top is the tundra's "bare smooth grey dome" finding
+ *  (crit3-tundra-c/shot-boulders-a.png). The edge is broken by the map's own luma so it drifts around the
+ *  dome instead of drawing a latitude line, and the snow value is capped well under the bloom threshold —
+ *  snow is a bright DIFFUSE surface, never a light source. */
+export function triplanarPatch(scale = 0.3, moss = 0.0, mossColor = [0.45, 0.62, 0.28], snow = 0.0) {
   return {
-    uniforms: { uTriScale: { value: scale }, uMoss: { value: moss }, uMossCol: { value: new THREE.Vector3(...mossColor) } },
+    uniforms: { uTriScale: { value: scale }, uMoss: { value: moss }, uMossCol: { value: new THREE.Vector3(...mossColor) }, uSnow: { value: snow } },
     vHead: 'varying vec3 vWPos; varying vec3 vWNormal;',
     vAfter: `{ vec4 wp = vec4(transformed, 1.0); mat3 nm = mat3(modelMatrix);
       #ifdef USE_INSTANCING
         wp = instanceMatrix * wp; nm = nm * mat3(instanceMatrix);
       #endif
       wp = modelMatrix * wp; vWPos = wp.xyz; vWNormal = normalize(nm * objectNormal); }`,
-    fHead: 'varying vec3 vWPos; varying vec3 vWNormal; uniform float uTriScale; uniform float uMoss; uniform vec3 uMossCol;',
+    fHead: 'varying vec3 vWPos; varying vec3 vWNormal; uniform float uTriScale; uniform float uMoss; uniform vec3 uMossCol; uniform float uSnow;\nfloat gSnowA = 0.0;',
     fMap: `#ifdef USE_MAP
       { vec3 bw = abs(normalize(vWNormal)); bw = pow(bw, vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
         vec3 p = vWPos * uTriScale;
         vec4 tc = texture2D(map, p.zy) * bw.x + texture2D(map, p.xz) * bw.y + texture2D(map, p.xy) * bw.z;
         diffuseColor *= tc;
         float mossA = uMoss * smoothstep(0.25, 0.85, vWNormal.y) * smoothstep(0.35, 0.7, tc.g * 1.6);
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uMossCol * 2.2, mossA); }
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uMossCol * 2.2, mossA);
+        if (uSnow > 0.001) {
+          float lum = dot(tc.rgb, vec3(0.2126, 0.7152, 0.0722));
+          gSnowA = uSnow * smoothstep(0.10, 0.66, vWNormal.y + (lum - 0.5) * 0.85);   // luma-broken edge: drift, never a latitude line
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.60, 0.635, 0.70) * (0.80 + 0.34 * lum), gSnowA);
+        } }
       #endif`,
+    // roughnessFactor only exists from <roughnessmap_fragment> onward, which is AFTER map_fragment — so the
+    // snow's matte roughness lands here, still ahead of lights_physical_fragment. Emitted ONLY when snow is
+    // actually on: Props patches ten materials with this helper and a depth/basic one would not declare it.
+    ...(snow > 0 ? { fEmissive: 'roughnessFactor = mix(roughnessFactor, 0.74, gSnowA);' } : {}),
   };
 }
 /** Per-instance InstancedMesh colour, carried by hand — USE THIS ON EVERY INSTANCED MATERIAL THAT WANTS
@@ -309,7 +330,7 @@ const LEAF_CROPS = (() => {
  *  list: [{c, n, w, h, up?, fold?, flip?, crop?, ao?}] — spherical normals around `center` give soft canopy shading;
  *  flip mirrors the texture, crop picks a LEAF_CROPS window, aLeaf carries (hue jitter, ambient occlusion). */
 function cards(list, center, fold = 0.2) {
-  const P = [], N = [], U = [], L = []; const up0 = new THREE.Vector3(0, 1, 0), r = new THREE.Vector3(), u = new THREE.Vector3(), u2 = new THREE.Vector3(), q = new THREE.Vector3(), n = new THREE.Vector3();
+  const P = [], N = [], U = [], L = [], Q = []; const up0 = new THREE.Vector3(0, 1, 0), r = new THREE.Vector3(), u = new THREE.Vector3(), u2 = new THREE.Vector3(), q = new THREE.Vector3(), n = new THREE.Vector3();
   for (const k of list) {
     n.copy(k.n).normalize(); const upv = k.up || up0; u.copy(upv).addScaledVector(n, -n.dot(upv)).normalize(); r.crossVectors(u, n).normalize();
     const f = k.fold ?? fold; u2.copy(u).multiplyScalar(Math.cos(f)).addScaledVector(n, Math.sin(f)); // top half tilts toward the normal
@@ -323,11 +344,13 @@ function cards(list, center, fold = 0.2) {
       const uvs = [[fx, v0], [1 - fx, v0], [1 - fx, v1], [fx, v1]];
       for (const i of [0, 1, 2, 0, 2, 3]) {
         const p = co[i]; P.push(p.x, p.y, p.z); q.subVectors(p, center).normalize(); N.push(q.x, q.y, q.z);
-        U.push(cu + uvs[i][0] * cs, cv + uvs[i][1] * ct); L.push(tint, ao);
+        U.push(cu + uvs[i][0] * cs, cv + uvs[i][1] * ct); L.push(tint, ao); Q.push(uvs[i][0], uvs[i][1]);
       }
     }
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', F32(P, 3)); g.setAttribute('normal', F32(N, 3)); g.setAttribute('uv', F32(U, 2)); g.setAttribute('aLeaf', F32(L, 2)); return g;
+  // aLuv = the card's OWN 0..1 uv, which `uv` no longer is once a LEAF_CROPS window is applied. A shader
+  // that wants to fade a card out toward its own border (so the card RECTANGLE stops existing) needs it.
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', F32(P, 3)); g.setAttribute('normal', F32(N, 3)); g.setAttribute('uv', F32(U, 2)); g.setAttribute('aLeaf', F32(L, 2)); g.setAttribute('aLuv', F32(Q, 2)); return g;
 }
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 function spine(n, fn) { const pts = [], radii = []; for (let i = 0; i <= n; i++) { const [p, r] = fn(i / n); pts.push(p); radii.push(r); } return [pts, radii]; }
@@ -396,7 +419,12 @@ export function makeRockGeometry(kind, seed = 1) {
   const sc = [[1, 0.85, 1.15], [1.25, 0.75, 1], [1.5, 0.45, 1.1], [0.7, 1.7, 0.6]][kind];
   for (let i = 0; i < n; i++) {
     v.fromBufferAttribute(p, i); const f = 1.4;
-    let d = 0.16 * fbm(v.x * f + v.y * 0.7 * f + seed, v.z * f - v.y * 0.5 * f, { octaves: 4, seed: 77 + seed }) + 0.05 * noise2(v.x * 5 + seed, v.z * 5 + v.y * 3, 78);
+    // Third octave, and it is not decoration: the boulder was a smooth ellipsoid, which is the wave-3
+    // "marble-egg boulders ... still smooth domes" (lost) and "bare smooth grey dome" (tundra) finding in
+    // both regions at once. A ridged |noise| term breaks the silhouette into shoulders and hollows at
+    // ~0.5 m, so the dome reads as weathered stone from its outline alone. Zero extra triangles.
+    let d = 0.16 * fbm(v.x * f + v.y * 0.7 * f + seed, v.z * f - v.y * 0.5 * f, { octaves: 4, seed: 77 + seed }) + 0.05 * noise2(v.x * 5 + seed, v.z * 5 + v.y * 3, 78)
+      + 0.075 * (1 - Math.abs(noise2(v.x * 2.6 + seed * 1.7, v.z * 2.6 - v.y * 2.1, 79)));
     if (kind === 3 && v.y > 0) d -= v.y * 0.18 * (Math.abs(v.x) + Math.abs(v.z)); // pointed tip
     v.multiplyScalar(1 + d); v.x *= sc[0]; v.y *= sc[1]; v.z *= sc[2];
     if (kind === 2 && v.y > 0.25) v.y = 0.25 + (v.y - 0.25) * 0.3; // flat top
@@ -404,33 +432,46 @@ export function makeRockGeometry(kind, seed = 1) {
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
 }
-/** One aether shard: an irregular 8-sided prism (per-side radius + height jitter) with a chiselled 3-step tip and a
+/** One aether shard: an irregular 8-sided prism (per-side radius + height jitter) with a chiselled tip and a
  *  bevelled waist. Irregular sides mean every facet has its OWN normal, so sun/rim/glint break across the shard —
- *  a regular hexagonal cone renders as two flat tones (the "purple confetti" read the critic called out). */
-function shardGeometry(rng, h, r) {
+ *  a regular hexagonal cone renders as two flat tones (the "purple confetti" read the critic called out).
+ *  THREE ARCHETYPES, not one prototype scaled (crit3-void-b: "no variation between instances beyond scale ...
+ *  Blender primitives with a toon shader"): 0 chisel spike, 1 flat blade (squashed on one axis, snapped tip),
+ *  2 stubby twisted prism with a bevelled crown. One extra chamfer row each, so the silhouette has seven
+ *  breaks instead of five, and blade/prism keep a capped top instead of collapsing to a needle point. */
+const SHARD_PROF = [
+  [[0, 0.74], [0.10, 1.00], [0.34, 0.96], [0.55, 0.86], [0.74, 0.68], [0.89, 0.36], [1, 0.00]],
+  [[0, 0.62], [0.08, 0.94], [0.30, 1.00], [0.58, 0.88], [0.80, 0.58], [0.93, 0.30], [1, 0.07]],
+  [[0, 0.86], [0.12, 1.00], [0.44, 0.98], [0.66, 0.90], [0.82, 0.72], [0.93, 0.42], [1, 0.11]],
+];
+function shardGeometry(rng, h, r, arch = 0) {
   const SIDES = 8, P = [];
   const rad = [], off = [];
-  for (let k = 0; k < SIDES; k++) { rad.push(r * (0.62 + rng() * 0.6)); off.push((rng() - 0.5) * 0.16); }
-  // profile: [heightFrac, radiusFrac] — flared foot, waist, shoulder, then a 2-step chisel to the point
-  const prof = [[0, 0.74], [0.10, 1.0], [0.46, 0.93], [0.70, 0.82], [0.86, 0.5], [1, 0.0]];
-  const twist = (rng() - 0.5) * 0.5;
+  const squash = arch === 1 ? 0.46 : 1;                       // blade: a plate, not a pencil
+  for (let k = 0; k < SIDES; k++) { rad.push(r * (0.58 + rng() * 0.70)); off.push((rng() - 0.5) * 0.20); }
+  const prof = SHARD_PROF[arch % 3];
+  const twist = (rng() - 0.5) * (arch === 2 ? 0.95 : 0.5);
   const pt = (pi, k) => {
     const [t, rf] = prof[pi], a = (k / SIDES) * Math.PI * 2 + twist * t + off[k % SIDES];
     const rr = rad[k % SIDES] * rf;
-    return [Math.cos(a) * rr, t * h * (1 + off[k % SIDES] * 0.3), Math.sin(a) * rr];
+    return [Math.cos(a) * rr, t * h * (1 + off[k % SIDES] * 0.3), Math.sin(a) * rr * squash];
   };
   for (let pi = 0; pi < prof.length - 1; pi++) for (let k = 0; k < SIDES; k++) {
     const a = pt(pi, k), b = pt(pi, k + 1), c = pt(pi + 1, k + 1), d = pt(pi + 1, k);
     if (prof[pi][1] > 0) P.push(...a, ...b, ...c);
     if (prof[pi + 1][1] > 0) P.push(...a, ...c, ...d);
   }
+  const top = prof[prof.length - 1];
+  if (top[1] > 0) { const c0 = [0, top[0] * h, 0]; for (let k = 0; k < SIDES; k++) P.push(...c0, ...pt(prof.length - 1, k), ...pt(prof.length - 1, k + 1)); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(P), 3)); return g;
 }
-function crystalClusterGeometry(rng, n) {
+function crystalClusterGeometry(rng, n, arch = 0) {
   const parts = [];
   for (let i = 0; i < n; i++) {
     const h = (i === 0 ? 1 : 0.3 + rng() * 0.55) * 2.4, r = h * (0.15 + rng() * 0.06);
-    const g = shardGeometry(rng, h, r);
+    // the cluster's own shards mix archetypes too — a spike leaning out of a blade reads as a growth, a
+    // row of identical cones reads as confetti
+    const g = shardGeometry(rng, h, r, i === 0 ? arch : (arch + 1 + ((rng() * 2) | 0)) % 3);
     g.rotateX(i === 0 ? rng() * 0.14 : 0.2 + rng() * 0.6); g.rotateY(rng() * Math.PI * 2);
     if (i > 0) g.translate(Math.cos(i * 2.4) * (0.25 + rng() * 0.4) * 1.2, -0.12, Math.sin(i * 2.4) * (0.25 + rng() * 0.4) * 1.2);
     parts.push(g);
@@ -501,6 +542,7 @@ export class Vegetation {
     const rng = mulberry32(game.seed + 4242);
     // painted assets (ASSETS.md): painterly leaf cluster card + seamless ridged bark, via the preloader (never load files ourselves)
     const leafCard = game.assets?.tex?.('leaf_card') ?? null;
+    this._leafCard = leafCard;
     const bk = game.assets?.tex?.('bark') ?? null;
     const barkAsset = bk ? { map: bk, normalMap: normalFromLuma(bk.image, 512, 4.5) } : null;
     if (!leafCard || !barkAsset) console.warn('[vegetation] painted assets missing, procedural fallback');
@@ -636,7 +678,10 @@ export class Vegetation {
     // term; for tundra its colour is snow, so domes get a white dusting instead of olive moss.
     const GROUPS = {
       default:   { map: rockTex,                                                          tri: 0.28, moss: 0.55 },
-      tundra:    { map: rockTexture(aniso, [0.55, 0.57, 0.61], [0.66, 0.68, 0.73], 0.3),  tri: 0.28, moss: 0.95, mossCol: [0.52, 0.54, 0.58] },
+      // snow, not "moss that happens to be grey": a real albedo swap on the up-faces (see triplanarPatch).
+      // The multiply-tint version shipped in wave 2 and read as nothing at all — every Frostveil boulder
+      // was still a bare grey dome in unbroken snow (crit3-tundra-c/shot-boulders-a.png).
+      tundra:    { map: rockTexture(aniso, [0.55, 0.57, 0.61], [0.66, 0.68, 0.73], 0.3),  tri: 0.28, moss: 0, snow: 0.92 },
       celestial: { map: A('marble_strata'),   tri: 0.20, moss: 0 },
       dragon:    { map: A('granite_detail'),  tri: 0.30, moss: 0 },
       infernal:  { map: A('basalt_columnar'), tri: 0.22, moss: 0 },
@@ -653,7 +698,7 @@ export class Vegetation {
     for (const [gname, cfg] of Object.entries(GROUPS)) {
       if (!cfg.map) continue;   // asset missing -> the region falls back to default at placement time
       const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: cfg.map, vertexColors: true, roughness: 0.95, metalness: 0.02 }),
-        mergePatch(fadePatch, triplanarPatch(cfg.tri, cfg.moss, cfg.mossCol), { key: 'rock-' + gname }));
+        mergePatch(fadePatch, triplanarPatch(cfg.tri, cfg.moss, cfg.mossCol, cfg.snow), { key: 'rock-' + gname }));
       this._rockGrp[gname] = this.rockGeos.map((g, k) => {
         const m = new THREE.InstancedMesh(gname === 'default' ? g : alias(g), mat, 8);
         m.castShadow = k === 0; // only the big boulders cast — small rocks hug the ground, their shadow is invisible but costs 3 cascade draws
@@ -703,7 +748,7 @@ export class Vegetation {
       // glacial ice" survived a wave-1 fix AND a wave-2 fix: both edited a tint that could not arrive.
       // (Rocks were never affected — that material sets vertexColors:true and its geometry has a colour
       // attribute.) Reading `instanceColor` in the vertex shader and forwarding it costs one varying.
-      vHead: 'varying float vPh; varying float vLy; flat varying vec3 vFN; varying vec3 vITint;', vBegin: `
+      vHead: 'varying float vPh; varying float vLy; varying vec3 vLp; flat varying vec3 vFN; varying vec3 vITint;', vBegin: `
         #ifdef USE_INSTANCING
           vPh = fract(dot(instanceMatrix[3].xz, vec2(0.137, 0.291)));
         #else
@@ -713,10 +758,13 @@ export class Vegetation {
         #ifdef USE_INSTANCING_COLOR
           vITint = instanceColor;
         #endif
-        vLy = position.y; vFN = objectNormal;`,
-      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; flat varying vec3 vFN; varying vec3 vITint;
+        vLy = position.y; vLp = position; vFN = objectNormal;`,
+      fHead: `uniform float uTime; uniform float uSunI; uniform vec3 uSunColor; uniform vec3 uSunDirV; varying float vPh; varying float vLy; varying vec3 vLp; flat varying vec3 vFN; varying vec3 vITint;
         float facetHash(vec3 n){ return fract(sin(dot(n, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-        vec3 gTint = vec3(0.42, 0.30, 1.00);`,
+        float cellHash(vec3 p){ return fract(sin(dot(floor(p), vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+        vec3 gTint = vec3(0.42, 0.30, 1.00);
+        float gPale = 0.0;    // 1 = this instance is ICE, not aether (set in map_fragment, read by the emissive block)
+        float gFH = 0.0;      // per-facet hash, shared by both blocks so albedo steps and specular agree`,
       fMap: `{
         // Instance HUE, taken once for the whole fragment (map runs before emissive). Everything that
         // used to be hardcoded aether violet reads off this, so an ice shard, a coral fan and a void
@@ -733,26 +781,41 @@ export class Vegetation {
           gTint = max(vec3(0.0), tL + (gTint - tL) * 2.2);
           gTint /= max(max(gTint.r, max(gTint.g, gTint.b)), 1e-3);
         }
-        float fh = facetHash(vFN);                                                    // stable per-facet value (flat normals)
-        float tipT = clamp(vLy / 2.2, 0.0, 1.0);
-        diffuseColor.rgb *= 0.30 + 1.05 * fh;                                            // hard facet-to-facet albedo steps: the faces must read apart in flat sun
-        diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + fh * 19.0);                    // internal growth banding
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (vec3(0.55) + gTint * 0.95), fh * 0.6 + tipT * 0.3);
-        // PALE SPIRES (Frostveil ice): a near-white instance tint means "this is ICE, not aether" — the
-        // body swaps its deep violet albedo for pale glacial, so daylight facets read frost instead of
-        // opaque royal sapphire (wave-1+2 tundra verdicts). Facet steps + growth banding stay, in white.
-        // The translucent read comes from tint SATURATION (rim/backlight in the pale ice hue), not emissive.
+        gFH = facetHash(vFN);                                                            // stable per-facet value (flat normals)
+        // THE BODY TAKES THE INSTANCE HUE, it is no longer merely mixed TOWARD it over a fixed violet
+        // albedo. That mix could never win: the material colour is 0x3a2a9e, so a Whisperwood fae spire
+        // carrying a green tint still rendered a fuchsia body — "hot magenta crystal clusters across the
+        // western band break the region palette" (crit3-forest-c/shot-west-band-in.png), a finding that
+        // survived two waves of edits to a tint that only ever reached the RIM. Luminance is preserved and
+        // the hue is replaced: saturate the colour, never raise the value (CLAUDE.md law).
+        float bl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        diffuseColor.rgb = mix(diffuseColor.rgb, gTint * bl * 1.45, step(0.0, vITint.r));
+        diffuseColor.rgb *= 0.34 + 0.98 * gFH;                                           // hard facet-to-facet albedo steps: the faces must read apart in flat sun
+        diffuseColor.rgb *= 0.86 + 0.30 * sin(vLy * 7.5 + gFH * 19.0);                   // internal growth banding
+        // INTERIOR DEPTH. "normal" does not exist this early in the fragment (normal_fragment_begin runs
+        // after map_fragment) and a flat-shaded material declares no vNormal, so the facet normal comes
+        // from the same screen derivatives three's own FLAT_SHADED path uses.
+        vec3 fdX = dFdx(vViewPosition), fdY = dFdy(vViewPosition);
+        vec3 fN = normalize(cross(fdX, fdY));
+        float nv = abs(dot(fN, normalize(vViewPosition)));
+        diffuseColor.rgb *= mix(1.28, 0.42, nv);                                         // face-on = looking through the deep core, grazing = a thin bright wall
+        diffuseColor.rgb *= 0.86 + 0.36 * cellHash(vLp * 3.7);                           // clouding / inclusions: a gem is not one value per facet
+        // PALE SPIRES (Frostveil ice): a near-white instance tint means "this is ICE, not aether".
         // ...and "is this ice?" is a question about SATURATION, not brightness. Keying it off luminance
         // meant the per-instance brightness jitter (j = 0.88..1.12 in addCrystal) decided it: the dim ~40%
         // of Frostveil shards fell under the threshold and came out royal sapphire next to their pale
         // neighbours (tools/out/veg3-runC/shot-tundra-shards.png). Chroma is invariant under that jitter —
         // it scales all three channels — so it separates the regions cleanly and for good: ice [.92 .96 1.04]
         // is 0.12 saturated, while void [.52 .22 1.05], lost, forest and the meadow's own jitter are all 0.45+.
+        // The ice BODY is now dark saturated blue, not pale grey. Pale grey was the bug: at 40 m+ the shard
+        // sat at the value of the snowfield behind it and the silhouette dissolved into white cardboard
+        // (crit3-tundra/shot-side.png). Value separation comes from a dark body; the ICE read comes from a
+        // fresnel rim and a thin-slab translucency added to reflectedLight below — lighting, never emissive.
         float pMax = max(vITint.r, max(vITint.g, vITint.b));
         float pSat = (pMax - min(vITint.r, min(vITint.g, vITint.b))) / max(pMax, 1e-3);
-        float paleT = vITint.r < 0.0 ? 0.0 : 1.0 - smoothstep(0.14, 0.34, pSat);
+        gPale = vITint.r < 0.0 ? 0.0 : 1.0 - smoothstep(0.14, 0.34, pSat);
         diffuseColor.rgb = mix(diffuseColor.rgb,
-          vec3(0.72, 0.80, 0.90) * (0.55 + 0.45 * fh) * (0.88 + 0.18 * sin(vLy * 6.0 + fh * 17.0)), paleT);
+          vec3(0.26, 0.40, 0.60) * (0.55 + 0.62 * gFH) * (0.86 + 0.22 * sin(vLy * 6.0 + gFH * 17.0)) * mix(1.30, 0.52, nv), gPale);
         }`,
       fEmissive: `{ float day = clamp(uSunI, 0.0, 1.0);
         vec3 tintC = gTint;
@@ -760,7 +823,11 @@ export class Vegetation {
         vec3 Vd = normalize(vViewPosition);                                      // fragment -> camera
         vec3 Nn = normalize(normal);
         float fres = pow(1.0 - clamp(abs(dot(Vd, Nn)), 0.0, 1.0), 2.2);          // broad Fresnel: a rim you can actually see at noon
-        float fh = facetHash(vFN);
+        float fh = gFH;
+        // per-facet specular variance: one roughness across the whole solid is what makes a gem read as
+        // moulded plastic (crit3-void-b "no specular breakup"). roughnessmap_fragment already ran, so
+        // roughnessFactor is live and this lands before lights_physical_fragment consumes it.
+        roughnessFactor = clamp(roughnessFactor * (0.60 + 0.90 * fh), 0.07, 0.85);
         float grad = mix(1.2, 0.45, clamp(vLy / 2.2, 0.0, 1.0));                 // bright core at the base, cool tips
         float streak = 0.82 + 0.3 * sin(vLy * 7.0 + fh * 21.0);
         float back = max(dot(-Vd, uSunDirV), 0.0);                               // sun behind the shard, shining through
@@ -775,10 +842,20 @@ export class Vegetation {
         // Both sun terms are pulled toward the shard's own colour. Left as raw sun they are white-gold, and a
         // white-gold facet glint a few metres from the camera in the meadow is the decree's blob by every
         // measure the gate uses (it caught one at 252,228,181). A crystal sparkles in its own hue.
+        // ICE IS NOT A LIGHT SOURCE. The aether glow is cut to a seventh on pale instances and the read
+        // moves into LIGHTING: a saturated cyan-blue fresnel rim plus a thin-slab backlight, added to
+        // reflectedLight.directDiffuse so it respects exposure, tone mapping and the bloom threshold and
+        // can never become a floating white ball (same mechanism as the ground-cover law in CLAUDE.md).
+        // Channel-capped, not luminance-capped: a cyan sits near the ceiling in two channels at once.
+        e = mix(e, e * 0.14, gPale);
+        vec3 iceHue = vec3(0.42, 0.70, 1.00);
+        reflectedLight.directDiffuse += min(gPale * uSunColor * max(uSunI, 0.35) *
+          (iceHue * pow(fres, 1.35) * 1.05 + iceHue * pow(back, 1.6) * (0.30 + 0.55 * fh) * 0.90),
+          vec3(0.42, 0.68, 0.92));
         totalEmissiveRadiance = min(e, vec3(2.1)); }`,                                 // hard cap: bloom must never wash a facet to flat white
     });
     this.crystalMat = mat;
-    this.crystalSets = [7, 5, 9].map((n, i) => { const m = new THREE.InstancedMesh(crystalClusterGeometry(rng, n), mat, 8); m.castShadow = false; /* emissive: shadows add nothing */ m.receiveShadow = true; m.name = 'crystals-' + i; this.game.scene.add(m); const lod = new InstLOD({ near: [m], nearDist: 520, band: 60, color: true }); this.lods.push(lod); return lod; });
+    this.crystalSets = [7, 5, 9].map((n, i) => { const m = new THREE.InstancedMesh(crystalClusterGeometry(rng, n, i), mat, 8); m.castShadow = false; /* emissive: shadows add nothing */ m.receiveShadow = true; m.name = 'crystals-' + i; this.game.scene.add(m); const lod = new InstLOD({ near: [m], nearDist: 520, band: 60, color: true }); this.lods.push(lod); return lod; });
   }
 
   // ------------------------------------------------------------ placement (deterministic, biome driven)
@@ -788,6 +865,27 @@ export class Vegetation {
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Qt = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler(), C = new THREE.Color();
     const lakeD = (x, z) => Math.hypot(x + 170, z + 70), ruinD = (x, z) => Math.hypot(x - 140, z - 60), arenaD = (x, z) => Math.hypot(x + 60, z - 260), aethD = (x, z) => Math.hypot(x, z + 28);
     const ok = (x, z) => Math.abs(x) < half && Math.abs(z) < half;
+    /** true when (x,z) sits inside the nearest outer region's landmark footprint (LM_CLEAR). */
+    const inLandmark = (b, x, z) => { const B0 = b.k >= 0 ? BIOMES[b.id] : null; return !!B0 && Math.hypot(x - B0.cx, z - B0.cz) < (LM_CLEAR[b.id] ?? 30); };
+    /** Seat height under a footprint of radius rr: the LOWEST ground under the base ring AND under a half-ring.
+     *  Three samples at 0.7r left boulders hanging over the downhill lip on a bowl slope — "a grey ellipsoidal
+     *  boulder hangs clean in mid-air against the bowl slope with open snow visible underneath"
+     *  (crit3-tundra-b/crop-float2.png), and the same defect all over the Dragon Peaks landmark bowl
+     *  (crit3-dragon-c/z_wallfloat.png). Six at the rim plus three inboard cover the real contact patch. */
+    // seatHi = the HIGHEST sample of the last seat() call. A footprint whose ground spans more than the
+    // object is tall has no resting place on it: seat it on the low sample and it hangs in open air, seat
+    // it on the high one and it is buried. That is "boulders float in open air and glue themselves to
+    // near-vertical faces, all over the landmark bowl" (crit3-dragon-c/z_wallfloat.png) and half the
+    // tundra bowl floaters — a slope THRESHOLD cannot catch it, because slopeAt is a smoothed gradient at
+    // a point and a 3 m boulder cares about the 3 m around it. Callers reject on the range.
+    let seatHi = 0;
+    const seat = (x, z, rr) => {
+      let lo = terrain.heightAt(x, z); let hi = lo;
+      const s = (px, pz) => { const h = terrain.heightAt(px, pz); if (h < lo) lo = h; if (h > hi) hi = h; };
+      for (let a = 0; a < 6; a++) { const th = a * 1.0472 + 0.31; s(x + Math.cos(th) * rr, z + Math.sin(th) * rr); }
+      for (let a = 0; a < 3; a++) { const th = a * 2.0944 + 1.4; s(x + Math.cos(th) * rr * 0.55, z + Math.sin(th) * rr * 0.55); }
+      seatHi = hi; return lo;
+    };
     // ---- trees
     const treeSpec = this.treeSets.map((s) => s.spec);
     for (let gx = -half; gx < half; gx += 7) for (let gz = -half; gz < half; gz += 7) {
@@ -812,6 +910,15 @@ export class Vegetation {
       const road = terrain.roadAt?.(x, z) ?? 0;                         // nothing grows in the pass roads
       if (road > 0.35) continue;
       const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
+      if (inLandmark(bt, x, z)) continue;                               // hero landmarks keep their own ground
+      // SIGHTLINE SPECIES. `bt.w` is a DISTANCE-from-centre weight, so between RING_IN and the region's look
+      // radius it is 0 and the Vale's own broadleaf pool used to take over — from inside Frostveil at full
+      // biome weight you were looking at "bright saturated summer-green broadleaf canopy directly behind the
+      // frost-pines" (crit3-tundra-c/crop-green.png, player at (296,-513), trees 160-260 m away on the ring).
+      // `bt.id` is the nearest wedge whatever the weight is, so out here species and tint come from the region
+      // whose sightline this ground is in, while DENSITY stays the home grove noise. Inside RING_IN nothing
+      // changes — the Vale keeps its own trees.
+      const bLook = !bTree && bt.k >= 0 ? BTREE[bt.id] : null;
       // `gv` is the FLOOR under the grove noise. Without one, grove2 returns 0 across whole stretches and the
       // region's heart is an open lawn with a treeline around it — which is a meadow, not a forest. A closed
       // canopy needs trees between the groves too; the noise should vary density, not switch it off.
@@ -827,7 +934,11 @@ export class Vegetation {
       if (bTree?.yMax !== undefined && y > bTree.yMax) continue;       // altitude band: dragon pines on LOW ledges only, tundra treeline below the massif
       if (Math.hypot(x - 118, z + 96) < 36) continue;                  // Hearthfall hamlet: cottages sit 13-24 m from (118,-96) + eaves + canopy overhang — trees were growing through hut roofs
       let species; const u = rng();
-      if (bTree) {
+      // No old-growth on a sightline: the giants are a region's own INTERIOR read, and the ring band is
+      // both the heaviest view in the world and visible from the Vale — 27 m crowns there buy nothing and
+      // cost the frame (the south-facing Whisperwood view is leaf-tri-bound, tools/out/veg4-perf).
+      if (bLook) species = bLook.sp[(u * bLook.sp.length) | 0];
+      else if (bTree) {
         // a region's pool owns ALL of its trees. The old `bt.w > 0.45` gate let the Vale's green species
         // leak in wherever the weight dipped — which is exactly the "living green trees all over the
         // Infernal Wastes" spec violation. Below w 0.02 there is no bTree and home logic applies as before.
@@ -846,14 +957,15 @@ export class Vegetation {
       // per-instance hue jitter, then pushed toward the REGION's foliage colour by the biome weight
       const tj = 0.76 + rng() * 0.44;
       let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
-      if (bTree?.col) { const k = bTree.col, w = bt.w; cr *= 1 + (k[0] - 1) * w; cg *= 1 + (k[1] - 1) * w; cb *= 1 + (k[2] - 1) * w; }
+      const kCol = bTree?.col ?? bLook?.col;
+      if (kCol) { const w = bTree ? bt.w : 1; cr *= 1 + (kCol[0] - 1) * w; cg *= 1 + (kCol[1] - 1) * w; cb *= 1 + (kCol[2] - 1) * w; }
       if (bTree && bt.id === 'forest' && rng() < 0.18) { cr *= 0.78; cb *= 1.24; }   // the enchanted accent: a scatter of blue-teal crowns in the deep green
       C.setRGB(cr, cg, cb);
       (this.treeSets[species] ?? this.treeSets[species === 3 || species === 6 ? 0 : 1]).lod.add(M, C);
       const r = Math.max(0.28, sp.colR * scale * (species === 5 ? 1.5 : 1));
-      // `c` (leaf tint) rides along for EZTrees, but ONLY for region-owned trees — the home Vale keeps
-      // EZTrees' own neutral jitter so this change cannot shift the spawn meadow's read.
-      this.trees.push(bTree ? { x, y, z, species, scale, r, c: [C.r, C.g, C.b] } : { x, y, z, species, scale, r });
+      // `c` (leaf tint) rides along for EZTrees, but ONLY for region-owned and sightline trees — the home
+      // Vale keeps EZTrees' own neutral jitter so this change cannot shift the spawn meadow's read.
+      this.trees.push(kCol ? { x, y, z, species, scale, r, c: [C.r, C.g, C.b] } : { x, y, z, species, scale, r });
       col.add({ type: 'capsule', a: new THREE.Vector3(x, y - 1, z), b: new THREE.Vector3(x, y + sp.colH * scale, z), r });
     }
     // ---- forest understory (see _buildUnderstory). Scanned over the Whisperwood's bounding box only —
@@ -863,7 +975,7 @@ export class Vegetation {
       for (let gx = x0; gx < x1; gx += 6) for (let gz = z0; gz < z1; gz += 6) {
         const x = gx + (rng() - 0.5) * 6, z = gz + ((((gx / 6) | 0) & 1) ? 3 : 0) + (rng() - 0.5) * 6;
         if (!ok(x, z)) continue;
-        const bu = B(x, z); if (bu.id !== 'forest' || bu.w < 0.22) continue;
+        const bu = B(x, z); if (bu.id !== 'forest' || bu.w < 0.22 || inLandmark(bu, x, z)) continue;
         // clumped, never a carpet: the point is patches of bracken between bare duff, not a second lawn
         const clump = smoothstep(0.34, 0.72, 0.5 + 0.5 * fbm(x * 0.021, z * 0.021, { octaves: 3, seed: 57 }));
         if (rng() > 0.62 * clump * bu.w) continue;
@@ -886,9 +998,12 @@ export class Vegetation {
       if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
       const br = B(x, z), bRock = br.w > 0.02 ? BROCK[br.id] : null;
       if (bRock) p = p * (1 - br.w) + bRock.p * br.w;
-      // the frozen lake at the Frostveil heart is a raised flat ICE SHEET now — keep it ice, not a rock
-      // yard (the wave-2 "floating boulders litter the lake bowl" frame was mostly rocks strewn there)
-      if (bRock && br.id === 'tundra' && y < wl + 2.5 && slope < 0.06) p *= 0.12;
+      if (inLandmark(br, x, z)) continue;                               // hero landmarks keep their own ground
+      // The frozen lake at the Frostveil heart is a raised flat ICE SHEET (bed at 4.22 m, walkable) — it is
+      // ICE, not a rock yard. 0.12 still left a litter of boulders across it in every hero frame
+      // (crit3-tundra-b/shot-throne-58.png), so the sheet itself is now bare and the band just off it is
+      // thinned; the shore keeps its rocks. Bowl SLOPE floaters are a seating bug, fixed by seat() below.
+      if (bRock && br.id === 'tundra' && slope < 0.10) { if (y < wl + 1.6) continue; if (y < wl + 4.0) p *= 0.15; }
       if (rng() > p) continue;
       const big = rng() < (slope > 0.2 || y > 30 ? 0.35 : 0.15) && rd > 45;
       const kind = big ? 0 : 1 + Math.floor(rng() * 3); const scale = big ? 2.2 + rng() * 3 : (rd < 45 ? 0.35 + rng() * 0.7 : 0.5 + rng() * 1.3);
@@ -898,10 +1013,11 @@ export class Vegetation {
         if (hit) continue;
       }
       E.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5); Qt.setFromEuler(E);
-      // seat on the LOWEST ground under the base ring, not the centre sample: centre-only seating left
-      // boulders hovering off downhill edges (tundra lake bowl floaters, the dragon crest slab)
-      let yb = y; { const rr = scale * 0.7; for (let a = 0; a < 3; a++) { const th = a * 2.0944 + 0.5; yb = Math.min(yb, terrain.heightAt(x + Math.cos(th) * rr, z + Math.sin(th) * rr)); } }
-      P.set(x, yb - 0.3 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
+      // seat on the LOWEST ground under the WHOLE footprint (see seat()), then sink deeper: a boulder that
+      // only kisses the ground shows daylight under its downhill lip on any slope worth the name.
+      const yb = seat(x, z, scale * 0.82);
+      if (seatHi - yb > 1.25 * scale) continue;                        // no resting place: this is a cliff, not ground
+      P.set(x, yb - 0.34 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       const g = 0.75 + rng() * 0.35; C.setRGB(g * (1 + (rng() - 0.5) * 0.1), g, g * (1 - rng() * 0.08));
       if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], br.w), C.g * lerp(1, t[1], br.w), C.b * lerp(1, t[2], br.w)); }
       const grp = (bRock?.grp && this._rockGrp[bRock.grp] && br.w > 0.35) ? bRock.grp : 'default';
@@ -912,12 +1028,19 @@ export class Vegetation {
     const addCrystal = (x, z, scale, variant, tint, aspect) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
       const ax = aspect ? aspect[0] : 1, ay = aspect ? aspect[1] : 1;
-      // seat on the lowest ground under the cluster footprint (same anti-float rule as the rocks: a
-      // centre-sampled shard on the tundra lake slope hung its base over downhill air)
-      let yb = y; { const rr = scale * ax * 0.55; for (let a = 0; a < 3; a++) { const th = a * 2.0944 + 1.1; yb = Math.min(yb, terrain.heightAt(x + Math.cos(th) * rr, z + Math.sin(th) * rr)); } }
-      P.set(x, yb - 0.12 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
+      // seat on the lowest ground under the whole cluster footprint, then bury the foot: a shard standing
+      // on its point over downhill air was half of the "floating boulders and shards litter the lake bowl"
+      // finding (crit3-tundra-b/crop-float2.png)
+      const yb = seat(x, z, scale * ax * 0.75);
+      if (seatHi - yb > 1.1 * scale * ay) return;                      // a shard cannot grow out of a cliff face either
+      P.set(x, yb - 0.28 * scale * ay, z); S.set(scale * ax, scale * ay, scale * ax); M.compose(P, Qt, S);
       const hue = rng();
-      if (tint) { const j = 0.88 + hue * 0.24; C.setRGB(tint[0] * j, tint[1] * j, tint[2] * j); }   // biome spire: ice / obsidian / coral / void shard
+      // Per-instance HUE jitter, not just brightness: a region of identically-coloured spires is the
+      // "no variation between instances beyond scale" read (crit3-void-b). The jitter is a rotation
+      // WITHIN the region's band (+-9% on the off-channels), so the palette holds and the value does not
+      // move — saturate the colour, cap the value.
+      if (tint) { const j = 0.88 + hue * 0.24, h2 = rng() - 0.5;
+        C.setRGB(tint[0] * j * (1 + h2 * 0.18), tint[1] * j * (1 - h2 * 0.10), tint[2] * j * (1 - h2 * 0.16)); }
       else C.setRGB(0.55 + hue * 0.5, 0.85 - hue * 0.3, 1.0); // cyan-blue .. magenta
       this.crystalSets[variant].add(M, C); this.crystals.push({ x, y, z, scale });
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, y + 0.4 * scale, z), r: scale * 0.75 });
@@ -933,10 +1056,16 @@ export class Vegetation {
       if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
       const bc = B(x, z), bSpire = bc.w > 0.02 ? BSPIRE[bc.id] : null;
       if (bSpire) p = p * (1 - bc.w) + bSpire.p * bc.w * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.016, z * 0.016, { octaves: 3, seed: 23 }));
+      if (inLandmark(bc, x, z)) continue;                               // hero landmarks keep their own ground
+      if (bc.id === 'tundra' && bc.w > 0.02 && y < wl + 1.6 && terrain.slopeAt(x, z) < 0.10) continue;   // the frozen lake is an ice SHEET, not a shard field
       if (rng() > p) continue;
-      const scale = bSpire && bc.w > 0.4 ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
+      // `own` at w > 0.4 was the second half of the forest magenta bug: between 0.02 and 0.4 the spire was
+      // placed by the REGION's probability but handed the home meadow's cyan..magenta jitter, so the
+      // Whisperwood's outer band grew fuchsia aether spires (crit3-forest-c/shot-west-band-in.png). If the
+      // region put it there, the region colours it.
+      const own = bSpire && bc.w > 0.12;
+      const scale = own ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
         : field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
-      const own = bSpire && bc.w > 0.4;
       addCrystal(x, z, scale, Math.floor(rng() * 3), own ? bSpire.col : null, own ? bSpire.a : null);
     }
     // hero formations: a handful of towering (8-13 m) clusters in the eastern fields — FF14 landmark scale
@@ -951,6 +1080,71 @@ export class Vegetation {
     // plaza-ring crystals pushed to >= 10.9 m from plaza centre (0,-28): at 8.8-10.8 m they clipped the
     // aetheryte plaza skirt (props-B's measured ask; plaza outer edge is ~10.5 m)
     for (const [x, z, s] of [[9.5, -21.5, 0.9], [-8, -35.5, 1.1], [10.5, -35, 0.7], [-10, -20.5, 0.6]]) addCrystal(x, z, s, Math.floor(rng() * 3));
+  }
+
+  /** THE ELDERHEART'S CROWN (forest blocker, crit3-forest-b/shot-approach-80.png + crit3-forest-c/
+   *  shot-lowsun-into-sun.png): Props builds the hero tree's canopy as flat-shaded icosahedron blobs, and
+   *  from every bearing it caps the treeline as "a pile of low-poly boulders instead of foliage".
+   *  Foliage cards are THIS file's system, so the crown is re-dressed here instead of re-modelled there:
+   *  the blob mesh is kept — dark, matte, smooth-shaded — as the canopy's inner MASS (it is what gives the
+   *  crown volume and self-shadowing, and it is why a card shell alone reads as a hedge), and its own
+   *  triangles are used as anchors for a painterly leaf-card shell built with the same cards()/LEAF_CROPS
+   *  canopy every tree in the world uses. ~560 cards, one draw call, ~2.2 k tris on a 45 m landmark.
+   *  Runs once on the first update: Props builds after Vegetation (World.parts order), so the mesh does
+   *  not exist yet at init time.
+   *  ponytail: reaches into Props' scene object by name rather than Props calling an export — upgrade path
+   *  is a `vegetation.dressCanopy(mesh, opts)` call from Props._buildBiomeClutter (raised as an ask). */
+  _dressElderheart() {
+    const scene = this.game.scene, src = scene.getObjectByName('elderheart-crown');
+    if (!src?.geometry || !this._leafCard) return false;
+    const pos = src.geometry.attributes.position;
+    if (!pos || pos.count < 9) return false;
+    const rng = mulberry32(this.game.seed + 9131);
+    const box = new THREE.Box3().setFromBufferAttribute(pos), C0 = box.getCenter(new THREE.Vector3());
+    const L = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), cen = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+    const tris = (pos.count / 3) | 0, step = Math.max(1, Math.round(tris / 1000));
+    for (let t = 0; t < tris; t += step) {
+      a.fromBufferAttribute(pos, t * 3); b.fromBufferAttribute(pos, t * 3 + 1); c.fromBufferAttribute(pos, t * 3 + 2);
+      cen.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+      e1.subVectors(b, a); e2.subVectors(c, a); n.crossVectors(e1, e2).normalize();
+      if (n.dot(cen.clone().sub(C0)) < 0) n.negate();                    // outward, whatever the winding says
+      // jitter the anchor across the face and push the card proud of the shell, so the cards read as a
+      // ragged foliage surface instead of a decal sheet lying on a polyhedron
+      const u = rng(), v = rng() * (1 - u);
+      cen.copy(a).addScaledVector(e1, u).addScaledVector(e2, v).addScaledVector(n, 0.9 + rng() * 1.5);
+      n.x += (rng() - 0.5) * 0.7; n.y += (rng() - 0.5) * 0.5 + 0.25; n.z += (rng() - 0.5) * 0.7;
+      card(L, cen.clone(), n.clone().normalize(), 5.4, 4.6, rng, { ao: 0.72 + rng() * 0.28 });
+    }
+    const geo = cards(L, C0, 0.24);
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({
+      map: this._leafCard, alphaTest: 0.38, side: THREE.DoubleSide, roughness: 0.96, metalness: 0, color: 0xb6e0b4,
+    }), {
+      key: 'elderheart-canopy',
+      vHead: 'attribute vec2 aLeaf; attribute vec2 aLuv; varying vec2 vLeaf; varying vec2 vLuv;',
+      vBegin: 'vLeaf = aLeaf; vLuv = aLuv;',
+      fHead: `varying vec2 vLeaf; varying vec2 vLuv;
+        const vec3 EH_COOL = vec3(0.62, 0.95, 0.78);    // shaded blue-green, the Whisperwood accent
+        const vec3 EH_WARM = vec3(1.12, 1.06, 0.66);    // sun-struck golden-green`,
+      // per-card hue + crown-depth AO: an inner card is darker than a rim card, which is what turns a shell
+      // of quads into a canopy with depth. Matte only — a landmark canopy that glows is the blob decree.
+      // The radial mask fades each card out toward its OWN border (aLuv, not uv — uv is inside a LEAF_CROPS
+      // window), so no card can present a straight edge whatever texel it sampled.
+      fMap: `#include <map_fragment>
+        diffuseColor.rgb *= mix(EH_COOL, EH_WARM, vLeaf.x) * (0.60 + 0.40 * vLeaf.y);
+        diffuseColor.a *= 1.0 - smoothstep(0.72, 1.30, length(vLuv - 0.5) * 2.0);`,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = m.receiveShadow = true; m.name = 'elderheart-canopy';
+    m.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: this._leafCard, alphaTest: 0.46, side: THREE.DoubleSide });
+    scene.add(m);
+    // The blob shell stays, as shadow and mass — but dark and SMOOTH: flat shading on an icosahedron is
+    // exactly the faceted-boulder tell, and the cards only cover ~80% of it.
+    try { src.geometry = mergeVertices(src.geometry); } catch (e) { /* welding is a nicety; the cards are the fix */ }
+    src.geometry.computeVertexNormals();
+    src.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, color: 0x9ec2a2 });
+    this.elderheartCanopy = m;
+    return true;
   }
 
   /** Deterministic collision self-test: walk a player-sized sphere straight into nearby registered colliders
@@ -984,6 +1178,7 @@ export class Vegetation {
 
   update(dt, t) {
     const { camera, sky } = this.game, U = this.uniforms;
+    if (!this._dressed) { this._dressed = true; try { this._dressElderheart(); } catch (e) { console.warn('[vegetation] elderheart canopy', e); } }
     U.uTime.value = t;
     if (sky) { U.uSunDirV.value.copy(sky.sunDir).transformDirection(camera.matrixWorldInverse); U.uSunColor.value.copy(sky.sunColor); U.uSunI.value = sky.sunIntensity ?? 1; }
     // staggered LOD refresh: 3 sets per frame, each set when the camera moved > 1 m from ITS last refresh

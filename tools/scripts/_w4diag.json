@@ -1,0 +1,128 @@
+[
+ {
+  "wait": 20
+ },
+ {
+  "eval": "__game.god(true); __game.passive(true); __game.clearEnemies&&__game.clearEnemies(); 1"
+ },
+ {
+  "hour": 13
+ },
+ {
+  "tp": [
+   -690,
+   null,
+   -60
+  ]
+ },
+ {
+  "look": [
+   1.4839,
+   -0.22
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "d0-normal"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.falls&&(w.falls.visible=false); 1"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "d1-nofalls"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.uniforms.uFoamMul.value=0; 1"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "d2-nofoam"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.debug=4; 1"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "d3-foammask"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.debug=1; 1"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "d4-reflect"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.debug=0; w.falls&&(w.falls.visible=true); 1"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "d5-back"
+ },
+ {
+  "tp": [
+   -545.9,
+   null,
+   -47.6
+  ]
+ },
+ {
+  "look": [
+   1.4839,
+   -0.13
+  ]
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "shot": "d6-vista"
+ },
+ {
+  "look": [
+   1.4839,
+   -0.3
+  ]
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "d7-vista-down"
+ },
+ {
+  "tp": [
+   -720.5,
+   null,
+   -82.9
+  ]
+ },
+ {
+  "look": [
+   -1.6577,
+   0.06
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "d8-riser1-up"
+ },
+ {
+  "eval": "const w=__game.game.world.water; JSON.stringify({rapid:w.uniforms.uRapid.value, foamMul:w.uniforms.uFoamMul.value, refl:w.uniforms.uHasReflect.value, grab:w.uniforms.uHasGrab.value})"
+ }
+]

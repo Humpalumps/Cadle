@@ -69,7 +69,16 @@ function creatureOnBeforeCompile(shader) {
       // Body parts (vGlow 0) get a ceiling far above anything they reach, so they are unaffected.
       float aetherLum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
       float aetherCap = mix(6.0, 0.62, vGlow);
-      if (aetherLum > aetherCap) gl_FragColor.rgb *= aetherCap / aetherLum;`);
+      if (aetherLum > aetherCap) gl_FragColor.rgb *= aetherCap / aetherLum;
+      // ...AND CAP THE CHANNEL, which is the half the luminance cap cannot see. Luminance is a WEIGHTED
+      // average (blue counts 0.07), so a violet sitting at luminance 0.62 can still carry a blue channel
+      // of 2.2 and a red of 0.97 — both clip through ACES and the crystal comes out pale pink. That is
+      // exactly the wave-3 void "pale-pink blob with hula-hoop rings" (measured 255,201,251) and the vale
+      // "wisps tone-map toward pale cyan-white". Same principle as the luminance cap, same one-scalar
+      // hue-preserving scale; 1.02 sits just under the 1.05 day bloom threshold on purpose.
+      float aetherMax = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
+      float aetherChan = mix(8.0, 1.02, smoothstep(0.25, 0.85, vGlow));
+      if (aetherMax > aetherChan) gl_FragColor.rgb *= aetherChan / aetherMax;`);
 }
 
 export function createCreatureMaterial({ tint = 0xffffff, emissive = 0x66ccff, roughness = 0.85, metalness = 0.05 } = {}) {
@@ -94,8 +103,21 @@ function shieldOnBeforeCompile(shader) {
     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
       float fr = pow(1.0 - saturate(dot(normal, geometryViewDir)), 2.2);
       float hex = smoothstep(0.55, 0.9, enoise(vSPos * 6.0 + uTime * 0.4));
-      diffuseColor.a = uAlpha * (0.015 + fr * 0.3 + hex * 0.04 + uHit * 0.5);
-      reflectedLight.indirectDiffuse += emissive * (fr * 1.3 + hex * 0.25 + uHit * 3.5);`);
+      // SATURATE BEFORE YOU NORMALISE: push the element hue toward its square so an arc cyan or a solar
+      // orange still reads as that colour through ACES instead of washing out to cream.
+      vec3 scol = mix(emissive, emissive * emissive, 0.8);
+      diffuseColor.a = uAlpha * (0.012 + fr * 0.26 + hex * 0.03 + uHit * 0.42);
+      reflectedLight.indirectDiffuse += scol * (fr * 1.1 + hex * 0.2 + uHit * 2.6);`)
+    .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+      // BLOB LAW ON THE SHELL. A shield bubble is a combat READ, not a light source, and at melee standoff
+      // it covers most of the frame (see SHELL_COV in Enemy.js) — so every pixel of it has to stay well
+      // under the bloom threshold. Cap the CHANNEL first (a cyan or a violet sits near the ceiling in two
+      // channels at once, which a luminance-only clamp never sees), then the luminance. Both are single
+      // hue-preserving scalars: the shell gets dimmer, never whiter.
+      float sMax = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
+      if (sMax > 0.80) gl_FragColor.rgb *= 0.80 / sMax;
+      float sLum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      if (sLum > 0.50) gl_FragColor.rgb *= 0.50 / sLum;`);
 }
 export function createShieldMaterial(color = 0x7fd8ff) {
   const m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0, transparent: true, opacity: 1, depthWrite: false, side: THREE.FrontSide });
