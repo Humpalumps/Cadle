@@ -1,30 +1,30 @@
 {
- "updated": "2026-08-25 (wave 1 verdicts in)",
- "status": "<b>Wave 1 verdict: every region LOSES the blind test vs Destiny 2.</b> 12 fresh-context critics inspected the live build. The single biggest cross-cutting bug: the shared prop-kit stone material renders as terracotta <i>brick</i> in six regions (Elderheart, celestial ruins, dwarven gate, Lost monoliths, infernal cliffs, void isle undersides). Second: floating isles read as UFO discs. Third: midday atmosphere is cheerful in the cursed regions. Wave 2 running (rescoped: Sunken pivots to above-water waterfalls per user decree): ~10 builders on disjoint files + a fresh AI-generated texture set (bark, marble, basalt, voidstone, ice, flagstone...), then fresh critics re-judge each region.",
+ "updated": "2026-08-26",
+ "status": "<b>Wave 2 complete: every region moved +1.5 to +2.5 points, none at bar yet.</b> All 10 builders landed (brick kill, isle rebuilds, 5 landmark rebuilds, canopy, winter pines, cursed atmospheres, underwater basics, ADS+recoil, map icons). Fresh critics re-judged all 9: best forest/tundra 6, vale 7; worst celestial 4.5 (Empyrean Gate still missing as a hero). One new blocker (shadowfen water glints white) + one regression (oak through Aetheryte pedestal). Gate running, then commit, then WAVE 3: Sunken above-water redesign + Tripo hero props + region loop-backs.",
  "kpis": [
   {
    "label": "wave",
-   "value": "2 — builders"
+   "value": "2 done → gate → 3"
   },
   {
    "label": "regions at bar",
    "value": "0 / 10"
   },
   {
-   "label": "worst",
-   "value": "forest & sunken 3/10"
+   "label": "avg score",
+   "value": "3.9 → 5.7"
   },
   {
    "label": "best",
-   "value": "vale 6.5 (TOSSUP)"
+   "value": "vale 7"
   },
   {
    "label": "Magnific credits (live)",
    "value": "5539"
   },
   {
-   "label": "Tripo credits",
-   "value": "topped up ✓ (3D gen ready for wave 3)"
+   "label": "Tripo credits (live)",
+   "value": "6200"
   }
  ],
  "pieces": [
@@ -32,81 +32,81 @@
    "key": "vale",
    "name": "🌾 The Vale",
    "files": "Grass, Props",
-   "status": "fixing",
-   "score": 6.5,
+   "status": "critic",
+   "score": 7,
    "verdict": "TOSSUP",
-   "gap": "black grass clumps + crystal clipping at the Aetheryte plaza — polished at 100 m, broken at 10 m",
-   "round": 1
+   "gap": "NEW REGRESSION: oak through the Aetheryte pedestal; voxel NPC; windowless cottages",
+   "round": 2
   },
   {
    "key": "forest",
    "name": "🌲 Whisperwood Deep",
    "files": "Vegetation, Props, Terrain, Grass",
-   "status": "fixing",
-   "score": 3,
-   "verdict": "LOSE",
-   "gap": "no forest interior: orchard saplings, 90% open sky overhead; Elderheart is brick masonry",
-   "round": 1
+   "status": "critic",
+   "score": 6,
+   "verdict": "TOSSUP",
+   "gap": "Elderheart has no mid-range/skyline read — findable only by its UI marker",
+   "round": 2
   },
   {
    "key": "tundra",
    "name": "❄️ Frostveil Tundra",
    "files": "Vegetation, Terrain, Props",
-   "status": "fixing",
-   "score": 4.5,
-   "verdict": "LOSE",
-   "gap": "summer-green conifers, zero snow on boughs; Glacier Throne is a grey brick chimney",
-   "round": 1
+   "status": "critic",
+   "score": 6,
+   "verdict": "TOSSUP",
+   "gap": "ice shards still opaque royal-blue; floating boulders litter the lake bowl",
+   "round": 2
   },
   {
    "key": "celestial",
    "name": "✨ Celestial Isles",
    "files": "Props, Sky",
    "status": "fixing",
-   "score": 3.5,
+   "score": 4.5,
    "verdict": "LOSE",
-   "gap": "floating isles are brown sombrero hats; Empyrean Gate doesn't exist as a landmark",
-   "round": 1
+   "gap": "Empyrean Gate still not a readable hero landmark; golden hour still terracotta",
+   "round": 2
   },
   {
    "key": "dragon",
    "name": "🏔️ Dragon Peaks",
    "files": "Props, Terrain, Vegetation",
    "status": "fixing",
-   "score": 3.5,
+   "score": 5,
    "verdict": "LOSE",
-   "gap": "Kharaz-Dun Gate is a floating brick greybox, not a gate cut into the mountain",
-   "round": 1
+   "gap": "mountain rock fails at every distance: smear close, corduroy mid, masonry tiling far",
+   "round": 2
   },
   {
    "key": "infernal",
    "name": "🔥 Infernal Wastes",
    "files": "Terrain, Vegetation, Sky, Water",
    "status": "fixing",
-   "score": 4,
+   "score": 5.5,
    "verdict": "LOSE",
-   "gap": "reads as friendly pink-sky Mars with living green trees; hellscape only exists from the air",
-   "round": 1
+   "gap": "distant ground still Mars-brown, zero smoke anywhere, Maw has no approach draw",
+   "round": 2
   },
   {
    "key": "lost",
    "name": "🏰 The Lost Realm",
    "files": "Props, Terrain",
    "status": "fixing",
-   "score": 3.5,
+   "score": 5,
    "verdict": "LOSE",
-   "gap": "monoliths render as orange patio brick; flagstone blown-out lilac-white",
-   "round": 1
+   "gap": "rampart ring still a bare cobble berm — walk-in is 100% featureless",
+   "round": 2
   },
   {
    "key": "shadowfen",
    "name": "🌑 Shadowfen",
    "files": "Sky, Water, Props",
    "status": "fixing",
-   "score": 4,
+   "score": 5.5,
    "verdict": "LOSE",
-   "gap": "midday reads as a cheerful mountain lake — the cursed key/haze is not on screen",
-   "round": 1
+   "gap": "BLOCKER: washed-white sun-glint blobs on the murk water; fen flooded not choked",
+   "round": 2
   },
   {
    "key": "sunken",
@@ -123,59 +123,61 @@
    "name": "🕳️ The Void",
    "files": "Props, Terrain",
    "status": "fixing",
-   "score": 4,
+   "score": 5.5,
    "verdict": "LOSE",
-   "gap": "isles are maroon UFO discs with brick undersides; the abyss has a horizon",
-   "round": 1
+   "gap": "abyss still absent (kernel untouched); forest impostors render as green voxel cubes",
+   "round": 2
   },
   {
    "key": "feel",
    "name": "⚔️ Game feel / content",
    "files": "Weapons, vfx, HUD",
-   "status": "fixing",
+   "status": "critic",
    "score": 6,
    "verdict": "LOSE",
-   "gap": "ADS is an untextured slab with no sight alignment; zero recoil under sustained fire",
+   "gap": "wave-2: real ADS sights + heat recoil + textured viewmodel landed; re-audit due in wave 3",
    "round": 1
   },
   {
    "key": "physics",
    "name": "🧱 Collision / placement",
    "files": "Props placement",
-   "status": "fixing",
+   "status": "critic",
    "score": 6,
    "verdict": "LOSE",
-   "gap": "kit props hover/bury on slopes; trees through hut roofs; collision sim itself passed",
+   "gap": "wave-2: terrain-conform seat pass landed; floaters remain at tundra lake + dragon crest",
    "round": 1
   }
  ],
  "shots": [
   {
-   "src": "tools/out/crit1-forest-b/shot-canopy.png",
-   "label": "forest: 90% open sky where a closed canopy should be"
+   "src": "tools/out/crit2-forest-b/shot-canopy-heart.png",
+   "label": "forest wave 2: canopy ~95% closed (was 90% open sky)"
   },
   {
-   "src": "tools/out/crit1-celestial-c/shot-isle-under.png",
-   "label": "celestial: isle = sombrero hat with basket-weave underside"
+   "src": "tools/out/crit2-tundra/shot-in.png",
+   "label": "tundra wave 2: snow-laden needle pines landed"
   },
   {
-   "src": "tools/out/crit1-infernal/shot-in.png",
-   "label": "infernal: pink-sky Mars with green trees"
+   "src": "tools/out/propsA-verify/shot-cel-isle-under.png",
+   "label": "celestial: isles rebuilt as layered strata (no more sombrero)"
   },
   {
-   "src": "tools/out/crit1-lost-c/shot-dusk.png",
-   "label": "lost: orange patio-brick monoliths"
+   "src": "tools/out/propsB-after-2/shot-gate-front.png",
+   "label": "dragon: Kharaz-Dun gate now embedded + facing arrivals"
   },
   {
-   "src": "tools/out/crit1-tundra-b/shot-night-aurora.png",
-   "label": "tundra night aurora — the one thing critics praised"
+   "src": "tools/out/weapons2-feel/crop-hc-ads.png",
+   "label": "weapons: real 3-dot iron sight picture at ADS"
   },
   {
-   "src": "tools/out/crit1-vale-c/shot-night-plaza.png",
-   "label": "vale night plaza — best shot of the sweep"
+   "src": "tools/out/propsB-after-3/shot-hagstone-close.png",
+   "label": "shadowfen: Hagstone textured with waterline band"
   }
  ],
  "log": [
+  "2026-08-26 — WAVE 2 COMPLETE (19 agents, 0 errors). All builders landed; 9 fresh critics: avg 3.9 -> 5.7, nothing at bar. New blocker: shadowfen water sun-glint blobs. Regression: oak through Aetheryte pedestal. Full verdicts: tools/out/wave2-summary.txt. Next: gate, commit, wave 3.",
+  "2026-08-26 — session restarted: Tripo verified working (key valid, balance 6200 queried live; .mcp.json fixed to inherit the env key — this session uses the REST API directly, MCP tools clean from next restart). Dev server relaunched on :5179. Resuming wave 2 (finish builders + rechecks), wave 3 follows.",
   "2026-08-26 — SESSION CUTOFF IMMINENT (user at 2% of window). Wave-2 workflow may die mid-run again; partial builder edits are COMMITTED as wip. RESTART KIT: fresh session reads HANDOVER + this page, relaunches tools/out/wave2-workflow-script.js via the Workflow tool (builder prompts already tell agents to expect partial edits on disk). Wave 3 (sunken redesign, life/content) starts after wave-2 rechecks pass + gate + Tripo MCP connected (.mcp.json ready, user sets TRIPO_API_KEY env var).",
   "2026-08-25 — user topped up Tripo credits: 3D model pipeline (image gen -> Tripo GLB -> image2threejs -> procedural Three.js) is cleared for wave-3 hero props. Magnific pool at 5539.",
   "2026-08-25 — progress page gained a generated-assets gallery: every AI-pipeline asset (textures now; Tripo->image2threejs model renders as wave 3 produces them) appears with a thumbnail + where it's used.",

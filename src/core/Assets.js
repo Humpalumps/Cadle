@@ -50,6 +50,7 @@ const TEX = {
   card_fern: { url: '/assets/tex/card_fern.png', repeat: false },
   card_reed: { url: '/assets/tex/card_reed.png', repeat: false },
   card_moss: { url: '/assets/tex/card_moss.png', repeat: false },
+  granite_detail: { url: '/assets/tex/granite_detail.jpg', repeat: true },
 };
 const AUDIO = {};
 for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) AUDIO[`shot-${a}-${i}`] = `/assets/sfx/shot-${a}-${i}.mp3`;
