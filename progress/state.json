@@ -158,9 +158,32 @@
    "files": "enemies/* via img2threejs",
    "status": "building",
    "gap": "Batch 1 GLBs DONE at Tripo v3.1 detailed (10 models incl. the Wayfinder NPC + ethereal types sculpted opaque for shader treatment). img2threejs conversion = wave 4."
+  },
+  {
+   "key": "ornament",
+   "name": "🏛️ Ornament library (all 10 landmarks)",
+   "files": "Props.js — flute/moulding/dentils/relief/trace/weather",
+   "status": "todo",
+   "gap": "USER VERDICT: landmark quality not impressive. Root cause is systemic: BoxGeometry + flat vertex tint everywhere, no carved profiles, no relief, gold painted as flat bands, stone untextured. Wave 5 headline."
   }
  ],
  "shots": [
+  {
+   "src": "tools/out/w4-gate/ref-vs-game.png",
+   "label": "THE REAL PROBLEM: Tripo reference (left) vs what shipped (right). Massing survived the conversion; ornament did not. Every prop in the game is boxes + flat tint — 'greybox with paint'. docs/ORNAMENT-STANDARD.md is the fix."
+  },
+  {
+   "src": "tools/out/w4-gate/shot-gate-120-golden.png",
+   "label": "THE EMPYREAN GATE, converted via img2threejs from the Tripo reference — real fluted columns, ornamented archivolt, gold filigree geometry (was 'flat orange masking tape' greybox boxes)"
+  },
+  {
+   "src": "tools/out/w4-gate/shot-gate-250-golden.png",
+   "label": "...but the 250 m approach read is STILL weak — it sits behind the berm. This is the 4th attempt at that specific gap and critics judge it next."
+  },
+  {
+   "src": "tools/out/w4-gate/sheet.png",
+   "label": "Empyrean Gate — six angles/hours from the live build"
+  },
   {
    "src": "tools/out/crit2-forest-b/shot-canopy-heart.png",
    "label": "forest wave 2: canopy ~95% closed (was 90% open sky)"
@@ -172,21 +195,11 @@
   {
    "src": "tools/out/propsA-verify/shot-cel-isle-under.png",
    "label": "celestial: isles rebuilt as layered strata (no more sombrero)"
-  },
-  {
-   "src": "tools/out/propsB-after-2/shot-gate-front.png",
-   "label": "dragon: Kharaz-Dun gate now embedded + facing arrivals"
-  },
-  {
-   "src": "tools/out/weapons2-feel/crop-hc-ads.png",
-   "label": "weapons: real 3-dot iron sight picture at ADS"
-  },
-  {
-   "src": "tools/out/propsB-after-3/shot-hagstone-close.png",
-   "label": "shadowfen: Hagstone textured with waterline band"
   }
  ],
  "log": [
+  "2026-08-26 — USER VERDICT on the converted Empyrean Gate: not impressive. Diagnosed against the Tripo reference side by side and they are right — the conversion kept the massing (podium courses, entablature breaks, 44 m apex, sightline maths) and dropped all the craft: smooth cylinders instead of fluted columns, flat bands instead of carved mouldings, an orange decal instead of a relief cartouche, painted stripes instead of raised gold, untextured cream instead of veined weathered marble. This is systemic across every prop in the game, not one landmark. Wrote docs/ORNAMENT-STANDARD.md: a shared ornament library (flute/moulding/dentils/coffer/relief/gold-trace/weather) + the 200 m / 40 m / 8 m acceptance rule. Headline item for wave 5.",
+  "2026-08-26 — WAVE 4 IN FLIGHT. Landed so far: the Empyrean Gate rebuilt through img2threejs from the Tripo reference (real columns + filigree, apex ~44 m), both blob blockers fixed at the ROOT (the witchlight cap was capping luminance, which is 72% green, so a teal fungus sailed through; the Aetheryte got a hue-preserving final-light cap like the grass one), the global far-haze curve fixed once for all five regions that reported white paper skylines, and the terrain projection bugs behind the corduroy/smear family. The 11 creature conversions are still running — they share one file (src/enemies/), so that lane is serial by necessity.",
   "2026-08-26 — USER CALL: performance is a DEFERRED DEDICATED PASS, not a per-wave gate. Current readings are close enough (typical 154-340 calls / 1.8-3.0M tris; outliers: vegetation 4.2-5.0M tris on the densest forest view, one 514 ms shader-link spike, hitchhunt mean 7.56 vs 7 budget, p99 18.2 vs 14). Keep building visuals/content; a perf+hitch wave cleans all of it up at the end (budget enforcement, boot prewarm for the new creature/prop materials, forest tri density).",
   "2026-08-26 — WAVE 3 COMPLETE (18 agents, 0 errors; critic phase parallelised mid-wave — GPU lock now serialises only captures, not agents). Structural wins landed. Critics harsher: avg 5.7 -> 5.2 with 3 BLOB VIOLATIONS open. Two of my own textures failed inspection (landscape photo used as ice; brickwork used as cliff) — both replaced and now judged 2x2 tiled. Verdicts: tools/out/wave3-summary.txt.",
   "2026-08-26 — gallery now shows REAL renders: the previous thumbnails were Tripo's 12-34 KB preview images upscaled 4x, which made excellent assets look like Minecraft. Built tools/out/assetgen/glbview.html (dev-only three.js GLB inspector, ACES + PBR env) and re-rendered all 11 at 1100px. Verified geometry directly: 57-58k tris and 4096x4096 PBR textures per creature, 139k for the gate.",
