@@ -1,0 +1,42 @@
+export const meta = {
+  name: 'wave6-content-1',
+  description: 'Quest markers + town quests, first-person arms, town NPC population',
+  phases: [{ title: 'Build', detail: '3 file-owned lanes' }],
+}
+const ROOT = 'C:/Users/ianca/Desktop/fps4/.claude/worktrees/cadle-character-load-perf-ee5b7b'
+const COMMON = `Repo root: ${ROOT} (git worktree; never touch git, tools/, progress.html, HANDOVER.md). Dev server ALREADY RUNNING at http://127.0.0.1:5179/ — never start another, never port 5173. You are a BUILDER on Cadle (three r185; Destiny 2 feel × FF14 look; painterly, warm golds / blue-violets, gold filigree on dark, luminous capped aether). CLAUDE.md ownership binds you — ONLY your lane's files. BLOB DECREE: any emissive that tone-maps white instead of its hue is a bug — saturate colour, cap intensity (~1.0/channel for persistent elements); ground cover never glows. node tools/invariants.mjs must exit 0 when you finish. Determinism: world-gen randomness via mulberry32(game.seed + offset). No per-frame allocation in hot paths.
+GPU DISCIPLINE (IMPORTANT): a combat-gate closer agent has GPU priority right now — do ALL your code work first and take screenshots at the END; use inspect WITHOUT --nolock (the lock serializes), keep runs to a handful of shots, and re-run anything that dies with "Execution context was destroyed" (other lanes hot-reload the page).
+Report: file:line changes, gates run VERBATIM, absolute screenshot paths, anything unfinished with its specific blocker.`
+const R = { type: 'object', additionalProperties: false, required: ['report'], properties: { report: { type: 'string' } } }
+const E = { effort: 'high', schema: R }
+phase('Build')
+const [rpg, arms, towns] = await parallel([
+  () => agent(`${COMMON}
+
+YOUR LANE: src/rpg/* (quest data, tracker, and a NEW src/rpg/QuestMarkers.js if needed) + src/ui/HUD.js ONLY for minimap pip hooks if the minimap code lives there. USER ASK (verbatim): "making the exclamation mark on quests / questions marks for hand in".
+1. WORLD-SPACE QUEST MARKERS, MMO convention: a floating gold ! above any NPC/object offering an available quest; a gold ? above the turn-in when the quest is COMPLETE (objectives done); a GREY/silver ? above the turn-in while objectives are still in progress. Billboarded, gently bobbing/rotating, readable at 40 m, occluded correctly by world geometry (depth test ON — it is a world object), and NEVER white-clipping: gold hue, emissive channel-capped ~1.0, modest bloom. Drive them off the EXISTING quest system state (quest available / active / complete and its giver/turn-in positions — read the quest data + tracker to find how givers and turn-in points are addressed; the Wayfinder NPC in the spawn meadow is the first giver). Hook into the existing rpg system's update loop — if the quest system is not a registered game system with an update, put the markers in a small self-contained class updated from whatever rpg entry point runs per frame, and if NOTHING in rpg runs per frame, say so in your report and the orchestrator will wire one line in Game.js.
+2. Add minimap pips for the same states if the minimap has an extension point you can reach from your lane (read-only check of HUD.js; a tiny hook is acceptable, a rewrite is not).
+3. TOWN QUESTS: the hamlet NE of the spawn meadow ("Aetheryte Plaza" area) is getting villager NPCs from another lane THIS BATCH (they will be placed via Props; code defensively — markers must attach by position/id lookup that tolerates NPCs appearing after init). Write 4-6 new WRITTEN quests (data only — adding a quest must never mean writing a function) for those villagers: fetch/kill/explore beats using ONLY enemy/item ids that ALREADY exist (node tools/curvecheck.mjs enforces this — run it, paste the verbatim result; it is pure node, ~1 s, no GPU). Good words matter: quests are the game's only narration (written, never spoken — invariants rule (j)).
+VERIFY: curvecheck verbatim; THEN at the end one small inspect run: screenshot the Wayfinder with a gold ! at 5 m and 30 m, day and night; if a quest can be driven to complete via __game evals, show the ? too. node tools/questgate.mjs is the full mechanics gate — run it if the harness is free, otherwise note it for the orchestrator.`, { label: 'rpg-quests', ...E }),
+
+  () => agent(`${COMMON}
+
+YOUR LANE: src/player/Weapons.js + src/player/weapons/*.js. USER ASK (verbatim): "main characters arm and hand look better". Build FIRST-PERSON ARMS: a gloved hand + forearm visibly gripping each weapon archetype.
+- Geometry: procedural (no GLBs — invariants bans them outside creatures). A convincing FPS hand needs: palm block with bevelled knuckle ridge, 4 fingers wrapped around the grip (bent segment chains — 2-3 segments each, posed per grip, no articulation needed at runtime), a thumb locked over/along the grip, and a forearm with a slight taper + sleeve cuff. LOW POLY IS FINE if the SILHOUETTE is right — what reads is finger wrap, knuckle line, cuff break.
+- Materials: glove leather via game.assets.tex('glove_leather') on the hand, dark blue-grey sleeve with a thin gold filigree trim at the cuff (the player is the same faction as the viewmodel guns). Roughness >= 0.5 on the glove, no emissive.
+- Pose per archetype: trigger hand on the grip for all; a support hand where the archetype wants one (autorifle/pulse/shotgun foregrip, sniper under the stock) — a single static pose per weapon is enough, matched so nothing clips through the gun.
+- Attach to the existing viewmodel rig so ALL current motion (bob, sway, ADS transform, recoil kick, reload dip) carries the arms automatically — do not add new animation systems; the arms ride the gun.
+- Budget: viewmodel total (gun + arms) <= 60k tris; keep sight emissive <= 1.0 and metal roughness >= 0.3 (invariants pins).
+VERIFY at the end: screenshots of every archetype hip + ADS at noon and one at night (give(weaponId) via __game). The bar: at first glance, a Destiny screenshot — a hand that is clearly HOLDING the weapon, not floating geometry.`, { label: 'fp-arms', ...E }),
+
+  () => agent(`${COMMON}
+
+YOUR LANE: src/world/Props.js (colliders additively via the existing registry). USER ASK (verbatim): "fill up the towns with npcs". The hamlet NE of the spawn meadow (buildings visible from the plaza) plus the Aetheryte Plaza area are EMPTY of people except the Wayfinder.
+1. VILLAGER NPCS from the existing rigged wayfinder model: game.assets.model('wayfinder') + game.assets.clips('wayfinder') (idle/walk/run). Clone scene AND materials per instance (ASSETS.md rule). Differentiate 6-10 villagers cheaply but convincingly: per-instance robe re-tints on the cloned materials (stay on the palette: deep blues, wine reds, forest greens, undyed cloth — vary value, keep the gold trim), slight scale variation (0.93-1.05), varied idle clip time offsets + a few on slow WALK loops between two points (the clips exist — a simple A-to-B-and-back mover with the walk clip and correct facing; reuse the pattern the Wayfinder placement already uses for its mixer).
+2. PLACE THEM WHERE LIFE HAPPENS: doorways, the well/market area, along the lane between the houses, one leaning at the plaza edge watching the aetheryte, one pair standing as if talking. On the ground (terrain.heightAt), facing sensible directions, WITH colliders so the player cannot walk through them.
+3. Give 4-6 of them NAMES + a quest-giver hook: expose a simple list (e.g. game.world.props.npcs = [{ id, name, position, object }]) so the rpg lane's quest markers and quest data can address them by id — coordinate loosely: publish stable ids like 'npc-miller', 'npc-warden-guard', and put the list in your report.
+4. Set dressing where the NPCs stand, from the ornament library: a market stall or two, crates/barrels/sacks, a noticeboard, a bench, lantern posts if the kit has them — a hamlet that looks INHABITED, not a diorama of empty boxes.
+Budget: watch draw calls (<= 350 at q=high total) — merge static dressing into few draws; each NPC is 1 draw (one mesh/material). Mixer CPU: 6-10 mixers on 23 joints is fine but update them at distance-banded rates like enemies do (hold pose when far).
+VERIFY at the end: screenshots — plaza wide shot, market closeup, a walking villager mid-stride, night shot with lanterns; stats() draw calls before/after in your report.`, { label: 'town-npcs', ...E }),
+])
+return { rpg, arms, towns }
