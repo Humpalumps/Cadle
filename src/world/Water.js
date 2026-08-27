@@ -67,7 +67,14 @@ const WATER_LOOK = {
   // under half a metre there is nothing to see THROUGH the surface, and a 3.2-mip, 0.17-capped mirror shows
   // nothing ON it either — so the only lever left is the ripple normal, which reads through Fresnel as
   // light/dark relief rather than as glints (rgh 0.34 + sp 0.05 make a glint impossible here by construction).
-  shadowfen: { sh: [0.040, 0.062, 0.030], dp: [0.006, 0.011, 0.004], ab: [7.50, 4.80, 8.50], rt: [0.40, 0.46, 0.38], rgh: 0.34, det: 0.36, fm: 0.25, sp: 0.05, rc: 0.17, rb: 3.2 },
+  // wave-5 BLOCKER re-tune. sh red channel raised above green (peat is TANNIN-stained: olive-BROWN, and under
+  // the fen's green ambient a green-dominant sh multiplied out to exactly the "flat mint sheet" the critic
+  // shot). rc 0.17 -> 0.34 + rb 3.2 -> 1.9: the 0.17 cap flattened the WHOLE mirror to one luminance — sky,
+  // megaliths, banks all capped to the same value = zero contrast = "16 m trilithons cast no reflection".
+  // The cap's job is only to keep a bright bank emissive from streaking; 0.34 still holds those far below
+  // white while letting a dark stone silhouette exist against the capped sky. Same logic on the blur: 1.9
+  // mips is still an oily surface, 3.2 was erasure.
+  shadowfen: { sh: [0.058, 0.052, 0.024], dp: [0.011, 0.009, 0.004], ab: [5.50, 5.20, 8.50], rt: [0.44, 0.45, 0.36], rgh: 0.34, det: 0.36, fm: 0.25, sp: 0.05, rc: 0.34, rb: 1.9 },
   // cascade gorge (user decree 2026-08-25): clear fast mountain water at wading depth, not open ocean
   sunken:    { sh: [0.060, 0.200, 0.240], dp: [0.008, 0.045, 0.075], ab: [1.30, 0.55, 0.30], fm: 0.90, det: 0.44 },
   tundra:    { sh: [0.075, 0.215, 0.310], dp: [0.008, 0.045, 0.115], ab: [1.45, 0.55, 0.26] },   // meltwater under ice
@@ -386,7 +393,10 @@ void main() {
   // night water reads more mirror-like: lift the reflection weight so moon/aurora/star sky sits on the whole surface
   float Fr = min(F * (1.0 + uNight * 1.2) + uNight * 0.03, 1.0 - noRefl * 0.3);   // no real mirror -> never a full-Fresnel white sheet
   col = mix(refr, refl, Fr) + spec;
-  col += uAmbient * uNight * (0.05 + 0.3 * pow(1.0 - NdotV, 3.0));   // ambient sheen: night lake never falls to featureless black
+  // ambient sheen: night lake never falls to featureless black — damped in the fen (uFilm), where it was the
+  // main term behind wave-5's "the water value-inverts to a pale sheet BRIGHTER than the sky at night": peat
+  // has nothing under the surface to return ambient, so at night it stays a dark mirror, not a glow sheet.
+  col += uAmbient * uNight * (0.05 + 0.3 * pow(1.0 - NdotV, 3.0)) * (1.0 - 0.72 * uFilm);
 #ifdef WATER_HQ
   // star-glint twinkle everywhere at night (not just the moon azimuth): sparse product threshold of two scrolling height layers
   float star = smoothstep(0.86, 0.985, n3.a) * smoothstep(0.72, 0.95, n1.a);
@@ -443,7 +453,10 @@ void main() {
   }
   // far field: the line fades by AMPLITUDE (a dim continuous hairline), never by punching gaps in it.
   // 0.86 ceiling: aerated water is never opaque paint — the body always shows through it.
-  foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - 0.55 * far) * (1.0 - smoothstep(200.0, 480.0, dist)) * (1.0 - uCamBelow) * 0.86;
+  // far cap 200-480 -> 280-650: from the sunken pass (~500-600 m out) the cascade treads' white threads were
+  // fully faded, which was half of "no staircase of water from the approach". The far band is a continuous
+  // amplitude-faded hairline by then (no gaps), so extending it cannot re-introduce the dash aliasing.
+  foam = clamp(foam, 0.0, 1.0) * uFoamMul * (1.0 - 0.55 * far) * (1.0 - smoothstep(280.0, 650.0, dist)) * (1.0 - uCamBelow) * 0.86;
   // silver, not chalk: pull the foam colour toward the local water hue so it stays a saturated highlight
   // (blob law — saturate the colour, cap the value) instead of a neutral white that tone-maps to paper.
   vec3 foamCol = mix(vec3(0.80), vec3(0.70) + uShallow * 0.95, 0.4) * (uSunRad * max(dot(vGN, uSunDir), 0.0) * 0.4 + uAmbient * 1.1 + uMoonRad * 0.35);
@@ -481,7 +494,10 @@ void main() {
   float fog = (uFogParams.z > uFogParams.y) ? smoothstep(uFogParams.y, uFogParams.z, vViewZ) : 1.0 - exp(-uFogParams.x * uFogParams.x * vViewZ * vViewZ);
   col = mix(col, uFogColor, fog * (1.0 - uCamBelow));
 
-  float alpha = smoothstep(0.0, 0.045, depth);                                  // knife-edge shore: water identity survives at 2 cm depth
+  // knife-edge shore normally (water identity survives at 2 cm depth) — but a peat fen's waterline is water
+  // SOAKING INTO the bank, not a cut: widen the ramp with uFilm so on the fen's flat pans the shoreline is a
+  // metres-wide soft gradient instead of the hard polygon polyline of the terrain triangulation (wave-5 blocker).
+  float alpha = smoothstep(0.0, 0.045 + 0.16 * uFilm, depth);
   // no grab -> alpha-blend fallback: opacity from absorption, but Fresnel sheen + foam always survive (never a bare bed)
   float cover = clamp(1.0 - dot(T, vec3(0.3333)), 0.0, 1.0);
   alpha *= mix(clamp(cover + F * 2.5 + foam + 0.25, 0.0, 1.0) * 0.95, 1.0, uHasGrab);
@@ -663,6 +679,13 @@ void main() {
     // a pale veil — tools/out/w-dbg6/shot-s0-on.png vs shot-s1-nofalls.png). Aeration is the TOP of the
     // distribution, not its middle: threads of churn with water you can see through between them.
     float aer = smoothstep(0.60, 1.12, s1 * 0.50 + s2 * 0.45 + s3 * 0.44);
+    // FAR HANDOVER (wave-5 blocker "from the pass there is no staircase of water"). Past ~150 m every churn
+    // octave is sub-pixel and the mips average it to its mean, which sits BELOW the aeration window — the
+    // measured whole-sheet alpha from the pass was 0.02-0.15, i.e. invisible against the rock through 40% of
+    // haze. The staircase can only read at that range as SOLID silver ribbons, so hand the sheet over to its
+    // drainage weight: full aeration, closed braid, opacity carried by wa alone. Continuous, so nothing pops.
+    float vfar = smoothstep(140.0, 380.0, vViewZ);
+    aer = mix(aer, 0.92, vfar);
     // braided channels, not a blanket: real cascades split around rock, and a full-width sheet is exactly
     // the "flat white paint" read. Two octaves (22 m and 9 m) so the braid has fingers, not just blobs; it
     // opens into a full curtain only at the foot, where the whole flow plunges — read from vUvM.x (metres
@@ -687,6 +710,7 @@ void main() {
     // is. Below ~10 degrees this term is now off entirely and braidRaw carries the sheet.
     float steep = smoothstep(0.18, 0.55, slope);
     float braid = mix(braidRaw, 1.0, clamp((smoothstep(0.35, 0.90, wa) * 0.85 + plunge * 0.25) * steep, 0.0, 1.0));
+    braid = max(braid, vfar);          // braid gaps are sub-pixel from the pass: the far sheet is a ribbon
     // NOISY DISSOLVE, not a threshold. Where the sheet ends, it has to end in fingers: any mask that ends
     // on a level set of a smooth field draws a visible line, and that line was half of the wave-4 finding.
     // Subtracting the braid noise from the weight makes the boundary the noise's own edge.
@@ -695,6 +719,7 @@ void main() {
     // base of 0.22 meant even zero-aeration cells were a fifth opaque, and 0.90 at full aeration left no
     // headroom for a crest to read against a trough.
     a = wa * edge * braid * (0.05 + 0.78 * aer) * (0.50 + 0.50 * wa);
+    a = mix(a, min(wa * 1.5, 1.0) * edge * 0.85, vfar);   // the far ribbon: opacity from discharge, not from churn the mips ate
     // THE APRON IS A SKIN ON GROUND, SO IT STOPS AT THE WATERLINE. Its vertices are clamped up to the water
     // plane (they have to be, or a submerged foot is depth-rejected against the surface), which means every
     // cell the 5 m lattice carries out over standing water becomes a FLAT HORIZONTAL PLATE floating on it —
@@ -709,7 +734,7 @@ void main() {
     // across the near field (wave-5 self-check, shot-sk-fall1-8m). Jittering the threshold by the braid
     // noise turns the same cut into fingers of white water running out into the shallows.
     a *= smoothstep(-0.55, -0.05, bed + (braidRaw - 0.5) * 0.45);
-    fc *= 0.74 + 0.40 * aer;      // crests bright, troughs grey — a single value across a sheet reads as card stock
+    fc *= (0.74 + 0.40 * aer) * (1.0 + 0.22 * vfar);   // crests bright, troughs grey; far ribbon lifted toward silver so it beats the haze mix (still under the fc cap x1.22 — silver, never clip-white)
   } else if (vKind < 1.5) {
     // plunge ring: churned foam collar spreading outward from the fall base (integer tile counts round
     // the circle so the angular seam is invisible)
@@ -753,7 +778,10 @@ void main() {
     // is not a plume, it is a flat grey filter over the whole screen, which is half of what made the 8 m
     // read a milk veil. Gone by 4 m, full by 14 m, where it is a silhouette again. Noise carries more of
     // the value too: spray is ragged, and a constant term is the part that reads as fog.
-    a = rr * rr * (0.09 + 0.26 * nm) * smoothstep(4.0, 14.0, vViewZ);
+    // far boost (wave-5 pass-approach blocker): from 300+ m the plume IS the fall — a receding file of white
+    // columns is what reads as a staircase long after the sheets are 2 px wide. At that range nm mips to ~0.5
+    // and the column washed out to ~0.2 alpha; lift it back toward a solid silhouette.
+    a = rr * rr * (0.09 + 0.26 * nm) * smoothstep(4.0, 14.0, vViewZ) * (1.0 + 1.2 * smoothstep(120.0, 420.0, vViewZ));
     fc = mix(fc, uAmbient * 1.15, 0.6);
   }
   float fog = (uFogParams.z > uFogParams.y) ? smoothstep(uFogParams.y, uFogParams.z, vViewZ) : 1.0 - exp(-uFogParams.x * uFogParams.x * vViewZ * vViewZ);
@@ -896,7 +924,14 @@ export class Water {
     for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
       const x = x0 + i * CELL, z = z0 + j * CELL, k = j * NX + i;
       const b = T.biomeBlend ? T.biomeBlend(x, z, bb) : null;
-      const rw = b ? (b.id === 'sunken' ? b.w : 0) : (T.biomeAt(x, z) === 'sunken' ? 1 : 0);
+      let rw = b ? (b.id === 'sunken' ? b.w : 0) : (T.biomeAt(x, z) === 'sunken' ? 1 : 0);
+      // the world-edge crag (r > ~900) is OUT. Its 60 m drops carry the biggest weight x drop products in the
+      // whole field, so it monopolised the 18-fall budget and the apron paint — the wave-5 critic found the
+      // cataracts "built onto the outer EDGE crag, outside the walkable region", while the gorge's own risers
+      // between the pass and the Court went begging. The brief wants ring-wall feeds + terrace cascades the
+      // player walks beside; the impassable rim wall is scenery nobody reaches, so it gets no white water.
+      const rr2 = x * x + z * z;
+      if (rr2 > 860 * 860) rw *= SS(940 * 940, 860 * 860, rr2);
       if (rw <= 0.02 || (T.dryAt && T.dryAt(x, z) > 0.5)) { RW[k] = 0; H[k] = WL + 1e3; continue; }
       RW[k] = rw; H[k] = T.heightAt(x, z);
     }
@@ -1000,7 +1035,11 @@ export class Water {
     const BK = 40, buck = new Map();
     for (let j = 1; j < NZ - 1; j++) for (let i = 1; i < NX - 1; i++) {
       const k = j * NX + i, d = DN[k];
-      if (WB[k] < 0.25 || d < 0 || SL[k] < 0.16) continue;
+      // 0.25/0.16 -> 0.18/0.14: with the edge crag excluded from the field (above), the 18-fall budget is no
+      // longer spent on unreachable wall cataracts — so the gate can afford the gorge's own, more modest
+      // risers, which are exactly the falls the wave-5 critic found missing ("the only two sites inside the
+      // region body"). More interior feet = plunge collars + mist columns stepping down the walkable gorge.
+      if (WB[k] < 0.18 || d < 0 || SL[k] < 0.14) continue;
       // RELATIVE collapse, not an absolute one: the treads carry fbm micro-relief and causeway shoulders at
       // slope 0.05-0.15, so `SL[d] < 0.09` almost never fired on them and the whole gorge yielded 3 feet.
       if (!(SL[d] < SL[k] * 0.55 || H[d] <= WL + 0.15)) continue;
@@ -1074,7 +1113,7 @@ export class Water {
     // 300 m out the plumes ARE the vista: a receding sequence of white columns stepping down toward the
     // Court is what reads as a staircase at that range, long after the sheets themselves are 2 px wide.
     for (const f of falls) {
-      const mw = f.w * 0.62 + 2.5, mh = f.hw * 0.85 + 3.4;
+      const mw = f.w * 0.72 + 2.8, mh = f.hw * 1.25 + 3.6;   // taller: the plume column is the vista-range read of a step (wave-5 pass blocker)
       const my = f.y + mh * 0.42, ox = f.sx - f.dx * 1.6, oz = f.sz - f.dz * 1.6;
       for (let q = 0; q < 2; q++) {
         const ca = Math.cos(q * 1.1 - 0.55 + rnd() * 0.2), sa = Math.sin(q * 1.1 - 0.55);
@@ -1130,10 +1169,13 @@ export class Water {
     // clusters of WILDLY different size and character (wave-3: "the same pale patches cover every square
     // metre... they read as an oil slick"). A fen chokes in mats, not in wallpaper: a few big rafts, many
     // small ones, and large open water between them.
+    // 46 -> 26 seeds, 18 m apart: the wave-5 critic's "flat opaque mint sheet" was in large part these cards —
+    // enough of them blanketed the basin that the mats WERE the water surface in half the shots. Scum is an
+    // accent on the murk, never a carpet over it.
     const seeds = [];
-    for (let tries = 0; tries < 900 && seeds.length < 46; tries++) {
+    for (let tries = 0; tries < 900 && seeds.length < 26; tries++) {
       const i = (rnd() * (cand.length / 2)) | 0, x = cand[i * 2], z = cand[i * 2 + 1];
-      if (seeds.every((s) => (s[0] - x) ** 2 + (s[1] - z) ** 2 > 14 * 14)) seeds.push([x, z, rnd()]);
+      if (seeds.every((s) => (s[0] - x) ** 2 + (s[1] - z) ** 2 > 18 * 18)) seeds.push([x, z, rnd()]);
     }
     const mats = [], tints = [];
     const q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
@@ -1151,14 +1193,22 @@ export class Water {
         const s = (algae ? 0.7 : 1.4) + rnd() * (algae ? 1.1 : 2.6);
         sc.set(s * (0.75 + rnd() * 0.5), s * (0.75 + rnd() * 0.5), 1);
         mats.push(new THREE.Matrix4().compose(v, q, sc));
-        tints.push(algae ? col.setHSL(0.27 + rnd() * 0.05, 0.34 + rnd() * 0.12, 0.10 + rnd() * 0.07).clone()
-                         : col.setHSL(0.20 + rnd() * 0.06, 0.45 + rnd() * 0.18, 0.26 + rnd() * 0.16).clone());
+        // duckweed L 0.26-0.42 -> 0.13-0.21: under the fen's bright green ambient the pale population tone-
+        // mapped to exactly the "mint" the wave-5 blocker names. Both populations are now dark peat tones —
+        // the duckweed stays the visibly warmer/lighter of the two, but it can never carry the frame.
+        tints.push(algae ? col.setHSL(0.27 + rnd() * 0.05, 0.34 + rnd() * 0.12, 0.09 + rnd() * 0.06).clone()
+                         : col.setHSL(0.21 + rnd() * 0.05, 0.32 + rnd() * 0.14, 0.13 + rnd() * 0.08).clone());
         cx += x; cz += z;
       }
     }
     if (!mats.length) return;
     const geo = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 1.0, metalness: 0, side: THREE.DoubleSide, color: new THREE.Color(0.42, 0.47, 0.24) });
+    // alphaTest 0.5 alone was the wave-5 "raw screen-door alpha DITHER band along every shore": a cutout card
+    // seen nearly edge-on minifies its alpha map into per-pixel pass/fail — a crawling checkerboard exactly in
+    // the 5-15 m shore band the cards live in. Blend the edges instead (a low alphaTest stays, purely so the
+    // fully-clear texels never occupy depth/blend slots); depthWrite off + renderOrder above the water surface
+    // so the near-coplanar cards resolve by blending, not by fighting the depth buffer.
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.15, transparent: true, depthWrite: false, roughness: 1.0, metalness: 0, side: THREE.DoubleSide, color: new THREE.Color(0.30, 0.33, 0.18) });
     // instanceColor does NOT reach the fragment shader on its own in three r185 (USE_INSTANCING_COLOR is
     // emitted into the VERTEX prefix only) — without this patch every card renders the same olive and the
     // whole fen surface goes uniform, which is exactly the wave-3 "uniform across the whole basin" finding.
@@ -1177,7 +1227,7 @@ export class Water {
     let r2 = 0;
     for (const m of mats) { const dx = m.elements[12] - cx, dz = m.elements[14] - cz; r2 = Math.max(r2, dx * dx + dz * dz); }
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, this.level, cz), Math.sqrt(r2) + 4);
-    mesh.name = 'water-scum'; mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = true;
+    mesh.name = 'water-scum'; mesh.renderOrder = 6; mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = true;
     mesh.raycast = () => {};
     this._noReflect.add(mesh);   // never re-rendered into the half-res mirror
     this.scum = mesh;
