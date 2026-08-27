@@ -162,6 +162,20 @@ export class Enemy {
     // escort guide}" so hostile AI can aggro the guide too (see _perceive) — one seam, reused by _think/_attack.
     this._threat = { pos: new THREE.Vector3(), feet: new THREE.Vector3(), obj: null };
     this.isGuide = false;   // true only for the escort guide instance (Enemies.spawnFriendly) — see takeDamage
+    // ---- baked locomotion (rigged GLBs whose clips passed the per-body eye gate — glbBody.USE_CLIPS):
+    // one AnimationMixer per instance, bound to this instance's cloned skeleton by bone name. Locomotion
+    // (idle / walk|quadruped-walk / run) comes from the clips, cross-faded by e.speedN in glbAnim.js;
+    // attack/stagger/death stay PROCEDURAL and are layered AFTER mixer.update() (both write bone
+    // rotations — order matters). The mixer is only ever advanced inside _animate, so the distance-banded
+    // animEvery rate limiter applies to it unchanged. No clips on the asset = no mixer = the full
+    // procedural path, untouched.
+    this.mixer = null;
+    if (this.rigged && asset.clips?.length) {
+      this.mixer = new THREE.AnimationMixer(boneRoot);
+      const act = (nm) => { const c = asset.clips.find((c2) => c2.name === nm); if (!c || !c.tracks.length) return null;
+        const a = this.mixer.clipAction(c); a.setEffectiveWeight(0); a.play(); return a; };
+      this.actIdle = act('idle'); this.actWalk = act('walk') ?? act('quadruped-walk'); this.actRun = act('run');
+    }
     this.body.setup(this, asset);
     this._fBody = this.bones.torso ?? this.bones.body ?? this.bones.core ?? null;
     this._fHead = this.bones.head ?? this.bones.neck1 ?? this.bones.neck ?? null;
@@ -192,6 +206,9 @@ export class Enemy {
     this.xp = Math.round(LEVEL_XP(def.xp, level) * (elite ? ELITE_XP_MUL : 1));
     this.position.copy(pos); if (!def.flying) this.position.y = g.terrain.heightAt(pos.x, pos.z); else this.position.y = g.terrain.heightAt(pos.x, pos.z) + def.hover;
     this.home.copy(this.position); this.velocity.set(0, 0, 0); this.yaw = yaw ?? rnd() * Math.PI * 2; this.seedT = rnd() * 100;
+    // stagger the baked clips per spawn so a camp of one type doesn't breathe/stride in perfect unison
+    if (this.actIdle) this.actIdle.time = this.seedT % this.actIdle.getClip().duration;
+    if (this.actWalk) this.actWalk.time = this.seedT % this.actWalk.getClip().duration;
     this.alert = false; this.seen = false; this.lastSeenT = -99; this.hurtT = -99; this.attackCd = 1 + rnd(); this.percT = rnd() * 0.3; this.fleeCd = 0; this.idleDur = 1.5 + rnd() * 3;
     this.flash = 0; this.dissolve = 0; this.telegraph = 0; this.attackT = 0; this.attackKind = null; this.deathT = 0; this.phaseIdx = 0; this.phaseFlash = 0; this.staggerT = 0; this.lastStagger = -99;
     this.onGround = !def.flying; this.phase = rnd() * 6; this.tilt = 0; this.tiltT = 0; this.pitchAnim = 0; this.rollAnim = 0; this.speedN = 0; this.distP = 999;

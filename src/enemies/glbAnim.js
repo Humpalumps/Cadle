@@ -55,6 +55,19 @@ function rot(G, i, k, a, k2, a2) {
   if (a) b.quaternion.premultiply(_dq.setFromAxisAngle(G.axes[i][k], a));
   if (a2) b.quaternion.premultiply(_dq.setFromAxisAngle(G.axes[i][k2], a2));
 }
+/**
+ * Layer a delta about world axis `k` onto whatever the MIXER already posed this frame, instead of
+ * resetting to bind the way rot() does. Only sound on bones the mixer rewrites every animate frame —
+ * on any other bone a premultiplied delta would accumulate frame over frame and wind the limb into a
+ * pretzel — so bones without a clip track in every clip (G.tracked[i] = 0) reset to bind first,
+ * which degrades exactly to rot() there. That guard is what makes the layered mode structurally safe.
+ */
+function radd(G, i, k, a, k2, a2) {
+  const b = G.bones[i]; if (!b) return;
+  if (!(G.tracked && G.tracked[i])) b.quaternion.copy(G.bind[i]);
+  if (a) b.quaternion.premultiply(_dq.setFromAxisAngle(G.axes[i][k], a));
+  if (a2) b.quaternion.premultiply(_dq.setFromAxisAngle(G.axes[i][k2], a2));
+}
 
 /**
  * Aim bone i's own chain direction at a world point, clamped and damped. This is rig.js's aimAt() generalised:
@@ -62,7 +75,7 @@ function rot(G, i, k, a, k2, a2) {
  * (their joints aim +Y down their own chain, and each one differently). Same clamped-yaw/pitch-with-slerp
  * behaviour, but the "forward" it swings is asset.boneFwd[i].
  */
-function aimChain(G, i, target, maxAng, k, dt) {
+function aimChain(G, i, target, maxAng, f) {   // f = slerp blend this frame (callers pass 1-exp(-k*dt) or a weight)
   const b = G.bones[i]; if (!b) return false;
   const par = b.parent; if (!par) return false;
   _m.copy(par.matrixWorld).invert();                       // one frame stale (matrices compose after animate) — fine for a damped aim
@@ -77,7 +90,7 @@ function aimChain(G, i, target, maxAng, k, dt) {
     ang = maxAng;
   }
   _q.copy(G.bind[i]).premultiply(_dq);
-  b.quaternion.slerp(_q, 1 - Math.exp(-k * dt));
+  b.quaternion.slerp(_q, f);
   return true;
 }
 /** relax back to the bind pose (rig.js's relaxBone slerps to IDENTITY, which is the wrong target here). */
@@ -100,7 +113,9 @@ function wave(G, ids, t, amp, freq, axis, lag, pitch) {
   if (!bs.length) return;
   chainWave(bs, t, amp * (CHAIN_REF / chainSum(bs.length)), freq, axis, lag);
   for (let j = 0; j < bs.length; j++) {
-    if (pitch) bs[j].rotation.x = pitch * (1 - j / bs.length);
+    // += not =: when the wave itself runs on the 'x' axis (serpent vertical undulation) an assignment
+    // would erase it; every 'y'-axis caller has rotation.x at 0 here so += is identical for them.
+    if (pitch) bs[j].rotation.x += pitch * (1 - j / bs.length);
     bs[j].quaternion.premultiply(G.bind[ids[j]]);
   }
 }
@@ -120,6 +135,11 @@ export function glbAnimator(profile, tuning) {
         arms: C.arms.map((c) => ({ ids: c.ids, left: c.left, lat: c.lat })),
         aux: asset.auxChains, wings: null, wingIds: null, rootY: asset.bindPos[C.root]?.y ?? 0,
         sPitch: 0,     // smoothed scalar: reading a pitch back off a composed quaternion would drift
+        tracked: asset.clipTracked ?? null,   // per-bone: 1 = every clip rewrites it (radd may layer)
+        aimW: 0,       // mixer path only: smoothed 0..1 head-aim blend — the clip pose is rewritten every
+                       // frame, so a damped slerp FROM it never converges; blend by weight instead
+        wWalk: 0, wRun: 0,   // smoothed clip weights: speedN can step ~0.3 in one frame (accel), and an
+                             // unsmoothed weight snap between two unrelated clip poses is a visible pop
       };
       // Wings: the opposed pair of non-leg chains that reaches FURTHEST outboard. The drake's are unnamed Tripo
       // filler hanging off the spine, the sprite's are limb group 0 — one test finds both, no hand exceptions.
@@ -145,6 +165,36 @@ export function glbAnimator(profile, tuning) {
       const stag = e.state === 'stagger', dead = e.state === 'dead';
       const wind = seg(sw, 0, 0.30), strike = seg(sw, 0.30, 0.40), rec = seg(sw, 0.55, 1);
 
+      // ---- BAKED LOCOMOTION (rigged GLBs whose clips passed the eye gate). The mixer poses the whole
+      // skeleton first — idle / walk / run cross-faded by speedN — and the procedural sections below
+      // LAYER onto that pose (radd) or deliberately override it (head aim, wing flap, tail, aux drift).
+      // Attack/stagger/death stay procedural by decree: a baked clip cannot be cut off mid-swing, and
+      // attack timing must line up with damage windows and telegraph frames.
+      // `air`: a flyer holds the idle clip mid-air with the procedural tuck on top (a ground walk cycled
+      // in the sky reads as treading water) — except an airGait profile (riftling), whose cycling legs
+      // in flight are its authored look.
+      const M = e.mixer;
+      const air = M ? !e.onGround && !T.airGait : false;
+      if (M) {
+        if (!dead) {
+          const tRun = air || !e.actRun ? 0 : seg(sp, 0.55, 0.92);
+          const tWalk = air ? 0 : Math.min(1 - tRun, seg(sp, 0.03, 0.32) + (e.actRun ? 0 : seg(sp, 0.55, 0.92)));
+          G.wWalk = damp(G.wWalk, tWalk, 8, dt); if (tWalk === 0 && G.wWalk < 0.008) G.wWalk = 0;   // snap to 0:
+          G.wRun = damp(G.wRun, tRun, 8, dt); if (tRun === 0 && G.wRun < 0.008) G.wRun = 0;         // a weight-0
+          // action is skipped by the mixer entirely, but damp() alone never reaches 0 — every idle
+          // creature would evaluate its walk clip's tracks forever for an invisible contribution
+          e.actIdle?.setEffectiveWeight(Math.max(0, 1 - G.wWalk - G.wRun));
+          e.actWalk?.setEffectiveWeight(G.wWalk);
+          e.actRun?.setEffectiveWeight(G.wRun);
+          // stride rate follows the actual ground speed so the feet track the ground instead of skating
+          if (e.actWalk) e.actWalk.timeScale = 0.55 + 0.85 * sp;
+          if (e.actRun) e.actRun.timeScale = 0.7 + 0.5 * sp;
+        }
+        // keep advancing while dead too: the radd layers below compose onto a pose the mixer refreshes
+        // every animate frame — on a frozen pose they would accumulate without bound.
+        M.update(dt);
+      }
+
       // ---- root: hover bob (the one position write, always recomputed from the bind pose) + turn bank
       const rb = G.bones[G.root];
       if (rb) {
@@ -153,25 +203,44 @@ export function glbAnimator(profile, tuning) {
       }
 
       // ---- spine: breath, gait sway, attack arc, stagger. One damped scalar drives the pitch so nothing
-      // fights the additive flinch layer Enemy._react adds on top.
-      const pitchTgt = e.tilt + (e.pitchAnim ?? 0) + T.lean * (0.10 + sp * 0.35)
+      // fights the additive flinch layer Enemy._react adds on top. On the mixer path the clip owns the
+      // gait sway — only slope tilt, attack arc, stagger, telegraph and breath are layered on (breath
+      // rides on top of the clip too: some idle clips have near-still stretches long enough to read as
+      // a held pose, and a live creature breathes continuously).
+      const pitchTgt = e.tilt + (e.pitchAnim ?? 0) + (M ? 0 : T.lean * (0.10 + sp * 0.35))
         - 0.55 * wind * (1 - tg * 0.3) + 0.85 * strike - 0.45 * rec + (stag ? -0.40 : 0) - tg * 0.22;
       G.sPitch = damp(G.sPitch, pitchTgt, 12, dt);
-      const breath = Math.sin(tt * 1.7) * T.breathe;
       for (let k = 0; k < G.spine.length; k++) {
         const f = 1 / Math.max(1, G.spine.length);
-        rot(G, G.spine[k], 0, G.sPitch * f + breath * (k ? 0.4 : 1),
+        // breath phase LAGS per segment (a breath travels up the torso). Not cosmetic: on a shared phase
+        // every spine bone crosses its sine turnaround on the SAME frames, so a rig whose idle is mostly
+        // breath (the wraith after the arm-chain trim moved its 16-joint midline chain into the spine)
+        // goes near-still twice a cycle — animcheck read it as a 35%-held strobing pose at 18 m.
+        const breath = Math.sin(tt * 1.7 - k * 0.7) * T.breathe * (k ? 0.4 : 1);
+        if (M) { if (!dead) radd(G, G.spine[k], 0, G.sPitch * f + breath, 1, stag ? Math.sin(tt * 26) * 0.05 : 0); }
+        else rot(G, G.spine[k], 0, G.sPitch * f + breath,
                            1, Math.sin(ph) * T.lean * 0.22 * sp * f + (stag ? Math.sin(tt * 26) * 0.05 : 0));
       }
 
-      // ---- neck + head: track the player when alert, drift when not
+      // ---- neck + head: track the player when alert, drift when not (mixer path: the clip owns the
+      // idle drift; the aim OVERRIDES it by weight, because a damped slerp from a pose that is
+      // rewritten every frame never converges)
       if (G.neck.length && !dead) {
-        const aimed = e.alert && A?.eye ? aimChain(G, G.neck[0], A.eye, T.headYaw, 9, dt) : false;
-        if (!aimed) { relax(G, G.neck[0], 3, dt); }
-        for (let k = 1; k < G.neck.length; k++) {
-          const lead = k === G.neck.length - 1 && e.alert && A?.eye;
-          if (lead) { if (!aimChain(G, G.neck[k], A.eye, T.headPitch, 7, dt)) relax(G, G.neck[k], 4, dt); }
-          else rot(G, G.neck[k], 0, Math.sin(tt * 1.3 + k) * 0.05 + 0.35 * strike - 0.2 * wind, 1, Math.sin(tt * 0.6 + k * 0.7) * (e.alert ? 0.06 : 0.22));
+        if (M) {
+          G.aimW = damp(G.aimW, e.alert && A?.eye ? 1 : 0, 6, dt);
+          if (G.aimW > 0.02 && A?.eye) {
+            aimChain(G, G.neck[0], A.eye, T.headYaw, G.aimW);
+            if (G.neck.length > 1) aimChain(G, G.neck[G.neck.length - 1], A.eye, T.headPitch, G.aimW);
+          }
+          if (wind || strike) for (let k = 1; k < G.neck.length; k++) radd(G, G.neck[k], 0, 0.35 * strike - 0.2 * wind);
+        } else {
+          const aimed = e.alert && A?.eye ? aimChain(G, G.neck[0], A.eye, T.headYaw, 1 - Math.exp(-9 * dt)) : false;
+          if (!aimed) { relax(G, G.neck[0], 3, dt); }
+          for (let k = 1; k < G.neck.length; k++) {
+            const lead = k === G.neck.length - 1 && e.alert && A?.eye;
+            if (lead) { if (!aimChain(G, G.neck[k], A.eye, T.headPitch, 1 - Math.exp(-7 * dt))) relax(G, G.neck[k], 4, dt); }
+            else rot(G, G.neck[k], 0, Math.sin(tt * 1.3 + k) * 0.05 + 0.35 * strike - 0.2 * wind, 1, Math.sin(tt * 0.6 + k * 0.7) * (e.alert ? 0.06 : 0.22));
+          }
         }
       }
 
@@ -181,6 +250,19 @@ export function glbAnimator(profile, tuning) {
       const am = T.legSwing * (0.34 + 0.66 * sp) * (stag ? 0.3 : 1);
       for (const L of G.legs) {
         const ids = L.ids, p2 = ph + L.off;
+        if (M) {
+          // clip owns the gait. Layer only the attack crouch, and the airborne tuck for flyers (which
+          // are holding the idle clip — see `air` above).
+          if (air) {
+            const s2 = Math.sin(tt * 1.1 + L.off) * 0.10;
+            radd(G, ids[0], 0, T.tuck * 0.6 + s2);
+            for (let k = 1; k < ids.length; k++) radd(G, ids[k], 0, T.tuck * (k === 1 ? 1 : 0.5) + s2 * 0.5);
+          } else if (!dead && (wind || strike)) {
+            radd(G, ids[0], 0, 0.28 * wind - 0.22 * strike);
+            if (ids[1] != null) radd(G, ids[1], 0, 0.35 * wind);
+          }
+          continue;
+        }
         if ((e.onGround || T.airGait) && !dead) {
           rot(G, ids[0], 0, -am * Math.sin(p2) + 0.28 * wind - 0.22 * strike);
           if (ids[1] != null) rot(G, ids[1], 0, am * T.kneeBend * Math.max(0, Math.sin(p2 + 1.1)) + 0.35 * wind);
@@ -210,6 +292,14 @@ export function glbAnimator(profile, tuning) {
       for (const R of G.arms) {
         if (G.wingIds?.has(R.ids)) continue;
         const ids = R.ids, sgn = R.left ? 1 : -1, p2 = ph + (R.left ? Math.PI : 0);
+        if (M) {
+          // clip owns the counter-swing; layer only the attack wind-up / swing-through
+          if (!dead && (wind || strike || rec)) {
+            radd(G, ids[0], 0, -aWind * wind + aStrike * strike + 0.25 * rec, 2, sgn * (0.22 * wind - 0.15 * rec));
+            if (ids[1] != null) radd(G, ids[1], 0, -(melee ? 0.55 : 0.18) * wind + (melee ? 0.40 : 0.10) * strike);
+          }
+          continue;
+        }
         const swing = asw * Math.sin(p2) - aWind * wind + aStrike * strike + 0.25 * rec;
         rot(G, ids[0], 0, swing, 2, sgn * (0.16 + 0.22 * wind - 0.15 * rec));
         if (ids[1] != null) rot(G, ids[1], 0, -0.22 - (melee ? 0.55 : 0.18) * wind + (melee ? 0.40 : 0.10) * strike);
@@ -230,17 +320,28 @@ export function glbAnimator(profile, tuning) {
 
       // ---- tail / body chain
       if (G.tail.length) {
-        if (profile === 'serpent') wave(G, G.tail, tt + ph * 0.4, T.tailAmp * (0.6 + sp * 0.8) * (T.undulate ?? 1), T.tailHz + sp * 2, 'y', 0.7, 0);
+        // serpent: VERTICAL undulation ('x' = pitch wave) plus a standing body arch, not plan-view
+        // snaking. Every serpent-profile creature FLIES (skyserpent, leviathan — dive role, hover
+        // 6-9 m), and a flyer seen from below or the side reads its motion in the vertical plane; the
+        // old horizontal S-curve read as a rigid glider AND collapsed the skeleton's vertical extent
+        // to ~0.38x of def.height (animcheck SIZE fail on both). The arch is what gives the body its
+        // authored dragon-glide posture — head high, body cresting — independent of the wave phase.
+        if (profile === 'serpent') wave(G, G.tail, tt + ph * 0.4, T.tailAmp * (0.6 + sp * 0.8) * (T.undulate ?? 1), T.tailHz + sp * 2, 'x', 0.7, T.arch ?? 0.22);
         else wave(G, G.tail, tt + ph * 0.5, T.tailAmp * (0.7 + sp * 0.6), T.tailHz + sp * 3, 'y', 0.8, 0.16 - sp * 0.10 + (e.state === 'flee' ? -0.3 : 0));
       }
 
       // ---- leftover chains (robes, horns, mandibles, void tendrils): slow secondary drift so nothing on the
       // creature is frozen. Skipped for anything already driven as a wing.
+      // Speed-responsive: loose parts STREAM when the body travels. A hovering wraith gliding 3 m/s
+      // with a statically-drifting robe read as a decal on rails (animcheck RAILS, wraith/voidhorror
+      // at motion 0.018-0.020 — the conversion prune cut the rig to 37 joints, so what deformation
+      // remains has to actually move). Amplitude and rate both ride e.speedN; at rest it is exactly
+      // the old slow drift.
       const aux = G.aux;
       if (aux) for (let c = 0; c < aux.length; c++) {
         const ch = aux[c];
         if (ch.ids.length < 2 || G.wingIds?.has(ch.ids)) continue;
-        wave(G, ch.ids, tt * 0.55 + c, 0.07 + tg * 0.08, 1.1 + (c % 3) * 0.3, 'y', 0.6, 0);
+        wave(G, ch.ids, tt * 0.55 + c, 0.07 + tg * 0.08 + sp * 0.12, 1.1 + (c % 3) * 0.3 + sp * 0.9, 'y', 0.6, 0);
       }
     },
   };

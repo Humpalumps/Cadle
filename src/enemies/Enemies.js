@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/Noise.js';
 import { BODIES } from './bodies.js';
-import { buildGlbBody, GLB_CFG } from './glbBody.js';
+import { buildGlbBody, GLB_CFG, clipsEnabled } from './glbBody.js';
 import { DEFS } from './defs.js';
 import { Enemy } from './Enemy.js';
 import { OUTER } from '../world/Biomes.js';
@@ -133,7 +133,9 @@ export class Enemies {
       const scene = this.game.assets?.model?.(bn);
       // no GLB_CFG entry = deliberately procedural forever (wisp: a glow orb, not a mesh) — a stray .glb
       // dropped next to it must not silently swap it out.
-      const glb = scene && GLB_CFG[bn] ? buildGlbBody(scene, GLB_CFG[bn], ref) : null;
+      // clips only pass through the per-body eye-judged opt-in (glbBody.USE_CLIPS / &clips= override):
+      // a body whose baked retarget reads worse than the procedural gait keeps procedural.
+      const glb = scene && GLB_CFG[bn] ? buildGlbBody(scene, GLB_CFG[bn], ref, clipsEnabled(bn) ? this.game.assets?.clips?.(bn) : null) : null;
       this.assets[type] = built[bn] = glb ?? ref;
     }
     this.populate();

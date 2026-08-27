@@ -64,6 +64,26 @@ export const GLB_CFG = {
   wayfinder: { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: null },
 };
 
+// ---------------------------------------------------------------------------------------------------
+// BAKED-CLIP OPT-IN, PER BODY — judged BY EYE against the procedural gait, creature by creature (user
+// verdict on the first mixer wiring, 2026-08-27: "floppy, limbs flail everywhere — much worse"). A body
+// is flipped true here ONLY after a walking contact sheet of the baked clip reads better than the
+// procedural gait for that creature; anything not listed (or false) keeps the full procedural animator
+// even though its GLB ships clips. Dev A/B: `&clips=all|none|<body,body>` overrides the table for that
+// page load — harness use only, the table is what ships.
+const USE_CLIPS = {
+  hound: false, riftling: false, frostwolf: false, drake: false, sprite: false, wraith: false,
+  sentinel: false, treant: false, golem: false, warden: false,
+};
+export function clipsEnabled(bn) {
+  let ovr = null;
+  try { ovr = new URLSearchParams(location.search).get('clips'); } catch { /* not a browser */ }
+  if (ovr === 'all') return true;
+  if (ovr === 'none') return false;
+  if (ovr) return ovr.split(',').includes(bn);
+  return !!USE_CLIPS[bn];
+}
+
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 const AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
 
@@ -76,8 +96,9 @@ function dequantize(geo, name) {
   geo.setAttribute(name, new THREE.BufferAttribute(f, a.itemSize));
 }
 
-/** @param {THREE.Object3D} scene gltf.scene from game.assets.model()  @param cfg one GLB_CFG entry  @param refAsset the procedural asset for the same type */
-export function buildGlbBody(scene, cfg, refAsset) {
+/** @param {THREE.Object3D} scene gltf.scene from game.assets.model()  @param cfg one GLB_CFG entry  @param refAsset the procedural asset for the same type
+ *  @param clips AnimationClip[] from game.assets.clips(name), or null — retargeted onto the normalised skeleton (asset.clips) */
+export function buildGlbBody(scene, cfg, refAsset, clips = null) {
   if (!scene || !refAsset) return null;
   if (scene.userData.__glbAsset) return scene.userData.__glbAsset;   // two enemy types can share one body: bake once
   let mesh = null;
@@ -86,6 +107,9 @@ export function buildGlbBody(scene, cfg, refAsset) {
   if (!mesh || !mesh.skeleton) return null;
 
   const bones = mesh.skeleton.bones.slice(), n = bones.length;
+  const origNames = bones.map((b) => b.name);              // clip tracks bind by these — captured before any rename
+  const origLoc = bones.map((b) => b.position.clone());    // original NODE-local rest translations — the frame clip
+                                                           // position tracks are authored in, before the hierarchy rebuild
   // Bind world matrices, in the GLB's world space. Taken from the INVERSE BIND MATRICES rather than the node
   // poses: the IBMs are what the skin weights are actually relative to, so if a rig's node pose ever drifts
   // from its bind pose the mesh still binds undeformed.
@@ -220,6 +244,39 @@ export function buildGlbBody(scene, cfg, refAsset) {
   for (const c of chainsRaw) c.lat = Math.abs(tx(c.ids[c.ids.length - 1]));
   for (const c of arms) c.left = tx(c.ids[0]) >= 0;
 
+  // ---- ARM-CHAIN TRIM (the seraph "boneless streamer", 2026-08-27). Tripo files some limbs as a chain
+  // that STARTS ON THE MIDLINE and climbs the spine before turning outboard: the sentinel's 0R "arm" is
+  // really 3 spine joints (x -0.11, y 1.94..2.56) + the actual arm, and the wraith's 16-joint "limb" is
+  // spine+arm+fingers. Driving such a chain from ids[0] arm-swings the whole torso column from hip
+  // height — a walking Empyrean Seraph's limb then leaves the hip as one long, boneless, tapering
+  // streamer. Trim the chain to start at the clavicle (one joint before the first genuinely outboard
+  // one) and hand the midline prefix to the SPINE, where breath/lean belongs. A chain that never leaves
+  // the midline at all (sentinel 1L: two joints straight down the pelvis) is not an arm — it is a spine
+  // run, reclassified whole. Legs are untouched: they are classified by tip height, not by reach.
+  // `limbName` records the UNTRIMMED L<g><s>_<k> naming first: GLB_CFG.headBone (golem 'L1L_2',
+  // warden 'L1R_3') was authored against it, and the trim below can shift or retire those names.
+  const limbName = new Map();
+  for (const c of chainsRaw) c.ids.forEach((i, k) => limbName.set(`L${c.group}${c.side}_${k}`, i));
+  {
+    const H = Math.max(1e-3, hi - lo), spineExtra = [];
+    for (let a2 = arms.length - 1; a2 >= 0; a2--) {
+      const c = arms[a2];
+      const th = Math.max(0.30 * Math.max(c.lat, 1e-3), 0.06 * H);   // "outboard" = clearly off the midline
+      const k = c.ids.findIndex((i) => Math.abs(tx(i)) >= th);
+      if (k < 0) {                                                   // never leaves the midline
+        if (c.lat < 0.10 * H) { c.asSpine = true; spineExtra.push(...c.ids); arms.splice(a2, 1); }
+        continue;
+      }
+      const start = Math.max(0, k - 1);                              // keep the clavicle as the swing pivot
+      if (start > 0 && c.ids.length - start >= 2) {
+        spineExtra.push(...c.ids.slice(0, start));
+        c.ids = c.ids.slice(start);
+        c.left = tx(c.ids[0]) >= 0;
+      }
+    }
+    if (spineExtra.length) { spine.push(...spineExtra); spine.sort((i, j) => ty(i) - ty(j)); }
+  }
+
   const alias = (i, ...a) => { if (i != null && i >= 0) bones[i].userData.alias.push(...a); };
   const rename = (i, nm) => { bones[i].name = nm; };
 
@@ -237,6 +294,7 @@ export function buildGlbBody(scene, cfg, refAsset) {
   }
   tail.forEach((i, k) => rename(i, 'tail' + k));
   for (const c of chainsRaw) {
+    if (c.asSpine) continue;   // reclassified whole into the spine — renamed spineN above
     c.ids.forEach((i, k) => rename(i, `L${c.group}${c.side}_${k}`));
     const tag = c.leg ? (legs.length > 2 ? (c.front ? 'F' : 'H') : '') + (c.left ? 'L' : 'R') : (c.left ? 'L' : 'R');
     if (c.leg) {
@@ -246,7 +304,7 @@ export function buildGlbBody(scene, cfg, refAsset) {
       alias(c.ids[0], 'shoulder' + tag, 'sh' + tag); alias(c.ids[1], 'elbow' + tag, 'el' + tag); alias(c.ids[c.ids.length - 1], 'hand' + tag, 'hd' + tag);
     }
   }
-  if (!neck.length && cfg.headBone) { const i = bones.findIndex((b) => b.name === cfg.headBone); alias(i, 'head'); }
+  if (!neck.length && cfg.headBone) { const i = limbName.get(cfg.headBone) ?? bones.findIndex((b) => b.name === cfg.headBone); alias(i, 'head'); }
 
   // ---- leftover chains (Tripo's `bone_N` filler): wings, robes, horns, mandibles. They carry real weight,
   // so they get names and secondary motion instead of being frozen.
@@ -260,6 +318,51 @@ export function buildGlbBody(scene, cfg, refAsset) {
     const c = auxChains.length;
     ids.forEach((j, k) => rename(j, `aux${c}_${k}`));
     auxChains.push({ ids, left: tx(ids[0]) >= 0, lat: Math.abs(tx(ids[ids.length - 1])) });
+  }
+
+  // ---- baked locomotion clips (Tripo retargets), re-aimed at the NORMALISED skeleton. The normalising
+  // transform leaves every non-root LOCAL rotation untouched (parent and child both premultiply qYaw in
+  // world, which cancels in the parent frame) and scales local translations uniformly — so quaternion
+  // tracks pass through verbatim, position tracks are rescaled, and track names are rewritten to the
+  // renamed bones so a per-instance AnimationMixer binds by name. Position tracks are rescaled PER BONE,
+  // by |normalised bind local| / |original node-local rest| — NOT by the model-wide s: some rigs carry a
+  // scale on an intermediate rig node, so the frame a clip's positions are authored in differs from
+  // world by a per-model factor the IBM-derived locals already absorbed (measured as the whole skeleton
+  // collapsing to 0.43x when s alone was used). ROOT tracks are dropped: the clips are baked in place,
+  // the AI owns the root, and the root's local frame is the one frame the normalisation DID change.
+  // Scale tracks are dropped too: bones stay scale 1 by contract (Enemy.spawn resets them).
+  // `clipTracked[i]` = 1 iff EVERY retargeted clip carries a quaternion track for bone i. glbAnim's
+  // layered deltas (radd) may only compose onto a pose the mixer rewrites every animate frame; on any
+  // other bone they would accumulate frame over frame and wind the limb into a pretzel — the guard
+  // makes radd fall back to bind-composed rotation there.
+  let retargeted = null, clipTracked = null;
+  if (clips?.length) {
+    const nameOf = new Map();
+    bones.forEach((b, i) => nameOf.set(origNames[i], i === rootI ? null : i));   // null = root, drop
+    const perClipQ = [];
+    retargeted = clips.map((clip) => {
+      const tracks = [], hasQ = new Uint8Array(n);
+      for (const tr of clip.tracks) {
+        const dot = tr.name.lastIndexOf('.');
+        const node = tr.name.slice(0, dot), prop = tr.name.slice(dot + 1);
+        const bi = nameOf.get(node);
+        if (bi == null) continue;                           // root, pruned joint, or non-skeleton node
+        if (prop === 'quaternion') {
+          hasQ[bi] = 1;
+          tracks.push(new THREE.QuaternionKeyframeTrack(bones[bi].name + '.quaternion', tr.times.slice(), tr.values.slice()));
+        } else if (prop === 'position') {
+          const ol = origLoc[bi].length();
+          const f = ol > 1e-6 ? bones[bi].position.length() / ol : s;   // bones[bi].position IS the new bind local here
+          const v = tr.values.slice();
+          for (let i = 0; i < v.length; i++) v[i] *= f;
+          tracks.push(new THREE.VectorKeyframeTrack(bones[bi].name + '.position', tr.times.slice(), v));
+        }
+      }
+      perClipQ.push(hasQ);
+      return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+    });
+    clipTracked = new Uint8Array(n);
+    for (let i = 0; i < n; i++) clipTracked[i] = perClipQ.every((h) => h[i]) ? 1 : 0;
   }
 
   // ---- material textures. ORM is the standard glTF packing, so the SAME map is roughness and metalness.
@@ -278,6 +381,7 @@ export function buildGlbBody(scene, cfg, refAsset) {
     boneAxes, boneFwd,
     chains: { spine, neck, tail, legs, arms, root: rootI },
     auxChains,
+    clips: retargeted, clipTracked,   // baked idle/walk/run (renamed + rescaled tracks), or null = fully procedural
   };
   scene.userData.__glbAsset = asset;
   return asset;
