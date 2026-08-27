@@ -163,6 +163,12 @@ export function makeMaterials(assets = null) {
   // dark blobs". Clone so our repeat never fights another consumer; null-safe: procedural wrap relief still stands alone.
   let glove = assets?.tex?.('glove_leather') ?? null;
   if (glove) { glove = glove.clone(); glove.repeat.set(1, 1); glove.needsUpdate = true; }
+  // dedicated glove for the HANDS (gun grip wraps keep 'grip'): same quilted leather but ~5x finer, so the quilt
+  // reads as glove padding at viewmodel distance — at repeat 1 each 12 mm finger face showed ~8 quilt diamonds and
+  // the fingers read as coiled rope. Warmer/lighter tint so the hand separates in value from the gunmetal it holds,
+  // and fully matte so the forearm sleeve never throws the wet-PVC specular streak the old 'dark' cylinder did.
+  let handTex = assets?.tex?.('glove_leather') ?? null;
+  if (handTex) { handTex = handTex.clone(); handTex.wrapS = handTex.wrapT = THREE.RepeatWrapping; handTex.repeat.set(0.21, 0.21); handTex.needsUpdate = true; }
   const mats = {
     metal: std({ color: 0x353b46, map: T.metal, roughnessMap: T.rough, roughness: 0.95, metalness: 0.9, envMapIntensity: 0.8, normalMap: T.normal, normalScale: new THREE.Vector2(0.85, 0.85) }),
     metal2: std({ color: 0x6e7480, map: T.metal, roughnessMap: T.rough, roughness: 0.78, metalness: 0.85, envMapIntensity: 0.85, normalMap: T.normal, normalScale: new THREE.Vector2(0.7, 0.7) }),
@@ -171,6 +177,7 @@ export function makeMaterials(assets = null) {
     gold: std({ color: 0xd8a94b, roughness: 0.38, metalness: 1.0, envMapIntensity: 1.0, emissive: 0x2a1a05, emissiveIntensity: 0.35, normalMap: T.normal, normalScale: new THREE.Vector2(0.3, 0.3) }),   // user decree: viewmodel metals must not throw white sun glints over the meadow (blobcheck-gated) — normalScale kept low so cast gold breaks up without adding new specular hot spots
     brass: std({ color: 0xffca6a, roughness: 0.35, metalness: 1.0, envMapIntensity: 1.1, emissive: 0x7a4a10, emissiveIntensity: 0.6, normalMap: T.normal, normalScale: new THREE.Vector2(0.25, 0.25) }),
     grip: std({ color: glove ? 0xcfc6ba : 0x2e211a, map: glove, roughness: 0.85, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(glove ? 0.6 : 1.1, glove ? 0.6 : 1.1) }),
+    hand: std({ color: handTex ? 0xdcc4a4 : 0x4a382c, map: handTex, roughness: 0.92, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(0.35, 0.35) }),
     ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05, normalMap: T.normal, normalScale: new THREE.Vector2(0.45, 0.45) }),
     white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0 }),   // sights stay lit-white but under the day bloom threshold (1.05): 2.2 bloomed into permanent white balls over the grass
     // envMapIntensity 0.5 + roughness 0.08: at night the flat ocular/objective discs mirrored the bright aurora
@@ -194,7 +201,7 @@ export function makeMaterials(assets = null) {
   // so the three petals plus star plus core were summing well past white in the middle of the reticle before bloom
   // even got to them. The element hue is what should read on a flash; the value is what blinds you.
   for (const el of Object.keys(ELEMENT_COLORS)) { mats.flash[el].petal.opacity = 0.4; mats.flash[el].star.opacity = 0.32; }
-  mats.all = [mats.metal, mats.metal2, mats.dark, mats.gold, mats.brass, mats.grip, mats.ivory, mats.white, mats.filigree0, mats.filigree1, mats.filigree2, mats.glass, ...Object.values(mats.glow)];
+  mats.all = [mats.metal, mats.metal2, mats.dark, mats.gold, mats.brass, mats.grip, mats.hand, mats.ivory, mats.white, mats.filigree0, mats.filigree1, mats.filigree2, mats.glass, ...Object.values(mats.glow)];
   return mats;
 }
 
@@ -259,8 +266,9 @@ class Builder {
 function pistolGrip(b, { p = [0, -0.045, 0.02], h = 0.085, w = 0.03, d = 0.036, tilt = -0.35, cap = true } = {}) {
   b.add(box(w, h, d, 0.008), 'grip', { p, r: [tilt, 0, 0] });
   if (cap) b.add(box(w + 0.003, 0.008, d + 0.003, 0.002), 'gold', { p: [p[0], p[1] - Math.cos(tilt) * h / 2, p[2] - Math.sin(tilt) * h / 2], r: [tilt, 0, 0] });
-  // metal backstrap spine
-  b.add(pbox(w * 0.6, h * 0.9, 0.004), 'metal', { p: [p[0], p[1] - Math.sin(tilt) * d / 2, p[2] + Math.cos(tilt) * d / 2], r: [tilt, 0, 0] });
+  // metal backstrap spine — full grip width: at 0.6w its proud edges left two daylight channels between
+  // spine and the wrapped hand, which read as bright slivers flanking the grip at ADS
+  b.add(pbox(w * 0.96, h * 0.9, 0.004), 'metal', { p: [p[0], p[1] - Math.sin(tilt) * d / 2, p[2] + Math.cos(tilt) * d / 2], r: [tilt, 0, 0] });
 }
 function triggerGuard(b, p, r = 0.017) {
   b.add(torusX(r, 0.0028, 6, 18), 'metal', { p });
@@ -321,7 +329,9 @@ function handcannon(b) {
   screws(b, [[0.0235, 0.038, 0.012], [0.0235, -0.008, 0.012], [0.0235, 0.034, -0.108], [0.0235, -0.006, -0.108]]);
   // grip + guard
   pistolGrip(b, { p: [0, -0.054, 0.026], h: 0.10, w: 0.036, d: 0.044, tilt: -0.40 });
-  b.add(pbox(0.013, 0.044, 0.024), 'ivory', { p: [0.012, -0.042, 0.024], r: [-0.40, 0, 0] }); b.add(pbox(0.013, 0.044, 0.024), 'ivory', { p: [-0.012, -0.042, 0.024], r: [-0.40, 0, 0] });
+  // side grip panels in dark leather, NOT ivory: the gripHand covers them, and the proud ivory edge showed
+  // through the finger notches as a bright white sliver at ADS that read as daylight between hand and grip
+  b.add(pbox(0.013, 0.044, 0.024), 'grip', { p: [0.012, -0.042, 0.024], r: [-0.40, 0, 0] }); b.add(pbox(0.013, 0.044, 0.024), 'grip', { p: [-0.012, -0.042, 0.024], r: [-0.40, 0, 0] });
   triggerGuard(b, [0, -0.016, -0.024], 0.019);
   gripHand(b, { p: [0, -0.054, 0.026], tilt: -0.40, R: 0.024, side: 1 }); // D2 hand cannons are one-handed at idle
   // reload performance: left hand rises in with a speedloader (hidden outside reloads)
@@ -690,10 +700,10 @@ export function buildAbilityHand(mats) {
   // armLen 0.09: the cuff, gold ring and plate collapse into a wrist BRACER. A full-length arm floating in open
   // frame with no body attached reads as a loose object next to the gun, not as the player's arm.
   gripHand(b, { p: [0, 0, 0], tilt: -0.25, R: 0.019, side: 1, armLen: 0.11, armDir: [-0.28, -0.95, 0.15] });   // hangs DOWN from the wrist: aimed at the camera you just see its end cap, which reads as a pipe
-  b.add(box(0.032, 0.055, 0.046, 0.011), 'grip', { p: [0, 0, -0.002], r: [-0.25, 0, 0] });
+  b.add(box(0.032, 0.055, 0.046, 0.011), 'hand', { p: [0, 0, -0.002], r: [-0.25, 0, 0] });
   // wrist bridge: gripHand's forearm attaches ~4 cm below the grip, a gap the GUN normally hides. Free-floating in
   // open frame that gap made the bracer read as a separate object next to a disembodied fist.
-  b.add(box(0.031, 0.052, 0.050, 0.010), 'grip', { p: [0.007, -0.020, 0.017], r: [-0.25, 0, 0] });
+  b.add(box(0.031, 0.052, 0.050, 0.010), 'hand', { p: [0.007, -0.020, 0.017], r: [-0.25, 0, 0] });
   const group = b.build().group;
   group.frustumCulled = false;
   return { group };
