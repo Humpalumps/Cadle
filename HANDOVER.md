@@ -72,9 +72,10 @@ because per-region work all lands in the same few single-owner files.
 `node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
 (298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
 
-**A wave-5 JUDGE workflow was running when the session ended and IT DID NOT SURVIVE.** Workflow runs
-are session-scoped and `resumeFromRunId` is same-session only, so run `wf_23885d22-fc9` is gone. The
-script is IN THE REPO, so just fire it again:
+**The wave-5 JUDGE workflow was DELIBERATELY STOPPED, not lost.** It was killed to stop it burning
+the user's last few percent of weekly usage on a run that could not have survived the session anyway
+(workflow runs are session-scoped; `resumeFromRunId` is same-session only, so `wf_23885d22-fc9` is
+gone regardless). **Re-firing it is the FIRST thing you should do** — the script is in the repo:
 
 ```
 Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
