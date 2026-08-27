@@ -84,6 +84,15 @@ asset — behind the start screen, never streamed mid-game. `tools/invariants.mj
 anywhere else, so **architecture cannot quietly follow monsters onto this path**.
 
 
+> **BOSS TIER (user decision 2026-08-27): bosses get a HIGHER conversion tier.** The standard tiers
+> (biped 15k / quadruped 10k / small 5k, joints pruned at 1.2% skin weight) are calibrated for trash
+> and rares seen at 5-40 m; a boss is a sustained close-up with attention on it, and the places the
+> budget genuinely shows are fine extremities (wing membranes, fingers) and silhouette at fill-frame
+> range. When converting a BOSS: face_limit stays 60000 at generation, target ~30k shipped tris,
+> relax the joint prune (keep wing/finger chains — lower the skin-weight cutoff or whitelist the
+> chains), and it still ships as one mesh / one material / one draw call. This is a per-creature
+> decision at conversion time, not a global budget change — trash stays on tier.
+
 ### Batch 1 status (2026-08-27, re-converted) - 9 rigged creatures on tier
 
 `public/assets/creatures/*.glb`, **5.8 MB total, one mesh + one material each (so one draw call each)**:
