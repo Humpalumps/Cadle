@@ -132,7 +132,49 @@ before.**
 - Credit balances are on the shared Tripo/Magnific accounts, not the Claude account: Tripo ~4,150,
   Magnific ~4,400 at handover.
 
-### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
+### ⚡ TAKEOVER 2026-08-27 EVENING (written at ~8% usage with an 8-lane build batch IN FLIGHT)
+
+**If you are reading this cold, here is the exact state and what to do, in order:**
+
+1. **Git state: everything up to `tools/out/wave6-build-batch.js` is COMMITTED AND PUSHED** on
+   `claude/session-e5730b` (this worktree, dev server 5179 — start with the vite command in
+   ENVIRONMENT & ACCESS below if `curl` on 5179 fails). Landed this session, all pushed:
+   - `b2dbf49` the COMBAT GATE (tools/combatcheck.py + tools/scripts/combat-blob-steps.json + gate.mjs
+     check 1b) — the wave-5 coverage hole is closed and was RED on the wave-5 build (8/10 regions).
+   - `66f5569` animcheck folded into gate.mjs (check 2b). HANDOVER job 5 done.
+   - `e0eecd5` the combat white-out FIX (3 builder lanes: Brush min-channel cap, pool+halo near-fades,
+     preset re-authors, uGLB material ceilings, METAL_ENV skinned-mesh opt-out, AE aeKnee rolloff)
+     + invariants rule (o) pinning every guard.
+   - `87c494a` Assets.js keeps GLB animation clips (assets.clips(name)) + 11 animated GLBs swapped
+     into public/assets/creatures/ (idle/walk/run; serpent+giant have none; wisp procedural).
+   - a follow-up commit: bolt-core saturation, death-pop hued, explosion energy conservation
+     (er=min(1,2.2/r)) — combat gate progression 58→47→37→44-findings-no-washes across runs
+     `tools/out/cvfx-{cal,vfxlane,verify,r2,r3,r4}` (r4 worst region washFrac 0.085 vs 0.84 pre-fix;
+     residuals are cores over PALE ground — snow/marble — and small; vfx lane owns finishing them).
+2. **UNCOMMITTED src/ edits in this worktree = the WAVE-6 BUILD BATCH mid-flight** (8 parallel
+   builder lanes, workflow `wf_a359a136-2de` — session-scoped, it CANNOT be resumed by you). The
+   full batch script with every lane's complete brief is IN THE REPO: **`tools/out/wave6-build-batch.js`**
+   (blob-fix script likewise at `tools/out/blob-fix-workflow.js`). Per-lane final reports (if the
+   lanes finished before the session died) are one JSON line each in
+   `C:/Users/ianca/.claude/projects/C--Users-ianca-Desktop-fps4--claude-worktrees-performance-improvement-check-b88dd0/9083c000-4cd1-49d5-9218-9a99e89009a6/subagents/workflows/wf_a359a136-2de/journal.jsonl`
+   (readable from any session; also per-agent transcripts alongside).
+   **Decision rule for the uncommitted work:** judge it by the GATES, not by prose — run
+   `node tools/invariants.mjs` (1 s), then the combat gate
+   (`node tools/inspect.mjs --nolock --name cvfx-post --q high --script tools/scripts/combat-blob-steps.json --url http://127.0.0.1:5179/`
+   then `python tools/combatcheck.py tools/out/cvfx-post`), then `node tools/animcheck.mjs`. If a
+   lane's files fail a gate and the journal has no report explaining them, `git checkout -- <file>`
+   that lane's files rather than shipping a half-edit; everything that passes, commit per-lane with
+   what the journal report says it did. Lane→file map is in the batch script's prompts.
+3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
+   model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
+   beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
+   Glacier Throne read, celestial region-wide identity, void 120 m drop rim, forest canopy leaf-card
+   rectangles). Re-judge ONLY after a big batch: `Workflow({scriptPath: 'tools/out/wave5-judge-workflow.js'})`
+   with every judge agent switched to `model: 'opus', effort: 'high'` (edit the script first — it
+   predates that directive).
+4. Keep progress.html current (user asks for it; it is served at http://127.0.0.1:5179/progress.html).
+
+### FIRST THING TO DO ON TAKEOVER (older block, session handed over 2026-08-27 at ~3% usage)
 
 **Everything is COMMITTED AND PUSHED: HEAD `913ed1c` on branch `claude/session-e5730b`, not merged
 to `main`.** Working tree is clean,
@@ -170,6 +212,14 @@ two agents CAN own the same file and you merge after - worth it for genuinely se
 not for a shared helper library where every agent touches the same functions.
 
 ### The method the user asked for (keep using it)
+
+**USER DIRECTIVE 2026-08-27 (binding): BUILD BEFORE RE-JUDGING, and JUDGE ON OPUS.** (1) Do not fire
+the wave-6 judge fleet until a large batch of fixes has landed — the campaign was burning most of its
+credits on judging instead of building. (2) When critics/judges DO run, spawn them with
+`model: 'opus', effort: 'high'` in the agent() opts (Workflow tool) — never on the default session
+model; the user does not want Fable credits spent on judge sub-agents. (3) BUILDERS run on
+**Fable 5 at high effort** — omit `model` (inherits the session's fable-5) and pass
+`effort: 'high'` explicitly.
 
 Break work into the smallest judgeable pieces; fan out sub-agents with strictly owned files
 (`CLAUDE.md` has the table); a **fresh-context critic inspects the RUNNING GAME**, never a builder's
@@ -437,9 +487,31 @@ settling is not strobing.
      resume: `Workflow({scriptPath: '<session workflows dir>/blob-fix-wf_c4b8377c-1cf.js',
      resumeFromRunId: 'wf_c4b8377c-1cf'})` — or just read the lanes' reports in its journal and run
      the verifier steps by hand (invariants → combat capture → combatcheck).
-   **After the fix lands: re-run gate (all four checks), then a fresh-eyes PUNCH critic (combat must
-   still look Destiny-vivid, not nerfed), then pin the new constants in invariants.mjs (rule for the
-   Brush cap constant, near-camera fade, preset near-white ban).** Thresholds stay orchestrator-owned.
+   **STATE 2026-08-27 (late): fixes LANDED and COMMITTED (`e0eecd5` fix, `87c494a` clips,
+   invariants rule (o) pins every guard). Washes are DEAD** — per-region peak washFrac after the lanes
+   + orchestrator follow-ups: dragon .84→.0002, celestial .83→.005, infernal .76→.0006, lost
+   .75→.0004, sunken .63→.0002, shadowfen .55→.035, tundra .31→.036, void/vale/forest ≈0 (all under
+   the .055 bar; run r3 = `tools/out/cvfx-r3/`). Residual WHITE-CORE clusters were traced by crop to
+   THREE authors, all fixed after r3: the Combat.js bolt-core sphere (lerp-to-WHITE removed,
+   min-channel cap, halo near-fade, sat 1.0 / l≤0.48 ×1.5), the spark-trail mist bleaching the bolt's
+   own core (alpha 0.7→0.5), and the DEATH preset's white-hot pop (hued to the creature's element,
+   hdr 5-7→3-3.5 — the tundra 22k-px "ball" was a wisp dying). Verification run r4 in flight.
+   The judge fleet stays PARKED (user directive): build a big batch first, judges on Opus high.
+   **r4 residual class understood: additive glows over PALE ground (snow/marble/sand) lift an
+   already-bright surface into the cream band — fixed structurally with explosion energy conservation
+   (`er = min(1, 2.2/r)`), bolt-core saturation, death-pop hue (commit after e0eecd5). Remaining
+   combat-gate findings are OWNED by the wave6 batch's vfx lane (target: zero).**
+
+   **THE WAVE-6 BUILD BATCH IS IN FLIGHT: workflow `wf_a359a136-2de`, 8 file-owned lanes, builders
+   Fable-5 effort-high** (terrain: ring banding + region ring splat + near field | props: Elderheart,
+   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + aetheryte, Hagstone, Drowned
+   Court, celestial isles + 8 m marble, Wayfinder placement | water: fen murk + sunken cascade shot |
+   sky: infernal blue polygon, shadowfen sun, void haze | grass: vale neon retune | weapons: the
+   viewmodel rebuild | vfx+abilities: combat gate to zero, impact decal, Starfall super, firing wedge |
+   enemies: mixer wiring, second rate limiter, seraph rig). If it dies, per-lane reports are in the
+   run's journal.jsonl; resume with the scriptPath in the session workflows dir. AFTER it lands:
+   orchestrator runs full gate (all checks incl. combat + animcheck), curvecheck/questgate, commits,
+   THEN the judge fleet on Opus high (script: tools/out/wave5-judge-workflow.js).
 0b. ~~Read the wave-5 judge verdicts~~ **DONE** - they are at the top of this section, and
    `tools/out/wave5-summary.txt` / `wave5-verdicts.json` / `wave5-raw.json` are written.
 1. **WIRE THE ANIMATION MIXER. The decisive next creature job** - it turns a smooth *procedural* gait
