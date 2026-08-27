@@ -151,7 +151,7 @@ before.**
      (er=min(1,2.2/r)) — combat gate progression 58→47→37→44-findings-no-washes across runs
      `tools/out/cvfx-{cal,vfxlane,verify,r2,r3,r4}` (r4 worst region washFrac 0.085 vs 0.84 pre-fix;
      residuals are cores over PALE ground — snow/marble — and small; vfx lane owns finishing them).
-2. **THE WAVE-6 BATCH IS RESOLVED (updated after the batch returned).** The user's spend limit killed
+2. **THE WAVE-6 BATCH IS RESOLVED, and the 3-lane REDO is IN FLIGHT (workflow wf_5340119f-a0d, script archived at tools/out/wave6-redo-3lanes.js; journal path pattern same as before under this session dir). If it died: same decision rule — gates + journal reports, commit what passes, revert unexplained failures.** The user's spend limit killed
    3 of 8 lanes mid-work; the other 5 returned verified reports. What happened next:
    - **COMMITTED per-lane (a0a2fc4..15460f9): terrain** (ring contour banding killed at both authors —
      never reintroduce a height-periodic term on the ring; near-field grain within 22 m; forest floor
