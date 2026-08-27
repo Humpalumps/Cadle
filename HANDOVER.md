@@ -66,6 +66,43 @@ horizontal contour-line banding that reads as a texture bug, the impact decal is
 circle, the super is two flat yellow clip-art hands, the only NPC has no face, and creatures charging
 the spawn meadow blow the grass out.
 
+### ENVIRONMENT & ACCESS - what survives a different Claude account / a different machine
+
+**The code is safe and portable.** Pushed 2026-08-27 to
+`https://github.com/Humpalumps/Cadle` as branch **`claude/session-e5730b`** (30 commits,
+**deliberately NOT merged to `main`**, so main is untouched and this can be reviewed or reset away).
+
+**Same machine, same Windows user (`ianca`), different Claude account -> everything works:**
+the worktree, `~/.claude/` (global CLAUDE.md, skills, this project's memory files) and the
+`TRIPO_API_KEY` environment variable are all per-WINDOWS-USER, not per-Claude-account.
+
+**Different machine -> you must bootstrap:**
+```
+git clone https://github.com/Humpalumps/Cadle.git
+cd Cadle && git checkout claude/session-e5730b && npm install
+npx vite --port 5179 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &
+```
+Then set `TRIPO_API_KEY` in the environment. Node 22. The harness needs `npx playwright install chromium`
+if it has never run there, and it wants a real GPU (this box is an RTX 3060).
+
+**THE DEV SERVER IS A PROCESS, NOT A FILE.** Everything in this handover assumes
+`http://127.0.0.1:5179/` is serving THIS worktree. Check with `curl -s -o /dev/null -w "%{http_code}"
+http://127.0.0.1:5179/` and start it with the vite command above if it is down. **Port 5173 serves the
+MAIN checkout — measuring or screenshotting it tests the wrong build, and that has burned this project
+before.**
+
+**WHAT DOES NOT TRAVEL, and one of these matters:**
+- **The Magnific MCP connector is account-level, NOT in the repo.** `.mcp.json` contains only `tripo`.
+  So a different Claude account may have **no image generation**, which means no new CONCEPT ART and
+  therefore no new creatures until it is reconnected. **Tripo is unaffected** — the REST API works off
+  `$TRIPO_API_KEY` (`tools/creature-anims.mjs` uses it directly), and the doc notes the Tripo MCP tools
+  401 in-session anyway, so REST is the supported path regardless.
+- **Workflow runs and session transcripts are session-scoped.** Nothing in flight can be resumed by
+  another session or account; re-fire from the script path instead. This is why the wave-5 judge script
+  lives in the repo at `tools/out/wave5-judge-workflow.js`.
+- Credit balances are on the shared Tripo/Magnific accounts, not the Claude account: Tripo ~4,150,
+  Magnific ~4,400 at handover.
+
 ### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
 
 **Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
