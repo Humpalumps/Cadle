@@ -70,6 +70,9 @@ const MODEL = Object.fromEntries([
   '/assets/creatures/sprite.glb', '/assets/creatures/wraith.glb', '/assets/creatures/riftling.glb',
   '/assets/creatures/warden.glb', '/assets/creatures/serpent.glb', '/assets/creatures/giant.glb',
   '/assets/creatures/wayfinder.glb',   // the NPC (15k tris, 23 joints, walk/idle/run) — Props.js consumes it
+  // Wave-5 NPCs/raiders (biped 15k tier, idle+walk clips; walk root travel detrended to in-place at merge):
+  '/assets/creatures/herbwife.glb', '/assets/creatures/merchant.glb', '/assets/creatures/mason.glb',
+  '/assets/creatures/raider.glb', '/assets/creatures/captain.glb',
 ].map((u) => [u.split('/').pop().split('.')[0], u]));
 
 const AUDIO = {};

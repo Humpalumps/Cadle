@@ -1,0 +1,16 @@
+herbwife-b|idle 6cd7c019-5a3a-4612-8024-bbb2d40143b3
+herbwife-b|walk 3687f6a5-05c9-4809-b4ee-793f99ade31d
+merchant|idle 7981ced2-758c-4fab-b3f5-fccc69da2b91
+merchant|walk 63f284db-f3b9-43aa-9b37-d0a29b479475
+mason|idle aa1fdada-b7f8-4096-b8b6-7a61fb6e1854
+mason|walk af5dad6a-0fe9-4a55-865f-c7b951861996
+raider|idle 0482fad6-3cb9-4c9e-909d-35dda10bd036
+raider|walk 18425a4d-1d45-432c-9696-6d28e62b66a0
+captain|idle 96cc006f-729b-44b1-a16e-60e208999c3d
+captain|walk 014dd9d0-41fe-4adb-9a6d-7d5c29db09f3
+mason|idle c84c8d7a-2a7a-47e1-8d14-62643c2102c8 (regen)
+mason|walk 83a426f2-da5b-49a0-8d18-753fe2478052 (regen)
+mason|walk a50e90b9-9f50-4769-9170-8cb8d273ccba (regen)
+mason|idle dbf8b6a6-5b72-46fe-9ac4-130f9db0a1da (regen)
+herbwife-a|walk 179c3a79-5375-4dec-a918-fa5deb8f1176 (regen)
+herbwife-a|idle f4e7b65c-8ebd-448e-bba8-9926fdb83e57 (regen)

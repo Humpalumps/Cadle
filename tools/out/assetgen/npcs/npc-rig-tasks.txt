@@ -1,0 +1,8 @@
+herbwife-b 05607781-a623-41ef-9389-a8cc71c92aa7
+merchant 31564c4a-a1f7-45bb-a20c-4d20d9e52c2e
+mason 737b79ca-9cd5-4590-b368-821571c29f77
+raider 39d17ea5-4b5c-48d2-8e2d-c5d3936772a1
+captain 3762efea-3d63-421d-bde0-57680a8583da
+mason eb537977-bacf-4f9f-9a76-706babff0d71 (regen)
+mason eeecff92-f4c2-48b2-812d-0ba4c52c9e29 (regen)
+herbwife-a 9b2f236c-0d33-4bca-9abb-e3d6a57565be (regen)

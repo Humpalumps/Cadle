@@ -1,0 +1,10 @@
+herbwife-b 8d053ad9-46f3-4bd4-97d9-8841030335bb
+merchant 5b97158f-f410-4d1e-82f2-4d8488f3e3c4
+mason f37499ec-789b-40b2-8f63-4ef51b5532ab
+raider 19b61815-b390-4e5c-8653-79bedb7da8b1
+captain 577fb548-2a85-43b5-9cb3-bc4908c30509
+mason 4aec3215-edd3-415b-a9bb-16af12efa310 (regen)
+mason 4aec3215-edd3-415b-a9bb-16af12efa310 (regen)
+herbwife-b c01e7fcb-8c83-4e6d-9448-741235be01a4 (regen)
+herbwife-b 7387c857-6296-4d9f-b560-8fe7ad4e391c (regen)
+herbwife-a 85693d19-a234-4f73-84dc-da7cd175ae98 (regen)
