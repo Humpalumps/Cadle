@@ -151,20 +151,27 @@ before.**
      (er=min(1,2.2/r)) — combat gate progression 58→47→37→44-findings-no-washes across runs
      `tools/out/cvfx-{cal,vfxlane,verify,r2,r3,r4}` (r4 worst region washFrac 0.085 vs 0.84 pre-fix;
      residuals are cores over PALE ground — snow/marble — and small; vfx lane owns finishing them).
-2. **UNCOMMITTED src/ edits in this worktree = the WAVE-6 BUILD BATCH mid-flight** (8 parallel
-   builder lanes, workflow `wf_a359a136-2de` — session-scoped, it CANNOT be resumed by you). The
-   full batch script with every lane's complete brief is IN THE REPO: **`tools/out/wave6-build-batch.js`**
-   (blob-fix script likewise at `tools/out/blob-fix-workflow.js`). Per-lane final reports (if the
-   lanes finished before the session died) are one JSON line each in
-   `C:/Users/ianca/.claude/projects/C--Users-ianca-Desktop-fps4--claude-worktrees-performance-improvement-check-b88dd0/9083c000-4cd1-49d5-9218-9a99e89009a6/subagents/workflows/wf_a359a136-2de/journal.jsonl`
-   (readable from any session; also per-agent transcripts alongside).
-   **Decision rule for the uncommitted work:** judge it by the GATES, not by prose — run
-   `node tools/invariants.mjs` (1 s), then the combat gate
-   (`node tools/inspect.mjs --nolock --name cvfx-post --q high --script tools/scripts/combat-blob-steps.json --url http://127.0.0.1:5179/`
-   then `python tools/combatcheck.py tools/out/cvfx-post`), then `node tools/animcheck.mjs`. If a
-   lane's files fail a gate and the journal has no report explaining them, `git checkout -- <file>`
-   that lane's files rather than shipping a half-edit; everything that passes, commit per-lane with
-   what the journal report says it did. Lane→file map is in the batch script's prompts.
+2. **THE WAVE-6 BATCH IS RESOLVED (updated after the batch returned).** The user's spend limit killed
+   3 of 8 lanes mid-work; the other 5 returned verified reports. What happened next:
+   - **COMMITTED per-lane (a0a2fc4..15460f9): terrain** (ring contour banding killed at both authors —
+     never reintroduce a height-periodic term on the ring; near-field grain within 22 m; forest floor
+     lift), **water** (fen tannin brown + shore soak + scum thinned; reflection cap 0.17→0.34),
+     **sky** (shadowfen golden hour sun; void distance haze), **grass** (vale off neon), **weapons**
+     (viewmodel night fixes; the full rebuild was already in an earlier commit).
+   - **REVERTED (unfinished, unexplained, user-visible damage): enemies mixer wiring, Props.js batch,
+     vfx-abilities batch.** Their partial diffs are archived at `tools/out/wave6-partials/*.patch`
+     (committed) — mineable, but the REDO should start clean from the briefs in
+     `tools/out/wave6-build-batch.js`. The half-wired mixer made creatures FLAIL (user saw it live) and
+     one of the partials broke boot (stuck loading overlay + black composer) — both cured by revert.
+   - **USER FEEDBACK for the mixer REDO (binding): the baked clips must be judged BY EYE, not just by
+     animcheck** — "floppy, limbs flail everywhere, much worse than before". The redo lane must
+     compare procedural vs baked per creature (gait contact sheets) and KEEP THE BETTER ONE per
+     creature; a bad retarget does not ship because a gate passed.
+   - **SKY LANE HANDOFF: the infernal "giant flat blue polygon" is NOT sky** — it is a world-anchored
+     column of layered blue camera-facing translucent sheets with a red-orange tip (a vfx/loot-beacon
+     class object), photographed in `tools/out/skyw5-wedge/`. The vfx redo lane owns it.
+   - Terrain lane could not capture 3 of its after-shots (the boot breakage window); re-shoot
+     sunken/fen/forest down-looks when convenient — the code paths are shared with verified shots.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
