@@ -259,7 +259,20 @@ export class Combat {
     const scene = this.game.scene;
     // bolt cores: one instanced low-poly sphere, HDR instance colors (bloom does the glow)
     const geo = new THREE.SphereGeometry(1, 10, 7);
-    this.coreMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff }), POOL);
+    // Core material carries a view-normal falloff: an unshaded instance colour renders as a FLAT SOLID
+    // DISC (combat gate cvfx-vfx6: "two flat solid-yellow ellipsoids on celestial marble", a flat magenta
+    // ball at the lens). Centre keeps the hot instance colour, the limb rolls off — the dart reads as a
+    // glowing orb with form, and its edge no longer posterises against the ground.
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    coreMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCN = normalize(normalMatrix * normal);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
+        .replace('#include <opaque_fragment>', 'outgoingLight *= 0.42 + 0.58 * pow(saturate(dot(normalize(vCN), vec3(0.0, 0.0, 1.0))), 0.65);\n#include <opaque_fragment>');
+    };
+    this.coreMesh = new THREE.InstancedMesh(geo, coreMat, POOL);
     this.coreMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.coreMesh.frustumCulled = false; this.coreMesh.castShadow = false; this.coreMesh.receiveShadow = false; this.coreMesh.name = 'projectile-cores';
     this.coreMesh.setColorAt(0, WHITE); this.coreMesh.count = 0; this.coreMesh.visible = false;
@@ -651,7 +664,17 @@ export class Combat {
     let ci = 0;
     for (let i = 0; i < live.length; i++) {
       const p = live[i], gi = i * 3;
-      if (p.hasCore) { const s = p.size * 0.45; this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++; }
+      if (p.hasCore) {
+        // near-lens fade, same discipline as the halo's vFade: a core sphere crossing the camera renders
+        // as a giant flat colour polygon filling the corner (combat gate r5, sunken crop). Shrink it out
+        // over the last ~2 m instead.
+        const cd = p.position.distanceTo(this.game.camera.position);
+        const nk = Math.min(1, Math.max(0, (cd - 1.0) / 2.2));   // full size past ~3.2 m; inside that the halo carries the read
+        if (nk > 0.01) {
+          const s = p.size * 0.45 * nk;
+          this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++;
+        }
+      }
       this._gPos[gi] = p.position.x; this._gPos[gi + 1] = p.position.y; this._gPos[gi + 2] = p.position.z;
       this._gVel[gi] = p.velocity.x; this._gVel[gi + 1] = p.velocity.y; this._gVel[gi + 2] = p.velocity.z;
       this._gSize[i] = p.size * 1.3 * p.glow;

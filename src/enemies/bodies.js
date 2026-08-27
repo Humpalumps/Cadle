@@ -159,7 +159,11 @@ const wisp = {
   build() {
     const R = new Rig(), { root } = R;       // root = body centre (flyer)
     const core = R.bone('core', root, 0, 0, 0);
-    R.part(core, prim.ico(), { p: [0, 0, 0], s: 0.27, color: 0xffffff, glow: 1, flat: true });                                        // burning aether orb — THE read
+    // Core albedo mid-neutral, NOT white: the emissive (element hue x uGlow) must be the dominant term.
+    // With a white albedo the hue-preserving channel cap preserves WHITE — on a hit flash the whole orb
+    // pinned at the cap as a flat desaturated egg (combat gate cvfx-vfx6, vale crop). Decree: saturate
+    // the colour; the orb's identity comes from ecol, the albedo just carries shading.
+    R.part(core, prim.ico(), { p: [0, 0, 0], s: 0.27, color: 0x8e97a8, glow: 1, flat: true });                                        // burning aether orb — THE read
     for (let i = 0; i < 4; i++) { // open shell: 4 dark faceted petals with wide gaps, core blazes through
       const a = i / 4 * Math.PI * 2 + 0.4;
       R.part(core, prim.hex(), { p: [Math.cos(a) * 0.3, (i % 2 ? 0.1 : -0.08), Math.sin(a) * 0.3], r: [0.5 + i * 0.3, a, 0.9], s: [0.14, 0.05, 0.17], color: 0x2c3550, glow: 0.1, flat: true, mottle: 0.3 });
@@ -168,9 +172,9 @@ const wisp = {
     // than the flat pale loops of the wave-3 void verdict (the hue itself is now held by the channel cap in
     // materials.js — this just stops them being the brightest thing in the region).
     const halo = R.bone('halo', core, 0, 0, 0);
-    R.part(halo, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2, 0, 0], s: [0.44, 0.44, 0.44], color: 0xffffff, glow: 0.75 });
+    R.part(halo, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2, 0, 0], s: [0.44, 0.44, 0.44], color: 0xaab2c2, glow: 0.75 });
     const halo2 = R.bone('halo2', core, 0, 0, 0);
-    R.part(halo2, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2 + 0.6, 0.3, 0], s: [0.34, 0.34, 0.34], color: 0xffffff, glow: 0.55 });
+    R.part(halo2, prim.torus(), { p: [0, 0, 0], r: [Math.PI / 2 + 0.6, 0.3, 0], s: [0.34, 0.34, 0.34], color: 0xaab2c2, glow: 0.55 });
     for (let i = 0; i < 6; i++) {
       const piv = R.bone('sh' + i, core, 0, 0, 0); const a = i / 6 * Math.PI * 2;
       R.part(piv, prim.crystal(), { p: [Math.cos(a) * 0.55, Math.sin(i * 1.7) * 0.08, Math.sin(a) * 0.55], r: [0.4, -a, 0.2], s: [0.11, 0.21 + (i % 2) * 0.07, 0.11], color: 0xdde8ff, glow: 0.9, flat: true });

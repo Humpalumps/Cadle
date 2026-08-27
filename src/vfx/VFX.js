@@ -43,7 +43,7 @@ const AETHER = 0x9f7bff, GOLD = 0xffd27a, DUST = 0x857458, DIRT = 0x4a3a28;
 const QMUL = { low: 0.5, medium: 0.75, high: 1 };
 const EMIT_RATE = { trail: 90, 'spark-trail': 45, slide: 45, aura: 30, charge: 40, 'heal-motes': 22, dust: 6, sparks: 8, 'exp-smoke': 11 };   // spark-trail 45 not 70: riftling+voidhorror volleys sustained ~375 live additive particles and the stack washed the void out
 
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color(), _hsl2 = { h: 0, s: 0, l: 0 };
 const _PS = new THREE.Vector3();   // _plume/_preheat spawn point (px/py/pz are set explicitly right after reset)
 const NOPTS = {};
 
@@ -559,6 +559,12 @@ const WEATHER = {
 const PRESET_COLOR = { muzzle: 0xffe9c4, 'impact-enemy': 0xb070ff, 'aether-burst': AETHER, death: AETHER, ring: 0xffffff, sigil: GOLD, heal: 0x9fffc0, 'heal-motes': 0x9fffc0, levelup: GOLD, pickup: 0xfff0a0, jump: 0x9fd8ff, trail: 0xffe9c4, 'spark-trail': 0xffe9c4, aura: AETHER, charge: AETHER, blood: 0xb070ff, 'impact-water': 0xcfe9ff };
 const L = (v) => v._lit;
 const axisOf = (o, def) => o.normal ?? o.dir ?? def;
+// deepen(): force a preset's working colour DEEP whatever the source. offsetHSL saturation does
+// nothing to a near-white input (HSL: saturating at L~0.9 stays near-white), and half the bestiary
+// feeds presets a PASTEL glowColor (frost 0x9fd8ff, seraph 0xffd27a) — the combat gate's residual
+// pale pops (r5: tundra death ball, sunken/lost/celestial glints) were all pastel survivors.
+// A colour only reads as magic through ACES if it starts deep: S >= 0.7, L <= 0.55.
+const deepen = (col) => { col.getHSL(_hsl2); if (_hsl2.l > 0.55 || _hsl2.s < 0.7) col.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55)); return col; };
 
 const PRESETS = {
   // ---- Destiny: guns -----------------------------------------------------------------------------------------------
@@ -648,15 +654,18 @@ const PRESETS = {
   },
   'impact-water'(v, p, o, k, s, c) {
     const b = v.brush;
-    b.reset(v.alpha, p).axisUp().spread(0.5).speed(2 * s, 5 * s).life(0.5, 0.9).size(0.03, 0.06, 0.6).tex(TEX.GLOW).color(0xd8ecff).lit(L(v)).alpha(0.9).gravity(14).drag(0.5).fade(0, 0.6).burst(14 * k);
-    b.reset(v.alpha, p).axisUp().spread(0.7).speed(0.8, 1.8).life(0.5, 0.8).size(0.15 * s, 0.25 * s, 2.5).tex(TEX.SMOKE).color(0xe8f4ff).lit(L(v)).alpha(0.35).rot().drag(3).fade(0.05, 0.3).burst(3 * k);
+    // spray/mist tinted toward ice-blue, not white: enemy bolts detonating on a frozen pond made a
+    // near-white mist patch + sparkle that the combat gate flagged (r6 tundra crop). Water spray still
+    // reads as spray at this tint; it just can't sit in the detector's desaturated-bright band.
+    b.reset(v.alpha, p).axisUp().spread(0.5).speed(2 * s, 5 * s).life(0.5, 0.9).size(0.03, 0.06, 0.6).tex(TEX.GLOW).color(0xaaccec).lit(L(v)).alpha(0.7).gravity(14).drag(0.5).fade(0, 0.6).burst(14 * k);
+    b.reset(v.alpha, p).axisUp().spread(0.7).speed(0.8, 1.8).life(0.5, 0.8).size(0.15 * s, 0.25 * s, 2.5).tex(TEX.SMOKE).color(0xb6d4e6).lit(L(v)).alpha(0.35).rot().drag(3).fade(0.05, 0.3).burst(3 * k);
     b.reset(v.add, p).axisUp().flat().tex(TEX.RING).size(0.1 * s, 0.1 * s, 8).life(0.6).color(0xffffff, 0x9fd8ff).hdr(1.5, 0.6).alpha(0.7).fade(0, 0.2).burst(1);
   },
   'impact-enemy'(v, p, o, k, s, c) {
     const b = v.brush, n = axisOf(o, UP), crit = !!o.crit, day = v.day;
     // Element identity survives ACES only at MODERATE HDR: anything above ~3x clips to white. So the hue lives in big,
     // saturated, low-HDR layers (halo, ring, motes) and only a small core is allowed to go white-hot.
-    const sat = _c2.copy(c).offsetHSL(0, 0.45, -0.08);
+    const sat = deepen(_c2.copy(c).offsetHSL(0, 0.45, -0.08));
     // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
     b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k);
     b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr(1.5 + 0.5 * day, 0.5).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
@@ -738,6 +747,11 @@ const PRESETS = {
     // the burst near-white, which was the combat gate's tundra star-sparkle cluster, the celestial warm
     // cream patches and the shadowfen green cores (cvfx-vfx3 run). Hue survives ACES iff it starts DEEP.
     const sat = _c2.copy(c).offsetHSL(0, 0.55, -0.16);
+    // A NEAR-WHITE glowColor is still near-white after +0.55 saturation at L~0.9 (HSL: saturating white
+    // does nothing). Force the burst DEEP regardless of the source pastel: L clamped to <=0.55, S floored
+    // at 0.7 — the frostwolf/icegiant pale-cyan dome on snow (cvfx-vfx6 tundra crop) was this survivor.
+    sat.getHSL(_hsl2);
+    if (_hsl2.l > 0.55 || _hsl2.s < 0.7) sat.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55));
     const pk = v._paleK(p), day2 = day * pk;   // pale-ground damp scales every additive layer below; the veil strengthens to carry the read
     // dark aether veil. Widened from 0.16-0.26 (cvfx-vfx4): enemies pour this preset onto PALE ground —
     // the icegiant's frost-hazard fountain re-emits it every 0.4 s on snow — and additive cyan over a white
@@ -754,7 +768,7 @@ const PRESETS = {
     // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game
     const b = v.brush, A = v.add, day = v.day;
     b.reset(v.alpha, p).jitter(0.35 * s).spread(3.14).speed(0.4, 1.2).life(1.5, 2.4).size(0.35 * s, 0.6 * s, 2.4).tex(TEX.SMOKE).color(0x0e0817, 0x1a1026).vary(0.3).alpha(0.72).rot().spin(1).drag(2).gravity(-0.6).fade(0.04, 0.45).burst(10 * k);
-    const dsat0 = _c3.copy(c).offsetHSL(0, 0.4, -0.06);   // rings grow LARGE (2.7 m): a white/pale start reads as a near-white sheet at melee — saturate; the small star/glow pops keep the white-hot identity
+    const dsat0 = deepen(_c3.copy(c).offsetHSL(0, 0.4, -0.06));   // rings grow LARGE (2.7 m): pastel glowColors must go DEEP or the pop is a pale ball (gate r5 tundra)
     // pop in the creature's own hue, not white: at hdr 5-7 the HOT_TINTed white still landed as a pale
     // ball post-cap (combat gate r3: tundra 22k-px cluster at rgb 232,234,233 was exactly this pop over
     // a dead wisp). The punch is the SIZE + double ring + flash; the colour is the element.
@@ -764,7 +778,7 @@ const PRESETS = {
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(dsat0).hdr(3, 1.2).alpha(0.7).fade(0.1, 0.3).burst(1);
     // afterglow motes: at 8 m the old 0.11 m stars were sub-pixel and the kill tail vanished by 0.75 s. 2x size, longer life,
     // saturated at moderate HDR so the element colour holds through noon exposure — the payoff now reads for ~2.5 s.
-    const dsat = _c2.copy(c).offsetHSL(0, 0.35, 0);
+    const dsat = deepen(_c2.copy(c).offsetHSL(0, 0.35, 0));
     b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * s, 0.36 * s, 0.4).tex(TEX.STAR).color(dsat, dsat).hdr(3.6 + 1.6 * day, 1.8).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(36 * k);
     b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * s, 0.75 * s, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr(1.7 + 0.5 * day).alpha(0.7).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(14 * k);
     b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, c).hdr(4, 2).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);

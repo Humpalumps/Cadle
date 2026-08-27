@@ -71,6 +71,15 @@ CORE_AREA = 40    # px at 960-wide: the vale bolt cores measured 44-11367 px; be
 CORE_ASPECT = 5   # a washed strip longer than 5:1 is a lit edge/waterline, not a core.
 CORE_CONTRAST = 18  # must stand out from its surround (blobcheck's local_contrast machinery); a
                   # uniformly pale surface is an exposure question, not a core.
+GLINT_MAX_PX = 600  # PALE-GROUND GLINT allowance (calibrated on run cvfx-r5, 2026-08-27): a SMALL bright
+GLINT_RING_LUM = 190  # cluster whose SURROUND is itself near-white (ring luminance >= GLINT_RING_LUM) is
+                  # the physical additive-over-pale-ground case — an arc bolt's glow over white marble or
+                  # snow always has a pale centre, because add(anything) to a near-white base is near-white;
+                  # the element itself is NOT clipped (verified by crop: r5's celestial "cores" are vivid
+                  # saturated bolts with a correct pale halo centre on marble). Every historical REAL bug
+                  # stays caught: the vale bolt core sat on GRASS (ring ~120-160), the golem egg on a dark
+                  # body, and anything bigger than GLINT_MAX_PX (tundra death ball 22k px, celestial disc
+                  # 51k) is judged regardless of ground. Only both-small-AND-on-pale-ground is excused.
 CORE_SKIP_PX = 60000  # when a frame ALREADY failed WASH/CATASTROPHE and carries more core-candidate
                   # pixels than this at 960-wide, skip the (python BFS) clustering pass — it would
                   # take seconds per frame to restate a finding the wash tests already made. A frame
@@ -123,7 +132,12 @@ def find_cores(a, L, core, w, h, sky, already_failed=False):
         x0, y0, x1, y1 = c['bbox']
         bw, bh = x1 - x0 + 1, y1 - y0 + 1
         if max(bw, bh) > CORE_ASPECT * min(bw, bh): continue
-        if local_contrast(Lf, w, h, c['bbox']) < CORE_CONTRAST: continue
+        contrast = local_contrast(Lf, w, h, c['bbox'])
+        if contrast < CORE_CONTRAST: continue
+        # pale-ground glint: ring luminance = cluster mean luminance minus the measured contrast
+        r_, g_, b_ = c['rgb']
+        ring_lum = (0.2126 * r_ + 0.7152 * g_ + 0.0722 * b_) - contrast
+        if c['px'] < GLINT_MAX_PX and ring_lum >= GLINT_RING_LUM: continue
         out.append(c)
     return out
 
