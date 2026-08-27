@@ -10,8 +10,22 @@ import { BIOMES } from '../world/Biomes.js';
  *   lighting.cascades       DirectionalLight[] (one per cascade, [0] === sun). All shadow-casting DirectionalLights in the scene are cascades.
  *   lighting.keyDir         Vector3 unit, FROM scene TO key light.  lighting.keyColor (Color), lighting.keyIntensity, lighting.isMoon (bool)
  *   lighting.hemi           HemisphereLight (sky.ambientColor / sky.groundColor)
- *   lighting.env            WebGLRenderTarget (PMREM) currently on scene.environment; rebuilt from sky colors when they change (~every 0.25 h)
+ *   lighting.env            WebGLRenderTarget (PMREM) currently on scene.environment; rebuilt when the sky, the
+ *                           region's haze (scene.fog.color) or its horizon glow change (~every 0.25 h, min 0.5 s apart)
  *   lighting.sunPeak / moonPeak / hemiIntensity / envIntensity / shadowDistance   tunables
+ *
+ * METAL — read this before you build a gold material (world/Props.js, enemies, anything with metalness ~1):
+ *   `envIntensity` (0.4) is the DIFFUSE ambient budget only. The SPECULAR half of the IBL is renormalised
+ *   per-fragment to 1.0x the real sky radiance for metals (METAL_ENV below), so a metalness-1 material
+ *   mirrors the sky it is actually standing under. Practical consequences for material authors:
+ *     - Do NOT compensate for dark metal with emissive. It is lit now; emissive on top is how "gold" becomes
+ *       a washed-white blob. Saturate the base colour instead — a metal's colour IS its F0.
+ *     - `envMapIntensity` on a material is IGNORED while it is lit by scene.environment: three overwrites
+ *       that uniform with scene.environmentIntensity. Tune the base colour and roughness, not that field.
+ *     - Roughness is the whole read: ~0.25-0.45 gives the horizon sweep that says "metal"; >0.6 goes matte
+ *       and back to looking like paint; <0.15 turns the sun lobe into a point glint (blob decree).
+ *   The env probe carries the region's haze and its Biomes.glow horizon band, so metal in the Wastes mirrors
+ *   ember and metal in the Lost Realm mirrors violet, at every hour, without any per-region material work.
  *   Per-biome grade: the key light and the hemisphere are tinted toward BIOMES[id].sun / scaled by .amb as
  *   the player crosses into a region (see _gradeBiome). Hue only — the time of day still owns the brightness,
  *   so the Wastes read as lit by their own fire and the Void as lit by almost nothing, at every hour.
@@ -48,6 +62,34 @@ const CASCADE_INTENSITY = [1, 0.95, 0.85, 0.8]; // far shadows lighten toward am
 const NORMAL_BIAS_TEXELS = 1.5, BIAS_TEXELS = 1.0;
 const BACK = 450;                            // how far behind the slice (toward the light) the shadow camera sits: room for mountain casters
 const MOON_COLOR = new THREE.Color(0.55, 0.68, 1.0);
+const BLACK = new THREE.Color(0, 0, 0);
+
+// ---------- metal: the specular half of the IBL runs at FULL strength ----------
+// scene.environmentIntensity is `envIntensity` (0.4) x sky/gold/biome scalers. That 0.4 is the DIFFUSE
+// ambient budget — the probe splits the fill with the hemisphere light, and the world's ambient is tuned
+// around it. three applies the same scalar to the SPECULAR IBL, and that is the bug: a metalness-1
+// material has zero diffuse, so 100% of its colour is `radiance`, and at 0.4 every metal in the world
+// renders at 40% of the sky it is supposed to mirror — i.e. black-brown. That is the Lost Realm's gold,
+// the Empyrean Gate's gold, and every ornament Props puts on dark stone. Raising envIntensity instead
+// would fix metal by washing out the whole world's diffuse ambient — the two halves must move apart.
+// So: for METALS ONLY, renormalise the specular probe back to 1.0x the real sky radiance. It is a FLOOR,
+// not a boost — clamp(1/envMapIntensity, 1, CAP) can only ever raise a metal's mirror up to "it reflects
+// exactly the sky it is standing under", never past it, so this cannot manufacture a white blob out of a
+// sky that does not already contain one.
+// Three properties that make it safe, and they are the reason it is written this way:
+//  - weighted by material.metalness, so it is a mathematical no-op for every dielectric in the world:
+//    terrain, grass cards, leaves, stone, crystals, clearcoat and water are bit-for-bit unchanged.
+//  - self-normalising against `envMapIntensity`, which three sets to scene.environmentIntensity for any
+//    material lit by scene.environment. The VIEWMODEL scene already runs its probe at 1.0 (Weapons.js has
+//    its own scene + PMREM), so the factor there is exactly 1.0 and the gun's gold is untouched — a flat
+//    constant here would have tripled it and blown the viewmodel out.
+//  - capped, so a near-black midnight probe cannot divide its way to a huge multiplier.
+const SPEC_ENV_CAP = 3.0;
+const METAL_ENV = /* glsl */`
+#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular ) && defined( STANDARD )
+	radiance *= mix( 1.0, clamp( 1.0 / max( envMapIntensity, 0.05 ), 1.0, ${SPEC_ENV_CAP.toFixed(1)} ), material.metalness );
+#endif
+`;
 
 // ---------- GLSL: cascade selection chain (shared by the built-in patch and the custom-material helper) ----------
 // Expects macros: CSM_N (1..4), CSM_EDGE(I) (square edge distance, >0 inside), CSM_EDGE_LAST(I) (radial), CSM_TAP(I) (pcf shadow 0..1).
@@ -187,6 +229,7 @@ function patchShaderChunks() {
   SC.lights_fragment_begin = src.slice(0, a) + BUILTIN_DIR_BLOCK + src.slice(b);
   SC.shadowmap_pars_fragment = SC.shadowmap_pars_fragment + BUILTIN_PARS;
   SC.lights_fragment_end = GRASS_INDIRECT_SHADOW + SC.lights_fragment_end;
+  SC.lights_fragment_maps = SC.lights_fragment_maps + METAL_ENV;   // radiance is still in scope; RE_IndirectSpecular consumes it in lights_fragment_end
 }
 
 // Custom ShaderMaterials: self-contained version (own uniforms, computes shadow coords in the fragment shader).
@@ -281,22 +324,47 @@ export class Lighting {
       side: THREE.BackSide, depthWrite: false, depthTest: false,
       uniforms: { zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, ground: { value: new THREE.Color() },
         sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, sunI: { value: 0 },
-        moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonI: { value: 0 } },
+        moonDir: { value: new THREE.Vector3(0, 1, 0) }, moonI: { value: 0 },
+        haze: { value: new THREE.Color() }, glow: { value: new THREE.Color() } },
       vertexShader: /* glsl */`varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
+      // What a metal sees. A three-band gradient with one tight sun dot is exactly what "flat-value paint,
+      // not metal" looks like once you mirror it: no horizon line, no regional colour, no broad highlight.
+      // Everything added here is a LOW-amplitude, wide-angle term — it changes what the reflection is MADE
+      // OF, never how bright it clips. (The diffuse half barely moves: the horizon ring and the pow-26 lobe
+      // together integrate to a few percent of irradiance, and the haze band replaces colour, not level.)
       fragmentShader: /* glsl */`
-        varying vec3 vDir; uniform vec3 zenith, horizon, ground, sunDir, sunColor, moonDir; uniform float sunI, moonI;
+        varying vec3 vDir; uniform vec3 zenith, horizon, ground, sunDir, sunColor, moonDir, haze, glow; uniform float sunI, moonI;
         void main(){
           vec3 d = normalize( vDir ); float h = d.y;
           vec3 c = h >= 0.0 ? mix( horizon, zenith, pow( h, 0.55 ) ) : mix( horizon, ground, clamp( pow( -h, 0.45 ) * 1.3, 0.0, 1.0 ) );
+          // The region's own air, so gold in the Wastes reflects ember and gold in the Lost Realm reflects
+          // violet. It is a BAND AT THE HORIZON, not a floor over everything below it — and that distinction
+          // is the whole read. Measured in the Lost Realm at noon the probe's own range is horizon 1.24 vs
+          // ground-bounce 0.24: a 5:1 sweep, and since a metal has NO diffuse, that sweep IS its shading.
+          // Pouring one flat haze colour over the entire lower hemisphere collapsed it to ~2:1, which is
+          // precisely the "flat-value paint, not metal" the critics named. Below the horizon the ground
+          // bounce has to win again.
+          float hz = 1.0 - smoothstep( -0.05, 0.45, h );
+          c = mix( c, haze, 0.60 * hz * exp( -max( 0.0, -h ) * 2.2 ) );
+          // The bright ring a real sky has at eye level. ~13 deg wide, not 5: at the roughness gold actually
+          // lives at (0.25-0.45) the PMREM blurs a 5-deg ring away to nothing, so a narrow one costs the same
+          // and does nothing. Same total energy, spread wide enough to survive the mip.
+          c += mix( horizon, haze, 0.5 ) * 0.22 * exp( -abs( h ) * 4.5 );
+          // the region's horizon glow (Biomes.glow / .glowI — the same value Sky paints on the dome). After
+          // dark it is the only warm thing in the sky, so a metal has to be able to see it.
+          c += glow * exp( -abs( h ) * 7.0 );
           float s = max( dot( d, sunDir ), 0.0 );
-          c += sunColor * sunI * ( 0.05 * pow( s, 4.0 ) + 1.5 * pow( s, 160.0 ) );   // haze glow + sun lobe for glossy reflections
+          // three lobes: haze glow, a BROAD sheen, the disc. The middle one is new and is the one a
+          // roughness-0.35-0.45 gold actually picks up — PMREM blurs the pow-160 disc almost to nothing there.
+          c += sunColor * sunI * ( 0.05 * pow( s, 4.0 ) + 0.38 * pow( s, 26.0 ) + 1.5 * pow( s, 160.0 ) );
           float m = max( dot( d, moonDir ), 0.0 );
-          c += vec3( 0.55, 0.68, 1.0 ) * moonI * ( 0.03 * pow( m, 4.0 ) + 0.6 * pow( m, 200.0 ) );
+          c += vec3( 0.55, 0.68, 1.0 ) * moonI * ( 0.03 * pow( m, 4.0 ) + 0.22 * pow( m, 30.0 ) + 0.6 * pow( m, 200.0 ) );
           gl_FragColor = vec4( c, 1.0 );
         }`,
     });
     this._envScene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 24, 12), this._envMat));
-    this.env = null; this._envHour = -99; this._envT = -99; this._envLum = 1; this._envSig = new Float32Array(12);
+    this.env = null; this._envHour = -99; this._envT = -99; this._envLum = 1; this._envSig = new Float32Array(18);
+    this._envC = [null, null, null, null, null, null];   // scratch list for _envColors(), never allocated per frame
     this._updateKey();
     this.bakeEnv();
   }
@@ -435,19 +503,29 @@ export class Lighting {
 
   // ---------- env map ----------
   _skyLum() { const s = this.game.sky; return 0.05 + s.skyColor.r + s.skyColor.g + s.skyColor.b + s.horizonColor.r + s.horizonColor.g + s.horizonColor.b; }
+  /** The six colours the probe is made of, in a reused array (this runs every frame). Haze and glow are the
+   *  region's own air and horizon memory — Sky grades both per-biome, so crossing a border rebakes the probe
+   *  and every metal in the world changes what it mirrors. */
+  _envColors() {
+    const s = this.game.sky, c = this._envC;
+    c[0] = s.skyColor; c[1] = s.horizonColor; c[2] = s.groundColor; c[3] = s.sunColor;
+    c[4] = this.game.scene.fog?.color ?? s.fogColor;
+    c[5] = s.uniforms?.uGlow?.value ?? BLACK;
+    return c;
+  }
   _skyDelta() {
-    const s = this.game.sky, g = this._envSig, c = [s.skyColor, s.horizonColor, s.groundColor, s.sunColor];
+    const g = this._envSig, c = this._envColors();
     let d = 0;
-    for (let i = 0; i < 4; i++) { d = Math.max(d, Math.abs(c[i].r - g[i * 3]), Math.abs(c[i].g - g[i * 3 + 1]), Math.abs(c[i].b - g[i * 3 + 2])); }
+    for (let i = 0; i < 6; i++) { d = Math.max(d, Math.abs(c[i].r - g[i * 3]), Math.abs(c[i].g - g[i * 3 + 1]), Math.abs(c[i].b - g[i * 3 + 2])); }
     return d;
   }
   bakeEnv() {
-    const s = this.game.sky, u = this._envMat.uniforms, g = this._envSig;
-    u.zenith.value.copy(s.skyColor); u.horizon.value.copy(s.horizonColor); u.ground.value.copy(s.groundColor);
-    u.sunDir.value.copy(s.sunDir); u.sunColor.value.copy(s.sunColor); u.sunI.value = this._sunI ?? 1;
+    const s = this.game.sky, u = this._envMat.uniforms, g = this._envSig, c = this._envColors();
+    u.zenith.value.copy(c[0]); u.horizon.value.copy(c[1]); u.ground.value.copy(c[2]);
+    u.sunDir.value.copy(s.sunDir); u.sunColor.value.copy(c[3]); u.sunI.value = this._sunI ?? 1;
     u.moonDir.value.copy(s.moonDir ?? this._v.copy(s.sunDir).negate()); u.moonI.value = this._moonI ?? 0;
-    const c = [s.skyColor, s.horizonColor, s.groundColor, s.sunColor];
-    for (let i = 0; i < 4; i++) { g[i * 3] = c[i].r; g[i * 3 + 1] = c[i].g; g[i * 3 + 2] = c[i].b; }
+    u.haze.value.copy(c[4]); u.glow.value.copy(c[5]);
+    for (let i = 0; i < 6; i++) { g[i * 3] = c[i].r; g[i * 3 + 1] = c[i].g; g[i * 3 + 2] = c[i].b; }
     const rt = this.pmrem.fromScene(this._envScene, 0, 1, 100, { size: 64 });
     const old = this.env; this.env = rt;
     this.game.scene.environment = rt.texture;

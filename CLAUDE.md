@@ -21,6 +21,15 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 > Reporting a feature complete without all three is the same failure as reporting a shader done without a screenshot.
 > 1. **Graphics** — `node tools/gate.mjs` exits 0 (invariants + blobcheck + jitter + pointer lock at q=high AND q=low), plus `tools/inspect.mjs` screenshots of every new visual element. A visual you did not look at is not done.
 > 2. **Performance** — `node tools/hitchhunt.mjs --name <label> --route combat` on the *densest* case, not the meadow. Budget is the one below: frame mean <= 7 ms, p99 <= 14 ms, <= 350 calls, <= 4 M tris, per-system CPU inside its slice, `memMB` flat over 30 s.
+> 2b. **Animation (added 2026-08-27, user ask).** `node tools/animcheck.mjs` must exit 0 for every creature
+> you touched. "It animates" has been asserted in reports and never measured — a mannequin sliding on rails,
+> a T-posed spawn, feet buried in the terrain and a creature walking backwards all look fine in a single
+> still, and a still was all anyone ever captured. animcheck reads the LIVE bone hierarchy while the AI
+> drives the creature and fails on: T-pose (never leaves bind), frozen-while-moving, foot slide (limb
+> rotation per metre travelled), moonwalking (facing vs velocity), sunk/hovering feet (bone-lowest-Y vs
+> `terrain.heightAt`), a size mismatch against `def.height * def.scale`, a dead idle, a flat attack, and a
+> death that does not play. Thresholds in its `LIMITS` block are ORCHESTRATOR-OWNED — run `--calibrate` to
+> read the numbers, never widen a threshold to turn a red build green.
 > 3. **Game mechanics** — `node tools/curvecheck.mjs` (pure node, ~1 s, also in CI: xp curve closes, level bands contiguous, every enemy/item a quest names exists, drop rates and pity hold) **and** `node tools/questgate.mjs` (drives the running game: ammo returns after running dry, every objective type ticks, a quest turns in and pays, no leak).
 > A gate that was not run is a gate that failed. Say in your report which ones you ran and paste the result.
 

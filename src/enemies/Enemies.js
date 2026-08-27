@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/Noise.js';
 import { BODIES } from './bodies.js';
+import { buildGlbBody, GLB_CFG } from './glbBody.js';
 import { DEFS } from './defs.js';
 import { Enemy } from './Enemy.js';
 import { OUTER } from '../world/Biomes.js';
@@ -18,6 +19,10 @@ import { OUTER } from '../world/Biomes.js';
  * Bodies (src/enemies/bodies.js): THREE.Bone hierarchies + rigid parts merged into ONE SkinnedMesh per creature (1 draw call, + shield bubble),
  *   shared geometry per type, per-instance material uniforms (tint/emissive palette, hit flash, telegraph glow, dissolve). Gait = foot planting +
  *   2-bone IK (rig.js), head tracking, tails, wing flaps, telegraphs, stagger, collapse + dissolve on death.
+ *   RIGGED GLB PATH (docs/CREATURE-PIPELINE.md): init() asks game.assets for /assets/creatures/<body>.glb and, when it is there,
+ *   swaps in glbBody.js's asset (same shape, one mesh/one material/one draw call, Tripo skeleton normalised to the PROCEDURAL body's
+ *   bounding box) plus glbAnim.js's rotation-only animator. The procedural body is built either way — it is the fallback AND the
+ *   normalisation reference, which is why def.radius/height/center, the standoff ring and def.scale need no retuning. wisp stays procedural.
  * AI: perception (radius + fov + LOS via combat.rayWorld, pack alert, gunfire within 22 m alerts), steering on terrain (heightAt, slope limit,
  *   water avoidance, collider push-out, separation), melee wind-up/lunge, ranged band + strafing, slam = combat.explode + shockwave + camera shake.
  * Spawning: spawn(type, pos, { level, yaw, elite, name, questTag }) -> enemy (cap MAX_ALIVE: if full, the farthest camp enemy is recycled);
@@ -115,8 +120,22 @@ export class Enemies {
   }
   init() {
     const t0 = performance.now();
-    const built = {};   // types that share a body share its geometry (23 types, 9 rigs)
-    for (const type of Object.keys(DEFS)) { const bn = DEFS[type].body ?? type; this.assets[type] = built[bn] ??= BODIES[bn].build(); this.pools[type] = []; }
+    const built = {};   // types that share a body share its geometry (23 types, 13 rigs)
+    for (const type of Object.keys(DEFS)) {
+      const bn = DEFS[type].body ?? type;
+      this.pools[type] = [];
+      if (built[bn]) { this.assets[type] = built[bn]; continue; }
+      // The procedural body is built REGARDLESS: it is the fallback when the .glb is missing/failed, and it is
+      // what supplies the bind-pose bounding box the GLB is normalised to (glbBody), which is what keeps
+      // def.radius/height/center, the standoff ring and def.scale correct with zero gameplay retuning.
+      // ~1 ms for all 13 and its geometry is disposed by nobody either way, so the fallback is free to keep.
+      const ref = BODIES[bn].build();
+      const scene = this.game.assets?.model?.(bn);
+      // no GLB_CFG entry = deliberately procedural forever (wisp: a glow orb, not a mesh) — a stray .glb
+      // dropped next to it must not silently swap it out.
+      const glb = scene && GLB_CFG[bn] ? buildGlbBody(scene, GLB_CFG[bn], ref) : null;
+      this.assets[type] = built[bn] = glb ?? ref;
+    }
     this.populate();
     this.warm();   // AFTER populate: the home camps consume from the pools, so warming first left the six home types with no spare
     this.game.events.on('weapon:fire', () => this._noise(this.game.player.position, 22));

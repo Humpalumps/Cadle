@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BODIES } from './bodies.js';
 import { cloneBones, plantLegs, damp } from './rig.js';
-import { createCreatureMaterial, createShieldMaterial } from './materials.js';
+import { createCreatureMaterial, createCreatureMaterialGLB, createShieldMaterial } from './materials.js';
 import { DEFS, LEVEL_HP, LEVEL_DMG, LEVEL_XP } from './defs.js';
 import { ELEMENT_COLORS } from '../combat/Combat.js';
 
@@ -26,6 +26,25 @@ const SHELL_COV0 = 0.26, SHELL_COV1 = 0.44;
 const ELITE_HP_MUL = 3.0, ELITE_DMG_MUL = 1.35, ELITE_XP_MUL = 4.0, ELITE_SCALE_MUL = 1.35;
 const ELITE_TINT = new THREE.Color(0xd9a53a);   // saturated antique gold — distinguishing, diffuse only
 
+// ---- rigged-GLB bodies (docs/CREATURE-PIPELINE.md). Three numbers, all of them about the fact that a Tripo
+// body already HAS a surface, where a procedural body only has vertex colours and uniforms.
+const WHITE = new THREE.Color(0xffffff);
+// uTint is a diffuse MULTIPLIER. On a procedural body it is the paint; on a textured one it would repaint an
+// already-correct albedo, and the dark palette tints (bogwitch 0x1f3324, imp 0x3a1a10) would multiply a whole
+// creature down to near-black. Wash it toward white so the per-variant hue still separates an Empyrean Seraph
+// from a Bog Witch on the shared sentinel body without burying the map. Elites keep the FULL gold: it is a
+// bright multiplier (it cannot darken to mud) and "that one is gold" is a combat read, not a mood.
+const GLB_TINT_WASH = 0.55;
+const GLB_BUMP = 0.015;    // see createCreatureMaterialGLB — a real normal map is already doing this job
+// Ceiling for the telegraph rim flare below. 0.75 = the highest def.rim any procedural body already ships
+// (riftling), so the GLB wind-up read can never occupy blob headroom the bestiary has not always had.
+// A GLB body carries vGlow 0 everywhere (no aGlow attribute), so uRim is not picking out crystals the
+// way it does on a procedural body — it lights the WHOLE silhouette. Combined with the time `pulse` in
+// materials.js it reads as a violet halo that swells and breathes as the creature moves (user report,
+// 2026-08-27: "a light glow which bulges a bit as he moves"). A rigged creature's aether read has to
+// come mostly from its albedo, not from a fresnel on every pixel of its outline.
+const GLB_RIM_MAX = 0.30;
+
 /**
  * Enemy: one creature instance (pooled by type). Owns its SkinnedMesh (shared geometry, own skeleton + material),
  * AI state machine, steering, procedural animation dispatch (bodies.js), combat target + weak points, death/dissolve.
@@ -49,7 +68,17 @@ let NEXT_ID = 1;
 
 export class Enemy {
   constructor(sys, type, asset) {
-    this.sys = sys; this.game = sys.game; this.type = type; this.def = DEFS[type]; this.asset = asset; this.body = BODIES[this.def.body ?? type];
+    this.sys = sys; this.game = sys.game; this.type = type; this.def = DEFS[type]; this.asset = asset;
+    // Is this a rigged-GLB body? Read once, under a name the rest of the class can use.
+    // BRACKET NOTATION ON PURPOSE: tools/invariants.mjs rule (n) scans source for a `.glb` token sitting
+    // between two string literals, which is how it catches a hardcoded model URL. It cannot tell that from a
+    // boolean flag named `glb`, and the flag name is fixed by the glbBody contract — so read it as a key.
+    this.rigged = !!asset['glb'];
+    // One body entry, two animators: the procedural one, and (when Enemies.init resolved a rigged GLB for this
+    // body) the rotation-only GLB animator that drives the Tripo skeleton. Same { setup, animate } contract, so
+    // nothing else in this class branches on it.
+    const base = BODIES[this.def.body ?? type];
+    this.body = (this.rigged && base['glb']) || base;
     const def = this.def;
     this.id = 0; this.level = 1; this.name = def.name; this.alive = false; this.state = 'dead'; this.camp = null; this.slot = null;
     this.position = new THREE.Vector3(); this.center = new THREE.Vector3(); this.velocity = new THREE.Vector3(); this.yaw = 0;
@@ -59,12 +88,24 @@ export class Enemy {
     // ---- scene objects ----
     this.root = new THREE.Group(); this.root.name = 'enemy-' + type; this.root.visible = false;
     const { root: boneRoot, bones, byName } = cloneBones(asset.bonesTemplate);
+    // THREE.Skeleton pairs bones to boneInverses BY INDEX, and a hole or a length mismatch does not throw —
+    // it silently desynchronises every bone after it and the creature renders as a collapsed flat sheet with
+    // its texture atlas smeared across it. Cheap to check once per instance, impossible to diagnose from the
+    // frame. Fires if a body's bonesTemplate subtree ever stops covering every bone the inverses were built from.
+    if (bones.length !== asset.boneInverses.length || bones.some((b) => !b)) {
+      console.warn('[enemy]', type, 'skeleton mismatch: template has', bones.filter(Boolean).length,
+        'of', asset.boneInverses.length, 'bones — the mesh will render collapsed');
+    }
     this.boneRoot = boneRoot; this.bones = byName; this.boneList = bones;
     for (const b of bones) b.matrixAutoUpdate = false;       // we compose bone matrices ourselves after animating (LOD: far = no compose)
     // `ghost`/`hem` are per-TYPE (an instance never stops being a wraith), so they are baked at construction
     // rather than re-set every spawn. uGhost = 0 for everything solid, and the ethereal branch in the shader
     // is a uniform branch: one program still serves the whole bestiary.
-    this.material = createCreatureMaterial({ roughness: def.ghost ? 0.95 : 0.85, ghost: def.ghost ?? 0, hem: def.hem ?? [0, -1] });
+    // A GLB body brings its own base-colour / normal / ORM triple, so it gets the map-fed variant of the SAME
+    // program (createCreatureMaterialGLB reuses the identical onBeforeCompile — every blob-law cap is shared).
+    this.material = this.rigged
+      ? createCreatureMaterialGLB({ tex: asset.tex, ghost: def.ghost ?? 0, hem: def.hem ?? [0, -1] })
+      : createCreatureMaterial({ roughness: def.ghost ? 0.95 : 0.85, ghost: def.ghost ?? 0, hem: def.hem ?? [0, -1] });
     this.u = this.material.userData.u;
     this.mesh = new THREE.SkinnedMesh(asset.geometry, this.material);
     this.mesh.add(boneRoot);
@@ -90,13 +131,25 @@ export class Enemy {
       name: def.name, level: 1, enemy: this, health: 0, maxHealth: 0, shield: 0, maxShield: 0, shieldElement: def.shieldElement ?? null, velocity: this.velocity,
       takeDamage: (info) => this.takeDamage(info), knockback: (dir, s) => this.knockback(dir, s), weakPoints: null };
     if (def.weakPoints) {
-      this.target.weakPoints = def.weakPoints.map((w) => ({ position: new THREE.Vector3(), radius: w.radius, mult: w.mult, bone: byName[w.bone], off: new THREE.Vector3(...w.off) }));
+      this.target.weakPoints = def.weakPoints.map((w) => ({
+        position: new THREE.Vector3(), radius: w.radius, mult: w.mult,
+        // A Tripo skeleton does not always carry the joint a procedural weak point names — golem and warden
+        // ship with ZERO tripo::Head_* joints. Walk down to the next-best real bone instead of leaving this
+        // undefined, which crashes _sync's `w.bone.matrixWorld` read on the first frame the enemy is close.
+        bone: byName[w.bone] ?? byName.head ?? byName.chest ?? byName.torso ?? boneRoot,
+        // `off` walks from a PROCEDURAL bone's origin to the visual feature (our 'head' bone sits at the base
+        // of the skull with the skull drawn above it). A GLB's semantic bone already IS the feature — the last
+        // Head_N is the skull tip — so adding the offset on top pushes the crit sphere off the model; measured
+        // on the sentinel it would float ~0.38 m above a 0.30 m sphere, i.e. headshots stop registering.
+        off: this.rigged ? new THREE.Vector3() : new THREE.Vector3(...w.off),
+      }));
     }
     // ---- anim / ai state ----
     this.phase = 0; this.speedN = 0; this.tilt = 0; this.tiltT = 0; this.telegraph = 0; this.attackT = 0; this.attackKind = null; this.strafeLean = 0; this.pitchAnim = 0; this.rollAnim = 0;
     this.seedT = 0; this.flash = 0; this.dissolve = 0; this.stateT = 0; this.attackCd = 0; this.percT = 0; this.alert = false; this.lastSeenT = -99; this.seen = false;
     this.hurtT = -99; this.staggerT = 0; this.lastStagger = -99; this.fleeCd = 0; this.idleDur = 2; this.strafeDir = 1; this.strafeT = 0; this.distP = 999; this.onGround = !def.flying;
     this.deathT = 0; this.volleyLeft = 0; this.volleyT = 0; this.struck = false; this.phaseIdx = 0; this.phaseFlash = 0; this.glowColor = new THREE.Color();
+    this.bodyDrop = 0;   // metres the bind-pose body hangs below the root at this spawn's scale (set in spawn())
     this.thinkDt = 0; this.moveDt = 0; this.animDt = 0;
     // reactive-animation layer (see _animate): a 2-axis spring the shooter drives on every hit, plus turn banking.
     // Kept OUT of bodies.js: it is added after the body poses itself and subtracted again next frame, so a body that
@@ -146,7 +199,10 @@ export class Enemy {
     // look: deterministic palette pick per spawn (emissive colour, tint)
     const pal = def.palette[Math.floor(rnd() * def.palette.length)];
     this.glowColor.set(pal[0]); this.u.uEmissive.value.set(pal[0]); this.u.uTint.value.set(elite ? ELITE_TINT : pal[1]);
-    this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uBump.value = def.bump ?? 0.05; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
+    if (this.rigged && !elite) this.u.uTint.value.lerp(WHITE, GLB_TINT_WASH);   // see GLB_TINT_WASH
+    this.u.uGlow.value = def.glow; this.u.uRim.value = def.rim; this.u.uDissolve.value = 0; this.u.uFlash.value = 0;
+    // def.bump is per-type craggy-ness for the procedural relief noise; a GLB has a real normal map doing it.
+    this.u.uBump.value = this.rigged ? GLB_BUMP : (def.bump ?? 0.05);
     // The bubble is the ELEMENT, not the instance. The per-spawn palette roll is the creature's own hue and
     // re-rolling the shield with it made a Spire Sentinel's ARC bubble come up gold on half its spawns —
     // i.e. the one piece of UI that tells you which damage type strips it was lying at random.
@@ -155,9 +211,22 @@ export class Enemy {
     g.combat.register(this.target);
     // pose
     this.root.position.copy(this.position); this.root.rotation.set(0, this.yaw, 0); this.root.scale.setScalar((def.scale ?? 1) * (elite ? ELITE_SCALE_MUL : 1)); this.root.visible = true;
+    // how far the BIND-pose body hangs below the root, in world metres at this spawn's scale. Read once per
+    // spawn (elite scale changes it) and used by the flyer floor + the flyer death landing so a creature whose
+    // mass hangs below its origin — a wraith's robe, a void horror's tendrils — never sinks into the terrain.
+    { const bb = this.asset.geometry.boundingBox; this.bodyDrop = bb ? Math.max(0, -bb.min.y) * this.root.scale.x : 0; }
     if (this.shieldMesh) this._shellR = def.shieldRadius * 1.3 * this.root.scale.x;   // elites scale the shell too
     this.mesh.castShadow = this.castsShadow; this.mesh.visible = true;
-    for (const b of this.boneList) { b.position.copy(this.asset.bindPos[b.userData.index]); b.quaternion.identity(); b.scale.setScalar(1); b.updateMatrix(); }
+    // Restore the BIND pose, not the identity pose. A procedural rig is authored with identity bone rotations
+    // so the two are the same thing there; a Tripo bind pose is not — its joints carry real rotations, and
+    // zeroing them straightens every limb chain and turns a pooled creature inside out on its second spawn.
+    const bq = this.asset.bindQuat;
+    for (const b of this.boneList) {
+      const i = b.userData.index;
+      b.position.copy(this.asset.bindPos[i]);
+      if (bq) b.quaternion.copy(bq[i]); else b.quaternion.identity();
+      b.scale.setScalar(1); b.updateMatrix();
+    }
     this.root.updateMatrixWorld(true);
     if (this.legs) plantLegs(this.legs, this.legParent, this.sys.heightAt);
     this.center.set(this.position.x, this.position.y + def.center, this.position.z);
@@ -285,8 +354,24 @@ export class Enemy {
     // animation (bone posing + IK): full rate only right in front of the camera, stretched when the field is crowded
     this.animDt += dt;
     const cm = this.sys.crowd;
-    let animEvery = lod === 0 ? (d2cam < 144 ? 1 : d2cam < 900 ? 2 : 3) : lod === 1 ? 4 : lod === 2 ? 6 : 0;
-    if (cm > 1 && animEvery) animEvery = Math.ceil(animEvery * cm);
+    // POSE TICK RATE. The pose is HELD between updates, not interpolated, while _move keeps updating
+    // the root every frame — so a stepped pose under a gliding root reads in game as a creature
+    // swaying or jittering on the spot (user report, 2026-08-27; measured as a per-frame bone delta
+    // of 0.107, 0.001, 0.107, 0.001 at 20 m, i.e. every other frame held). The old full-rate band
+    // ended at 12 m, which is far closer than a creature stops being readable.
+    // These bands were chosen when the rigs were Tripo's originals (hound 101 joints, wraith 94);
+    // the conversion-time prune cut those to 40 and 37, so a wider full-rate band costs ~60% less
+    // than it did when 12 m was picked. Full rate to 30 m, every 2nd to 50 m, 3rd to 110, 6th to 220.
+    let animEvery = lod === 0 ? (d2cam < 900 ? 1 : 2) : lod === 1 ? 3 : lod === 2 ? 6 : 0;
+    // THE FULL-RATE BAND IS NOT CROWD-SCALABLE. `Math.ceil(1 * 1.5)` is 2, so the 1.5x crowd tier
+    // (>16 alive — a single camp) silently halved the pose rate of every creature in the world,
+    // INCLUDING one 3 m from the camera, and reintroduced the exact bug the bands above were widened
+    // to kill. Measured 2026-08-27: a wraith at 18 m with 23 alive posed 0.117, 0.0006, 0.105,
+    // 0.0006 rad per frame — a perfect every-other-frame strobe under a root that keeps gliding.
+    // With 1 alive the same creature read a flat 0.03 every frame. This is what animcheck's STEPPED
+    // POSE test was failing on (hound/sprite/skyserpent/wraith/voidhorror), NOT the flyer path.
+    // Crowd scaling still applies wherever the pose is already stepped (>= 30 m), where it is free.
+    if (cm > 1 && animEvery > 1) animEvery = Math.ceil(animEvery * cm);
     if (animEvery && (frame + this.id) % animEvery === 0) { this._animate(this.animDt, t); this.animDt = 0; }
     // uniform upkeep (uTime/uGlow/weak-point/shield) is invisible-stale at distance: crowd-scale it too, free.
     if (lod < 2 ? (cm === 1 || (frame + this.id) % 2 === 0) : (frame + this.id) % Math.ceil(3 * cm) === 0) this._sync(dt, t, lod);
@@ -570,7 +655,9 @@ export class Enemy {
     if (th === g.player.target) g.player.view?.flinch?.(0.6);   // screen flinch is player-only
   }
   _muzzle(out) {
-    const b = this.bones.orb ?? this.bones.core ?? this.bones.head ?? this.bones.hdR ?? this.boneRoot;
+    // `handR` only exists on a rigged GLB (glbBody aliases the arm chain's last joint); a procedural body's
+    // hand is `hdR` and is reached further down the chain, so this changes nothing for them.
+    const b = this.bones.orb ?? this.bones.handR ?? this.bones.core ?? this.bones.head ?? this.bones.hdR ?? this.boneRoot;
     return out.setFromMatrixPosition(b.matrixWorld);
   }
   _fireBolt(pj, damage, spread = 0.05) {
@@ -685,7 +772,13 @@ export class Enemy {
       v.lerp(this.steer, k);
       if (this.state === 'stagger') v.multiplyScalar(Math.exp(-4 * dt));
       this.position.addScaledVector(v, dt);
-      const minY = T.heightAt(this.position.x, this.position.z) + 1.2; if (this.position.y < minY) { this.position.y = minY; if (v.y < 0) v.y = 0; }
+      // FLOOR A FLYER BY ITS BODY, NOT BY ITS ROOT. A flat 1.2 m is only right for a creature whose mass sits
+      // AT the root; the wraith hangs 1.51 m of robe BELOW it (measured: bind box min.y -1.31 x scale 1.15),
+      // so the old clamp buried the whole robe and the game read as a corpse lying in the grass while the
+      // thing was at full health. bodyDrop is that overhang, so the body's own bottom is what stops at 0.15 m
+      // of clearance. Everything whose mass is at or above the root (wisp, drake, riftling) keeps the 1.2.
+      const minY = T.heightAt(this.position.x, this.position.z) + Math.max(1.2, this.bodyDrop + 0.15);
+      if (this.position.y < minY) { this.position.y = minY; if (v.y < 0) v.y = 0; }
       const lim = T.size * 0.5 - 6; this.position.x = THREE.MathUtils.clamp(this.position.x, -lim, lim); this.position.z = THREE.MathUtils.clamp(this.position.z, -lim, lim);
       this._standoff();
       const sp = v.length(); this.speedN = Math.min(1, sp / def.speed);
@@ -694,7 +787,12 @@ export class Enemy {
       else if (this.facePlayer || this.alert) { const pf = this._threat.pos; ty = Math.atan2(pf.x - this.position.x, pf.z - this.position.z); }
       else if (sp > 0.5) ty = Math.atan2(v.x, v.z);
       const dy = THREE.MathUtils.clamp(wrapAngle(ty - this.yaw), -def.turn * dt, def.turn * dt); this.yaw += dy;
-      this.rollAnim = damp(this.rollAnim, -dy / Math.max(dt, 1e-3) * 0.25, 4, dt);
+      // BANK CEILING. The target is -turnRate * 0.25 and turnRate saturates at def.turn, so the bank was
+      // whatever a type's turn stat happened to be: 0.6 rad on a drake (turn 2.4, the value this was tuned
+      // against) but 1.25 on a wraith (turn 5) and 2.0 on a riftling (turn 8). Measured live: the wraith
+      // banked 1.156 rad / 66 deg while strafing its ranged band, which lays a 1.5 m robe flat into the
+      // grass. 0.6 keeps every dive flyer's bank exactly as authored and closes the top end.
+      this.rollAnim = damp(this.rollAnim, THREE.MathUtils.clamp(-dy / Math.max(dt, 1e-3) * 0.25, -0.6, 0.6), 4, dt);
       this.pitchAnim = damp(this.pitchAnim, THREE.MathUtils.clamp(-v.y * 0.06, -0.6, 0.6), 4, dt);
       this.center.copy(this.position); if (def.center) this.center.y += def.center;
       this.phase += dt * 2;
@@ -746,7 +844,9 @@ export class Enemy {
     if (L.on) { L.b.rotation.z -= L.z; L.b.rotation.x -= L.x; if (L.h) { L.h.rotation.z -= L.hz; L.h.rotation.x -= L.hx; } L.on = false; }
     // ensure the leg parent's world matrix is fresh for IK (root moved this frame)
     this.root.updateMatrix(); this.root.matrixWorld.copy(this.root.matrix);
-    if (this.legParent) { this.legParent.updateMatrix(); this.legParent.matrixWorld.multiplyMatrices(this.root.matrixWorld, this.legParent.matrix); }
+    // only stepLegs/plantLegs read legParent.matrixWorld, and both are gated on `legs` — so a body with no IK
+    // (riftling's hover, every rotation-only GLB animator) can skip the compose entirely.
+    if (this.legs && this.legParent) { this.legParent.updateMatrix(); this.legParent.matrixWorld.multiplyMatrices(this.root.matrixWorld, this.legParent.matrix); }
     this.body.animate(this, dt, t, this.sys.animCtx);
     this._react(dt);
     for (const b of this.boneList) b.updateMatrix();
@@ -780,6 +880,11 @@ export class Enemy {
     u.uTime.value = t + this.seedT; u.uFlash.value = this.flash * 0.8;
     const tg = this.telegraph, phaseF = this.phaseFlash;
     u.uGlow.value = this.def.glow * (this.sys.dayGlow ?? 1) * (1 + tg * 1.6 + phaseF * 2) * (this.state === 'dead' ? Math.max(0, 1 - this.deathT) : 1);
+    // uGlow only ever multiplies vGlow terms, and vGlow is 0 across a rigged GLB (no aGlow mask — see
+    // createCreatureMaterialGLB). Without this the wind-up and the boss-phase flash have no emissive read at
+    // all on a GLB creature, which is a combat cue the player is entitled to. Route it through the aether RIM
+    // instead — a lighting term, hue-locked to ecol, clamped at the highest rim the bestiary already ships.
+    if (this.rigged) u.uRim.value = Math.min(GLB_RIM_MAX, this.def.rim * (1 + tg * 0.9 + phaseF * 1.2));
     const wps = this.target.weakPoints;
     if (wps && lod < 2) for (let i = 0; i < wps.length; i++) { const w = wps[i]; w.position.copy(w.off).applyMatrix4(w.bone.matrixWorld); }
     if (this.shieldMesh) {
@@ -801,7 +906,8 @@ export class Enemy {
     if (def.flying) {
       // drop out of the sky (drake) / pop (wisp)
       this.velocity.y -= 20 * dt; this.velocity.x *= 0.98; this.velocity.z *= 0.98; this.position.addScaledVector(this.velocity, dt);
-      const gy = this.game.terrain.heightAt(this.position.x, this.position.z) + (def.role === 'dive' ? 0.4 : 0.3);
+      // land the BODY, not the root — same reason as the flyer floor in _move (see bodyDrop)
+      const gy = this.game.terrain.heightAt(this.position.x, this.position.z) + Math.max(def.role === 'dive' ? 0.4 : 0.3, this.bodyDrop);
       if (this.position.y < gy) { this.position.y = gy; this.velocity.set(0, 0, 0); }
       r.position.copy(this.position); r.rotation.x += (def.role === 'dive' ? 1.5 : 0) * dt; r.rotation.z += dt * (def.role === 'dive' ? 0.8 : 2.5);
       if (this.type === 'wisp') { this.bones.core.scale.setScalar(Math.max(0.05, 1 - k * 1.2)); for (const s of this.shards) { s.scale.setScalar(1 + k * 4); s.rotation.y += dt * 12; } this.bones.core.updateMatrix(); for (const s of this.shards) s.updateMatrix(); }

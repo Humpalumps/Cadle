@@ -81,6 +81,16 @@ const BH = [
     // Without them the region is one unbroken climb and the "dragon nests on the ledges" is a texture.
     const bench = ss(0.30, 0.44, m) * (1 - ss(0.52, 0.64, m));
     if (bench > 0.01) t = mix(t, Math.round(t / 26) * 26 + 4, bench * 0.72);
+    // EROSION STRUCTURE (wave-4 blocker: "no macro relief at any distance — a photograph wallpapered
+    // onto a smooth mesh"). m and c are smooth multifractals: they give a big shape and fine crag, and
+    // NOTHING in between, so the faces read as one continuous swell however good the texture is. Real
+    // peaks get their read from DRAINAGE — a branching network of gullies incised into the flanks,
+    // deepest mid-slope and closing at both the crest and the toe, leaving spurs standing between.
+    // Band-limited to >= 9 m (ridged4 at 0.013 = 77/37/18/9 m) so the 1 m bake reproduces it exactly.
+    const flank = m * (1 - m) * 4;                                             // 0 on the summit and on the plain
+    if (flank > 0.02) t -= ss(0.55, 0.95, ridged4(wx * 0.013, wz * 0.013, s + 236)) * 23 * flank * (1 - 0.65 * bench);
+    // TALUS at the foot: 22 m blocky relief so the bowl the walls tower over is broken ground, not pavement.
+    t += (rmf(x * 0.045, z * 0.045, s + 237, 3) - 0.42) * 5.2 * ss(0.34, 0.05, m);
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
     t = mix(t, 44, ss(105, 55, d));                                            // the gate needs a forecourt
     return mix(h, t, w);
@@ -128,7 +138,14 @@ const BH = [
     // Props can frame that span with gate architecture.
     let da = Math.abs(Math.atan2(z, x) - (THETA0 + 5 * STEP)); if (da > Math.PI) da = 2 * Math.PI - da;
     const notch = ss(20, 8, da * Math.sqrt(x * x + z * z) + n2(x * 0.03, z * 0.03, s + 253) * 4);
-    t += 30 * ss(118, 146, d) * ss(192, 160, d) * (1 - 0.88 * notch);          // rampart ring, pierced by the gate
+    const berm = ss(118, 146, d) * ss(192, 160, d);
+    t += 30 * berm * (1 - 0.88 * notch);                                       // rampart ring, pierced by the gate
+    // The rampart is the zone's LARGEST surface and it was a smooth extruded ramp — at 5-15 m there was
+    // nothing on it but the plate (wave-4 finding). A ruined earthwork is slumped rubble: 18/9/4.5 m lumps
+    // on the two FACES only (the band term is 0 on the crest and on the plain), so the berm reads as
+    // collapsed masonry under turf instead of a bevel, and the near field has something to measure.
+    const face = berm * (1 - berm) * 4;
+    if (face > 0.02) t += face * (rmf(x * 0.055 + 3, z * 0.055 - 7, s + 254, 3) * 4.8 - 1.9);
     t -= 7 * ss(62, 22, d);                                                    // sunken plaza
     return mix(h, t, w);
   },
@@ -137,7 +154,17 @@ const BH = [
     // Wetter. At 3.05 the flats sat under 0.95 m of water and the hummocks were most of the surface, so from
     // anywhere but the middle the fen read as a damp green wood. 2.45 puts the flats knee-to-thigh deep and
     // leaves the hummocks as the only dry ground — which is the region's whole passive.
-    const t = 2.45 + (hum > 0 ? hum : 0) * 3.2 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.3;
+    let t = 2.45 + (hum > 0 ? hum : 0) * 3.2 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.3;
+    // TUSSOCKS AND POOLS (wave-4 blocker: "everything from 2 m to 25 m in front of the player is
+    // featureless water, at every hour and every angle"). The hummock field is a 48 m fbm whose finest
+    // octave is 0.21 m, so the flooded flats were a DEAD FLAT bed under a dead flat water plane: there
+    // was literally nothing for the eye to measure in the near field. A ridged octave at 16/8/4 m puts
+    // sedge tussocks that break the surface between pools that go knee-deep, so depth VARIES over the
+    // near field — which is the only thing that makes shallow water read as ground rather than a sheet.
+    // ADDITIVE ONLY (max(0, ...)): a two-sided term dug the pools to 1.8 m, and "peat to the knee" is the
+    // region's whole passive — the crowns come UP, the water line does not go down.
+    const tus = ridged3(x * 0.062 + 9, z * 0.062 - 4, s + 263);
+    t += Math.max(0, tus * tus - 0.12) * 2.4 * (1 - 0.5 * ss(0, 0.55, hum));
     return mix(h, t, w);
   },
   function bhSunken(x, z, h, s, w, cx, cz) {                                   // The Sunken Kingdom: cascade gorge (user decree 2026-08-25 — NO underwater area)
@@ -162,6 +189,12 @@ const BH = [
     // alternate flooded/dry (the causeway tops sit ~0.6 m above the water line)
     const basinM = ss(56, 38, a) * ss(-130, -70, a);
     t += basinM * ss(0.62, 0.78, ridged3(x * 0.016, z * 0.016, s + 273)) * 1.15;
+    // SCOURED BEDROCK (wave-4 blocker: "the bedrock is a bare, untextured, geometry-free plane — the near
+    // field of the whole region has zero detail"). The treads carried +-0.14 m of 50 m fbm, i.e. nothing:
+    // a photograph on a ramp. A gorge floor that a river has worked is RIBBED — hard bands standing proud,
+    // plunge hollows scooped between them. 19/9/5 m ridged, ~1.5 m peak-to-trough on the dry treads and
+    // half that in the flooded basin (so wading stays 0.3-1.0 m, never over-head).
+    t += (ridged3(x * 0.052 + 4, z * 0.052 - 6, s + 276) - 0.38) * (1.55 - 0.8 * basinM);
     // the rapid channel: ~10-18 m wide, meanders down the centreline, cut to 3.35 (0.65 m of fast water).
     // It slots through the upper treads and pours over each riser; gated off behind the Court.
     const ch = ss(13, 5, b + n2(x * 0.02 + 3, z * 0.02 - 5, s + 274) * 9) * ss(-60, -25, a);

@@ -17,6 +17,7 @@ import { BIOMES, RL_EDGE } from './Biomes.js';
  *   vegetation.rocks     [{x,y,z,kind,scale}]
  *   vegetation.crystals  [{x,y,z,scale}]
  *   vegetation.understory  InstLOD of Whisperwood fern/bracken clumps, or null when card_fern is missing
+ *   vegetation.canopy    [InstLOD x3] Whisperwood mid-canopy leaf bundles, or null when leaf_card is missing
  *   vegetation.lods      InstLOD sets refreshed round-robin (Props pushes its own)
  *   vegetation.uniforms  { uTime, uWind, uSunDirV, uSunColor, uSunI } shared by Props materials
  *   vegetation.setWind(w)
@@ -97,6 +98,27 @@ const BSPIRE = {
 // is the shipped symptom; the cause is that scatter never knew the landmarks existed outside the home bowl.
 // Values are the built footprint plus a crown's worth of margin (a 13 m pine is ~7 m across at the top).
 const LM_CLEAR = { forest: 26, tundra: 30, celestial: 46, dragon: 56, infernal: 34, lost: 48, shadowfen: 28, sunken: 40, void: 34 };
+
+// CROWN ENVELOPE of the two Whisperwood species, metres before instance scale — where _buildCanopyFoliage
+// hangs its mid-canopy bundles. `h` mirrors EZTrees' TARGET_H (27 m old-growth, 13 m broadleaf); y0..y1 is
+// the crown's vertical span as a fraction of h, `r` its half-width, `n` bundles per tree, `bs` bundle size
+// in metres. Bundles sit at 0.4-1.15 of the crown radius: the SHELL and just outside it, so from under the
+// tree they are between the eye and the giant crown cards, which is the whole point.
+// y1 STOPS SHORT OF THE APEX on purpose (0.86 / 0.90, was 0.96 / 0.98). The crown card cloud thins to
+// almost nothing in the top tenth of a tree, so bundles placed there are the only thing on the silhouette
+// and they read as a chain of foliage balls floating in open sky above the treeline
+// (S6/shot-13-side.png). tools/out/S7 settles what they are: shot-D-onlybundles.png hides EZTrees' leaves
+// and the bundles are visibly ringed onto their own trunk tops — the placement is right, the TOP of the
+// band was not. Same 34 bundles in a shorter band is also denser where a player actually looks.
+// `bs` is the dial that decides whether this layer FIXES the defect or joins it: a bundle card carries a
+// ~0.3 LEAF_CROPS window of the painted bush, i.e. 2-3 painted leaves across the card, so a 2 m card puts
+// leaves at ~0.7 m and a 4 m card puts them back at 1.4 m — which is the giant-crown-card failure again, one
+// size down. Measured against tools/out/L5-a1-forest (bs 2.9): near bundles still read metre-scale. 1.75/1.25
+// lands leaves at 0.4-0.7 m, and the count goes UP to hold crown coverage.
+const CROWN = {
+  5: { h: 27, y0: 0.38, y1: 0.86, r: 0.31, n: 34, bs: 1.75 },   // old-growth giant: the tree whose 9 m cards read as stage flats
+  8: { h: 13, y0: 0.48, y1: 0.90, r: 0.30, n: 6,  bs: 1.25 },   // broadleaf sub-canopy: fewer, smaller — this layer's cards are already honest
+};
 
 // grove noise for the outer regions (separate lattice from the home Whisperwood, so they clump differently)
 const grove2 = (x, z) => smoothstep(0.10, 0.52, fbm(x * 0.0075, z * 0.0075, { octaves: 3, seed: 41 }) * 0.5 + 0.5);
@@ -368,6 +390,25 @@ function fan(list, center, y, radius, count, w, h, tilt, rng, jitter = 0.35, ao 
     card(list, c, n, w, h, rng, { ao: ao * lerp(0.72, 1.0, clamp(rr / radius, 0, 1)) }); // deeper in the crown = less sky light
   }
 }
+/** A UNIT leaf bundle: `n` small cards on a sphere of radius ~0.5, normals pointing outward from the centre.
+ *  This is the mid-canopy atom (see _buildCanopyFoliage) — instanced at ~1-2.3 m it puts leaves at 30-70 cm,
+ *  which is the size the painted card asset was drawn at. Contrast with an old-growth CROWN card, which is
+ *  ~9 m across and therefore magnifies the same painting until one leaf is 3 m wide and reads as a flat
+ *  print. Cards are pushed through card()/cards(), so each one gets its own LEAF_CROPS window (ragged
+ *  silhouette), fold, flip, hue jitter and AO for free. 4 tris a card. */
+function leafBundle(rng, n) {
+  const L = [], c = V3(0, 0, 0);
+  for (let i = 0; i < n; i++) {
+    // golden-angle spiral over the sphere: the cards actually surround the centre instead of clumping,
+    // so a bundle has a silhouette from every side (it is instanced at a fully random orientation).
+    const yy = 1 - (i + 0.5) / n * 1.72, rr = Math.sqrt(Math.max(0.02, 1 - yy * yy)), a = i * 2.39996 + rng() * 0.7;
+    const dir = V3(Math.cos(a) * rr, yy, Math.sin(a) * rr);
+    const p = dir.clone().multiplyScalar(0.16 + rng() * 0.30);
+    const nrm = dir.clone().add(V3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(0.7));
+    card(L, p, nrm, 0.82, 0.74, rng, { ao: 0.66 + 0.34 * (yy * 0.5 + 0.5) });   // undersides darker: volume, not a shelf
+  }
+  return cards(L, c, 0.34);
+}
 // species 0: tall slender "shroud birch" — long pale trunk, big painterly canopy clusters near the top
 function buildSlender(rng) {
   const H = 16, bx = (rng() - 0.5) * 1.6, bz = (rng() - 0.5) * 1.6;
@@ -554,6 +595,7 @@ export class Vegetation {
     await new Promise((r) => requestAnimationFrame(r));
     this._buildCrystals(rng, aniso);
     this._buildUnderstory();
+    this._buildCanopyFoliage();
     await new Promise((r) => requestAnimationFrame(r));
     this._place(mulberry32(game.seed + 777));
     // ez-tree trees are the DEFAULT (see EZTrees.js): generated variants through the same InstLOD
@@ -707,26 +749,107 @@ export class Vegetation {
       });
     }
   }
-  /** Whisperwood understory: knee-to-waist fern/bracken clumps ABOVE the grass-blade fern cards.
-   *  The wave-2 forest minor was "one fern mesh repeated at uniform density" — Grass.js owns the blade-scale
-   *  card and cannot give it a second SIZE, so the variety has to come from a layer with its own instance
-   *  scale/rotation/tint. 3 crossed quads = 6 triangles, near tier only: ~70 instances in frame, ~0.4 k tris,
-   *  one draw call. Null-safe: no card_fern -> no layer, the grass floor is unchanged. */
-  _buildUnderstory() {
-    const tex = this.game.assets?.tex?.('card_fern') ?? null;
-    this.understory = null;
-    if (!tex) return;
-    const q = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-    const geo = mergeGeometries([q, q.clone().rotateY(Math.PI / 3), q.clone().rotateY(Math.PI * 2 / 3)]);
+  /** One ground-cover card layer: instanced quads, alpha-eroded LOD fade, per-instance tint, all normals
+   *  forced UP so it is lit like the ground it sits on (no black backside quad). Null-safe: missing asset
+   *  -> null, and the caller's placement loop skips it. */
+  _cardLayer(texName, name, at, nearDist, geoFn) {
+    const tex = this.game.assets?.tex?.(texName) ?? null;
+    if (!tex) return null;
+    const geo = geoFn();
     const nn = geo.getAttribute('normal');
-    for (let i = 0; i < nn.count; i++) nn.setXYZ(i, 0, 1, 0);   // lit like the ground it sits on: no black backside quad
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }),
-      mergePatch(erodeFade(0.42), instTintPatch, { key: 'understory' }));   // instTintPatch: without it the per-clump green/teal jitter below would silently do nothing
+    for (let i = 0; i < nn.count; i++) nn.setXYZ(i, 0, 1, 0);
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: tex, alphaTest: at, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }),
+      mergePatch(erodeFade(at), instTintPatch, { key: name }));   // instTintPatch: without it the per-clump tint jitter would silently do nothing
     const m = new THREE.InstancedMesh(geo, mat, 8);
-    m.castShadow = false; m.receiveShadow = true; m.name = 'understory-fern';
+    m.castShadow = false; m.receiveShadow = true; m.name = name;
     this.game.scene.add(m);
-    this.understory = new InstLOD({ near: [m], nearDist: 38, band: 8, color: true });
-    this.lods.push(this.understory);
+    const lod = new InstLOD({ near: [m], nearDist, band: 8, color: true });
+    this.lods.push(lod); return lod;
+  }
+  /** Whisperwood floor, two layers.
+   *  FERN: knee-to-waist bracken clumps ABOVE the grass-blade fern cards. The wave-2 forest minor was "one
+   *  fern mesh repeated at uniform density" — Grass.js owns the blade-scale card and cannot give it a second
+   *  SIZE, so the variety has to come from a layer with its own instance scale/rotation/tint.
+   *  MOSS: near-horizontal overlapping sheets hugging the duff. The region spec is "deep teal-green MOSS and
+   *  fern undergrowth" and the moss half was simply missing — the floor between the bracken clumps was bare
+   *  splat, which is what makes a forest floor read as terrain-with-plants-on-it at 8 m instead of a forest
+   *  floor. Horizontal cards cost the same as vertical ones and answer a distance the fern cannot: a fern is
+   *  a silhouette, moss is a SURFACE.
+   *  6-8 triangles each, near tier only, one draw call apiece. */
+  _buildUnderstory() {
+    this.understory = this._cardLayer('card_fern', 'understory-fern', 0.42, 38, () => {
+      const q = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
+      return mergeGeometries([q, q.clone().rotateY(Math.PI / 3), q.clone().rotateY(Math.PI * 2 / 3)]);
+    });
+    this.moss = this._cardLayer('card_moss', 'understory-moss', 0.34, 30, () => {
+      const q = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);   // flat on the ground, not a billboard
+      return mergeGeometries([q, q.clone().rotateY(1.14).translate(0.22, 0.045, -0.16), q.clone().rotateY(2.35).translate(-0.19, 0.085, 0.20)]);
+    });
+  }
+  /** WHISPERWOOD MID-CANOPY — the wave-4 forest BLOCKER, and it is the first thing in frame in that region:
+   *  "near-field canopy is a handful of giant flat leaf-print cards ... the forest roof reads as painted
+   *  stage flats" (tools/out/L5-base-forest/shot-roof.png reproduces it exactly).
+   *
+   *  The mechanism, because the obvious fix is the wrong one. An old-growth crown card is ~9 m across and
+   *  the painted leaf_card asset is ONE bush, so a 0.30 crop window puts ~2.5 painted leaves across 9 m —
+   *  each leaf renders 3 m wide and perfectly smooth. That is not a resolution problem and not a tri
+   *  problem: it is a card that is far larger than the art drawn on it. Making the crown cards smaller is
+   *  EZTrees.js's dial (SPECIES_TUNE[5]) and it trades canopy closure away; the tri-cheap fix that costs
+   *  nothing else is to hang a layer of CORRECTLY-SCALED foliage in front of them.
+   *
+   *  So: bundles of 5-7 small cards (leafBundle) instanced at ~0.8-2.3 m through the crown shell of every
+   *  region-owned Whisperwood tree, at a fully random orientation, non-uniform scale and its own tint.
+   *  Three bundle geometries round-robin so a near bundle is never a visible clone. What this buys, in the
+   *  critic's own words: many smaller cards (~30 cm leaves, the size the asset was painted at), varied
+   *  orientation (random quaternion, not the crown's radial fan), broken silhouettes (LEAF_CROPS window +
+   *  the radial card mask below, so no bundle ever shows a straight edge) and real parallax between layers
+   *  — bundles sit at 0.45-1.0 of tree height and OUTSIDE the crown card cloud, so the giant sheets are
+   *  seen THROUGH foliage instead of being the foreground.
+   *
+   *  Cost: ~20 tris an instance, ~450 in frame at nearDist 72, 3 draw calls, near tier only (the impostor
+   *  band past ~128 m never sees them). No shadow cast — the giants already own the canopy shadow, and an
+   *  alpha-cutout caster would need its own depth material plus 3 cascade draws for a read nobody can see.
+   *  Null-safe: no leaf_card asset -> no layer, everything else is unchanged.
+   *  BLOB LAW: no emissive anywhere in here. Value comes from the standard lit path and per-card AO. */
+  _buildCanopyFoliage() {
+    const tex = this._leafCard;
+    this.canopy = null;
+    if (!tex) return;
+    const rng = mulberry32(this.game.seed + 8181);
+    const AT = 0.36;
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: tex, alphaTest: AT, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 }), {
+      key: 'canopy-bundle',
+      vHead: 'attribute float aFade; attribute vec2 aLeaf; attribute vec2 aLuv; varying float vFade; varying vec2 vLeaf; varying vec2 vLuv; varying vec3 vITint;',
+      vBegin: `vFade = aFade; vLeaf = aLeaf; vLuv = aLuv; vITint = vec3(1.0);
+        #ifdef USE_INSTANCING_COLOR
+          vITint = instanceColor;
+        #endif`,
+      fHead: `varying float vFade; varying vec2 vLeaf; varying vec2 vLuv; varying vec3 vITint;
+        const vec3 CAN_SHADE = vec3(0.66, 0.94, 0.78);   // deep teal-green, the Whisperwood's shaded leaf
+        const vec3 CAN_SUN   = vec3(1.14, 1.04, 0.68);   // sun-struck leaf. Both are ALBEDO multipliers, not light.`,
+      fMap: `#include <map_fragment>
+        diffuseColor.rgb *= vITint * mix(CAN_SHADE, CAN_SUN, vLeaf.x) * (0.52 + 0.48 * vLeaf.y);
+        // BLOB LAW insurance. Three multipliers stack here (texture x per-instance tint x per-card hue), and
+        // the per-instance tint alone can reach ~1.07 in green, i.e. an ALBEDO above 1 — nonphysical, and the
+        // exact shape of every washed-white recurrence this project has had. Hue-preserving max-channel cap:
+        // the colour is untouched, only the value moves.
+        { float mx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+          if (mx > 1.0) diffuseColor.rgb /= mx; }
+        // RADIAL CARD MASK on the card's OWN uv (aLuv, not vMapUv: vMapUv is inside a LEAF_CROPS window).
+        // Fading a card out toward its own border is what makes the card RECTANGLE stop existing: corners
+        // go first, which is where every "flat pasted quad" read comes from.
+        diffuseColor.a *= 1.0 - smoothstep(0.62, 1.22, length(vLuv - 0.5) * 2.0);`,
+      // One combined discard: the LOD cross-fade erosion AND the walked-into-the-canopy dissolve. Erosion,
+      // never a screen door — a static camera holds a dither pattern forever (the tundra stipple blocker).
+      fAlpha: `if (diffuseColor.a < mix(1.01, ${AT.toFixed(3)}, min(clamp(vFade, 0.0, 1.0), smoothstep(0.8, 2.6, length(vViewPosition))))) discard;`,
+    });
+    this.canopy = [5, 6, 7].map((n, i) => {
+      const m = new THREE.InstancedMesh(leafBundle(rng, n), mat, 8);
+      m.castShadow = false; m.receiveShadow = true; m.name = 'canopy-bundle-' + i;
+      this.game.scene.add(m);
+      const lod = new InstLOD({ near: [m], nearDist: 72, band: 16, color: true });
+      this.lods.push(lod); return lod;
+    });
   }
   _buildCrystals(rng, aniso) {
     const U = this.uniforms;
@@ -863,6 +986,16 @@ export class Vegetation {
     const { terrain } = this.game, col = this.game.world.colliders, wl = terrain.waterLevel, half = terrain.size / 2 - 10;
     const bb = {}, B = (x, z) => (terrain.biomeBlend ? terrain.biomeBlend(x, z, bb) : NO_BIOME);
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Qt = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler(), C = new THREE.Color();
+    const UPV = new THREE.Vector3(0, 1, 0), Qs = new THREE.Quaternion(), Nv = new THREE.Vector3();   // moss: sit flat cards ON the slope, not through it
+    // DECORATION STREAM. Everything this file added in wave 5 — crown anisotropy, mid-canopy bundles, moss
+    // sheets — draws from here, NOT from `rng`. A decorative layer must not move the world: `rng` is one
+    // shared sequence walked by trees, then understory, then rocks, then crystals, so a single extra draw
+    // in the tree loop re-rolls every rock and crystal on the map. That is not hypothetical — the first
+    // version of this change did exactly that, and `collisionSelfTest()` on the default seed started
+    // failing its crystal probe because a re-rolled cluster landed 7 m from its neighbour (the probe gets
+    // wedged: Colliders.resolveSphere is single-pass, so two overlapping pushes can undo each other).
+    // With a separate stream the tree/rock/crystal layout is bit-identical to before this wave.
+    const drng = mulberry32(this.game.seed + 9091);
     const lakeD = (x, z) => Math.hypot(x + 170, z + 70), ruinD = (x, z) => Math.hypot(x - 140, z - 60), arenaD = (x, z) => Math.hypot(x + 60, z - 260), aethD = (x, z) => Math.hypot(x, z + 28);
     const ok = (x, z) => Math.abs(x) < half && Math.abs(z) < half;
     /** true when (x,z) sits inside the nearest outer region's landmark footprint (LM_CLEAR). */
@@ -952,14 +1085,45 @@ export class Vegetation {
       }
       else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
       const sp = treeSpec[species] ?? treeSpec[species === 3 || species === 6 ? 0 : 1];
-      const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5 : species === 3 || species === 6 ? 0.7 + rng() * 0.6 : species === 5 ? 0.9 + rng() * 0.35 : 0.8 + rng() * 0.4;
-      E.set((rng() - 0.5) * 0.08, rng() * Math.PI * 2, (rng() - 0.5) * 0.08); Qt.setFromEuler(E); P.set(x, y - 0.25 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
+      // FOREST SCALE SPREAD, not one size. Half of the wave-4 "a handful of giant flat cards" blocker is
+      // that every old-growth giant was 27 m x (0.9..1.25), so every crown card in frame was the same ~9 m
+      // sheet. 0.70+0.62 holds the mean (1.01 vs 1.075) and nearly triples the spread — crown cards now run
+      // 6.5-12 m and the roof stops being one repeated plane. Species 8 widens the same way, which is what
+      // turns the broadleaf sub-canopy into a real LAYER (8-18.5 m) instead of a uniform 13 m shelf; two
+      // separated height bands under the emergents is where the "parallax between layers" actually comes from.
+      const scale = species === 0 ? 0.8 + rng() * 0.55 : species === 1 ? 0.75 + rng() * 0.5
+        : species === 3 || species === 6 ? 0.7 + rng() * 0.6
+        : species === 5 ? 0.70 + rng() * 0.62
+        : species === 8 ? 0.62 + rng() * 0.80
+        : 0.8 + rng() * 0.4;
+      // A crown is not a solid of revolution. A little XZ anisotropy (area-preserving: ani x 1/ani) plus a
+      // touch more lean on the giants re-aspects and rotates a whole card set per instance — "varied
+      // orientation" for the cost of one matrix, no extra geometry and no extra draw.
+      const ani = CROWN[species] ? 0.88 + drng() * 0.26 : 1, lean = species === 5 ? 0.13 : 0.08;
+      E.set((rng() - 0.5) * lean, rng() * Math.PI * 2, (rng() - 0.5) * lean); Qt.setFromEuler(E);
+      P.set(x, y - 0.25 * scale, z); S.set(scale * ani, scale, scale / ani); M.compose(P, Qt, S);
       // per-instance hue jitter, then pushed toward the REGION's foliage colour by the biome weight
       const tj = 0.76 + rng() * 0.44;
       let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
       const kCol = bTree?.col ?? bLook?.col;
       if (kCol) { const w = bTree ? bt.w : 1; cr *= 1 + (kCol[0] - 1) * w; cg *= 1 + (kCol[1] - 1) * w; cb *= 1 + (kCol[2] - 1) * w; }
       if (bTree && bt.id === 'forest' && rng() < 0.18) { cr *= 0.78; cb *= 1.24; }   // the enchanted accent: a scatter of blue-teal crowns in the deep green
+      // ALBEDO IS A REFLECTANCE — it cannot exceed 1, and `tr.c` goes straight into EZTrees' leaf and
+      // impostor instanceColor (EZTrees.js:419). tj alone reaches 1.20 and the per-channel jitter takes
+      // red to ~1.39, so the brightest crowns were multiplying their leaf card ABOVE the painted value:
+      // backlit, an old-growth crown card then read as a pale mint plastic sheet 4 m across
+      // (S1-before/shot-12-eye.png, top of frame). Hue-preserving max-channel cap — the colour is
+      // untouched, only the value moves. Same rule as the canopy-bundle shader in _buildCanopyFoliage,
+      // and the same rule the blob decree states: saturate the colour, cap the intensity.
+      { const mx = Math.max(cr, cg, cb); if (mx > 1) { cr /= mx; cg /= mx; cb /= mx; } }
+      // ...and the old-growth giant gets one stop less on top of the cap. Its crown is a few ~9 m cards
+      // carrying a 0.30 uv window of leaf_card (EZTrees LEAF_MAP[5] + the fixed `cs` crop), so a painted
+      // leaf renders ~3 m wide with a smooth interior: backlit at the TOP of the crown that reads as a pale
+      // mint plastic sheet, and it was the brightest thing in the frame from under the canopy
+      // (S4/shot-13-in.png). Leaf SCALE is EZTrees' dial and not mine; VALUE is mine, and dropping the
+      // giant's crown a stop hands the highlight to the mid-canopy bundles below it — which carry leaves at
+      // the size the asset was painted at. Species 5 only: the sub-canopy broadleaf's cards are honest.
+      if (species === 5) { cr *= 0.90; cg *= 0.90; cb *= 0.90; }
       C.setRGB(cr, cg, cb);
       (this.treeSets[species] ?? this.treeSets[species === 3 || species === 6 ? 0 : 1]).lod.add(M, C);
       const r = Math.max(0.28, sp.colR * scale * (species === 5 ? 1.5 : 1));
@@ -967,10 +1131,41 @@ export class Vegetation {
       // Vale keeps EZTrees' own neutral jitter so this change cannot shift the spawn meadow's read.
       this.trees.push(kCol ? { x, y, z, species, scale, r, c: [C.r, C.g, C.b] } : { x, y, z, species, scale, r });
       col.add({ type: 'capsule', a: new THREE.Vector3(x, y - 1, z), b: new THREE.Vector3(x, y + sp.colH * scale, z), r });
+      // ---- MID-CANOPY BUNDLES (see _buildCanopyFoliage), LAST in the iteration because they reuse M/C
+      // (InstLOD.add copies both, and trees.push above still needed C as the tree's own leaf tint).
+      // Region-owned Whisperwood trees only: the layer exists to break the old-growth crown's flat sheets,
+      // and those only grow inside the forest region (bLook sightline trees never get species 5).
+      const cw = this.canopy && bTree && bt.id === 'forest' ? CROWN[species] : null;
+      if (cw) {
+        const Hc = cw.h * scale, nB = Math.round(cw.n * (0.65 + drng() * 0.75));
+        for (let i = 0; i < nB; i++) {
+          // A CROWN IS NOT A CYLINDER. Pick the height first, then taper the radius toward the apex:
+          // sampling a constant 0.25-0.93 of the crown radius at ALL heights hung bundles ~8 m off the
+          // trunk at the very TOP of the tree, where the crown has already closed to a point — a scatter
+          // of detached foliage puffs in open sky with nothing behind them (S1-before/shot-12-up.png,
+          // and the same puffs at golden hour in shot-18-up.png). `1 - 0.78 t^2` keeps the mid and lower
+          // crown full-width, so canopy closure is untouched, and pulls the apex in to ~a fifth.
+          // ...and it does not reach the rim either. At 0.93 of the crown half-width a bundle's own 1.4 m
+          // radius pokes THROUGH the leaf mass, so from below the treeline it reads as a compact ball of
+          // foliage alone in the sky (S2b/shot-12-b-eye.png, above the ridge). 0.80 keeps the whole bundle
+          // inside, and `rim` shrinks the outermost ones on top of that — a tuft at the edge of a crown is
+          // small in nature, and a small stray reads as a branch tip instead of a floating object.
+          const t = drng(), prof = 1 - 0.85 * t * t, rn = 0.20 + drng() * 0.60, rim = 1.20 - 0.45 * rn;
+          const a = drng() * Math.PI * 2, rr = Hc * cw.r * prof * rn;
+          const bs = cw.bs * scale * rim * (0.62 + drng() * 0.60);
+          E.set(drng() * 6.2832, drng() * 6.2832, drng() * 6.2832); Qt.setFromEuler(E);   // fully random orientation — a bundle is never a clone of its neighbour
+          P.set(x + Math.cos(a) * rr, y + Hc * (cw.y0 + t * (cw.y1 - cw.y0)), z + Math.sin(a) * rr);
+          S.set(bs * (0.82 + drng() * 0.36), bs * (0.74 + drng() * 0.50), bs * (0.82 + drng() * 0.36));
+          M.compose(P, Qt, S);
+          const bd = 0.70 + drng() * 0.30;   // bundles hang inside the crown's shade: they read DOWN from the tree's tint, never up
+          C.setRGB(cr * bd, cg * bd, cb * bd);
+          this.canopy[(drng() * 3) | 0].add(M, C);
+        }
+      }
     }
     // ---- forest understory (see _buildUnderstory). Scanned over the Whisperwood's bounding box only —
     // a whole-map grid here would add ~110 k biomeBlend calls to boot for a layer that exists in one region.
-    if (this.understory) {
+    if (this.understory || this.moss) {
       const F = BIOMES.forest, x0 = F.cx - RL_EDGE, x1 = F.cx + RL_EDGE, z0 = F.cz - RL_EDGE, z1 = F.cz + RL_EDGE;
       for (let gx = x0; gx < x1; gx += 6) for (let gz = z0; gz < z1; gz += 6) {
         const x = gx + (rng() - 0.5) * 6, z = gz + ((((gx / 6) | 0) & 1) ? 3 : 0) + (rng() - 0.5) * 6;
@@ -978,9 +1173,53 @@ export class Vegetation {
         const bu = B(x, z); if (bu.id !== 'forest' || bu.w < 0.22 || inLandmark(bu, x, z)) continue;
         // clumped, never a carpet: the point is patches of bracken between bare duff, not a second lawn
         const clump = smoothstep(0.34, 0.72, 0.5 + 0.5 * fbm(x * 0.021, z * 0.021, { octaves: 3, seed: 57 }));
+        const road = (terrain.roadAt?.(x, z) ?? 0) > 0.35;
+        const y = terrain.heightAt(x, z), slope = terrain.slopeAt(x, z);
+        const bad = road || y < wl + 0.4 || slope > 0.42;
+        // MOSS SHEETS, on the ANTI-clump: moss takes the damp shaded floor the bracken is NOT standing on,
+        // so the two layers interlock instead of stacking, and the bare duff between clumps stops existing.
+        // Banks steeper than ~17 deg are skipped (roots and washout, not a moss bed); the rest lie ON the
+        // slope, aligned to the terrain normal below.
+        // A 6 m lattice can hold at most one sheet per 36 m², which measured 18 instances in frame — a
+        // rounding error, not a surface (tools/out/L5-a2-forest, moss [1453, 18]). Moss grows in PATCHES,
+        // so an accepted cell drops 2-4 overlapping sheets inside ±2.4 m: the coverage that makes it read,
+        // the clumping that keeps it from being a lawn, and the same one draw call.
+        if (this.moss && !bad && slope < 0.30 && drng() < 0.60 * (1.15 - clump) * bu.w) {
+          const nM = 2 + ((drng() * 3) | 0);
+          for (let k = 0; k < nM; k++) {
+            const mx = x + (drng() - 0.5) * 4.8, mz = z + (drng() - 0.5) * 4.8;
+            const my = terrain.heightAt(mx, mz); if (my < wl + 0.4) continue;
+            const ms = 0.8 + drng() * 1.4;
+            // LIE ON THE GROUND. A horizontal 2.8 m card on a 15 deg bank sinks 0.4 m in at the uphill edge
+            // and floats 0.4 m off at the downhill one — the flat-card version of a decal with no projection.
+            // Align to the terrain normal first, then spin about it, so the sheet follows the slope.
+            terrain.normalAt(mx, mz, Nv);
+            Qt.setFromUnitVectors(UPV, Nv).multiply(Qs.setFromAxisAngle(UPV, drng() * 6.2832));
+            P.set(mx, my + 0.035, mz); S.set(ms * (0.85 + drng() * 0.4), 1, ms * (0.85 + drng() * 0.4)); M.compose(P, Qt, S);
+            // SATURATE THE COLOUR, CAP THE VALUE — and here that is not a slogan, it is the whole bug.
+            // card_moss is a HANGING DRAPE asset (ASSETS.md: fen snags): pale sage-grey strands, almost
+            // no chroma of its own. The first tint was near-neutral (channel ratio 0.72/1.00/0.89 at
+            // value ~0.79), so the surface had nothing to hold a hue with and simply took the colour of
+            // whatever lit it — under a closed canopy that is blue-violet sky fill, and the layer read as
+            // pale blue-grey rags stapled to the duff (S1-before/shot-12-floor8.png, the patches around
+            // the near trunk). Value HIGHER than the floor it sits on plus no hue = a light blob, which
+            // is the same disease as the meadow's white blobs one stop down.
+            // 0.34/0.86/0.46 is a real moss green with the chroma to survive a blue fill, and the value
+            // is now BELOW the duff instead of above it: damp shaded ground, not a sticker. Albedo only,
+            // no emissive, max channel <= 0.85.
+            // Blue stays LOW on purpose. The light reaching a horizontal card under a closed canopy is
+            // mostly blue-violet sky fill, so a tint with blue anywhere near green hands the surface's hue
+            // straight to the fill and the floor goes cyan (S2a/shot-12-a-floor8.png, first tint pass).
+            // 0.40/0.92/0.32 is warm forest green with enough chroma to win that argument.
+            const mg = 0.58 + drng() * 0.32, tq = drng() * 0.14;
+            C.setRGB(mg * (0.40 - tq * 0.5), mg * 0.92, mg * (0.32 + tq));   // tq: a few patches drift teal, the region's accent
+
+            this.moss.add(M, C);
+          }
+        }
+        if (!this.understory) continue;
         if (rng() > 0.62 * clump * bu.w) continue;
-        if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
-        const y = terrain.heightAt(x, z); if (y < wl + 0.4 || terrain.slopeAt(x, z) > 0.42) continue;
+        if (bad) continue;
         const s = 0.55 + rng() * 1.45, lean = 0.22;                                  // 0.55-2.0 m: the size spread the grass card cannot have
         E.set((rng() - 0.5) * lean, rng() * Math.PI * 2, (rng() - 0.5) * lean); Qt.setFromEuler(E);
         P.set(x, y - 0.06 * s, z); S.set(s * (0.8 + rng() * 0.5), s, s * (0.8 + rng() * 0.5)); M.compose(P, Qt, S);

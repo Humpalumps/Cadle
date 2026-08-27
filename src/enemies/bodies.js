@@ -1,11 +1,18 @@
 import * as THREE from 'three';
 import { Rig, prim, makeLeg, stepLegs, plantLegs, chainWave, aimAt, relaxBone, aimBone, damp } from './rig.js';
+import { glbAnimator } from './glbAnim.js';
+import { GLB_CFG } from './glbBody.js';
 
 /**
  * Procedural bodies: one entry per type { build() -> rig asset, setup(e) -> per-instance anim state, animate(e, dt, t, A) }.
  * All parts authored in root space (Y up, +Z forward, root at the feet / ground contact; flyers: root at body center).
  * Bind pose = identity bones. Animations are pure procedural: sine/IK/foot planting on THREE.Bone hierarchies.
  * A = { eye:Vector3 (player eye), heightAt(x,z) }
+ *
+ * Twelve of the thirteen also have a RIGGED-GLB variant (`BODIES[name].glb`, bottom of this file): same
+ * { setup, animate } contract, driving a Tripo skeleton whose bind pose is NOT identity. The procedural entry
+ * is never removed — it is the fallback and the normalisation reference. See the RIGGED GLB VARIANTS block
+ * at the bottom of this file; the per-model config itself lives in glbBody.js's GLB_CFG.
  */
 const ease = (s) => s * s * (3 - 2 * s);
 const pulse01 = (t, f) => Math.sin(t * f) * 0.5 + 0.5;
@@ -1250,3 +1257,27 @@ const sprite = {
 };
 
 export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent, frostwolf, treant, riftling, sprite };
+
+/* ================================================================ RIGGED GLB VARIANTS
+ * docs/CREATURE-PIPELINE.md: monsters are rigged GLBs now, architecture stays procedural. Nothing above this
+ * line changed. Every procedural body is still built at boot and is still the FALLBACK — a missing or failed
+ * /assets/creatures/<name>.glb resolves to null in game.assets and Enemies.init keeps the procedural asset —
+ * and it is also what supplies the bounding box the GLB is normalised against (src/enemies/glbBody.js), which
+ * is how def.radius/height/center, the standoff ring, hover height and def.scale survive the swap untouched.
+ *
+ * The GLB variant is a second ANIMATOR on the same { setup, animate } contract; the geometry/skeleton come from
+ * glbBody. Enemy's constructor picks `(rigged && BODIES[name].glb) || BODIES[name]`, where `rigged` is the
+ * flag glbBody stamps on the asset.
+ * `wisp` deliberately has none (user decision): it is a glow orb made of emissive prims + orbiting shards, not
+ * a mesh, and there is nothing a scanned body would add to it.
+ */
+
+// One animator per configured body, profile straight off glbBody's GLB_CFG — that table is the single source
+// of truth for "what shape is this rig" (it also carries the yaw, the leg-group classification and the
+// headBone for the two rigs Tripo gave no Head chain), and duplicating it here is how the two halves drift.
+// No per-creature `tuning` override: glbAnim's TUNE already differentiates quadruped/biped/flyer/hover/serpent,
+// and a per-creature number that has never been looked at on screen is a guess wearing a constant's clothes.
+// Add one — glbAnimator(cfg.profile, { legSwing: ... }) — when a screenshot says a specific creature reads wrong.
+// `wisp` has no GLB_CFG entry, so it never gets a .glb animator; `wayfinder` has one but no procedural body yet,
+// hence the BODIES guard.
+for (const [name, cfg] of Object.entries(GLB_CFG)) if (BODIES[name]) BODIES[name]['glb'] = glbAnimator(cfg.profile);

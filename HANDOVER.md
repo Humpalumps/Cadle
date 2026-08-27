@@ -9,13 +9,22 @@ Repo: `https://github.com/Humpalumps/Cadle` · branch `main` · everything below
 
 ---
 
-## 0. WHERE THE CAMPAIGN IS RIGHT NOW (2026-08-27) - READ THIS BEFORE ANYTHING ELSE
+## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
-The user asked for a Destiny-2-quality pass over the whole game, broken into the smallest judgeable
-pieces, built by fan-out sub-agents, judged by fresh-context critics on the RUNNING GAME, looping
-until the critics are genuinely wowed. Four waves are done. **Work in this worktree; its dev server
-is `http://127.0.0.1:5179/`** (5173 is the main checkout - measuring it is the classic wrong-tree
-trap, see 4a-bis).
+> **Last updated 2026-08-27, mid-session, WHILE WAVE 5 IS RUNNING.** If you are a fresh agent picking
+> this up cold, everything you need is in this section. Work in this worktree; its dev server is
+> **`http://127.0.0.1:5179/`** (5173 is the MAIN checkout - measuring it is the classic wrong-tree
+> trap, see 4a-bis). **Keep this section current as you go: the user is near a usage limit and a
+> replacement agent gets this file and nothing else.**
+
+### The method the user asked for (keep using it)
+
+Break work into the smallest judgeable pieces; fan out sub-agents with strictly owned files
+(`CLAUDE.md` has the table); a **fresh-context critic inspects the RUNNING GAME**, never a builder's
+summary, and is harsh; the critic compares blind against real Destiny 2 / FF14 and names the single
+biggest gap when ours loses. **No fixed number of rounds - loop until the critics are genuinely
+wowed.** Between major waves, one fresh agent plays the whole thing end to end and judges it as ONE
+experience. The user is usually away: **act, do not ask.** Report what you did and what you measured.
 
 ### Wave scoreboard (fresh critics, blind vs the real Destiny 2 / FF14)
 
@@ -32,59 +41,250 @@ trap, see 4a-bis).
 | void | 4 | 5.5 | 5 | 5.5 |
 | vale | 6.5 | 7 | 5 | 6 (TOSSUP) |
 
-Average 3.9 -> 5.7 -> 5.2 -> **5.8**. Nothing is at the bar yet. Verdicts with per-finding evidence:
-`tools/out/wave{1,2,3,4}-summary.txt` and `wave{1,2,3,4}-verdicts.json`; screenshots in
-`tools/out/crit{1,2,3,4}-<region>*/`. Wave 4 closed with a **full GATE PASS** (blobcheck clean 88
-frames at q=high and q=low, jitter clean, pointer lock engage + re-acquire) and curvecheck OK.
+Average 3.9 -> 5.7 -> 5.2 -> **5.8**. Nothing is at the bar. Per-finding evidence:
+`tools/out/wave{1,2,3,4}-summary.txt`, `wave{1,2,3,4}-verdicts.json`, screenshots in
+`tools/out/crit{1,2,3,4}-<region>*/`. Wave 4 closed with a **full GATE PASS** and curvecheck OK.
 
-### THE BIG ROUTE CHANGE - monsters are rigged GLBs now
+### THE FOUR SYSTEMIC FAULTS behind every wave-4 LOSE (this is what wave 5 is fixing)
 
-The user saw the procedural reconstruction output and rejected it ("those models are terrible ...
-they aren't even close to the glb sample"). **`docs/CREATURE-PIPELINE.md` is now the definitive
-process and must be read before touching a creature or an NPC.** Summary:
+Reading all ten wave-4 verdicts together, the same four causes repeat in ten places. **Wave 5 is
+therefore organised by CAUSE, not by region** - which also makes it file-disjoint and parallelisable,
+because per-region work all lands in the same few single-owner files.
 
-- **Monsters/NPCs:** concept (Magnific) -> Tripo `image_to_model` (v3.1, detailed) -> Tripo
-  `animate_rig` -> Tripo `animate_retarget` for locomotion -> `node tools/optimize-creature.mjs`
-  -> `public/assets/creatures/*.glb` -> `game.assets`.
-- **Architecture stays procedural** - parametric mouldings and exact repetition win across ten
-  landmarks. `docs/ORNAMENT-STANDARD.md` is the bar there (and explains why landmarks kept scoring
-  4-6: we kept fixing the 200 m silhouette and never built the 40 m ornament or the 8 m material).
-- `tools/invariants.mjs` rule (n) allows `/assets/creatures/*.glb` from `Assets.js` or `src/enemies/`
-  and **fails the build for a `.glb` anywhere else**, so architecture cannot quietly follow.
-- **Gotcha that reads as a dead end:** `animate_rig` MUST get `model_version: "v2.0-20250506"` or
-  newer. The default v1.0 returns `error_code 1004` with zero credits - indistinguishable from
-  "unriggable".
-- **`python3` did not exist on this box** and every img2threejs doc command starts with it, which is
-  why earlier builders silently hand-rolled primitives. Shimmed at `C:/Users/ianca/bin/python3`
-  (and `python3.cmd` for PowerShell); user PATH updated, `python` untouched.
+1. **Landmarks are greybox.** No carved ornament, no material truth. 8 of 10 regions. The fix is the
+   shared ornament library in `Props.js` (`docs/ORNAMENT-STANDARD.md`): flute / moulding / dentils /
+   coffer / relief / gold-trace / weather. **This is the wave headline.**
+2. **The near field is a featureless smear** at 2-25 m (shadowfen, lost, infernal slopes, sunken
+   bedrock) and there is no macro relief (dragon). Terrain lane.
+3. **Noon identity fails** - void reads as a purple alpine valley, infernal shows blue sky and white
+   cumulus, the mountain ring wears snowcaps inside the fire region. Sky lane (+ ring splat).
+4. **Gold renders black-brown and aether washes to white.** Both are the same missing piece: metal
+   with no environment to reflect goes black, and an uncapped aether clips to white. Lighting lane.
 
-### WHAT IS DONE vs WHAT IS NEXT
+### RUNNING RIGHT NOW: the wave-5 JUDGE phase (`wf_e10788fa-a48`)
 
-**Done:** 9 creatures generated, rigged, optimised and staged in `public/assets/creatures/`
-(8.8 MB, one mesh each, joints 34-101). Hound has a verified walk clip. Crowd cost measured.
-Blob decree: all three wave-3 violations fixed at root; wave-4 critics found ONE more (dragon melee),
-traced to `VFX.flash()` firing a PointLight ~1 m from the camera, fixed with a near-camera fade in
-the shared function and verified `BLOBCHECK PASS`.
+Fired 2026-08-27 from `tools/out/wave5-judge-workflow.js`. Ten fresh region critics (each pre-loaded
+with its own wave-4 findings so it reports whether they were actually CLOSED), an ANIMATION
+inspect-and-fix lane backed by `tools/animcheck.mjs` (the only agent there allowed to edit source,
+and only under `src/enemies/`), and **the whole-game coherence agent that plays it end to end**. It
+writes `tools/out/wave5-summary.txt` and `wave5-verdicts.json` in the wave-4 format.
+**Until it finishes, every score on `progress.html` is a WAVE-4 number** - wave 5 was built but not
+judged, which is why nothing appeared to improve.
 
-**NEXT, in order:**
-1. **Wire the 9 creature GLBs into the game.** `Assets.js` needs GLB loading (GLTFLoader + meshopt
-   decoder, both already in `node_modules/three`), `src/enemies/` needs to consume them instead of
-   the procedural bodies, keeping the `BODIES` entry points, bone-driven animate hooks, LOD ladder
-   and `Enemies.warm()`. **Nothing is wired yet - the GLBs are on disk and unused.**
-2. **Fix the two known optimiser issues** (doc has them): simplify ratio is computed pre-weld so
-   every model is 1.3-5x over its tier target; and prune the 101/94/82-joint skeletons to ~30.
-   Do the prune at conversion time - retrofitting 13 creatures later is miserable.
-3. **4 creature bodies still need concepts + models:** warden, serpent, giant, wisp. Concepts for
-   warden/serpent/giant were generating when the session ended; **wisp should probably stay
-   procedural** - it is a glow orb, not a mesh.
-4. **Wave 5** (was about to launch): region loop-backs on everything still LOSE, the creature
-   integration above, and a **fresh coherence agent that plays the whole game end to end and judges
-   it as ONE experience** - that has never been done and the user asked for it between major waves.
-5. **Performance is a DEFERRED dedicated pass** (user call, 4m) - do NOT gate waves on it.
+### WHAT LANDED THIS SESSION
+
+- **`creature-glb-integration`** (`wf_6dc753f5-91b`) - **LANDED, 8 agents, 0 errors.** All 12 creature
+  GLBs preload through `game.assets` (7.91 MiB, 73/73 assets in ~4.3 s, not the boot critical path);
+  `glbBody.js` + `glbAnim.js` created with a runnable offline check
+  (`node tools/out/glbbody-check.mjs` -> 13/13 rigs); 21 enemy types resolve to a GLB asset; one
+  SkinnedMesh / one material / 3 textures each = **1 draw call per creature**.
+- **`wave5-builders`** (`wf_e0b17042-114`) - **LANDED 2026-08-27, 12 agents, 0 errors.** Six file-owned lanes, one systemic fault each, each
+  followed by its own self-check pass that must screenshot and fix what it sees:
+  `Props.js` (ornament) | `Terrain.js`+kernel (near field, ring splat) | `Sky.js` (noon identity) |
+  `Lighting.js` (metal/aether/aerial perspective) | `Vegetation.js` (canopy cards) | `Water.js`
+  (the sunken staircase-of-water shot, foam, fen murk).
+
+Both persist their scripts under
+`~/.claude/projects/<proj>/<session>/workflows/scripts/*.js`; resume with
+`Workflow({scriptPath, resumeFromRunId})`. Per-agent returns are in each run's `journal.jsonl`.
+
+### BUILD HEALTH (verified by the orchestrator after wave-5 builders landed)
+
+`node tools/invariants.mjs` -> all OK. Game boots at q=high with **ZERO page errors**, **21 enemy
+types on GLB assets**, **298 draw calls / 3.33 M tris** (budget: <=350 / <=4 M).
+A `vUv : undeclared identifier` shader error in the Props floor-sigil rework was live mid-wave and
+the Props lane's own self-check fixed it. Kept here as a standing trap: **in three r185 the map
+varying is `vMapUv` - plain `vUv` does not exist unless something declares it**, so an
+`onBeforeCompile` injection that uses `vUv` compiles nowhere.
+
+### THE CREATURE ROUTE - monsters and NPCs are rigged GLBs (architecture stays procedural)
+
+The user rejected the procedural reconstruction output ("those models are terrible ... they aren't
+even close to the glb sample"). **`docs/CREATURE-PIPELINE.md` is the definitive process** and must be
+read before touching a creature or an NPC. concept (Magnific) -> Tripo `image_to_model` -> Tripo
+`animate_rig` -> Tripo `animate_retarget` for locomotion -> `node tools/optimize-creature.mjs` ->
+`public/assets/creatures/*.glb` -> `game.assets`. `tools/invariants.mjs` rule (n) allows
+`/assets/creatures/*.glb` from `Assets.js` or `src/enemies/` and **fails the build for a `.glb`
+anywhere else**, so architecture cannot quietly follow.
+
+**Tripo version audit (2026-08-27), so nobody re-derives it:** the authoritative `model_version` enum
+lives in the Tripo MCP tool schema, not the docs site (which renders empty). Newest is
+**`v3.1-20260211`** and that is what we use, at `geometry_quality: detailed` /
+`texture_quality: detailed` / `face_limit: 60000` / `pbr: true`. There is no v3.5. Rig side,
+`v2.0-20250506` resolves server-side to `v2.5-20260210`. **Deliberately NOT used:**
+`orientation: "align_image"` (would lock the model to our three-quarter concept camera),
+`quad: true` (topology we would immediately triangulate, and `simplify` dissolves its edge loops
+anyway), `auto_size` (redundant - we normalise to the procedural body's bind box).
+**THE TRAP that reads as a dead end:** `animate_rig` MUST get `model_version` or it returns
+`error_code 1004` with zero credits, which is indistinguishable from "unriggable".
+
+### THE BESTIARY AS IT STANDS - 13 creatures + 1 NPC, all on tier
+
+`public/assets/creatures/`. One mesh + one material each, so **one draw call each**.
+
+| creature | tris | joints | MB | notes |
+|---|---|---|---|---|
+| treant | 15,000 | 32 | 1.06 | +walk/idle/run clips staged |
+| golem | 14,973 | 30 | 0.88 | +clips |
+| sentinel | 15,000 | 28 | 0.97 | +clips |
+| warden | 15,000 | 20 | 0.84 | NEW batch 2, +clips, critic 5/10 |
+| giant | ~15,000 | - | 0.73 | NEW batch 2, critic 6/10, NO clips (see below) |
+| hound | 10,000 | 40 | 0.79 | was 101 joints, +clips |
+| drake | 10,000 | 52 | 0.84 | +clips |
+| wraith | 10,000 | 37 | 0.74 | was 94 joints, +clips |
+| frostwolf | 9,992 | 30 | 0.75 | +clips |
+| riftling | 10,000 | 45 | 0.69 | +clips |
+| serpent | ~10,000 | - | 0.69 | NEW batch 2, critic 7/10, NO clips |
+| sprite | 4,606 | 27 | 0.40 | +idle/walk |
+| wayfinder (NPC) | 15,000 | 23 | 0.68 | NEW - replaces the vale blocker's "flat face slab" |
+
+**wisp stays PROCEDURAL by user decision** - it is a glow orb, not a mesh.
+
+**Both batch-1 optimiser issues are CLOSED (2026-08-27).** (1) The simplify ratio was computed from
+`count()` evaluated *before* `weld()` in the same transform chain; a Tripo export is non-indexed so
+the base read ~2x high and everything shipped 1.3-5x over tier. Weld now runs in its own pass and
+simplify iterates to convergence. (2) `tools/creature-joints.mjs` prunes skeletons at conversion
+time - keeps every `tripo::*` structural joint, everything carrying >=1.2% skin weight and their
+ancestors, folds dropped joints' weights into the nearest kept ancestor and re-parents children with
+the matrix composed, so every surviving bone's world bind pose is bit-identical and the inverse bind
+matrices are a plain row subset. It is animation-aware: when clips are present it only drops LEAF
+joints, because folding a dropped joint's rest transform into a child would silently invalidate any
+channel writing an absolute local T/R/S to that child.
+
+**Baked locomotion landed**: 29 clips over 10 creatures via `tools/creature-anims.mjs fetch|merge`
+(~390 credits). Verified: clips survive decimation, root motion is ~0.01 units (Tripo bakes in
+place, so a clip cannot fight the AI-driven `root.position`), +0.2 MB per creature.
+**Staged at `tools/out/anims/*.glb`, NOT yet swapped into `public/assets/creatures/`** - deliberately,
+because the integration workflow was consuming those files. **Swapping them in and wiring an
+AnimationMixer that blends idle/walk/run by `e.speedN` is the next creature job.** Attacks, stagger
+and death stay PROCEDURAL by decree (a baked clip cannot be cut off mid-swing, and attack timing has
+to line up with damage windows and telegraph frames).
+
+**serpent and giant have no reachable rig task id** - the batch-2 forge only persisted
+`warden-rig.json` - so they cannot get retargeted clips and run on procedural animation. That is
+acceptable (a serpent is a `chainWave`; a slam boss attacks procedurally anyway).
+**ALWAYS write `<name>-rig.json`.** Recorded ids: `tools/out/assetgen/creatures/rig-tasks.txt`.
+
+**What every batch-2 critic independently said**, and it is a MATERIAL-stage fix, not new art:
+surfaces read as glossy vinyl, and the gold filigree arrives as desaturated beige. The fix is a
+roughness floor plus an albedo saturate/darken on the accent, in `src/enemies/materials.js`.
+
+### THE ANIMATION GATE (new 2026-08-27, user ask: "proper inspection and fix of animations")
+
+`node tools/animcheck.mjs [--types a,b,c] [--calibrate]`. It is now **gate 2b in the CLAUDE.md
+sign-off** and must exit 0 for any creature you touched. It does NOT judge pixels: it reads the live
+bone hierarchy while the AI drives the creature and fails on T-pose (never leaves bind),
+frozen-while-moving, foot slide (limb rotation per metre travelled), moonwalking (facing vs
+velocity), sunk/hovering feet (lowest bone Y vs `terrain.heightAt`), size mismatch vs
+`def.height * def.scale`, dead idle, flat attack, and a death that never plays. Screenshots are
+captured only to show WHY a number failed. **Thresholds in its `LIMITS` block are orchestrator-owned
+- run `--calibrate` to read the numbers, never widen one to turn a red build green.**
+**CALIBRATED AND PASSING 2026-08-27: 23/23 clean** (`tools/out/animgate/anim-report.json`). That is
+the first mechanical proof the bestiary actually animates: no T-poses, no foot slide on any walker,
+no sunk or hovering feet, no moonwalking, sizes correct, every attack animates or telegraphs, every
+death plays. Sample numbers for a healthy creature (hound): facing 1.00, groundGap -0.054 m,
+limbPerMetre 7.45, bindDelta 0.71 rad.
+
+**Calibration corrected three false-positive classes in the gate itself - do not reintroduce them:**
+(a) FOOT SLIDE is walker-only; the first full run failed exactly five creatures and all five were
+flyers (wisp, imp, drake, skyserpent, leviathan) - a serpent has no legs and a wisp is a glow orb.
+Flyers and limbless bodies get a RAILS check on whole-body deformation instead. (b) FLAT ATTACK
+compares against IDLE, not against locomotion - a melee creature attacks from its standoff ring with
+its legs planted, so locomotion is the wrong comparand and it failed a hound whose attack was fine.
+(c) An attack counts as animated if it moves bones **OR** raises `e.telegraph` - a wisp/imp
+telegraphs with emissive and scale, not with its skeleton, and a bone-only gate called it flat for
+doing exactly what it was designed to do.
+
+### CREATURE ANIMATION - what the user found by eye, all four fixed, one thread still open
+
+**The general lesson, which is now written up properly in `docs/CREATURE-PIPELINE.md` ("TWO BUG
+CLASSES THE USER FOUND BY EYE THAT EVERY GATE MISSED"): a 23/23 gate PASS meant the creatures
+animated CORRECTLY, not WELL.** Every fault below was invisible to every metric we had and obvious to
+a person looking at the game for ten seconds. Read that section before wiring any new creature.
+
+1. **Swaying/jittering on the spot - FIXED.** `Enemy.js` rate-limits `_animate` by camera distance and
+   HOLDS the pose between updates rather than interpolating, while `_move` keeps gliding the root
+   every frame. Full-rate animation ended at **12 m**. Measured per-frame bone delta at 20 m was
+   `0.107 0.001 0.107 0.001` - every other frame held. Bands widened to full rate < 30 m, every 2nd to
+   50 m, 3rd to 110, 6th to 220; affordable because the joint prune cut hound 101 -> 40 and wraith
+   94 -> 37. Verified `_animate` now runs 60/60 rendered frames at lod 0.
+2. **A membrane tearing between the hound's tail and its right hind leg - FIXED.** `chainWave()` ramps
+   amplitude per segment (`amp * (0.6 + i*0.3)`) and those rotations SUM down the chain. Tuned against
+   3-bone procedural tails (sum 2.7); Tripo hands back 6 (hound) and 7 (riftling), i.e. sums 8.1 and
+   10.5, so the tail curled ~120 degrees into the haunch. Normalised by chain length INSIDE `wave()`
+   in glbAnim.js, which fixed the aux-chain caller for free. **Cleared the joint prune of causing it**
+   by measuring skin influence spread before/after: the prune IMPROVED it (hound 8.03% of verts with
+   influences >0.35 m apart -> 0%).
+3. **"A light glow which bulges as he moves" - FIXED.** A GLB body has `vGlow` 0 everywhere (no aGlow
+   attribute), so `uRim` was not picking out crystals as it does on a procedural body - it lit the
+   WHOLE silhouette, and the time `pulse` in materials.js made it breathe. `GLB_RIM_MAX` 0.75 -> 0.30.
+   A rigged creature's aether read must come mostly from its albedo.
+4. **"The movement of the 4 legs is a bit off" - FIXED.** Phasing was already correct (`off =
+   (front === left) ? 0 : PI` is a proper diagonal trot, FL+HR / FR+HL) and `boneAxes` correctly maps
+   world axes into each bone's parent frame, so mirroring was fine too. It was pure AMPLITUDE:
+   `legSwing 0.55 * (0.10 + 0.90*sp)` gives ~10 degrees of hip swing at patrol speed and ~31 flat out,
+   where a real quadruped swings 45-60. Now `0.92 * (0.34 + 0.66*sp)`. Verified visually against a
+   12-frame gait contact sheet (`tools/out/houndrun2/gait-sheet.png` vs the before at
+   `tools/out/houndrun/gait-sheet.png`).
+
+**STILL OPEN - flyers strobe.** After the band fix `tools/out/animfull2` still failed
+`hound, sprite, skyserpent, magmagolem, leviathan, riftling` on STEPPED POSE, and riftling's reading
+is unambiguous: **50% of frames held, alternating 100% of the time, at 19 m** - where `animEvery` is
+definitionally 1 and `_animate` was measured running every frame. So there is a SECOND rate limiter
+somewhere in the flyer/hover path (most of the failures fly), and it is not `Enemy.update`'s
+`animEvery`. Find it. The gate now also requires ALTERNATION as well as held frames, because a
+creature that damps to rest at its standoff ring is legitimately still and read 32% held at 4 m -
+settling is not strobing.
+
+### WHAT THE INTEGRATION REPORTED THAT MATTERS LATER (do not rediscover)
+
+- **`wayfinder.glb` is on disk but NOT referenced by `Assets.js`** - it was not in the contract's key
+  list. Add it when the NPC is wired (Props.js owns the Wayfinder).
+- **Invariants rule (n) matches a LITERAL path**, so the 12 model URLs in `Assets.js` are spelled out
+  one by one on purpose. A template like `` `/assets/creatures/${name}.glb` `` FAILS THE BUILD. Do not
+  "tidy" them into a loop.
+- **The ORM texture is bound twice per material** (roughnessMap AND metalnessMap), so the GPU warm
+  loop de-dupes with a Set - 36 unique textures for 12 creatures, not 72.
+- **Per-model facing had to be read, never assumed:** every upright Tripo model faces +X; the
+  quadrupeds and the serpent face +Z - EXCEPT the frostwolf, which is a quadruped facing +X. That is
+  the `yaw` column of `GLB_CFG`.
+- **Limb classification is shaky on some rigs and is worth a look** when animation quality is judged:
+  sentinel's legs classified as g0.**L** and g1.**R**; giant came back g0 L4 R1 / g1 L1 R4; wraith's
+  "16-joint limb" is really spine+arm+fingers on the midline; drake's WINGS are unnamed
+  `bone_30..38` / `bone_42..50` so they are not in the limb set at all; golem has no `Head_` chain
+  (its neck is `L1L_2`); serpent has NO spine and NO limbs, just a 9-joint tail; frostwolf's tail is
+  a single joint.
+
+### NEXT JOBS, in order
+
+0. **Read the wave-5 judge verdicts when `wf_e10788fa-a48` finishes** (`tools/out/wave5-summary.txt`),
+   update the scoreboard in this file and on `progress.html`, and run the correction loop on whatever
+   the critics call a blocker.
+1. **WIRE THE ANIMATION MIXER. This is the decisive next creature job** - it is what turns a smooth *procedural*
+   gait into a real retargeted walk cycle, and it is also what decides the Blender/Mixamo question
+   above. Five steps, and step 1 is the trap - see "THE MIXER JOB, concretely" above.
+2. **Find the SECOND pose rate limiter.** After the `animEvery` fix, `_animate` was measured running
+   60/60 frames at lod 0, yet `tools/out/animfull2` still failed
+   `hound, sprite, skyserpent, magmagolem, leviathan, riftling` on STEPPED POSE - riftling at
+   **50% held / 100% alternating at 19 m**. Most of those fly, so look in the flyer/hover path.
+   `node tools/animcheck.mjs` is the red test.
+3. **Wire the Wayfinder NPC** - `public/assets/creatures/wayfinder.glb` exists (15k tris, 23 joints,
+   walk/idle/run clips) but is not in `Assets.js`'s MODEL table and not consumed by `Props.js`.
+   Closes the vale blocker's "flat face slab, gold headphone discs" finding.
+4. **Fire the wave-5 judge phase** - the script is already written:
+   `Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })`. Ten fresh region critics each
+   pre-loaded with their own wave-4 findings, an ANIMATION inspect-and-fix lane, and **the whole-game
+   coherence agent that plays it end to end and judges it as ONE experience** - the user asked for
+   that between major waves and it has never been run. **Do not fire it against a half-written build.**
+5. **Fold `tools/animcheck.mjs` into `tools/gate.mjs`** so the animation gate runs with the others
+   instead of having to be remembered.
+6. **Performance is a DEFERRED dedicated pass** (user call) - do NOT gate waves on it. Current live
+   reading after wave 5: 298 draw calls / 3.33 M tris at q=high, inside the 350 / 4 M budget.
 
 ### Live asset accounts
-Magnific ~4,400 credits; Tripo ~4,785. `$TRIPO_API_KEY` is in the user environment - the REST API
-works, the Tripo MCP tools 401 in-session and need an app restart to pick the key up.
+Magnific ~4,400 credits. Tripo **~4,150** (`$TRIPO_API_KEY` is in the environment; the REST API works,
+the Tripo MCP tools 401 in-session and need an app restart to pick the key up). Creature payload
+~9.6 MB of a 40 MB budget.
 
 ## 1. The job
 

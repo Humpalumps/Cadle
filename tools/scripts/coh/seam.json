@@ -1,0 +1,10 @@
+[
+ {"wait":26},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(0,t.heightAt(0,-20)+1.7,-20);window.__game.setHour(13);return 'ok'})()"},
+ {"wait":2},{"look":[0,0.15]},{"shot":"s-on"},
+ {"eval":"window.__game.bypassPostfx(true);'ok'"},{"wait":1},{"shot":"s-off"},
+ {"eval":"window.__game.bypassPostfx(false);'ok'"},{"wait":1},{"shot":"s-on2"},
+ {"eval":"(()=>{const g=window.__game.game;const r=[];g.scene.traverse(o=>{});return JSON.stringify({pr:g.renderer.renderer?g.renderer.renderer.getPixelRatio():null, size:g.renderer.renderer?[g.renderer.renderer.domElement.width,g.renderer.renderer.domElement.height]:null});})()"},
+ {"eval":"(()=>{const l=window.__game.game.lighting; l.csm&&l.csm.lights?l.csm.lights.forEach(x=>x.visible=false):0; return 'shadowsoff'})()"},
+ {"wait":1},{"shot":"s-noshadow"}
+]

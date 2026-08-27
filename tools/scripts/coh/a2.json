@@ -1,0 +1,4 @@
+[{"eval":"JSON.stringify({html:document.body.innerHTML.slice(0,1200),canvases:[...document.querySelectorAll('canvas')].map(c=>({w:c.width,h:c.height,cls:c.className,id:c.id,z:getComputedStyle(c).zIndex,disp:getComputedStyle(c).display}))})"},
+{"eval":"JSON.stringify({g:typeof window.__game, keys:window.__game?Object.keys(window.__game):null})"},
+{"eval":"JSON.stringify(window.__game&&window.__game.state?window.__game.state():null)"},
+{"shot":"live"}]

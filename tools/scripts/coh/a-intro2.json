@@ -1,0 +1,16 @@
+[
+ {"wait":1.2},{"shot":"i01"},
+ {"wait":1.5},{"shot":"i02"},
+ {"wait":2.0},{"shot":"i03"},
+ {"wait":3.0},{"shot":"i04"},
+ {"wait":4.0},{"shot":"i05"},
+ {"wait":5.0},{"shot":"i06"},
+ {"wait":5.0},{"shot":"i07"},
+ {"eval":"JSON.stringify({run:!!window.__game.game?._running,armed:!!window.__game.intro?.armed})"},
+ {"wait":5.0},{"shot":"i08"},
+ {"wait":5.0},{"shot":"i09"},
+ {"burst":{"name":"warp","n":8,"interval":0.35}},
+ {"wait":3.0},{"shot":"i10"},
+ {"wait":4.0},{"shot":"i11"},
+ {"wait":6.0},{"shot":"i12"}
+]

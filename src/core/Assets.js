@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
  * Assets: central preloader for the generated assets in public/assets/ (see ASSETS.md).   (orchestrator)
@@ -7,12 +8,15 @@ import * as THREE from 'three';
  *
  * API (all safe when an asset is missing — returns null and the caller keeps its procedural fallback):
  *   game.assets.tex(name)            -> THREE.Texture (sRGB; terrain/bark repeat-wrapped, aniso 8) | null
+ *   game.assets.model(name)          -> THREE.Object3D (the loaded gltf.scene, NOT cloned) | null
  *   game.assets.sfxData(name)        -> ArrayBuffer | null   (raw mp3 bytes; decode via audioBuffer())
  *   game.assets.audioBuffer(ctx, n)  -> Promise<AudioBuffer> (decoded + cached per name)
  *   game.assets.deferred[name]       -> Promise, resolved when a DEFERRED (region-theme) fetch has landed in this.audio
  *   game.assets.progress             -> 0..1;  event 'assets:progress' {loaded, total, item} for the HUD load bar
  *   game.assets.loadMs               -> total preload wall time
  * Texture keys: grass_albedo cliff_strata forest_soil beach_sand snow ruins_stone bark leaf_card glyph1 glyph2
+ * Model keys (rigged creature GLBs, see docs/CREATURE-PIPELINE.md): hound frostwolf drake treant golem
+ *   sentinel sprite wraith riftling warden serpent giant   — src/enemies/glbBody.js consumes these.
  * SFX keys: shot-handcannon-1..4 shot-autorifle-1..4 shot-sniper-1..4 shot-shotgun-1..4 shot-pulse-1..4 shot-fusion-1..4 explosion-1..4
  * Music keys: field-theme night-theme + one per region: wood frost choir drums forge convergence fen deep void
  */
@@ -52,6 +56,21 @@ const TEX = {
   card_moss: { url: '/assets/tex/card_moss.png', repeat: false },
   granite_detail: { url: '/assets/tex/granite_detail.jpg', repeat: true },
 };
+// Rigged creature GLBs (concept -> Tripo generate+animate_rig -> local gltf-transform meshopt/webp -> here;
+// docs/CREATURE-PIPELINE.md). One mesh, one material, one primitive each = one draw call; rig-only, no clips.
+// Extensions used are EXT_texture_webp + KHR_mesh_quantization, BOTH native to three r185's GLTFLoader —
+// do not add a meshopt decoder or a KTX2Loader, nothing here needs one.
+// The URLs are spelled out rather than built from the key because tools/invariants.mjs rule (n) matches the
+// literal '/assets/creatures/<name>.glb' in code; a template would read as `${name}.glb` and fail the build.
+// warden/serpent/giant may not be on disk in every checkout — a missing one warns and stays null, exactly
+// like a missing texture, and src/enemies/ keeps its procedural body for that type.
+const MODEL = Object.fromEntries([
+  '/assets/creatures/hound.glb', '/assets/creatures/frostwolf.glb', '/assets/creatures/drake.glb',
+  '/assets/creatures/treant.glb', '/assets/creatures/golem.glb', '/assets/creatures/sentinel.glb',
+  '/assets/creatures/sprite.glb', '/assets/creatures/wraith.glb', '/assets/creatures/riftling.glb',
+  '/assets/creatures/warden.glb', '/assets/creatures/serpent.glb', '/assets/creatures/giant.glb',
+].map((u) => [u.split('/').pop().split('.')[0], u]));
+
 const AUDIO = {};
 for (const a of ['handcannon', 'autorifle', 'sniper', 'shotgun', 'pulse', 'fusion']) for (let i = 1; i <= 4; i++) AUDIO[`shot-${a}-${i}`] = `/assets/sfx/shot-${a}-${i}.mp3`;
 for (let i = 1; i <= 4; i++) AUDIO[`explosion-${i}`] = `/assets/sfx/explosion-${i}.mp3`;
@@ -74,7 +93,7 @@ for (const m of ['wood', 'frost', 'choir', 'drums', 'forge', 'convergence', 'fen
 export class Assets {
   constructor(game) {
     this.game = game;
-    this.textures = {}; this.audio = {}; this._decoded = {};
+    this.textures = {}; this.models = {}; this.audio = {}; this._decoded = {};
     this.deferred = {};   // name -> in-flight fetch for the region themes (not awaited by init; see AUDIO_DEFER)
     this.progress = 0; this.loadMs = 0;
   }
@@ -83,10 +102,11 @@ export class Assets {
     const t0 = performance.now();
     // one rendered frame — the intro's loading screen is driving rAF, so this is what lets the bar move
     const frame = () => new Promise((r) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
-    const total = Object.keys(TEX).length + Object.keys(AUDIO).length;
+    const total = Object.keys(TEX).length + Object.keys(MODEL).length + Object.keys(AUDIO).length;
     let loaded = 0;
     const tick = (item) => { loaded++; this.progress = loaded / total; this.game.events.emit('assets:progress', { loaded, total, item }); };
     const texLoader = new THREE.TextureLoader();
+    const gltfLoader = new GLTFLoader();
 
     const jobs = [];
     for (const [name, cfg] of Object.entries(TEX)) jobs.push(
@@ -99,6 +119,13 @@ export class Assets {
       .then((b) => { this.audio[name] = b; })
       .catch((e) => console.warn('[assets] audio missing:', name, e?.message));
     for (const [name, url] of Object.entries(AUDIO)) jobs.push(grabAudio(name, url).finally(() => tick(name)));
+    // Creature GLBs queued LAST for the same reason the region themes were pushed off the front (below):
+    // vite dev is HTTP/1.1, so 12 requests x ~700 KB issued first would sit on the six connections the
+    // loading screen's own textures are waiting for. Same total bytes either way — this just keeps the bar
+    // moving. They ARE in the critical set (nothing streams mid-game), so init still awaits them.
+    for (const [name, url] of Object.entries(MODEL)) jobs.push(
+      gltfLoader.loadAsync(url).then((g) => { this.models[name] = g.scene; })
+        .catch((e) => console.warn('[assets] model missing:', name, e?.message)).finally(() => tick(name)));
     await Promise.all(jobs);
     // Region themes start only NOW, after the critical set has landed. Firing them on the same tick still
     // took the boot off the critical path, but it left 13 MB competing for the same six connections as the
@@ -111,7 +138,18 @@ export class Assets {
     // was a single visible freeze right at the end of the asset phase, which is where the bar appeared
     // to hang. The awaits are all still inside init(), so nothing starts playing before the upload is done.
     const R = this.game.renderer;
-    const warm = [...Object.values(this.textures)];
+    // The creature GLBs go through the SAME batched loop, not a loop of their own: 12 models x 3 textures
+    // (Color / NormalGL / ORM) is more upload than the whole 2D set, and that is precisely the freeze this
+    // batching exists to prevent. A Set because the ORM map is bound twice per material (roughness AND
+    // metalness, the standard glTF packing) — uploading it once is enough.
+    const warmSet = new Set(Object.values(this.textures));
+    for (const scene of Object.values(this.models)) scene.traverse((o) => {
+      for (const mat of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!mat) continue;
+        for (const v of Object.values(mat)) if (v?.isTexture) { v.anisotropy = 8; warmSet.add(v); }
+      }
+    });
+    const warm = [...warmSet];
     // Sub-progress too: assets:progress is already pegged at 100% by the time the uploads start, so the
     // bar sat at exactly 55% through the whole warmup while hitching. Assets is the first system, so its
     // slot on the bar is done 0 -> 1; reporting a fraction of that keeps the line moving.
@@ -126,6 +164,8 @@ export class Assets {
   }
 
   tex(name) { return this.textures[name] ?? null; }
+  /** the loaded gltf.scene, NOT cloned — clone the scene AND its materials before mutating (ASSETS.md) */
+  model(name) { return this.models[name] ?? null; }
   sfxData(name) { return this.audio[name] ?? null; }
   /** decode (once) into an AudioBuffer; decodeAudioData detaches its input, so feed it a copy */
   audioBuffer(ctx, name) {

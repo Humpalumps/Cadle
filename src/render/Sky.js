@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BIOMES } from '../world/Biomes.js';
+import { BIOMES, ORDER, RING_IN, wedgeAt, centerOf } from '../world/Biomes.js';
 import { mulberry32 } from '../core/Noise.js';
 
 /**
@@ -69,6 +69,28 @@ const WIND = [0.93, 0.37];  // cloud drift direction (normalized-ish)
 const FOG_Y0 = 30, FOG_H = 140;
 // Haze luminance ceiling (see _refreshColors): knee + how much headroom is left above it.
 const FOG_KNEE = 0.80, FOG_HEAD = 0.22;
+
+// ---------------- the veil is TRANSMITTANCE, not a lerp weight ----------------
+// This is the whole of the noon-identity failure, and it is arithmetic, not taste. `skyVeil` was mixed
+// straight: at the Void's 0.84 that leaves 16% of the raw sky on the dome, and the raw noon sky is ~1.2 in
+// linear while the Void's own air is luminance 0.135 — so the leftover BLUE outweighed the region's murk
+// almost 2:1 and midday came out a pale lavender ("a purple alpine valley, not the void", wave-4 blocker).
+// Same sum over the Wastes at 0.92. A real smoke / peat-reek / void-murk lid passes a couple of percent, so
+// drive the RESIDUAL as a power of (1-v) with the exponent itself rising with v: a light canopy veil barely
+// moves, a genuine ceiling closes and the region's own air owns the dome at every hour — hardest at noon,
+// which is exactly where it was failing, without a time-of-day knob to drift out of sync.
+//   0.20 -> 0.21   0.24 -> 0.26   0.30 -> 0.34   0.42 -> 0.52   0.84 -> 0.97*  0.92 -> 0.97*
+// VEIL_MAX is the safety on the top end: 3% of the sky always survives, so a ceiling reads as a lit
+// overcast rather than as a painted-out dome, and the deck keeps something to sit in front of.
+const VEIL_MAX = 0.97;
+const veilOpacity = (v) => Math.min(VEIL_MAX, 1 - Math.pow(1 - v, 1 + 2 * v * v));
+// Reach of the DISTANT weather term (_farVeil): full lid by 320 m from a region's centre (= RL_EDGE, where
+// the camera-local veil takes over), nothing past 820 m. Weather is bigger than terrain — you see the lid
+// over a volcano long before you are standing under it.
+const FAR_CORE = 320, FAR_EDGE = 820;
+// Rec.709 luminance of a linear THREE.Color. Module scope, not a per-call arrow: _gradeFog and _farVeil both
+// run every frame, and a closure allocated in a hot path is exactly what the perf budget bans.
+const LUM = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
 THREE.ShaderChunk.fog_vertex = /* glsl */`
 #ifdef USE_FOG
 	float fogY1 = cameraPosition.y + dot( vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] ), mvPosition.xyz );
@@ -246,8 +268,8 @@ precision highp sampler3D;
 layout(location = 0) out highp vec4 oColor;   // GLSL3: no oColor alias (see NOISE3D_FRAG note)
 uniform sampler2D uLut, uNoise;
 uniform sampler3D uShape, uDetail;
-uniform vec3 uSunDir, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot, uBeltCol;
-uniform float uCamY, uCloudCover, uCirrusCover, uBelt, uCloudH0, uCloudH1, uWindT, uTileM, uSunEl;
+uniform vec3 uSunDir, uCloudLightDir, uCloudLightCol, uCloudAmbTop, uCloudAmbBot, uBeltCol, uFogColor;
+uniform float uCamY, uCloudCover, uCirrusCover, uBelt, uCloudH0, uCloudH1, uWindT, uTileM, uSunEl, uVeil;
 uniform vec2 uTan, uWindV, uShearV;
 uniform vec3 uCamPos, uThr;   // x = clear-sky iso threshold, y = full-coverage threshold, z = soft width
 uniform mat3 uCamRot, uPrevRotInv;
@@ -265,6 +287,12 @@ vec3 lutSky(vec3 d) {
   float v = 0.5 + 0.5 * sign(el) * sqrt(abs(el) / (0.5 * PI));
   return texture2D(uLut, vec2(az, v)).rgb;
 }
+// What the far distance of THIS region actually looks like. Aerial perspective inside the deck used to melt
+// every cloud into the raw atmosphere, so over the Wastes a bank at 20 km dissolved into clean blue and the
+// horizon read as a fair-weather day no matter what the dome did in front of it. Clouds hang IN the region's
+// air, so they have to converge on it. (uVeil/uFogColor are the shared uniforms the dome uses; the cloud pass
+// runs a frame ahead of _gradeFog, which is invisible next to the 0.03 easing on both.)
+vec3 airAt(vec3 d) { return mix(lutSky(d), uFogColor, uVeil * 0.85); }
 
 // weather map: x = local coverage, y = cloud type (0 = flat pancake, 1 = towering castle)
 vec2 weather(vec2 xz) {
@@ -372,7 +400,7 @@ void main() {
       vec2 wth = weather(uCamPos.xz + d.xz * (t0 + span * 0.35));
       if (wth.x > 0.005) {
         float sigE = 0.0075;
-        vec3 skyC = lutSky(d);
+        vec3 skyC = airAt(d);
         // perf: a coarse/fine empty-space skip was tried here and MEASURED SLOWER (82 -> 73 fps at 36 steps).
         // A dynamic hi flag makes the density fetch divergent, so every lane pays for both the shape and
         // the erosion tap, and the ragged loop keeps the warp alive longer than the uniform march does.
@@ -419,7 +447,7 @@ void main() {
     float cir = cov * 0.5 + fib * 0.32 + fib2 * 0.18;
     float ca = smoothstep(0.62 - uCirrusCover * 0.14, 0.88, cir) * smoothstep(0.008, 0.12, d.y) * 0.36;
     vec3 cc = uCloudLightCol * (0.40 + 0.20 * phase + fwd * 0.10) + uCloudAmbTop * 0.55;
-    cc = mix(cc, lutSky(d), 1.0 - exp(-tc * 1.1e-5));
+    cc = mix(cc, airAt(d), 1.0 - exp(-tc * 1.1e-5));
     acc += T * cc * ca; T *= 1.0 - ca;
   }
   oColor = vec4(acc, 1.0 - T);
@@ -496,9 +524,9 @@ void main() { vDir = position; vec4 p = projectionMatrix * vec4(mat3(viewMatrix)
 
 const DOME_FRAG = /* glsl */`
 uniform sampler2D uLut, uNoise, uClouds;
-uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow, uGlow, uCloudLightCol;
-uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil, uFogD;
-uniform vec2 uTan, uCloudTexel;
+uniform vec3 uSunDir, uMoonDir, uSunDisc, uMoonCol, uFogColor, uMoonGlow, uGlow, uCloudLightCol, uVeilFarCol;
+uniform float uTime, uHaze, uAurora, uStarVis, uPixAng, uVeil, uFogD, uVeilSun, uVeilFar;
+uniform vec2 uTan, uCloudTexel, uVeilFarDir;
 uniform mat3 uStarMat, uCamRot;
 varying vec3 vDir;
 const float PI = 3.14159265;
@@ -553,10 +581,56 @@ void main() {
   float limb = 1.0 - 0.35 * pow(clamp(ang / discR, 0.0, 1.0), 2.0);
   col += sunDisc * (0.7 * exp(-ang * ang / (2.0 * 0.035 * 0.035)) + 0.12 * exp(-ang / 0.25)) * sunUp;
 
+  // ---- how much of this pixel of sky is the region's own air, and WHOSE air is it ----
+  // uVeil is the lid where the CAMERA stands. uVeilFar is the lid over the region this bearing points at,
+  // and it is painted only in THAT azimuth and only low in the sky: a plume sits over its own volcano, it
+  // does not swallow the zenith or the half of the world behind you. Without it the approach through a pass
+  // photographs a fair-weather Vale sky directly over the Wastes — "blue sky and white cumulus over the fire
+  // region" (wave-4), because the whole grade followed the camera's feet and the camera was still 330 m out.
+  // The mask is a PLATEAU with soft edges, not a lobe. A cos²·exp falloff was tried first and it re-created
+  // the very bug this fixes: at 34 deg up it left the mix weight at 0.41, and 59% of a ~1.2-linear noon sky
+  // still owns the hue, so the frame photographed as blue sky with a slightly grubby tint. A lid is a LID —
+  // full strength across the region's angular width and from the horizon to ~35 deg, then handing back to the
+  // local sky by ~70 deg so the zenith and the half of the world behind you stay honest.
+  //   towards: full within ~53 deg of the region, gone past ~83 deg
+  //   d.y:     full below ~33 deg elevation, gone above ~72 deg
+  vec2 dh2 = normalize(d.xz + vec2(1e-5, 0.0));
+  float towards = max(dot(dh2, uVeilFarDir), 0.0);
+  float farM = smoothstep(0.12, 0.60, towards) * (1.0 - smoothstep(0.55, 0.95, d.y));
+  float farA = uVeilFar * farM;                        // the DISTANT lid's own opacity in this direction
+  float veil = max(uVeil, farA);
+  // Whose air is this pixel made of. Written as a share of the FAR term, not of veil: with no distant lid
+  // at all it is exactly 0, so uVeilFarCol — which is deliberately FROZEN while a plume eases out — can
+  // never leak into a region that has no plume. Continuous, so the plume's edge is a gradient, not a seam.
+  float farOwn = clamp((farA - uVeil) / max(farA, 1e-4), 0.0, 1.0);
+  vec3 airCol = mix(uFogColor, uVeilFarCol, farOwn);
+  // A LID IS NOT A PAINTED WALL — it scatters, and that is the whole difference between weather and a
+  // backdrop. Mixing toward ONE flat colour is what left the Void "a flat pastel lilac wash: no cloud form,
+  // no value hierarchy, the isles at 200 m barely separating from the sky behind them" (self-check
+  // 2026-08-27) — and raising the veil to 0.97 made it WORSE, because the 3% of raw sky that survives was
+  // carrying every scrap of structure the dome had left. So the region's own air gets the two things a real
+  // overcast has: a vertical value ramp (deep overhead where you look through the most of the lid) and a
+  // broad soft brightening where the sun sits behind it.
+  // Anchored at 1.0 for the first ~3.5 deg of elevation ON PURPOSE — that band is where a fully fogged ridge
+  // meets the sky, and the aerial-perspective match below has to land on exactly the terrain's fog colour
+  // there or the mint-paper-cutout bug comes straight back. Above it there is no terrain left to match.
+  // VALUE only, in the region's own hue, multiplying a haze whose luminance is <= 0.13 linear in every
+  // veiled region (peak here ~0.19, a sixth of the bloom threshold) — this cannot make a white ball.
+  // Faded in over veil 0.25..0.75, so the light canopy veils (tundra 0.26, lost 0.21) are untouched.
+  // Depth 0.45 and gated by sunUp: the ramp is a LID SCATTERING DAYLIGHT, so it belongs to the day. At 0.58
+  // ungated the Void still photographed as pastel-lilac milk ("a purple alpine valley, not the void") because
+  // the zenith never got far enough from the horizon band to read as depth; at night there is nothing to
+  // scatter and the dome is already near-black, so applying it there just crushed an abyss that was fine.
+  float lid = smoothstep(0.25, 0.75, veil);
+  vec3 airS = airCol * mix(1.0, mix(1.0, 0.45, smoothstep(0.06, 0.85, d.y) * sunUp), lid);
+  // the sun's place in the lid: the dome and the deck get it, the aerial-perspective match does not (it has
+  // to keep matching FogExp2 on the ridge). pow 4 = broad and soft; it is a glow, never a disc.
+  vec3 veilCol = airS + airCol * (0.45 * pow(max(mu, 0.0), 4.0) * sunUp * lid);
+
   // Smoke/reek ceiling (Biomes.skyVeil): point sources and curtains die FIRST under real smoke — long
   // before the sky colour goes. The gentler 1-v² left a legible starfield and a crisp moon over the
   // Wastes' 0.88 veil (wave-1 critic: "green aurora + starfield at night ... gives the region away").
-  float pv = clamp(1.0 - uVeil * 1.15, 0.0, 1.0); pv *= pv;
+  float pv = clamp(1.0 - veil * 1.15, 0.0, 1.0); pv *= pv;
 
   // ---- moon (phase-lit sphere: dark maria + crater mottling; radiance kept under bloom) + glow ----
   if (uMoonDir.y > -0.12) {
@@ -627,23 +701,36 @@ void main() {
   // veils the SKY; the deck then sits in front of it and must keep its structure.
   // Thickest at the horizon, thinner overhead — but only just: a ceiling is a CEILING, and the old 22%
   // overhead window kept the Wastes/Void domes reading as bright haze rather than weather.
-  col = mix(col, fogCol, uVeil * mix(1.0, 0.92, smoothstep(0.0, 0.80, d.y)));
+  col = mix(col, veilCol, veil * mix(1.0, 0.92, smoothstep(0.0, 0.80, d.y)));
   // The deck under a veil is not cumulus, it is the underside of the ceiling: hue forced to the region's own
   // smoke, VALUE spread around the haze by how lit each billow is (dark bellies ~0.4x, lit tops ~1.35x), so
   // it reads as weather instead of white puffs punching through hell. Normalising by the cloud light keeps
   // that spread independent of how bright the sun happens to be — the absolute cloud radiance is 10-30x the
   // haze in a veiled region, which is why a straight "pull toward fogCol" flattened it to nothing.
+  // The spread WIDENS with the lid (0.34/0.86 -> 0.22/1.15). Under a veil the deck runs at near-full cover,
+  // so shade is the only thing left carrying form, and at the old spread a full-cover ceiling flattened
+  // into one tone — the Void read as a smooth gradient with no billows at all. Darker bellies and brighter
+  // tops is what makes a ceiling read as weather. Ceiling check: the widest case is the forest (lid 0.56,
+  // the brightest air of anything veiled at 0.49 linear) -> 0.49 * (0.27 + 1.02*1.6) = 0.93, still under the
+  // 1.15 shoulder; the true lids sit at 0.12-0.13 air, so they peak near 0.25. Nothing here can clip white.
   float cA = max(cl.a, 1e-3);
   float shade = clamp(dot(cl.rgb, vec3(0.2126, 0.7152, 0.0722)) / (cA * max(dot(uCloudLightCol, vec3(0.2126, 0.7152, 0.0722)), 1e-3)), 0.0, 1.6);
-  vec3 deck = fogCol * (0.34 + 0.86 * shade) * cA;                 // premultiplied, like cl.rgb
-  cl.rgb = mix(cl.rgb * (1.0 - uVeil * 0.45), deck, uVeil);
+  vec3 deck = veilCol * (mix(0.34, 0.22, lid) + mix(0.86, 1.15, lid) * shade) * cA;   // premultiplied, like cl.rgb
+  cl.rgb = mix(cl.rgb * (1.0 - veil * 0.45), deck, veil);
   col = col * (1.0 - cl.a) + cl.rgb;
 
   // ---- horizon haze (tinted by the actual sky at that azimuth: amber toward a low sun, cool away) & ground ----
+  // These three are the LOCAL air, and that was a bug in two directions at once. (1) Under a DISTANT lid
+  // they repainted the plume with wherever the camera happens to stand: at the Infernal pass the smoke
+  // photographed neutral grey-blue (measured 111,116,133) instead of the Wastes' brown, because 330 m out
+  // the camera is still standing in Vale air. (2) The 0.60 pull back toward raw lutSky put ~10% of a
+  // 1.2-linear noon sky back on the horizon AFTER the veil had just removed it — so the heaviest lids leaked
+  // blue exactly where the eye reads the sky against the ridge line. Both close by using the region's own
+  // shaped air and damping the raw-sky pull by how thick the lid is.
   float hz = exp(-max(d.y, 0.0) * 11.0) * uHaze;
-  vec3 hcol = mix(fogCol, lutSky(normalize(vec3(d.x, abs(d.y) + 0.05, d.z))), 0.60) * 0.94;
+  vec3 hcol = mix(airS, lutSky(normalize(vec3(d.x, abs(d.y) + 0.05, d.z))), 0.60 * (1.0 - veil * 0.85)) * 0.94;
   col = mix(col, hcol, hz * smoothstep(-0.1, 0.02, d.y));
-  col = mix(col, fogCol * (1.0 - 0.28 * smoothstep(0.0, -0.32, d.y)), smoothstep(0.012, -0.03, d.y));
+  col = mix(col, airS * (1.0 - 0.28 * smoothstep(0.0, -0.32, d.y)), smoothstep(0.012, -0.03, d.y));
   // Aerial-perspective MATCH (the mint-cutout fix): FogExp2 paints a distant ridge with fogCol at
   // 1-exp(-(density*depth)^2), so the dome must converge to the SAME colour at the same rate just above the
   // horizon — otherwise a fully-fogged ridge reads as a flat paper cutout in the region's haze hue against a
@@ -652,16 +739,19 @@ void main() {
   // In the Vale fogCol ≈ the horizon ring colour, so this is near-invisible there.
   float pl = 1500.0 / (1.0 + max(d.y, 0.0) * 26.0);
   float fmz = 1.0 - exp(-pow(uFogD * pl, 2.0));
-  col = mix(col, fogCol, fmz * smoothstep(-0.10, 0.015, d.y));
+  col = mix(col, airS, fmz * smoothstep(-0.10, 0.015, d.y));
   // Region horizon glow (Biomes.glow/glowI): ember light off the Wastes' lava fields, the Isles' gold memory
   // at night. A broad saturated band, intensity premultiplied and capped ≤0.3 — never a point source (blob law).
   col += uGlow * exp(-max(d.y, 0.0) * 5.5);
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
   if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
-  // the disc dims through a smoke ceiling (uVeil) — an undimmed 60x disc through heavy smoke is a washed-white
-  // ball, exactly the bug the blob decree bans. It does NOT dim with fmz: a low sun must still burn through haze.
-  col += sunDisc * disc * limb * 60.0 * sunUp * (1.0 - cl.a) * (1.0 - uVeil);
+  // the disc dims through a smoke ceiling — an undimmed 60x disc through heavy smoke is a washed-white ball,
+  // exactly the bug the blob decree bans. It does NOT dim with fmz: a low sun must still burn through haze.
+  // uVeilSun is the RAW skyVeil, deliberately not the transmittance-corrected one the dome mixes with: the
+  // corrected 0.97 would delete the disc outright, and a dull ember sun showing through the Wastes' smoke is
+  // the shot, not an absence. At raw 0.92 the disc still lands at 0.08 * 60 = 4.8 — a soft glow, never a ball.
+  col += sunDisc * disc * limb * 60.0 * sunUp * (1.0 - cl.a) * (1.0 - uVeilSun);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -774,7 +864,8 @@ export class Sky {
       uLut: { value: this.lutRT.texture }, uNoise: { value: this.noiseRT.texture }, uClouds: { value: this.cloudRT.texture },
       uShape: { value: this.shapeRT.texture }, uDetail: { value: this.detailRT.texture },
       uSunDir: { value: this.sunDir }, uMoonDir: { value: this.moonDir }, uSunDisc: { value: this.sunDiscColor }, uMoonCol: { value: new THREE.Color() }, uMoonGlow: { value: new THREE.Color() },
-      uFogColor: { value: new THREE.Color().copy(this.fogColor) }, uVeil: { value: 0 }, uFogD: { value: this.fogDensity }, uGlow: { value: new THREE.Color(0, 0, 0) }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
+      uFogColor: { value: new THREE.Color().copy(this.fogColor) }, uVeil: { value: 0 }, uVeilSun: { value: 0 }, uFogD: { value: this.fogDensity }, uGlow: { value: new THREE.Color(0, 0, 0) },
+      uVeilFar: { value: 0 }, uVeilFarDir: { value: new THREE.Vector2(0, -1) }, uVeilFarCol: { value: new THREE.Color(0, 0, 0) }, uCloudLightDir: { value: new THREE.Vector3(0, 1, 0) }, uCloudLightCol: { value: new THREE.Color() },
       uCloudAmbTop: { value: new THREE.Color() }, uCloudAmbBot: { value: new THREE.Color() }, uBeltCol: { value: new THREE.Color() },
       uTime: { value: 0 }, uWindT: { value: 0 }, uCamY: { value: 0 }, uCamPos: { value: new THREE.Vector3() },
       uCloudCover: { value: 0.5 }, uCirrusCover: { value: 0.5 }, uHaze: { value: 0.3 }, uAurora: { value: 0 },
@@ -946,7 +1037,11 @@ export class Sky {
     // the same air the distance is (in the Vale _fogC === fogColor, so nothing changes there)
     u.uFogColor.value.copy(this._fogC);
     const veil = this._veilE ?? 0;
-    u.uVeil.value = veil;
+    // The dome mixes with the TRANSMITTANCE-corrected veil (see veilOpacity); everything that is really a
+    // physical dose of smoke — the sun disc, the key light, how low and thick the deck hangs — keeps the raw
+    // skyVeil, so this fixes the sky's midday identity without moving the world's lighting budget.
+    u.uVeil.value = veilOpacity(veil);
+    u.uVeilSun.value = veil;
     u.uFogD.value = this._fogD;   // graded density: the dome's aerial-perspective match mirrors FogExp2 exactly
     // A smoke / reek / ash ceiling is OVERCAST and LOW. Without this a veiled region inherited the Vale's
     // fair-weather cumulus field (cover ~0.46, base 1.45 km) — a handful of puffs with big blue gaps, which
@@ -975,13 +1070,6 @@ export class Sky {
   _gradeFog(camera) {
     const out = this._fogC ??= new THREE.Color();
     out.copy(this.fogColor); this._fogD = this.fogDensity;
-    // Submerged: the whole world is seen through the water column, so the fog IS the water. Colour comes
-    // from whatever look Water is currently wearing, so the fen is green murk and the Sunken Kingdom is blue.
-    const wtr = this.game.world?.water;
-    if (wtr?.level != null && camera.position.y < wtr.level && wtr.isWater?.(camera.position.x, camera.position.z)) {
-      const sh = wtr.uniforms?.uShallow?.value;
-      if (sh) { out.setRGB(sh.r * 2.1, sh.g * 2.1, sh.b * 2.1); this._fogD = 0.055; return; }
-    }
     const b = this.game.terrain?.biomeBlend?.(camera.position.x, camera.position.z, this._bb ??= {});
     const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
     // the veil eases BOTH ways, including on this early-out — otherwise walking out of the Wastes leaves
@@ -1000,10 +1088,10 @@ export class Sky {
       gr = gt.r * s; gg = gt.g * s; gb = gt.b * s;
     }
     gU.r += (gr - gU.r) * 0.03; gU.g += (gg - gU.g) * 0.03; gU.b += (gb - gU.b) * 0.03;
+    this._farVeil(camera.position.x, camera.position.z);
     // ---- per-region key + night-ambient grade (Biomes.keyLow / .ambNight) ----
     // Applied HERE (Sky updates before Lighting/Water/Grass, all of which read these colours), re-derived
     // every frame from the pristine copies _refreshColors keeps, so nothing compounds.
-    const L = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
     const gld = sstep(0.35, 0.10, this.sunElevation) * sstep(-0.05, 0.02, this.sunElevation);   // 1 = golden hour, 0 = high noon / night
     const klT = B && B.keyLow != null ? b.w * gld : 0;
     this._klE = (this._klE ?? 0) + (klT - (this._klE ?? 0)) * 0.03;
@@ -1031,6 +1119,17 @@ export class Sky {
       // the zenith really is blue at golden hour, and the visible DOME is the GPU LUT, untouched by this.
       this._hueToward(this.horizonColor.copy(this._horBase), this._klC, this._klE);
     }
+    // Submerged: the whole world is seen through the water column, so the fog IS the water. Colour comes
+    // from whatever look Water is currently wearing, so the fen is green murk and the Sunken Kingdom is blue.
+    // This sits AFTER every eased term on purpose. It used to be the first thing in the method, so wading
+    // froze the veil, the glow and the key grade at whatever the last frame held — the same class of bug as
+    // a grade sticking over the Vale, just triggered by standing in a puddle. Everything eases every frame
+    // now; only the final haze hue/density is overridden here.
+    const wtr = this.game.world?.water;
+    if (wtr?.level != null && camera.position.y < wtr.level && wtr.isWater?.(camera.position.x, camera.position.z)) {
+      const sh = wtr.uniforms?.uShallow?.value;
+      if (sh) { out.setRGB(sh.r * 2.1, sh.g * 2.1, sh.b * 2.1); this._fogD = 0.055; return; }
+    }
     if (!B || !B.fog) return;
     const cache = this._fogCache ??= new Map();
     let t = cache.get(b.id);
@@ -1051,9 +1150,65 @@ export class Sky {
     out.r *= lumS; out.g *= lumS; out.b *= lumS;
     // hazeSun: at low sun a mist region hands part of the mix back to the time-of-day colour — water vapour
     // takes on the sunset light, so golden hour reaches the Sunken gorge instead of constant sea-mint.
-    const k = L(out) / Math.max(1e-4, L(c)), w = b.w * 0.85 * (1 - (B.hazeSun ?? 0) * gld);
+    const k = LUM(out) / Math.max(1e-4, LUM(c)), w = b.w * 0.85 * (1 - (B.hazeSun ?? 0) * gld);
     out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
     this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
+  }
+
+  /**
+   * WEATHER OVER THE REGION AHEAD — the pass-approach half of noon identity.
+   * `skyVeil` follows the camera's feet, so cresting the pass 330 m short of the Cinder Maw photographed a
+   * fair-weather Vale sky sitting directly over the Wastes (measured: uVeil 1.5e-7, haze still the Vale's
+   * pale blue). A lid over a volcano is visible long before you are under it, so the region on this bearing
+   * paints its own veil — but only in ITS azimuth and only low in the sky (DOME_FRAG), so the zenith and the
+   * half of the world behind you stay honest.
+   * Gated below RING_IN and ramped over the first 150 m of the ring so nothing ever leaks onto the home bowl,
+   * and eased at the same 0.03 as the near veil so it fades out in place instead of sticking or snapping.
+   * Measured ramp on the Infernal bearing (skyVeil 0.92): r 330 (ring inner edge) -> 0.00, r 380 -> 0.50,
+   * r 430 (mid pass) -> 0.97, r 480 (pass exit) -> 0.97, spawn meadow -> 0.00.
+   * ponytail: ONE plume, the region on the camera's own bearing (wedgeAt). Standing in Frostveil you do not
+   * see the Wastes' lid on the horizon, only your own. Upgrade path if that ever reads as a hole: keep a
+   * second slot for wedgeAt(k±1) and max() the two in the shader — the dome cost is another dot+smoothstep.
+   */
+  _farVeil(px, pz) {
+    const u = this.uniforms;
+    let t = 0, col = null, dx = 0, dz = 0;
+    const r = Math.hypot(px, pz);
+    if (r > RING_IN) {
+      const k = wedgeAt(px, pz), FB = BIOMES[ORDER[k]];
+      if (FB?.skyVeil) {
+        const c = centerOf(k);
+        dx = c.x - px; dz = c.z - pz;
+        const d = Math.hypot(dx, dz);
+        // 110 m, not 150: at r 430 (mid pass, the shot the wave-4 blocker was written from) the old ramp
+        // stood at 0.74, which corrects to 0.89 — and 11% of a ~1.2-linear noon sky still outweighed 89% of
+        // a 0.12-linear smoke, so the plume photographed as neutral overcast instead of smoke. The region's
+        // own look radius starts at r 440, so by 430 the lid should simply be full.
+        t = veilOpacity(FB.skyVeil * sstep(FAR_EDGE, FAR_CORE, d) * sstep(RING_IN, RING_IN + 110, r));
+        if (t > 0.002) {
+          const cache = this._farCache ??= new Map();
+          col = cache.get(k);
+          if (!col) { col = new THREE.Color(FB.fog).convertSRGBToLinear(); cache.set(k, col); }
+          this._farLum = FB.fogLum ?? 1;
+        }
+      }
+    }
+    this._vfE = (this._vfE ?? 0) + (t - (this._vfE ?? 0)) * 0.03;
+    u.uVeilFar.value = this._vfE;
+    if (!col) return;                                     // fading out: keep the last hue/direction in place
+    // that region's hue at THIS hour's haze value, darkened by its own fogLum — the same recipe the local
+    // grade below uses, so the plume and the ground under it are made of the same air at every hour
+    const s = LUM(this.fogColor) * this._farLum / Math.max(1e-4, LUM(col));
+    // Eased, not assigned. `wedgeAt` flips on the bisector, so walking around the ring band laterally used to
+    // snap the plume's hue AND its azimuth in a single frame while its opacity stayed high — an orange lid
+    // becoming a violet one between two frames. Same 0.03 as every other grade here, so it turns over ~1 s.
+    // Below 0.02 opacity the plume is not on screen yet, so SNAP there instead: easing up from black would
+    // otherwise draw a dark smudge for the second it takes the hue to arrive, every time you enter a ring.
+    const e = this._vfE < 0.02 ? 1 : 0.03;
+    const dl = Math.hypot(dx, dz) || 1, fc = u.uVeilFarCol.value, fd = u.uVeilFarDir.value;
+    fc.r += (col.r * s - fc.r) * e; fc.g += (col.g * s - fc.g) * e; fc.b += (col.b * s - fc.b) * e;
+    fd.x += (dx / dl - fd.x) * e; fd.y += (dz / dl - fd.y) * e;
+    const fl = Math.hypot(fd.x, fd.y); if (fl > 1e-4) fd.set(fd.x / fl, fd.y / fl);
   }
 
   /** Pull colour `c` toward hue `kc` by `e`, keeping c's own luminance — same trick as Lighting._gradeBiome.

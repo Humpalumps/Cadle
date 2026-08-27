@@ -61,14 +61,16 @@ and `quadruped:attack` are rejected as invalid names.
 - **Bipeds get much better attack presets than quadrupeds** — `slash` and `shoot` are native there,
   so the sentinel/warden/forgeknight class gets real sword and ranged animations for free.
 
-### 5. Optimise LOCALLY (`node tools/optimize-creature.mjs <in> <out> --tris N`)
+### 5. Optimise LOCALLY (`node tools/optimize-creature.mjs <in> <out> --tris N [--joints N]`)
 
 Never a web service. The online GLB optimisers are `gltf-transform` front-ends and the compression is
 open codecs (meshopt, Draco, KTX2/Basis), so local tooling gets identical ratios without uploading
 assets and without a build step that depends on someone else's site staying up.
 
-The script runs `dedup -> prune -> weld -> simplify(meshopt) -> flatten -> join -> resample ->
-textureCompress(webp, 1024) -> quantize`. Choices: **meshopt not Draco** (decodes far faster, and
+The script runs `dedup -> prune -> weld` in one pass, then `simplify(meshopt)` iterated against the
+**welded** count (see the fix note below - computing the ratio pre-weld is what put all of batch 1
+over tier), then `pruneJoints -> flatten -> join -> resample -> textureCompress(webp, 1024) ->
+quantize`. Choices: **meshopt not Draco** (decodes far faster, and
 download size is not a constraint — assets come down behind the loading screen or ship in a Steam
 package, so boot time is what we are short of); **textures to 1024** (Tripo emits 4096, ~16x the
 texels a creature needs); **join/flatten** because draw calls, not triangles, are what bind us at 72
@@ -82,33 +84,86 @@ asset — behind the start screen, never streamed mid-game. `tools/invariants.mj
 anywhere else, so **architecture cannot quietly follow monsters onto this path**.
 
 
-### Batch 1 status (2026-08-27) — 9 rigged creatures optimised and staged
+### Batch 1 status (2026-08-27, re-converted) - 9 rigged creatures on tier
 
-`public/assets/creatures/*.glb`, **8.8 MB total, one mesh each (so one draw call each)**:
+`public/assets/creatures/*.glb`, **5.8 MB total, one mesh + one material each (so one draw call each)**:
 
-| creature | tris | joints | MB | tier target |
+| creature | tris (rigged source -> shipped) | joints | MB | tier |
 |---|---|---|---|---|
-| treant | 38,354 | 68 | 1.77 | 15k **over** |
-| drake | 25,700 | 82 | 1.08 | 10k **over** |
-| wraith | 24,330 | 94 | 0.99 | 10k **over** |
-| golem | 23,345 | 34 | 1.00 | 15k over |
-| sentinel | 22,540 | 34 | 1.06 | 15k over |
-| sprite | 21,214 | 35 | 0.81 | 4k **way over** |
-| frostwolf | 17,106 | 34 | 0.82 | 10k over |
-| riftling | 14,316 | 59 | 0.63 | 10k over |
-| hound | 13,106 | 101 | 0.65 | 10k (close) |
+| treant | 57,408 -> 15,000 | 68 -> 32 | 1.06 | 15k |
+| golem | 57,111 -> 14,973 | 34 -> 30 | 0.76 | 15k |
+| sentinel | 56,905 -> 15,000 | 34 -> 28 | 0.85 | 15k |
+| hound | 59,730 -> 10,000 | **101 -> 40** | 0.55 | 10k |
+| drake | 58,252 -> 10,000 | 82 -> 52 | 0.62 | 10k |
+| wraith | 58,282 -> 10,000 | **94 -> 37** | 0.56 | 10k |
+| frostwolf | 56,868 -> 9,992 | 34 -> 30 | 0.60 | 10k |
+| riftling | 58,866 -> 10,000 | 59 -> 45 | 0.50 | 10k |
+| sprite | 59,758 -> 4,606 | 35 -> 27 | 0.32 | 4k |
 
-**KNOWN ISSUE 1 — the simplifier undershoots its target.** `optimize-creature.mjs` computes the
-simplify `ratio` from `count()` evaluated *before* `weld()` runs in the same transform chain, so the
-base is wrong and everything lands 1.3-5x over target. Fix: weld first in its own `transform()` call,
-then compute the ratio, then simplify — or loop until the count converges. Nothing is broken by this,
-the models just carry more triangles than the tier allows.
+**FIXED (2026-08-27) - the simplifier used to undershoot its target.** `optimize-creature.mjs`
+computed the simplify `ratio` from `count()` evaluated *before* `weld()` ran in the same
+`transform()` chain. A Tripo export is non-indexed, so the pre-weld count reads roughly double the
+real triangle count and the ratio came out roughly half as aggressive as asked for - which is why
+batch 1 shipped 1.3-5x over tier. `weld()` now runs in its own `transform()` call, the ratio is
+computed against the welded count, and simplify iterates (up to 3 passes) because meshopt's ratio
+is a request, not a guarantee - it stops early when a collapse would exceed `error`.
 
-**KNOWN ISSUE 2 — biped rigs are much cheaper than the rest.** Biped comes back at **34 joints**,
-quadruped/avian at 59-101. The bone plan below matters most for the hound (101), wraith (94) and
-drake (82); the biped creatures are already close to the 25-35 target and may need no pruning at all.
+**FIXED (2026-08-27) - the skeletons are pruned at conversion time.** `tools/creature-joints.mjs`,
+called from the optimiser as `--joints N` (default 32). Tripo names the joints it considers
+structural `tripo::*` (Root / Spine_N / Head_N / {0,1}_{Left,Right}_Limb_N / Tail_N) and the filler
+`bone_N`, which makes the keep/drop decision mechanical rather than a judgement call:
 
-**These are rig-only.** `animate_retarget` is a separate call per creature per clip; only the hound
+- **keep** joint 0, every `tripo::*` joint, every joint carrying >= 1.2% of total skin weight, and
+  every joint-ancestor of a kept joint (so a chain is never broken and no bone is orphaned).
+- if that set still busts the ceiling, **shed the lightest leaf joints iteratively** - shedding a
+  tip promotes its parent to a leaf, so a filler tail chain comes off one ring per round - guarded
+  by a 2% mass floor, so a shoulder or a jaw is never shed however leaf-like it is.
+- **drop** the rest: each dropped joint's skin weights are folded into its nearest KEPT ancestor
+  (never discarded, and duplicate influences inside a vec4 are merged and renormalised), and its
+  children are re-parented to its own parent with their local matrix pre-multiplied by the dropped
+  joint's. Every surviving bone's WORLD bind pose is therefore bit-identical, which is why the
+  inverse bind matrices are just a row subset with no recompute.
+
+It runs before `quantize()` (JOINTS_0 / WEIGHTS_0 are rewritten in place). The remaining outliers -
+drake 52 and riftling 45 - are structural: those rigs genuinely carry that many `tripo::*` limb and
+tail joints, and chain integrity outranks the 32 target.
+
+**Biped rigs are still much cheaper than the rest**, but the gap has closed: biped comes back at 34
+joints and prunes to 27-30, quadruped/avian came back at 59-101 and prune to 37-52.
+
+**Baked locomotion landed 2026-08-27 (`tools/creature-anims.mjs`).** 29 clips across 10 creatures
+(idle / walk / run; quadrupeds take the native `preset:quadruped:walk`, everyone else `preset:walk`),
+~390 credits. `fetch` submits `animate_retarget` against the RECORDED rig task ids in
+`tools/out/assetgen/creatures/rig-tasks.txt`; `merge` copies the channels onto `<name>-rigged.glb`
+by NODE NAME (same rig task means the same skeleton, so the match is exact) and writes
+`<name>-animated.glb`, which is then the optimiser's input.
+
+Four things that were not obvious and are worth not re-deriving:
+
+- **Merge BEFORE the optimiser, never after.** The joint prune folds a dropped joint's rest transform
+  into its children's LOCAL transforms, which silently invalidates any animation channel writing an
+  absolute local T/R/S to one of those children — and glTF has no matrix track to compose into.
+  `creature-joints.mjs` therefore detects clips and switches to a leaf-only drop set, so nothing is
+  ever folded into a survivor. Measured on the hound this cost nothing: still 101 -> 40 joints,
+  because the filler `bone_N` chains were all leaf-ward anyway.
+- **Root motion is ~zero.** Tripo bakes clips in place (hound walk: root translation range 0.010 on
+  x, 0.000 on z). So a baked clip cannot fight the AI-driven `root.position`, which was the main
+  integration risk.
+- **Clips survive decimation intact**: hound 306 channels per clip in, 123 out after the prune, walk
+  2.60 s / idle 15.38 s / run 1.29 s, T+R+S paths. Cost is +0.24 MB per creature for three clips
+  (0.55 -> 0.79 MB).
+- **Three channels per clip target an `Armature` node above the skeleton root**, not a joint. Valid
+  glTF, harmless, and inert if the game binds from the skinned mesh's skeleton.
+
+**Attacks, stagger and death stay PROCEDURAL** regardless — not because Tripo cannot produce them,
+but because a baked clip cannot be cut off mid-swing when the enemy is staggered, and attack timing
+has to line up with damage windows and telegraph frames.
+
+**PERSIST THE RIG TASK ID.** `animate_retarget` needs the RIG task id, not the generation task id.
+Batch 2 only wrote `warden-rig.json`, so `serpent` and `giant` have no reachable rig task and run on
+procedural animation. Always write `<name>-rig.json`.
+
+**Batch 1 was rig-only when it landed.** `animate_retarget` is a separate call per creature per clip; only the hound
 has a clip so far (`preset:quadruped:walk`, verified deforming correctly at 13k after optimisation).
 
 **Crowd cost, measured on the optimised hound** (isolated scene, every instance at LOD0 with its own
@@ -155,6 +210,127 @@ calls, `cpuMs`, and the per-system Enemies slice — not a meadow with three wis
 `hitchhunt --route combat` the deferred perf pass owes; the bone work is the one part of that pass
 worth doing early, because it is cheaper to prune a skeleton once at conversion time than to retrofit
 13 creatures later.
+
+## TWO BUG CLASSES THE USER FOUND BY EYE THAT EVERY GATE MISSED (2026-08-27)
+
+Both were found by a human looking at the game, after a 23/23 animation-gate PASS. Both are CLASSES,
+not incidents, and both are now covered mechanically. Read this before wiring any new creature.
+
+### Class A - RIG TOPOLOGY IS A VARIABLE, and every per-segment tuning constant assumes one
+
+**What happened:** the Aether Hound grew a stretched membrane between its tail and its right hind leg
+whenever it walked or attacked. Not a skinning bug, not the joint prune - the *animation* was tearing
+the skin.
+
+`rig.js`'s `chainWave()` ramps amplitude per segment as `amp * (0.6 + i * 0.3)`, and those rotations
+are RELATIVE TO THE PARENT, so tip deflection is their SUM:
+
+| tail | segments | total multiplier |
+|---|---|---|
+| procedural body (what every TUNE value was authored against) | 3 | 2.7 |
+| Tripo hound | 6 | **8.1** |
+| Tripo riftling | 7 | **10.5** |
+
+At `tailAmp 0.26` the hound curled its tail through ~120 degrees, wrapped it into the haunch, and the
+skin between them stretched into a flat sheet. The tuning was never wrong - it was applied to a rig
+with twice the joints it was written for.
+
+**THE RULE: a Tripo rig's joint count is whatever the generator felt like that day** (measured on our
+own batch: tails 4-7, limb chains 2-7, spine 1-5, head chains 2-5, and total joints 20-101 across
+thirteen creatures). **So normalise every chain driver by its own chain length, and put the
+normalisation INSIDE the shared helper, never at the call site** - `wave()` had two callers and only
+one of them was the tail, so fixing it in `wave()` fixed the aux chains for free and makes every
+future chain safe by construction.
+
+Audit of every chain driver in `glbAnim.js` after the fix - keep it this way:
+
+| driver | normalised by | 
+|---|---|
+| spine | `1 / G.spine.length` |
+| legs / arms | `/(k - 1)` decay with depth |
+| neck / head | per-joint clamped aim at a target (converges, does not sum) |
+| `wave()` (tail + aux chains) | `CHAIN_REF / chainSum(n)` |
+
+**When you add a creature, print its per-chain joint counts and compare them against what the tuning
+assumes.** A rig that comes back with a 9-joint tail is not an error, it is Tuesday.
+
+### Class B - A MEAN CANNOT SEE TEMPORAL ALIASING
+
+**What happened:** creatures visibly swayed and jittered on the spot. `Enemy.update` rate-limits
+`_animate` by camera distance and **HOLDS the pose between updates instead of interpolating**, while
+`_move` keeps updating the root every frame. Full-rate animation ended at **12 m**, so past that the
+skeleton strobed at 1/2, 1/3, 1/4 the render rate under a smoothly gliding root. Measured per-frame
+total bone delta:
+
+| distance | pattern |
+|---|---|
+| 8 m | `0.053 0.051 0.054 0.055 ...` smooth |
+| 20 m | `0.107 0.001 0.107 0.001 ...` every 2nd frame |
+| 40 m | `0.23 0.001 0.001 0.35 0.001 0.001 ...` every 3rd frame |
+
+**Why every gate missed it:** `animcheck.mjs` measured mean per-frame motion, mean limb travel per
+metre, mean ground gap. **A mean is IDENTICAL whether a pose moves smoothly or in held steps.** So is
+a single screenshot. The bug was invisible to every metric we had and trivially visible to a person.
+
+**THE RULE: any gate on an LOD-ticked or rate-limited system must inspect the per-frame delta
+SEQUENCE, not its average.** `animcheck.mjs` now computes `heldFrac` (the fraction of frames where
+the pose does not move) and fails above 20%. This generalises past animation - the same blindness
+applies to anything else this project rate-limits by distance or frame parity: VFX emitters, shadow
+cascade updates, water/grass wind, uniform upkeep in `_sync`.
+
+### EVALUATED AND DEFERRED: Blender + Mixamo (user asked 2026-08-27) - do not re-litigate
+
+The machine has Blender installed and the user asked whether Mixamo would have been the better route.
+The reasoning, so this is decided once:
+
+**Mixamo cannot serve this bestiary.** Its auto-rigger and its ENTIRE animation library target a
+humanoid skeleton (`mixamorig:Hips/Spine/Neck/Head/...`). It cannot rig or animate a quadruped, a
+serpentine or an avian. Our thirteen split: quadruped (hound, frostwolf, riftling, drake),
+serpentine/avian (serpent, leviathan, sprite), humanoid-ish (sentinel, golem, treant, warden, giant,
+wraith, wayfinder). So Mixamo could not have animated the hound - the exact creature the user was
+looking at when they reported the animation faults. Tripo's `animate_rig` accepts
+`biped | quadruped | hexapod | octopod | avian | serpentine | aquatic | others` and is driveable over
+REST, which is why it is the pipeline's animation source.
+
+**Where Mixamo would genuinely win: the humanoid subset only** (warden, giant, sentinel, wayfinder).
+Mixamo clips are real motion capture; Tripo's retarget is synthesised. Caveat that cuts the other
+way: a human mocap cycle on a TREANT or a GOLEM often reads worse than a stylised gait, because the
+proportions are not human - so the win is narrower than it first looks.
+
+**Blender is the more useful half and we are not using it.** Headless (`blender --background --python`)
+it is fully scriptable, so it fits the pipeline, and it beats `gltf-transform` at two jobs:
+1. **Retargeting between skeletons** (Rokoko / Auto-Rig Pro) - the only way Mixamo clips could reach
+   our rigs at all.
+2. **Skin weight repair.** Tripo's auto-skinning left the ORIGINAL hound with 8% of its vertices
+   carrying influences more than 0.35 m apart. The joint prune happened to fix that; a weight-smooth
+   pass in Blender would be the principled fix rather than a lucky side effect.
+
+**Decision: do not add a second animation source until the Tripo clips have been WIRED and judged.**
+29 verified clips are staged and no AnimationMixer exists yet, so comparing the two routes today would
+be comparing one of them to speculation. Wire them, look at the result, and if the humanoids
+specifically still read weak, Blender + Mixamo for that subset is a well-scoped upgrade.
+
+### The two experiments that actually diagnose a creature, and cost minutes
+
+1. **BIND-POSE A/B - separates deformation from geometry.** Replace `e.body` with a no-op animator,
+   copy every bone back to `asset.bindQuat`/`bindPos`, `updateMatrix()`, screenshot, and compare
+   against the animated frame. If the artifact vanishes the ANIMATION is tearing the mesh; if it
+   survives it is in the model and no amount of tuning will help. This is what proved the hound's
+   membrane was animation, in one capture.
+2. **SKIN INFLUENCE SPREAD - separates skinning from animation.** For every vertex, compute the
+   spatial spread (in bind space) of the joints influencing it above ~0.12 weight. A vertex pulled by
+   two joints far apart is a stretch waiting to happen. Run it on the ORIGINAL rigged GLB and the
+   SHIPPED one and compare - that is how the joint prune was cleared of causing the hound's membrane:
+
+   | model | verts with influences > 0.35 m apart | worst |
+   |---|---|---|
+   | hound, original rigged (101 joints) | 8.03% | 0.843 |
+   | hound, shipped pruned (40 joints) | **0%** | 0.343 |
+   | treant, original (68) | 4.61% | 0.706 |
+   | treant, shipped (32) | **0%** | 0.346 |
+
+   The prune TIGHTENED skinning. Worth knowing: folding a dropped joint's weights into its nearest
+   kept ancestor is a locality improvement, not a compromise.
 
 ### What this does NOT change
 

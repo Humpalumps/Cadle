@@ -45,7 +45,7 @@ export const DEFS = {
   golem: {
     name: 'Stone Golem', element: 'void', role: 'slam', flying: false,
     health: 620, shield: 0, damage: 24, speed: 2.4, turn: 2.2, accel: 6,
-    perception: 40, fov: 2.4, attackRange: 4.2, attackWindup: 0.9, attackCooldown: 2.8, attackRecover: 0.6, slamRadius: 5, knockback: 9, standoff: 3.0,
+    perception: 40, fov: 2.4, attackRange: 4.2, attackWindup: 0.9, attackCooldown: 2.8, attackRecover: 0.6, slamRadius: 5, knockback: 9, standoff: 3.9,
     throwRange: [9, 24], throw: { speed: 22, radius: 0.45, gravity: 14, element: 'kinetic', life: 5, damage: 14, explodeRadius: 2.5 },
     stagger: 0.3, staggerTime: 0.6,
     radius: 0.95, height: 3.3, center: 1.8, weakPoints: [{ bone: 'core', radius: 0.36, mult: 3.0, off: [0, 0, 0.07] }],
@@ -72,7 +72,7 @@ export const DEFS = {
   warden: {
     name: 'Warden of the Spire', element: 'void', role: 'slam', flying: false, boss: true,
     health: 1800, shield: 500, shieldElement: 'void', damage: 32, speed: 3.4, turn: 2.8, accel: 8,
-    perception: 60, fov: 6.3, attackRange: 4.6, attackWindup: 0.8, attackCooldown: 2.4, attackRecover: 0.6, slamRadius: 6, knockback: 11, standoff: 3.2,
+    perception: 60, fov: 6.3, attackRange: 4.6, attackWindup: 0.8, attackCooldown: 2.4, attackRecover: 0.6, slamRadius: 6, knockback: 11, standoff: 4.1,
     volleyRange: [8, 30], volley: 5, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 30, radius: 0.28, element: 'void', life: 4, damage: 11 },
     stagger: 0.4, staggerTime: 0.5, shieldRadius: 1.85, phases: [0.66, 0.33],
     radius: 1.1, height: 3.9, center: 2.1, weakPoints: [{ bone: 'head', radius: 0.42, mult: 1.6, off: [0, 0.26, 0] }, { bone: 'torso', radius: 0.38, mult: 2.2, off: [0, 0.67, 0.39] }],
@@ -113,7 +113,7 @@ const BIOME_DEFS = {
   treant: {
     name: 'Elder Treant', body: 'treant', element: 'strand', role: 'slam', flying: false, scale: 1.15,
     health: 700, shield: 0, damage: 24, speed: 2.2, turn: 2.0, accel: 5.5,
-    perception: 38, fov: 2.3, attackRange: 4.6, attackWindup: 1.0, attackCooldown: 2.9, attackRecover: 0.65, slamRadius: 5.4, knockback: 9, standoff: 3.2,
+    perception: 38, fov: 2.3, attackRange: 4.6, attackWindup: 1.0, attackCooldown: 2.9, attackRecover: 0.65, slamRadius: 5.4, knockback: 9, standoff: 4.1,
     throwRange: [10, 26], throw: { speed: 21, radius: 0.5, gravity: 14, element: 'strand', life: 5, damage: 15, explodeRadius: 2.8 },
     stagger: 0.34, staggerTime: 0.6,
     radius: 1.0, height: 3.6, center: 1.9, weakPoints: [{ bone: 'core', radius: 0.38, mult: 3.0, off: [0, 0, 0.07] }],
@@ -141,7 +141,7 @@ const BIOME_DEFS = {
   icegiant: {
     name: 'Frostveil Giant', body: 'giant', element: 'stasis', role: 'slam', flying: false, scale: 1.0,
     health: 950, shield: 180, shieldElement: 'stasis', damage: 28, speed: 3.0, turn: 2.3, accel: 7,
-    perception: 46, fov: 2.5, attackRange: 5.2, attackWindup: 0.85, attackCooldown: 2.7, attackRecover: 0.6, slamRadius: 6.2, knockback: 12, standoff: 3.6,
+    perception: 46, fov: 2.5, attackRange: 5.2, attackWindup: 0.85, attackCooldown: 2.7, attackRecover: 0.6, slamRadius: 6.2, knockback: 12, standoff: 4.5,
     throwRange: [11, 30], throw: { speed: 24, radius: 0.5, gravity: 14, element: 'stasis', life: 5, damage: 17, explodeRadius: 3.0 },
     stagger: 0.36, staggerTime: 0.6, shieldRadius: 1.9,
     radius: 1.05, height: 4.6, center: 2.5, weakPoints: [{ bone: 'head', radius: 0.42, mult: 2.2, off: [0, 0.1, 0.1] }],
@@ -207,7 +207,7 @@ const BIOME_DEFS = {
   magmagolem: {
     name: 'Magma Golem', body: 'golem', element: 'solar', role: 'slam', flying: false, scale: 1.1,
     health: 820, shield: 0, damage: 27, speed: 2.5, turn: 2.2, accel: 6,
-    perception: 42, fov: 2.4, attackRange: 4.4, attackWindup: 0.9, attackCooldown: 2.7, attackRecover: 0.6, slamRadius: 5.6, knockback: 10, standoff: 3.1,
+    perception: 42, fov: 2.4, attackRange: 4.4, attackWindup: 0.9, attackCooldown: 2.7, attackRecover: 0.6, slamRadius: 5.6, knockback: 10, standoff: 4.0,
     throwRange: [9, 26], throw: { speed: 23, radius: 0.46, gravity: 14, element: 'solar', life: 5, damage: 16, explodeRadius: 2.8 },
     stagger: 0.32, staggerTime: 0.6,
     radius: 0.98, height: 3.4, center: 1.85, weakPoints: [{ bone: 'core', radius: 0.36, mult: 3.0, off: [0, 0, 0.07] }],
@@ -298,7 +298,7 @@ const BIOME_DEFS = {
   archon: {
     name: 'Archon of the Convergence', body: 'warden', element: 'void', role: 'slam', flying: false, boss: true, scale: 1.15,
     health: 3200, shield: 900, shieldElement: 'void', damage: 38, speed: 3.6, turn: 2.9, accel: 8,
-    perception: 66, fov: 6.3, attackRange: 5.0, attackWindup: 0.78, attackCooldown: 2.2, attackRecover: 0.55, slamRadius: 7, knockback: 13, standoff: 3.4,
+    perception: 66, fov: 6.3, attackRange: 5.0, attackWindup: 0.78, attackCooldown: 2.2, attackRecover: 0.55, slamRadius: 7, knockback: 13, standoff: 4.3,
     volleyRange: [8, 34], volley: 6, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 32, radius: 0.3, element: 'void', life: 4, damage: 13 },
     stagger: 0.42, staggerTime: 0.5, shieldRadius: 2.1, phases: [0.7, 0.4],
     radius: 1.15, height: 4.2, center: 2.3, weakPoints: [{ bone: 'head', radius: 0.44, mult: 1.6, off: [0, 0.26, 0] }, { bone: 'torso', radius: 0.4, mult: 2.2, off: [0, 0.67, 0.39] }],

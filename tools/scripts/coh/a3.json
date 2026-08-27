@@ -1,0 +1,4 @@
+[{"wait":20},
+{"eval":"JSON.stringify({errors:window.__game.errors,ready:window.__game.ready,running:window.__game.game&&window.__game.game._running,sys:window.__game.game?Object.keys(window.__game.game).slice(0,60):null})"},
+{"wait":25},
+{"eval":"JSON.stringify({errors:window.__game.errors,running:window.__game.game&&window.__game.game._running,intro:typeof window.__game.intro,splash:document.getElementById('splash')?document.getElementById('splash').innerHTML.slice(0,300):null,cw:document.getElementById('game').width})"}]

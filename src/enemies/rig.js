@@ -149,10 +149,18 @@ export class Rig {
   }
 }
 
-/** Clone the template bone hierarchy for an instance; returns { root, bones (flat, template order), byName }. */
+/**
+ * Clone the template bone hierarchy for an instance; returns { root, bones (flat, template order), byName }.
+ * ALIASES: a bone may carry `userData.alias` — a list of extra names it also answers to. That is how a rigged
+ * GLB body (src/enemies/glbBody.js) keeps the procedural vocabulary working: Tripo's joints are renamed to
+ * 'spine0'/'neck2'/'L1R_3', and the semantic names the rest of the game looks up (def.weakPoints' 'head' /
+ * 'core' / 'torso', Enemy._fBody/_fHead, _muzzle) ride along as aliases on whichever joint actually is that
+ * feature. A real bone NAME always wins (`??=`) so an alias can never shadow a procedural body's own bone.
+ */
 export function cloneBones(template) {
   const root = template.clone(true); const bones = []; const byName = {};
   root.traverse((b) => { if (b.isBone) { bones[b.userData.index] = b; byName[b.name] = b; } });
+  root.traverse((b) => { if (b.isBone && b.userData.alias) for (const a of b.userData.alias) byName[a] ??= b; });
   return { root, bones, byName };
 }
 

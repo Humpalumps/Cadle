@@ -543,20 +543,23 @@ vec4 lyrHex(vec2 uv, float i, float sharp) { return lyrHexG(uv, i, sharp, dFdx(u
 //   verdict — so rock regions set it high. It is the inverse knob of rockCut, applied only above ~30 deg.
 // mvar: 0..1 strength of the low-frequency macro value swing on the floor (snow/flagstone want far less
 //   blotch than moss or ash — the tundra "blue watercolor stains" verdict).
-void biomeSet(float k, out float layer, out float scl, out float rough, out float cov, out float snow, out float rockCut, out float steep, out float mvar, out vec3 tint) {
-  layer = 1.0; scl = 3.6; rough = 0.90; cov = 0.72; snow = 0.0; rockCut = 0.0; steep = 0.0; mvar = 1.0; tint = vec3(1.0);
-  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.92; tint = vec3(0.50, 0.62, 0.55); }                  // Whisperwood floor: moss + leaf litter in SHADE. It was 0.86/1.10/0.80 — a lit lawn with a treeline round it; Ashenvale's floor is the darkest ground in the world, not the brightest
-  else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.78; snow = 0.30; rockCut = 0.45; steep = 0.55; mvar = 0.35; tint = vec3(0.97, 1.00, 1.06); }   // tundra: snow_sastrugi owns the flats (wind streaks); generic snow(5) only dusts the drift line. Matte — ice gloss on snow read as soap. Tint cooled: snow albedo has to hold blue against a warm key (see uSunWarm)
-  else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.86; rough = 0.55; steep = 0.95; tint = vec3(0.98, 1.14, 1.46); }    // celestial: celestial_marble.jpg is TAN (linear ratio 1 : 0.85 : 0.61) and the old warm tint pushed it further, which is why the Isles read as a sand desert. This inverts the asset's own hue to a warm WHITE marble. steep: the plaza is ARCHITECTURE — it must never climb a 40-deg mountainside (wave-3 celestial "texture-splat error")
-  else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.88; rockCut = 0.12; steep = 1.0; tint = vec3(0.84, 0.88, 1.02); }   // dragon rock. rockCut stays LOW on purpose: the triplanar cliff (cR) is the only layer with real crag detail; steep=1 hands every face >~30 deg to it so the top-projected floor can no longer smear into corduroy
-  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.12; steep = 0.85; mvar = 0.8; tint = vec3(0.96, 0.97, 1.02); }   // infernal: ash_basalt is already charcoal (the old 0.80/0.82/0.94 cooled a warm ash that is gone); cliffs/cinder cones go to columnar basalt via the cR override, not to the top-projected floor (the old rockCut 0.80 is what put brick-course strata on every cone)
-  else if (k < 5.5) { layer = 13.0; scl = 4.6; cov = 0.92; rough = 0.85; steep = 0.85; mvar = 0.7; tint = vec3(1.02, 0.98, 1.08); }   // lost realm: flagstone_violet IS dark violet with gold inlay — the old celestial-marble + 1.42 blue lift is what blew the plain out lilac-white. steep: the rampart berm face is EARTH+rubble (triplanar cliff, violet-graded below by bLos), not stretched flagstone smear
-  else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.94; rough = 0.60; rockCut = 0.45; tint = vec3(0.84, 0.98, 0.72); }   // shadowfen: peat_muck is true dark peat; mild olive push only (the old 0.70/0.86/0.74 compensated the warm fen_muck that is gone)
+// snowK: how much of the GLOBAL altitude snowline this region tolerates on the mountain ring it shares with
+//   its neighbours. The ring is one landform for nine biomes, so an altitude-only rule dresses the wall behind
+//   a lava caldera in white snowcaps (filed three waves running for infernal, twice for void). 0 = never.
+void biomeSet(float k, out float layer, out float scl, out float rough, out float cov, out float snow, out float rockCut, out float steep, out float mvar, out float snowK, out vec3 tint) {
+  layer = 1.0; scl = 3.6; rough = 0.90; cov = 0.72; snow = 0.0; rockCut = 0.0; steep = 0.0; mvar = 1.0; snowK = 1.0; tint = vec3(1.0);
+  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.92; snowK = 0.70; tint = vec3(0.50, 0.62, 0.55); }                  // Whisperwood floor: moss + leaf litter in SHADE. It was 0.86/1.10/0.80 — a lit lawn with a treeline round it; Ashenvale's floor is the darkest ground in the world, not the brightest
+  else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.78; snow = 0.30; rockCut = 0.45; steep = 0.55; mvar = 0.35; snowK = 1.00; tint = vec3(0.97, 1.00, 1.06); }   // tundra: snow_sastrugi owns the flats (wind streaks); generic snow(5) only dusts the drift line. Matte — ice gloss on snow read as soap. Tint cooled: snow albedo has to hold blue against a warm key (see uSunWarm)
+  else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.86; rough = 0.55; steep = 0.95; snowK = 0.90; tint = vec3(0.98, 1.14, 1.46); }    // celestial: celestial_marble.jpg is TAN (linear ratio 1 : 0.85 : 0.61) and the old warm tint pushed it further, which is why the Isles read as a sand desert. This inverts the asset's own hue to a warm WHITE marble. steep: the plaza is ARCHITECTURE — it must never climb a 40-deg mountainside (wave-3 celestial "texture-splat error")
+  else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.88; rockCut = 0.12; steep = 1.0; snowK = 1.00; tint = vec3(0.70, 0.655, 0.60); }   // dragon rock. Was (0.84, 0.88, 1.02) — a BLUE lift on an already-bright plate, which is why the gate forecourt floor photographed as white broken concrete (sc-B/shot-dragon-near-noon). Darker and hue-neutral so the iron-grey walls (bDrg grade) can sit against it. rockCut stays LOW on purpose: the triplanar cliff (cR) is the only layer with real crag detail; steep=1 hands every face >~30 deg to it so the top-projected floor can no longer smear into corduroy
+  else if (k < 4.5) { layer = 8.0;  scl = 3.2; cov = 1.00; rough = 0.92; rockCut = 0.12; steep = 0.85; mvar = 0.8; snowK = 0.00; tint = vec3(0.96, 0.97, 1.02); }   // infernal: ash_basalt is already charcoal (the old 0.80/0.82/0.94 cooled a warm ash that is gone); cliffs/cinder cones go to columnar basalt via the cR override, not to the top-projected floor (the old rockCut 0.80 is what put brick-course strata on every cone)
+  else if (k < 5.5) { layer = 13.0; scl = 4.6; cov = 0.92; rough = 0.85; steep = 0.85; mvar = 0.7; snowK = 0.55; tint = vec3(1.02, 0.98, 1.08); }   // lost realm: flagstone_violet IS dark violet with gold inlay — the old celestial-marble + 1.42 blue lift is what blew the plain out lilac-white. steep: the rampart berm face is EARTH+rubble (triplanar cliff, violet-graded below by bLos), not stretched flagstone smear
+  else if (k < 6.5) { layer = 10.0; scl = 3.0; cov = 0.94; rough = 0.60; rockCut = 0.45; snowK = 0.20; tint = vec3(0.84, 0.98, 0.72); }   // shadowfen: peat_muck is true dark peat; mild olive push only (the old 0.70/0.86/0.74 compensated the warm fen_muck that is gone)
   // Sunken Kingdom is a MOUNTAIN CASCADE GORGE, not a beach (user decree 2026-08-25 + wave-3 blocker "the whole
   // region reads as beige desert sand"). Floor = the same jagged fracture rock as a cliff face, graded cool and
   // wet; seabed_ripple (14) survives only in the shallow flats near the water line, added in the splat below.
-  else if (k < 7.5) { layer = 3.0;  scl = 5.0; cov = 0.95; rough = 0.52; steep = 0.90; mvar = 0.9; tint = vec3(0.62, 0.72, 0.74); }
-  else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; steep = 0.90; tint = vec3(0.78, 0.74, 0.92); }   // voidstone. steep: the abyss walls go to the triplanar cliff path (overridden to voidstone below) — top projection is what smeared the crater slopes into corduroy
+  else if (k < 7.5) { layer = 3.0;  scl = 5.0; cov = 0.95; rough = 0.52; steep = 0.90; mvar = 0.9; snowK = 0.45; tint = vec3(0.62, 0.72, 0.74); }
+  else              { layer = 11.0; scl = 4.0; cov = 1.00; rough = 0.68; rockCut = 0.88; steep = 0.90; snowK = 0.00; tint = vec3(0.78, 0.74, 0.92); }   // voidstone. steep: the abyss walls go to the triplanar cliff path (overridden to voidstone below) — top projection is what smeared the crater slopes into corduroy
 }`;
 
 // splat: computed where <map_fragment> would sample the albedo; leaves tN (world normal), tRough, tAO, tEmis for later chunks
@@ -645,10 +648,10 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float bA = ${THETA0} + bK * ${STEP}, bA2 = ${THETA0} + bK2 * ${STEP};
   float bD = length(P.xz - vec2(cos(bA), sin(bA)) * ${RB}.0) + (macro - 0.5) * 26.0;
   float bD2 = length(P.xz - vec2(cos(bA2), sin(bA2)) * ${RB}.0) + (macro - 0.5) * 26.0;
-  float bLayer, bScl, bRough, bCov, bSnow, bRockCut, bSteep, bMvar; vec3 bTint;
-  float bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2, bSteep2, bMvar2; vec3 bTint2;
-  biomeSet(bK, bLayer, bScl, bRough, bCov, bSnow, bRockCut, bSteep, bMvar, bTint);
-  biomeSet(bK2, bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2, bSteep2, bMvar2, bTint2);
+  float bLayer, bScl, bRough, bCov, bSnow, bRockCut, bSteep, bMvar, bSnowK; vec3 bTint;
+  float bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2, bSteep2, bMvar2, bSnowK2; vec3 bTint2;
+  biomeSet(bK, bLayer, bScl, bRough, bCov, bSnow, bRockCut, bSteep, bMvar, bSnowK, bTint);
+  biomeSet(bK2, bLayer2, bScl2, bRough2, bCovN, bSnow2, bRockCut2, bSteep2, bMvar2, bSnowK2, bTint2);
   float bW = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD);    // Biomes.RL_*: regions abut, seam at ~260 m
   float bW2 = 1.0 - smoothstep(${RL_CORE}.0, ${RL_EDGE}.0, bD2);
   float wB = mix(bW * bCov, bW2 * bCovN, bMix);
@@ -665,6 +668,32 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // off the low ground, which is where the offending chute actually was.
   float bCel = mix(bW * step(1.5, bK) * step(bK, 2.5), bW2 * step(1.5, bK2) * step(bK2, 2.5), bMix);
   wB *= mix(1.0, smoothstep(46.0, 62.0, P.y), bCel);
+  float bShf = mix(bW * step(5.5, bK) * step(bK, 6.5), bW2 * step(5.5, bK2) * step(bK2, 6.5), bMix);   // shadowfen: bed-depth grade under the standing water
+  // ---- THE MOUNTAIN RING WEARS THE REGION'S CLOTHES ------------------------------------------------
+  // Third-wave-unfixed finding: the ring inside the Wastes still had white snowcaps and Utah-sandstone
+  // corduroy, and the Void's ring was "snow-capped crisp". The MECHANISM: every per-region override above
+  // is gated on bW, which is measured from the region's CENTRE at r = RB (760 m) with RL_EDGE = 320 — so
+  // bW is already 0 by r ~ 440, and the ring CRESTS live at r ~ 330-460. The tallest, most-looked-at rock
+  // in every region was therefore outside its own region's paint. bK does NOT have that problem: it comes
+  // from the bearing, so it is the right wedge at any radius. ringW re-asserts the wedge across the ring
+  // band and hands the crests back to the biome underneath, exactly as the brief asks — region weight, not
+  // a global altitude rule.
+  // SELF-CHECK 2026-08-27: the outer cutoff (x (1 - smoothstep(452, 508, rad))) was WRONG and it is why
+  // "snowcaps in the Wastes" was still visible after the ring fix. The horizon you see from inside a
+  // region is mostly the EDGE crag wall at r > 960, plus the shoulder between it and the region — and
+  // off-bearing (near a wedge bisector) the edge wall is ~370 m from its region centre, i.e. outside
+  // RL_EDGE, so bW is 0 there too. Both were left ungraded: the Infernal Wastes and the Void both render
+  // white alpine peaks on their own skyline (sc-C/shot-infernal-far-noon, shot-void-mid-noon). The wedge
+  // is defined at every radius, so there is no reason to stop: everything past the bowl belongs to the
+  // region on its bearing.
+  float ringW = smoothstep(296.0, 360.0, rad);
+  bInf = max(bInf, ringW * step(3.5, bK) * step(bK, 4.5));
+  bVod = max(bVod, ringW * step(7.5, bK));
+  bDrg = max(bDrg, ringW * step(2.5, bK) * step(bK, 3.5));
+  bLos = max(bLos, ringW * step(4.5, bK) * step(bK, 5.5) * 0.5);    // a HINT of violet on the ring, not the full rampart-earth grade
+  bSnk = max(bSnk, ringW * step(6.5, bK) * step(bK, 7.5) * 0.8);
+  bSnowK = mix(bSnowK, bSnowK2, bMix);
+  float regW = max(bW, ringW);                                   // "the region owns this pixel", ring included
   bRough = mix(bRough, bRough2, bMix);
   bSnow = mix(bSnow, bSnow2, bMix); bRockCut = mix(bRockCut, bRockCut2, bMix);
   bSteep = mix(bSteep, bSteep2, bMix); bMvar = mix(bMvar, bMvar2, bMix);
@@ -681,7 +710,10 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // never on the out-of-world skirt: it is a gentle ramp, so a height-and-slope snow test paints ALL of it
   // white, and a white sheet behind the ring is exactly the bank the mountains were being mistaken for.
   wSnow *= 1.0 - smoothstep(${HALF - 32}.0, ${HALF}.0, max(abs(P.x), abs(P.z)));
-  wSnow *= 1.0 - bInf * 0.92;      // ...and never inside the Wastes: white snowcaps on the ring wall behind a caldera (wave-3 infernal major)
+  // ...and only as much as the region under it tolerates (biomeSet's snowK). Infernal and the Void are 0,
+  // the fen and the gorge are near 0, the Peaks and Frostveil keep the full cap. Replaces the one hard-coded
+  // infernal cut, which is why the SAME bug was still open in the Void two waves later.
+  wSnow *= mix(1.0, bSnowK, regW);
   float skirtM = smoothstep(76.0, 58.0, ruinD) * smoothstep(38.0, 52.0, ruinD);   // Spire skirt band: broken rock, not a dirt mound
   float rockTh = mix(0.30, 0.12, max(alt, max(mtn, skirtM)));
   float rockW = 0.13 + far * 0.12;                                       // wide blend + multi-octave dither: no sawtooth boundary at the skirt base
@@ -787,11 +819,24 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     // placeholder". It is graded to violet-grey earth with a wide macro value swing so it reads as raised
     // earth-and-rubble that belongs to the violet plain it rings, instead of imported sandstone.
     if (bLos > 0.002) {
-      vec3 earth = cR.rgb * mix(vec3(0.50, 0.42, 0.68), vec3(0.92, 0.82, 1.06), macro2C * 0.6 + macroC * 0.4);
+      // Value pulled well down (was 0.50-1.06): cliff_strata x its 1.20 load gain x rMac is a BRIGHT plate,
+      // so the old grade left the rampart a pale lilac wall at any range -- lighter than the violet plain it
+      // is supposed to be made of. Same hue, roughly half the value, wider swing so the rubble reads.
+      vec3 earth = cR.rgb * mix(vec3(0.30, 0.25, 0.44), vec3(0.68, 0.60, 0.84), macro2C * 0.6 + macroC * 0.4);
       cR.rgb = mix(cR.rgb, earth, bLos);
     }
-    // Sunken gorge walls: the same rock, wet and cool. Keeps the cascade sheets reading AGAINST the stone.
-    if (bSnk > 0.002) cR.rgb = mix(cR.rgb, cR.rgb * vec3(0.58, 0.68, 0.72), bSnk);
+    // Dragon Peaks: dark iron rock, not white quarry stone. cliff_strata x its 1.20 load gain x rMac is a
+    // BRIGHT neutral plate, and the region tint (0.84, 0.88, 1.02) cooled it further, so the Peaks rendered
+    // as pale blue-grey concrete at exactly the same VALUE as the bowl floor in front of them — no
+    // silhouette, no separation, and nothing that says "dragon" (sc-B/shot-dragon-mid-noon, -near-noon).
+    // A darkening with a faint warm bias (1 : 0.92 : 0.85), NOT the warm grade that turned this plate into
+    // terracotta sandstone in wave 3: the hue barely moves, the value drops a third.
+    if (bDrg > 0.002) cR.rgb = mix(cR.rgb, cR.rgb * vec3(0.66, 0.585, 0.505), bDrg);
+    // Sunken gorge walls / treads: the same rock, wet and cool. Keeps the cascade sheets reading AGAINST the
+    // stone — and now WET vs DRIED, not one flat cool multiply. The single grade left the scoured treads a
+    // pale mint sheet with no value hierarchy at all ("wet formica", sc-A/_z-sunk-near.png); river rock is
+    // near-black where it never dries and pale where it does, which is the whole reason a rapids reads.
+    if (bSnk > 0.002) cR.rgb = mix(cR.rgb, cR.rgb * mix(vec3(0.33, 0.42, 0.45), vec3(0.74, 0.86, 0.88), macro2C), bSnk);
     // near-camera granite octave: cliff_strata tiles at 13 m, so at 2 m a face was "blurry brown mush".
     // Wave 3: the octave is now a REAL fine-grain tile (granite_detail, layer 16) at 1.9 m instead of a
     // re-tap of the strata — actual feldspar/mica granularity instead of more blur (dragon close-up verdict).
@@ -804,7 +849,15 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
       float ns = 1.0 / 2.6;
       vec4 cRn = lyrHex(P.zy * ns, 16.0, 6.0) * bw.x + lyrHex(P.xz * ns, 16.0, 6.0) * bw.y + lyrHex(P.xy * ns, 16.0, 6.0) * bw.z;
       cR.rgb *= mix(1.0, clamp(dot(cRn.rgb, vec3(0.30, 0.55, 0.15)) * 5.7, 0.42, 1.72), rockNear * 0.65);   // 5.7 = 1/mean-luma of granite_detail.jpg (0.175 linear) — remeasure if the asset is replaced
+      // NEAR-FIELD CAVITY, free: cR.a is the plate's own height/luma channel, already fetched. Using it to
+      // darken the crevices is what gives a rock face DEPTH at 3-15 m instead of one evenly lit grey wall
+      // (the 8 m "material truth" bar). Multiplicative on albedo, so it can only ever darken toward the hue.
+      cR.rgb *= mix(1.0, 0.60 + 0.68 * cR.a, rockNear * 0.85);
     }
+    // The ring rock takes the REGION's grade (same reason as ringW above): one neutral warm-grey plate wrapped
+    // around all nine biomes is what reads as "Utah sandstone" behind a lava field and as a crisp alpine wall
+    // over a peat fen. Half strength — this is a grade on the region's own stone, not a re-skin.
+    cR.rgb *= mix(vec3(1.0), mix(bTint, bTint2, bMix), regW * 0.5);
     // far-field tiling break: a 143 m value swing over every cliff (macroC is already in registers — free).
     // The masonry-course repeat read at distance because each 13 m hex cell kept the same mean value.
     cR.rgb *= mix(1.0, 0.70 + 0.60 * macroC, farC * 0.75);
@@ -828,6 +881,27 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     vec4 dX = lyr(P.zy * (1.0 / 1.1), 7.0), dZ = lyr(P.xy * (1.0 / 1.1), 7.0);
     vec3 bX = vec3(0.0, dX.g * 2.0 - 1.0, dX.r * 2.0 - 1.0) * bw.x, bZ = vec3(dZ.r * 2.0 - 1.0, dZ.g * 2.0 - 1.0, 0.0) * bw.z;
     bump = mix(bump, (bX + bZ) * 0.7 * detFade + bump * bw.y, wRock);
+    // MACRO RELIEF — the 40 m "ornament hierarchy" bar, and the thing every cliff in this world was missing.
+    // cliff_strata tiles at 9.5 m, so a 60 m Dragon Peaks wall is six tiles of ~1.2 m facets and NOTHING
+    // between that and the whole massif: at 40 m it reads as one uniform grey speckle carpet with no
+    // buttresses, no ledges and no value hierarchy — "a photograph wallpapered onto a smooth mesh"
+    // (sc-B/shot-dragon-mid-noon, _zoom-wall.png). The 47 m rMac patch is albedo only, which cannot carve.
+    // This is a LIGHTING term: a 26 m bump on the same three-plane frame the cliff plate uses, so the sun
+    // itself makes lit shoulders and shadowed recesses out of the wall. It deliberately does NOT fade with
+    // camD — macro relief is precisely the structure that has to survive to 200 m, where the fine octaves
+    // have long since mipped away. mcH rides along as a cavity term (mean 1.0, multiplicative on albedo:
+    // it can only darken toward the rock's own hue, never brighten past it, never reach bloom).
+    // RIDGED, same fold as the near-field octave: a plain fbm bump at this scale gives rounded lumps and
+    // the wall reads as melted wax. Folding each tap's gradient about its midline turns the lumps into
+    // crests with gullies between them — arete-and-couloir, which is what a 60 m rock face is made of.
+    float ms = 1.0 / 26.0;
+    vec4 mcX = lyr(P.zy * ms, 7.0), mcY = lyr(P.xz * ms, 7.0), mcZ = lyr(P.xy * ms, 7.0);
+    vec3 msg = vec3(sign(0.5 - mcX.b), sign(0.5 - mcY.b), sign(0.5 - mcZ.b));
+    bump += (vec3(0.0, mcX.g * 2.0 - 1.0, mcX.r * 2.0 - 1.0) * (bw.x * msg.x)
+           + vec3(mcY.r * 2.0 - 1.0, 0.0, mcY.g * 2.0 - 1.0) * (bw.y * msg.y)
+           + vec3(mcZ.r * 2.0 - 1.0, mcZ.g * 2.0 - 1.0, 0.0) * (bw.z * msg.z)) * 1.00 * wRock;
+    float mcH = mcX.b * bw.x + mcY.b * bw.y + mcZ.b * bw.z;
+    cR.rgb *= 0.74 + 0.52 * (1.0 - abs(mcH * 2.0 - 1.0));    // dark in the gullies, pale on the crests (mean ~1.0)
   }
   // biome floor. Derivatives are taken in uniform control flow (pdx/pdy, hoisted above with the guarded splat
   // fetches) and handed to the sampler, so the second (neighbour) fetch can sit behind a branch and cost
@@ -894,6 +968,19 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
       cB.rgb = mix(cB.rgb, cB.rgb * vec3(0.52, 1.02, 0.60), mossS * 0.7);
       bRough = mix(bRough, 0.32, wetR * 0.85);
     }
+    // Shadowfen bed. The kernel now gives the flats tussock-and-pool relief; this is what makes it READ.
+    // The bed is under 0.2-1.5 m of peat water and it was painted at one flat value, so the depth variation
+    // would have been invisible and the near field would still be "featureless water at every hour and every
+    // angle". Peat water is strongly absorbing: value falls off fast with depth (that gradient IS the shape
+    // cue), an algal scum ring paints in the few cm either side of the waterline, and the tussock crowns that
+    // stand proud keep their dry peat colour. All multiplies on the albedo — nothing here can bloom.
+    if (bShf > 0.002) {
+      float dep = smoothstep(0.05, 1.30, uWater - P.y) * bShf;
+      cB.rgb *= mix(vec3(1.0), vec3(0.26, 0.33, 0.27), dep);
+      float scum = bShf * (1.0 - smoothstep(0.10, 0.55, abs(P.y - uWater + 0.10))) * smoothstep(0.40, 0.70, macro2 + (det2.b - 0.5) * 0.55);
+      cB.rgb = mix(cB.rgb, vec3(0.052, 0.082, 0.030), scum * 0.72);
+      bRough = mix(bRough, 0.34, smoothstep(1.10, 0.0, abs(P.y - uWater)) * bShf * 0.8);   // wet sheen on the waterline band
+    }
     // Frostveil frozen lake: walkable ice sheet over the bowl (kernel holds the bed at 4.22, dryAt-masked).
     // ice_glacial (layer 15) with sastrugi-snow drifts blown back across it — cracks read, patches soften.
     if (wTun > 0.002) {
@@ -953,7 +1040,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     float w1 = sin(cq.x + uTime * 0.75) * sin(cq.y * 1.07 - uTime * 0.62);
     float w2 = sin((cq.x + cq.y) * 0.71 - uTime * 0.48) * sin((cq.x - cq.y) * 0.63 + uTime * 0.39);
     float cst = pow(clamp(w1 * 0.5 + w2 * 0.5 + 0.5, 0.0, 1.0), 5.0);
-    alb *= 1.0 + cst * 1.5 * sub * (1.0 - smoothstep(0.0, 22.0, uWater - P.y));
+    alb *= 1.0 + cst * 1.5 * sub * (1.0 - smoothstep(0.0, 22.0, uWater - P.y)) * (1.0 - bShf * 0.9);   // ...but not in the fen: peat water carries no light net
   }
   // shoreline wetness: wide gradient + saturated dark waterline band, like an FF14 shore
   float wet = lakeM * smoothstep(uWater + 6.5, uWater + 0.2, P.y + (det2.b - 0.5) * 0.7);
@@ -961,6 +1048,45 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   alb *= mix(vec3(1.0), vec3(0.48, 0.54, 0.64), lakeM * smoothstep(uWater + 1.6, uWater + 0.2, P.y));   // dark saturated waterline band
   alb = mix(alb, alb * vec3(0.6, 0.72, 0.7), lakeM * smoothstep(uWater, uWater - 3.0, P.y));
   rough = mix(rough, 0.10, wet);
+  // ---- NEAR-FIELD DETAIL OCTAVE (the last ~40 m) ------------------------------------------------
+  // The second systemic wave-4 fault: "everything from 2 m to 25 m in front of the player is a featureless
+  // smear" (shadowfen, lost, infernal, sunken). It is a BAND GAP, not a resolution problem. The detail
+  // ladder ran 0.23 m / 0.9 m / 4.3 m tiles -> dominant features 2.5 cm, 10 cm, 48 cm, and then jumped
+  // straight to the 61 m and 143 m macros. Nothing existed between half a metre and sixty, which is
+  // precisely the scale you see when you look at the ground ten metres ahead: at that distance every floor
+  // plate in the world (3-9.5 m tiles) shows a fraction of ONE tile, so all that is left is its mip.
+  // This is the missing rung: a 12 m tile of the detail plate -> ~1.3 m rubble/boulder-scale structure,
+  // with a 6 m macro on top of it, contributing BOTH a normal and a hue-preserving value break-up.
+  // Sampled TRIPLANAR on the same anG frame the cliff path uses, so it does NOT stretch 1/cos(slope) on a
+  // face -- that is the infernal "ground detail dies on slopes" verdict, and top projection is its cause.
+  // Value modulation is scalar (the plate's height/macro channels, centred on 0.5) so it only ever scales
+  // the albedo it is given: it cannot shift hue and it cannot push anything toward the bloom threshold.
+  // Faded out by 40 m, an order of magnitude before a 1.3 m feature could alias.
+  // Windowed, not just faded: under ~5 m a 1.3 m feature is magnified past the plate's texel density and
+  // turns back into soft blobs -- and that range is already owned by det0 (0.23 m), det (0.9 m) and the
+  // granite octave. This rung is for the 7-40 m band, which is the one that was empty.
+  float nfW = smoothstep(3.0, 9.0, camD) * (1.0 - smoothstep(18.0, 42.0, camD));
+  if (nfW > 0.003) {
+    nfW *= 1.0 - 0.45 * clamp((sG + sF) / sum, 0.0, 1.0);          // gentler under grass/leaf cover, which hides the ground anyway
+    vec3 nw = pow(anG, vec3(4.0)); nw /= (nw.x + nw.y + nw.z);
+    const float nfS = 1.0 / 12.0;
+    vec4 nX = lyr(P.zy * nfS, 7.0), nY = lyr(P.xz * nfS, 7.0), nZ = lyr(P.xy * nfS, 7.0);
+    // RIDGED, not smooth (self-check 2026-08-27). Layer 7's height channel is plain fbm, so the first
+    // version of this octave delivered soft parallel WAVES, not the "1.3 m rubble" the comment claimed —
+    // the sunken treads read as wet formica with the waves rolling across it (sc-A/shot-sunken-near-noon).
+    // 1 - |2h-1| folds the fbm about its midline: the level set becomes a crease network, which is what
+    // fracture and scour actually look like. Free — same three taps. The bump gets the matching fold:
+    // flipping each tap's gradient by sign(0.5 - h) turns every smooth lobe into a V-crease, so the
+    // LIGHTING creases too instead of just the albedo (a value-only crease reads as a painted-on line).
+    vec3 nsg = vec3(sign(0.5 - nX.b), sign(0.5 - nY.b), sign(0.5 - nZ.b));
+    bump += (vec3(0.0, nX.g * 2.0 - 1.0, nX.r * 2.0 - 1.0) * (nw.x * nsg.x)
+           + vec3(nY.r * 2.0 - 1.0, 0.0, nY.g * 2.0 - 1.0) * (nw.y * nsg.y)
+           + vec3(nZ.r * 2.0 - 1.0, nZ.g * 2.0 - 1.0, 0.0) * (nw.z * nsg.z)) * 0.85 * nfW;
+    float nfH = nX.b * nw.x + nY.b * nw.y + nZ.b * nw.z;           // ~1.3 m structure
+    float nfM = nX.a * nw.x + nY.a * nw.y + nZ.a * nw.z;           // ~6 m patches
+    float nfC = 1.0 - abs(nfH * 2.0 - 1.0);                        // -> creases (mean ~0.5, so this stays a pure value break-up)
+    alb *= 1.0 + ((nfC - 0.5) * 0.50 + (nfM - 0.5) * 0.30) * nfW;
+  }
   // detail bump into the normal, close-up detail contrast (some albedo contrast survives at distance)
   tN = normalize(gN + bump);
   alb *= 1.0 + (det.b - 0.5) * 0.5 * detFade + (det2.b - 0.5) * 0.2 * (1.0 - 0.6 * far) + (det0.b - 0.5) * 0.45 * nearF;
