@@ -12,6 +12,16 @@ const TR_VERT = /* glsl */`
   void main() {
     vec3 a = (modelViewMatrix * vec4(iA, 1.0)).xyz, b = (modelViewMatrix * vec4(iB, 1.0)).xyz;
     vec3 p = mix(a, b, uv.y);
+    // NEAR-PLANE CLIP (infernal firing wedge): a tracer/beam endpoint behind the eye (the muzzle can cross
+    // the near plane under FOV kick / steep pitch) mirror-projects, and the quad becomes a hard-edged
+    // polygon spanning the frame corner-to-corner. Slide the vertex along its own segment back to just in
+    // front of the plane; the existing depth fade (smoothstep below) then takes its alpha to ~0.
+    const float NEARP = 0.07;
+    if (p.z > -NEARP) {
+      vec3 seg = b - a;
+      if (abs(seg.z) > 1e-5) p = a + seg * clamp((-NEARP - a.z) / seg.z, 0.0, 1.0);
+      p.z = min(p.z, -NEARP);
+    }
     vec2 ax = (b - a).xy; float l = length(ax);
     vec2 perp = l > 1e-5 ? vec2(-ax.y, ax.x) / l : vec2(1.0, 0.0);
     float depth = max(0.05, -p.z);

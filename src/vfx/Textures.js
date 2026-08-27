@@ -97,13 +97,19 @@ export function makeAtlas(seed = 1) {
 export function makeDecals(seed = 1) {
   const c = canvas(T * 2, T), ctx = c.getContext('2d');
   const rnd = mulberry32(seed + 313);
-  // 0 bullet hole: dark pit, chipped rim, radial cracks
-  { const cracks = []; for (let k = 0; k < 7; k++) cracks.push([rnd() * 6.283, 0.3 + rnd() * 0.45, 0.03 + rnd() * 0.03]);
+  // 0 bullet hole. Wave-6 verdict on the old one: "a huge pure-black soft radial blob — no crater, no rim"
+  // — its 0.5-alpha halo out to r 0.55 was most of the footprint, so at any distance the mips averaged the
+  // whole tile into one soft dark disc. Now the alpha lives in STRUCTURE: a small hard pit, a ragged
+  // HALF-strength lip ring around it (reads as chipped stone, not a shadow), and thin tapering fracture
+  // streaks with bare surface showing between them — so the mark reads as a crater at 2 m and shrinks to a
+  // crisp dot at range instead of a smudge.
+  { const cracks = []; for (let k = 0; k < 8; k++) cracks.push([rnd() * 6.283, 0.34 + rnd() * 0.42, 0.014 + rnd() * 0.016]);
     fillTile(ctx, 0, 0, (x, y, r) => {
       const n = fbm(x * 5, y * 5, { octaves: 3, seed: seed + 5 }) * 0.5 + 0.5;
-      let m = sstep(0.3 + 0.16 * (n - 0.5), 0.12, r) + 0.5 * sstep(0.55, 0.22, r + 0.3 * (n - 0.5));
+      let m = sstep(0.20 + 0.06 * (n - 0.5), 0.08, r);                                             // small dark pit
+      m = Math.max(m, 0.42 * sstep(0.40, 0.18, r + 0.24 * (n - 0.5)) * sstep(0.10, 0.20, r));      // chipped lip: lighter, ragged, gone by r~0.4
       const ang = Math.atan2(y, x);
-      for (const [a, len, w] of cracks) { const da = Math.abs(((ang - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI); const d = da * r; if (r < len) m = Math.max(m, 0.9 * sstep(w * 1.6, 0, d) * (1 - r / len) * (0.6 + 0.8 * n)); }
+      for (const [a, len, w] of cracks) { const da = Math.abs(((ang - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI); const d = da * r; if (r < len) m = Math.max(m, 0.85 * sstep(w * 1.6, 0, d) * (1 - r / len) * (0.5 + 0.8 * n)); }
       return m;
     }); }
   // 1 scorch: fbm blotch with streaks

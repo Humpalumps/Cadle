@@ -1,0 +1,1 @@
+[{"wait": 6.0}, {"shot": "boot"}, {"eval": "(()=>{const o=document.querySelector('#loading,#overlay,.loading');return JSON.stringify({loadingVisible:o?getComputedStyle(o).display!=='none'&&getComputedStyle(o).visibility!=='hidden':false,started:!!window.__game.game.time})})()"}, {"hour": 13}, {"look": [0.3, 0.0]}, {"fire": 0.25}, {"shot": "boot-firing"}, {"wait": 1}]

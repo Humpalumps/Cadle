@@ -385,6 +385,18 @@ export class VFX {
     fn(this, p, o, k, s, this._col(o, PRESET_COLOR[preset] ?? AETHER));
   }
   _col(o, fallback) { return _c.set(o.color ?? (o.element && ELEMENT_COLORS[o.element]) ?? fallback); }
+  /**
+   * Pale-ground damp (blob decree, last mile). Over a near-WHITE floor (tundra snow, celestial marble)
+   * ACES compresses base+additive to the top of the curve, so ANY meaningful additive collapses to a
+   * desaturated wash — the combat gate's stubborn tundra sparkle fields were healthy deep-cyan stars whose
+   * sum with snow tone-mapped white. There is no per-pixel fix in a particle system: the honest move is
+   * less additive VALUE on those grounds, with the dark veils carrying the contrast read instead.
+   * One biome lookup per burst, deterministic.
+   */
+  _paleK(p) {
+    const b = this.game.terrain?.biomeAt?.(p.x, p.z);
+    return b === 'tundra' || b === 'celestial' ? 0.5 : b === 'dragon' || b === 'sunken' ? 0.75 : 1;
+  }
   _anchor(p) { const a = this._anchors[this._ai = (this._ai + 1) % this._anchors.length]; a.copy(p); return a; }
   tracer(from, to, o = NOPTS) {
     // Shots fly along the view axis, so a tracer projects to a SHORT screen segment near the muzzle: length + width + on-screen
@@ -400,7 +412,9 @@ export class VFX {
     const type = o.type ?? 'bullet';
     if (type === 'sigil') return this.sigil(p, { normal: n, color: o.color, size: o.size ?? 2.5, duration: o.duration ?? 10 });
     if (type === 'scorch') this.decals.add(p, n, o.size ?? 2.5, 1, o.life ?? 60, 0.12, 0.1, 0.09, o.rot);
-    else this.decals.add(p, n, o.size ?? 0.16, 0, o.life ?? 45, 0.28, 0.26, 0.24, o.rot);
+    // bullet tint 0.34 not 0.28: with the rebuilt crater tile (small pit + lip + cracks) the mark keeps its
+    // read from structure; near-black multiply on dark rock was the "hole in the world" half of the verdict
+    else this.decals.add(p, n, o.size ?? 0.14, 0, o.life ?? 45, 0.34, 0.32, 0.29, o.rot);
   }
   flash(p, o = NOPTS) {
     let f = null; for (const x of this.lights) if (x.t >= x.dur) { f = x; break; }
@@ -480,7 +494,7 @@ export class VFX {
       const n = e.normal ?? this._up, s = e.surface;
       const preset = s === 'water' ? 'impact-water' : (s === 'prop' || s === 'rock') ? 'impact-rock' : 'impact-terrain';
       this._emit(preset, e.point, { normal: n, element: e.element });
-      if (s !== 'water') this.decal(e.point, n, { type: 'bullet', size: 0.16 + Math.random() * 0.1 }); // wave-1 feel audit: 0.12-0.2 m decals read as thin — one notch bigger
+      if (s !== 'water') this.decal(e.point, n, { type: 'bullet', size: 0.12 + Math.random() * 0.06 }); // honest 0.12-0.18 m: at 0.16-0.26 the old soft-blob tile read as a ~200 px hole in the world at 2 m
     });
     ev.on('combat:explosion', (e) => {
       if (!e?.point) return;
@@ -667,7 +681,7 @@ const PRESETS = {
     // Elemental explosions take the ELEMENT_COLORS pastel (arc/stasis 0x*d8ff, strand 0x7cff9c) — as a tracer
     // tint that is fine, but as the BODY colour of a whole fireball a pastel IS near-white: stasis/arc/strand
     // detonations were flagged as cream clouds in tundra/celestial/shadowfen. Deep-saturate it first.
-    const fire = o.element === 'arc' || o.element === 'void' || o.element === 'stasis' || o.element === 'strand' ? _c2.copy(c).offsetHSL(0, 0.55, -0.14) : _c2.set(0xff5a18);
+    const fire = o.element === 'arc' || o.element === 'void' || o.element === 'stasis' || o.element === 'strand' ? _c2.copy(c).offsetHSL(0, 0.55, -0.18) : _c2.set(0xff5a18);
     const fl = n ? p.y - 0.02 : -1e9;
     // Blob decree re-author (wave-5: enemy bolts detonate AT the camera and this preset washed 8 of 10
     // regions near-white): every near-white literal is gone — the punch is a SATURATED fire hue at hdr low
@@ -675,16 +689,26 @@ const PRESETS = {
     // Range fade (same mechanism note as 'trail'): past ~20 m the whole layer stack projects onto the same
     // few dozen pixels and adds up cream whatever the hue — thin the additive layers with distance.
     const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
-    const fr = (1 - 0.6 * Math.min(1, Math.max(0, (dd - 20) / 40))) * (o.dampen ?? 1);   // range fade × volley-overlap energy share
+    // near-lens damping: a detonation 2-4 m out puts ~6 additive layers each covering 20-60% of the frame —
+    // under the per-quad coverage fade, but their SUM is the celestial 36k-px cream sheet (cvfx-vfx4 a-4,
+    // 9.1% wash). Point-blank punch is carried by shake/flash/kick, not by stacked value.
+    const nf = 0.55 + 0.45 * Math.min(1, dd / 8);
+    const fr = (1 - 0.6 * Math.min(1, Math.max(0, (dd - 20) / 40))) * (o.dampen ?? 1) * nf * v._paleK(p);   // range fade × volley-overlap share × near-lens damp × pale-ground damp
     // Energy conservation for BIG detonations (icegiant throw r=3.0, skyserpent 1.5): the halo/ring quads
     // scale with r, so per-pixel additive intensity must fall as the area grows or a 5-m soft disc lands on
     // pale ground (snow, marble, sand) and lifts an already-bright surface into the detector's cream band —
     // combat gate r4's tundra/celestial residuals were exactly this, not a clipped element.
     const er = Math.min(1, 2.2 / Math.max(1e-3, r));
-    b.reset(A, p).tex(TEX.GLOW).size(0.38 * r, 0.5 * r, 1.9).life(0.16).color(fire, fire).hdr(3 * fr, 1.5 * fr).fade(0, 0.25).burst(1);                // hot core in the FIRE hue itself: even HOT_TINTed white lands at channel-spread ~30 once capped, which is exactly the detector's cream band
+    // INSTANT dark backing (the muzzle/impact-enemy contrast trick at fireball scale). Combat gate r4's
+    // remaining residuals were all "additive element hue over a PALE floor" (tundra snow, celestial marble,
+    // sunken sand): the sum starts from an already-bright base, so even a capped additive stack lifts it
+    // into the detector's cream band. A same-frame dark flash-front under the fireball makes the additive
+    // layers read against DARK — the punch comes from contrast, not from more value.
+    b.reset(AL, p).jitter(0.22 * r).spread(3.14).speed(0.3 * r, 0.8 * r).life(0.32, 0.5).size(0.42 * r, 0.6 * r, 2.1).tex(TEX.SMOKE).color(0x1a1109, 0x261b10).vary(0.3).alpha(0.58 * (o.dampen ?? 1)).rot().spin(1.5).drag(1.5).fade(0, 0.35).burst(3);
+    b.reset(A, p).tex(TEX.GLOW).size(0.38 * r, 0.5 * r, 1.9).life(0.16).color(fire, fire).hdr(3 * fr * er, 1.5 * fr * er).fade(0, 0.25).burst(1);                // hot core in the FIRE hue itself (er: the core quad scales with r too — a big detonation's per-pixel energy must fall as its area grows)
     b.reset(A, p).tex(TEX.GLOW).size(1.1 * r, 1.3 * r, 1.5).life(0.28).color(fire, 0x7a1800).hdr(1.2 * fr * er, 0.3).alpha(0.85).fade(0, 0.25).burst(1);        // warm halo (er: per-pixel energy falls as the disc grows)
     b.reset(A, p).tex(TEX.FLARE).size(1.4 * r, 1.7 * r, 1.5).life(0.11).color(fire, 0x8a2000).hdr(2.2 * fr * er, 1).rot().fade(0, 0.2).burst(1);           // flare petals in the element hue, not cream-white
-    b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.5, 1.0).size(0.18 * r, 0.36 * r, 2.6).tex(TEX.SMOKE).color(fire, 0x8a1a00).hdr(1.2 * fr, 0.25).vary(0.5).alpha(0.85).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.3).burst(Math.max(4, Math.round(12 * k * fr))); // fire tongues (12 not 22 at hdr 1.2: a stack of tongues clips its BLUE channel first and the whole pile goes cream — fewer, dimmer, still fire)
+    b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.5, 1.0).size(0.18 * r, 0.36 * r, 2.6).tex(TEX.SMOKE).color(fire, 0x8a1a00).hdr(1.2 * fr * er, 0.25).vary(0.5).alpha(0.85).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.3).burst(Math.max(4, Math.round(12 * k * fr))); // fire tongues (12 not 22 at hdr 1.2: a stack of tongues clips its BLUE channel first and the whole pile goes cream — fewer, dimmer, still fire)
     // smoke ball: Destiny grenade gradient — fire-lit orange-brown -> mid grey-brown -> dark. Starts SMALL and semi-transparent
     // and grows (endMul 3.4), so 0.2-1.0 s reads as a churning fireball, not an instant ink blob.
     b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(0xb06a2e, 0x272119).hdr(1.7, 1).lit(L(v)).vary(0.35).alpha(0.62).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(14 * k);
@@ -697,7 +721,7 @@ const PRESETS = {
       _v3.set(p.x, p.y + 0.9, p.z);                                                                                                                    // scorch "haze" discs: the decal itself is buried under 1 m grass, this is the visible char
       b.reset(AL, _v3).axis(n).flat().ring(0, 0.5 * r).tex(TEX.SMOKE).size(0.75 * r, 1.05 * r, 1.15).life(7, 10).color(0x241d16, 0x2b241b).vary(0.3).alpha(0.5).rot().fade(0.06, 0.45).burst(5); }
     b.reset(A, p).axisUp().spread(3.14).speed(1.2 * r, 3.2 * r).life(1.4, 2.6).size(0.022, 0.05, 0.35).tex(TEX.SPARK).color(0xffb050, fire).hdr(2.0 * fr, 0.7).stretch(0.03).gravity(8).drag(1.0).floor(fl, 0.3).fade(0, 0.6).burst(Math.round(30 * k * fr));       // lingering embers (local: capped speed so they don't pile 10 m away)
-    b.reset(A, p).jitter(0.4 * r).axisUp().spread(1.2).speed(0.4, 1.2).life(1.4, 2.4).size(0.05 * r, 0.09 * r, 0.4).tex(TEX.GLOW).color(fire, 0xff3000).hdr(1.8 * fr, 0.5).alpha(0.55).gravity(-0.5).drag(1.5).fade(0.1, 0.5).burst(Math.round(10 * k * fr));       // floating hot motes
+    b.reset(A, p).jitter(0.4 * r).axisUp().spread(1.2).speed(0.4, 1.2).life(1.4, 2.4).size(0.05 * r, 0.09 * r, 0.4).tex(TEX.GLOW).color(fire, 0xff3000).hdr(1.8 * fr * er, 0.5).alpha(0.55).gravity(-0.5).drag(1.5).fade(0.1, 0.5).burst(Math.round(10 * k * fr));       // floating hot motes
     b.reset(AL, p).axisUp().spread(2.2).speed(1.2 * r, 3 * r).life(0.8, 1.5).size(0.04 * s, 0.1 * s, 0.9).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(15).gravity(22).drag(0.3).floor(fl, 0.3).fade(0, 0.75).burst(14 * k);    // debris
     v.flash(p, { color: fire, intensity: 1.2 * s, distance: 6 * r, duration: 0.3 });   // was 6*s: the creatures-1 bisect showed these lights co-author the wash — at 14+ they still lit a melee golem's boulder arm to cream at 1 m
   },
@@ -708,14 +732,23 @@ const PRESETS = {
   },
   'aether-burst'(v, p, o, k, s, c) {
     const b = v.brush, A = v.add, day = v.day;
-    const sat = _c2.copy(c).offsetHSL(0, 0.5, 0);      // saturated violet-blue so it reads as magic, not a shadow artifact
-    // dark aether veil: TINY and sparse — at noon it used to dominate and the whole burst read as a shadow smudge
-    b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.16 * s, 0.26 * s, 2.0).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.3).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
-    b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr(1.6 + 0.6 * day, 0.5).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
-    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr(4 + 2 * day, 1.8).alpha(0.9).fade(0, 0.3).burst(1);
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(3.2 + 1.2 * day, 2).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(90 * k);   // 2x mote size, saturated (was white-hot dots that clipped to grey specks)
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr(2.2 + 0.8 * day).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(42 * k);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr(2.4 + 1.0 * day, 0.9).alpha(0.95).fade(0, 0.2).burst(1);
+    // DEEP-saturate — drop lightness too, exactly like 'explosion' does. Enemies feed this preset their
+    // glowColor on every stagger/shield-break/hit react, and half the bestiary's glow is a PASTEL
+    // (icegiant 0x9fd8ff->white, seraph 0xffd27a, bogwitch 0x7cff9c): saturating without deepening left
+    // the burst near-white, which was the combat gate's tundra star-sparkle cluster, the celestial warm
+    // cream patches and the shadowfen green cores (cvfx-vfx3 run). Hue survives ACES iff it starts DEEP.
+    const sat = _c2.copy(c).offsetHSL(0, 0.55, -0.16);
+    const pk = v._paleK(p), day2 = day * pk;   // pale-ground damp scales every additive layer below; the veil strengthens to carry the read
+    // dark aether veil. Widened from 0.16-0.26 (cvfx-vfx4): enemies pour this preset onto PALE ground —
+    // the icegiant's frost-hazard fountain re-emits it every 0.4 s on snow — and additive cyan over a white
+    // base washes at ANY strength; the veil is the dark the burst reads against. Still brief and violet-dark,
+    // so at noon it reads as roiled aether shadow, not an ink blob.
+    b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.3 * s, 0.44 * s, 1.8).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.42 * (2 - pk)).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
+    b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr((1.6 + 0.6 * day2) * pk, 0.5 * pk).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
+    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr((4 + 2 * day2) * pk, 1.8 * pk).alpha(0.9).fade(0, 0.3).burst(1);
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.7 + 1.0 * day2) * pk, 1.8 * pk).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(90 * k);   // 2x mote size, saturated; hdr 2.7 not 3.2 — swirling stars over snow were the tundra 21-cluster sparkle field
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr((2.2 + 0.8 * day2) * pk).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(42 * k);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr((2.4 + 1.0 * day2) * pk, 0.9 * pk).alpha(0.95).fade(0, 0.2).burst(1);
   },
   death(v, p, o, k, s, c) {
     // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game

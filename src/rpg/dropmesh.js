@@ -189,19 +189,23 @@ export function buildKit() {
         color: label.clone().multiplyScalar(0.34), emissive: new THREE.Color(BEAM_COLOR[k]),
         emissiveIntensity: EMIS[k], roughness: 0.55, metalness: 0.35, flatShading: true,
       }),
-      // NORMAL blend + no tone map: this is the one that has to hold its hue against the sky
+      // NORMAL blend + no tone map: this is the one that has to hold its hue against the sky.
+      // fog: TRUE (wave-6 infernal "giant flat blue polygon"): with fog off, a camp wipe's pile of rare
+      // beams on a ridge punched through the region haze as a solid untone-mapped blue wedge pasted on
+      // the sky. The haze has to own a beacon at range exactly like everything else; opacity 0.62 keeps
+      // a STACK of drops (5+ land in one spot) translucent instead of summing to a solid sheet.
       core: new THREE.MeshBasicMaterial({
-        color: beam, vertexColors: true, transparent: true, opacity: 0.92,
-        depthWrite: false, side: THREE.FrontSide, fog: false, toneMapped: false,
+        color: beam, vertexColors: true, transparent: true, opacity: 0.62,
+        depthWrite: false, side: THREE.FrontSide, fog: true, toneMapped: false,
       }),
       halo: new THREE.MeshBasicMaterial({
         color: new THREE.Color(BEAM_COLOR[k]), vertexColors: true, transparent: true, opacity: 0.24,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-        fog: false, toneMapped: false,
+        fog: true, toneMapped: false,
       }),
       ring: new THREE.MeshBasicMaterial({
         color: beam, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-        depthWrite: false, fog: false, toneMapped: false,
+        depthWrite: false, fog: true, toneMapped: false,
       }),
     };
   }

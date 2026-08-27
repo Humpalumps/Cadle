@@ -124,6 +124,36 @@ function handGeo() {
   return geo;
 }
 
+// Fresnel-shaded energy-hand material. The old unlit MeshBasic + additive shell was the wave-6 verdict's
+// "two enormous flat solid-yellow cartoon hands": no shading terms exist in the overlay scene, so the hand
+// has to model itself — deep-amber-to-gold ramp along the arm (vertex colour), a fixed key-light lambert so
+// the fingers turn, and a pale-gold fresnel rim that replaces the shell. Channels capped at 1.15 with the
+// blue channel structurally tiny: saturated gold through ACES, never white (blob decree).
+function handMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uDeep: { value: new THREE.Color(0x6b3407) }, uGold: { value: new THREE.Color(GOLD_CORE) }, uRim: { value: new THREE.Color(0xffd27a) } },
+    vertexShader: /* glsl */`
+      varying float vRamp; varying vec3 vN; varying vec3 vV;
+      void main() {
+        vRamp = color.r;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalMatrix * normal; vV = -mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 uDeep; uniform vec3 uGold; uniform vec3 uRim;
+      varying float vRamp; varying vec3 vN; varying vec3 vV;
+      void main() {
+        vec3 n = normalize(vN), v = normalize(vV);
+        float fr = pow(1.0 - abs(dot(n, v)), 2.0);
+        float lam = 0.32 + 0.68 * max(0.0, dot(n, normalize(vec3(0.4, 0.75, 0.5))));   // hard-ish key: the fingers have to TURN, or the hand is a flat orange cutout again
+        vec3 c = mix(uDeep, uGold, pow(vRamp, 1.5)) * lam + uRim * fr * 0.9;           // ramp biased deep: only the fingertips reach full gold
+        gl_FragColor = vec4(min(c, vec3(1.15)), 1.0);
+      }`,
+    vertexColors: true, side: THREE.DoubleSide, fog: false,
+  });
+}
+
 export class Abilities {
   constructor(game, player) {
     this.game = game; this.player = player;
@@ -187,24 +217,23 @@ export class Abilities {
   _ensureVM() {
     if (this._vm) return true;
     const w = this.player.weapons; if (!w?.scene || !w?.cam) return false;
-    const gold = new THREE.Color(COL.super);
-    // saturated gradient core: vertexColors ramp * deep gold, brightness <= 1 so the hand keeps its hue at noon
-    const core = new THREE.MeshBasicMaterial({ color: GOLD_CORE, vertexColors: true, side: THREE.DoubleSide, fog: false });
-    const shell = new THREE.MeshBasicMaterial({ ...ADD, color: gold.clone().multiplyScalar(0.85), opacity: 0.35, side: THREE.DoubleSide });
+    // fresnel-shaded energy core (see handMaterial): shading + rim live in the shader, no additive shell
+    const core = handMaterial();
     const geo = this._handGeo = handGeo();
     this._vm = { group: new THREE.Group(), hands: [], glows: [], wisps: [], vig: null };
     for (let i = 0; i < 2; i++) { // 0 = left, 1 = right
       const h = new THREE.Group();
-      const c = new THREE.Mesh(geo, core); const s = new THREE.Mesh(geo, shell); s.scale.setScalar(1.09); // tight shell keeps the finger silhouette readable
+      const c = new THREE.Mesh(geo, core);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(GOLD_CORE), opacity: 0.4 }));
-      glow.scale.set(0.28, 0.28, 1); glow.position.set(0, 0.03, -0.055);
-      h.add(c, s, glow);
+      glow.scale.set(0.19, 0.19, 1); glow.position.set(0, 0.03, -0.055);   // small palm ember, not a flat yellow disc over the hand
+      h.add(c, glow);
       for (let k = 0; k < 3; k++) { // orbiting palm wisps: small saturated embers circling each palm
         const wsp = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(0xffc14d).multiplyScalar(0.9), opacity: 0.85 }));
         wsp.scale.set(0.05, 0.05, 1); h.add(wsp); this._vm.wisps.push({ sp: wsp, hand: i, k });
       }
       h.position.set(i ? 0.27 : -0.27, -0.24, i ? -0.50 : -0.52); h.rotation.set(0, i ? -0.14 : 0.14, i ? -0.08 : 0.08);
-      if (!i) h.scale.x = -1;
+      h.scale.setScalar(0.88);                       // wave-6 "enormous": a touch smaller so the frame corners stay world, not mitten
+      if (!i) h.scale.x = -0.88;
       this._vm.group.add(h); this._vm.hands.push(h); this._vm.glows.push(glow);
     }
     // golden screen vignette (persistent super-state feedback)
@@ -253,8 +282,8 @@ export class Abilities {
       const pu = this._pulse[i];
       h.position.z = (i ? -0.50 : -0.52) - 0.13 * pu + 0.05 * pu * pu;
       h.rotation.x += -0.38 * pu; h.rotation.z = (i ? -1 : 1) * 0.14 * pu;
-      const sc = 1 + 0.22 * pu; h.scale.set(i ? sc : -sc, sc, sc);
-      vm.glows[i].material.opacity = 0.32 + 0.4 * this._pulse[i] + 0.06 * Math.sin(t * 9 + i * 3);
+      const sc = 0.88 * (1 + 0.22 * pu); h.scale.set(i ? sc : -sc, sc, sc);   // 0.88: base size, see _ensureVM
+      vm.glows[i].material.opacity = 0.2 + 0.3 * this._pulse[i] + 0.04 * Math.sin(t * 9 + i * 3);
     }
     for (const w of vm.wisps) { // palm wisps: tilted orbits, tighter + brighter on fire pulse
       const a = t * (3.2 + w.k * 0.8) + w.k * 2.1 + w.hand * 3.14, r = 0.085 + 0.02 * Math.sin(t * 2.3 + w.k);
@@ -508,7 +537,9 @@ export class Abilities {
     if (this._ensureVM()) { this._vm.group.visible = true; this._vmT = 0; this._pulse[0] = this._pulse[1] = 1; if (this._mv) { this._mv.t = -1; this._mv.group.visible = false; } }
     else for (const h of this.hands) h.visible = true; // fallback: world-space hand glows
     const view = this.player.view; if (view && typeof view.baseFov === 'number') { this._fovDelta = 6; view.baseFov += this._fovDelta; }
-    postfx?.flash?.(c, 0.9, 0.5); postfx?.kick?.(1.0); view.shake?.(1.4, 0.5);
+    // no postfx.kick here (wave-6: "screen-wide barrel warp ... violet/red garbage at the frame edges" —
+    // a 1.0-strength chromatic-aberration pulse IS a radial warp; the flash + shake carry the super pop)
+    postfx?.flash?.(c, 0.9, 0.5); view.shake?.(1.4, 0.5);
     const p = this.player.position; this._burst(this._v1.set(p.x, p.y + 1, p.z), c, 3, 0.5); this._burst(this._v1, GOLD_CORE, 1.4, 0.2); this._ring(p, c, 9, 0.7); this._ring(p, GOLD_CORE, 5, 0.4);
     this._sigil('aura', p, c, 2.2, 6, true);
     vfx?.emit?.('aether-burst', this._v1, { color: c, count: 80, scale: 1 }); vfx?.flash?.(this._v1, { color: c, intensity: 12, distance: 20, duration: 0.25 });
@@ -536,7 +567,7 @@ export class Abilities {
     let best = null, bd = 1e9;
     for (const e of this._enemiesNear(this.player.eye, 90)) { const dd = this._v2.subVectors(e.position, this.player.eye).length(); if (dd < bd && this._v2.normalize().dot(this._fwd) > 0.2) { bd = dd; best = e; } }
     combat.projectile?.({ origin: o, dir: d, speed: 55, damage: 65, element: 'solar', owner: this.player, team: 'player', radius: 0.3, gravity: 0, life: 3, homing: best, turn: 9,
-      visual: { color: GOLD_CORE, size: 0.2, stretch: 3.5, glow: 1.2, trail: true }, source: 'starfall' }); // direct damage only: no explode = no black-smoke spam
+      visual: { color: GOLD_CORE, size: 0.18, stretch: 3.5, glow: 0.8, trail: true }, source: 'starfall' }); // direct damage only: no explode = no black-smoke spam; glow 0.8 — at 1.2 the spawn glow read as a flat yellow disc at the reticle
   }
   _skyBolt() { // stars falling FROM the sky — the "Starfall" framing + finishes what the hand bolts start
     const { camera, combat, terrain } = this.game;
