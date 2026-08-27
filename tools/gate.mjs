@@ -74,6 +74,16 @@ for (const q of ['high', 'low']) {
   }
 }
 
+// --- 2b: animation gate (HANDOVER job 5: fold animcheck in so it runs with the others) ---
+// Numeric checks on the live bone hierarchy (T-pose, foot slide, moonwalk, sunk/hover feet, stepped
+// pose, dead idle, flat attack, missing death). Thresholds live in animcheck's LIMITS block and are
+// orchestrator-owned. It drives its own headless Chromium, so it runs after the visual captures.
+{
+  console.log('[gate] animation gate (animcheck)...');
+  const r = spawnSync('node', ['tools/animcheck.mjs', '--name', 'gate-anim', '--url', BASE], { stdio: 'inherit', timeout: 1200000 });
+  if (r.status !== 0) { console.error('[gate] animation gate failed'); failed = true; }
+}
+
 // --- 3: pointer lock behavior ---
 console.log('[gate] pointer lock check...');
 try {
