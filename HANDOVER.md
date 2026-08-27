@@ -263,6 +263,11 @@ not for a shared helper library where every agent touches the same functions.
 
 ### The method the user asked for (keep using it)
 
+**USER DIRECTIVE (2026-08-27 late): CONCURRENCY CAP — at most 3-4 agents running at once while the
+user is at the machine (they play games on it; agent load + GPU capture bursts lag them). Queue the
+rest; prefer letting a wave finish before firing the next. Harness captures are the real GPU load —
+pause them on request.**
+
 **USER DIRECTIVE 2026-08-27 (binding): BUILD BEFORE RE-JUDGING, and JUDGE ON OPUS.** (1) Do not fire
 the wave-6 judge fleet until a large batch of fixes has landed — the campaign was burning most of its
 credits on judging instead of building. (2) When critics/judges DO run, spawn them with
