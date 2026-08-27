@@ -22,7 +22,10 @@
  *   rewards(id) -> [item] (the pre-rolled candidates, plain JSON), rewardIds(id) -> [id],
  *   claim(id, i) -> bool (take candidate i of a turned-in quest), pendingClaim() -> id | '',
  *   readStele(region) -> id acted on | '' (what 'props:stele' calls; safe to call directly),
- *   offersAt(region) -> [id], all() -> catalogue, debugTick(id) -> bool,
+ *   offersAt(region) -> [id] (stele-giver quests only), offersFor(giver) -> [id],
+ *   readGiver('stele:<region>'|'npc:<id>') -> id acted on | '' (the npc twin of readStele),
+ *   giverStates() -> { giverKey: 'ready'|'offer'|'progress' } (drives the world ! / ? markers),
+ *   all() -> catalogue, debugTick(id) -> bool,
  *   state() -> { active:[{id,name,region,objectives:[{text,have,need,done}]}], completed:[id] } — scalars only
  * HUD calls emitted: hud.setQuest(name, objectives[], otherActiveTitles[]) where each objective is
  *   { type, text, done, toString() -> text } plus { have, need } for the COUNTABLE types only —
@@ -52,6 +55,11 @@ function anchor(a) {
 }
 const need = (o) => o.count ?? 1;
 const hit = (want, got) => (Array.isArray(want) ? want.includes(got) : want === got);
+// Every quest has a giver key: 'stele:<region>' (the Wayfinder stones) or 'npc:<id>' (a Hearthfall
+// villager). Villager quests live and die at their villager — the stele never offers or collects them —
+// so the ! / ? over each head is honest about WHOSE quest it is.
+const giverOf = (q) => q.giver ?? ('stele:' + q.region);
+const isNpc = (g) => typeof g === 'string' && g.startsWith('npc:');
 
 // ---------------------------------------------------------------- objective handlers
 // death(o, ev) -> how much to add; tick(o, p) -> same, polled at 2 Hz; at(o) -> waypoint anchor
@@ -190,6 +198,7 @@ export class Quests {
   readStele(region) {
     if (!region) return '';
     for (const id of this.active.keys()) {           // safe: turnIn mutates `active`, but we return at once
+      if (isNpc(giverOf(BY_ID[id]))) continue;       // a villager's quest is handed back to the villager
       if (BY_ID[id].region === region && this._ready(id)) { this.turnIn(id); return id; }
     }
     const id = this.offersAt(region)[0];             // QUESTS order = chain first, then sides
@@ -391,15 +400,69 @@ export class Quests {
   }
 
   // ---------------------------------------------------------------- accept / turn in
+  /** can this quest be offered right now, ignoring WHERE it is offered from */
+  _offerable(q) {
+    if (this.done.has(q.id) || this.active.has(q.id)) return false;
+    if (q.req && BY_ID[q.req].region === q.region && !this.done.has(q.req)) return false;   // cross-region links order the ROUTE, they do not lock a region you walked into early
+    if (!this._canEscort() && q.objectives.some((o) => o.type === 'escort')) return false;  // no guide runtime -> unavailable. Every escort is a SIDE quest, so no chain ever stalls on this.
+    return true;
+  }
+
   offersAt(region) {
     const out = [];
     for (const q of QUESTS) {
-      if (q.region !== region || this.done.has(q.id) || this.active.has(q.id)) continue;
-      if (q.req && BY_ID[q.req].region === region && !this.done.has(q.req)) continue;   // cross-region links order the ROUTE, they do not lock a region you walked into early
-      if (!this._canEscort() && q.objectives.some((o) => o.type === 'escort')) continue;  // no guide runtime -> unavailable. Every escort is a SIDE quest, so no chain ever stalls on this.
+      // npc-giver quests are excluded: they are offered by their villager (readGiver), never the stele,
+      // and Props' stele glyph reads offersAt(region).length — a stele ! for a villager's quest would lie.
+      if (q.region !== region || isNpc(giverOf(q)) || !this._offerable(q)) continue;
       out.push(q.id);
     }
     return out;
+  }
+
+  /** the quests a specific giver ('stele:<region>' | 'npc:<id>') is offering right now */
+  offersFor(giver) {
+    const out = [];
+    for (const q of QUESTS) if (giverOf(q) === giver && this._offerable(q)) out.push(q.id);
+    return out;
+  }
+
+  /**
+   * ONE exchange per press at any giver — the npc twin of readStele (which stays the region-wide stele
+   * path). Turn-ins first, then the next offer. Returns the id acted on, or ''.
+   */
+  readGiver(giver) {
+    if (!giver) return '';
+    if (giver.startsWith('stele:')) return this.readStele(giver.slice(6));
+    for (const id of this.active.keys()) {
+      if (giverOf(BY_ID[id]) === giver && this._ready(id)) { this.turnIn(id); return id; }
+    }
+    const id = this.offersFor(giver)[0];
+    if (!id) { this.game.hud?.toast?.('NOTHING MORE TO ASK OF YOU', { ms: 2200 }); return ''; }
+    if (this.active.size >= MAX_ACTIVE) { this.game.hud?.toast?.('YOUR QUEST LOG IS FULL', { ms: 2600 }); return ''; }
+    return this.accept(id) ? id : '';
+  }
+
+  /**
+   * Every giver's marker state in one pass — what the world-space ! / ? glyphs (QuestMarkers.js) and the
+   * minimap pips render. Priority per giver, same as readStele/readGiver act on a press:
+   *   'ready'    an active quest at this giver is complete       -> gold ?
+   *   'offer'    this giver has something new                    -> gold !
+   *   'progress' you carry this giver's quest, not done yet      -> grey ?
+   * Returns a plain { giverKey: state } object; a giver with nothing gets no key at all.
+   */
+  giverStates() {
+    const s = {};
+    for (const id of this.active.keys()) {
+      const g = giverOf(BY_ID[id]);
+      if (this._ready(id)) s[g] = 'ready';
+      else s[g] ??= 'progress';
+    }
+    for (const q of QUESTS) {
+      if (!this._offerable(q)) continue;
+      const g = giverOf(q);
+      if (s[g] !== 'ready') s[g] = 'offer';           // a new quest outranks a half-done one
+    }
+    return s;
   }
 
   accept(id) {

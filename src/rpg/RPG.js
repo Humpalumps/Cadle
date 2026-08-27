@@ -21,6 +21,7 @@ import { reserveNames } from './names.js';
 import { compareAgainstLoadout, WEAPON_SLOTS, SLOT_LABELS, defaultSlotFor } from './compare.js';
 import { Screens } from '../ui/Screens.js';
 import { OpeningQuest } from './quest.js';
+import { QuestMarkers } from './QuestMarkers.js';
 import { LANDMARKS as BIOME_LANDMARKS } from '../world/Biomes.js';
 
 const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle', scout: 'Scout Rifle', beam: 'Charge Beam' };
@@ -236,6 +237,8 @@ export class RPG {
     this.screens = new Screens(g, ctx);
     this.quest = new OpeningQuest(g, R);
     this.quest.init();
+    // world-space ! / ? over quest givers + minimap pips (HUD reads this.markers.pips())
+    this.markers = new QuestMarkers(g, this.quest);
   }
 
   update(dt, t) {
@@ -249,6 +252,7 @@ export class RPG {
     this._promptWas = this._promptSet;
     this.screens.frame(dt);
     this.quest.update(dt, this.game.time);
+    this.markers?.update(dt, this.game.time);
     if (this._dirty && this.game.time > this._nextSave) { this._nextSave = this.game.time + 6; this.ctx.rpg.save(); }
   }
 }

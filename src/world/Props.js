@@ -1032,6 +1032,8 @@ export class Props {
     await new Promise((r) => requestAnimationFrame(r));
     this._buildVillage(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
+    this._buildVillagers(h, col);
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildBorderStones(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildBiomeClutter(rng, h, col);
@@ -1973,6 +1975,73 @@ export class Props {
         S(new THREE.BoxGeometry(6.0, 0.24, 0.52).rotateY(-a2).rotateZ((rng() - 0.5) * 0.02).translate(px, h(px, pz) + 0.10, pz), [0.44, 0.38, 0.30]);
       }
     }
+    // ---- THE MARKET & COMMONS (user ask "fill up the towns"): two canvas stalls by the well, a crate
+    // cluster, a noticeboard on the lane, benches and lantern posts — the furniture the villagers
+    // (_buildVillagers) stand around. Everything joins the four existing buckets, so the whole pass costs
+    // ZERO extra draw calls; the lantern panes join the villageWindows merge below, so the lane lights
+    // amber after dusk through the same capped additive material (BLOB-safe by construction).
+    const lampGlass = [];
+    const lantern = (lx, lz) => {
+      const ly = h(lx, lz), DKW = [0.30, 0.26, 0.22], DKC = [0.13, 0.12, 0.11];
+      K(new THREE.CylinderGeometry(0.085, 0.115, 3.1, 7).translate(lx, ly + 1.55, lz), DKW);
+      K(new THREE.BoxGeometry(0.60, 0.08, 0.08).translate(lx + 0.22, ly + 3.04, lz), DKW);          // the arm
+      K(new THREE.BoxGeometry(0.10, 0.06, 0.10).translate(lx + 0.44, ly + 2.98, lz), DKC);          // hanger
+      K(new THREE.BoxGeometry(0.26, 0.36, 0.26).translate(lx + 0.44, ly + 2.76, lz), DKC);          // the cage
+      K(new THREE.ConeGeometry(0.24, 0.20, 4).rotateY(Math.PI / 4).translate(lx + 0.44, ly + 3.02, lz), DKC);
+      for (let q = 0; q < 4; q++) lampGlass.push(new THREE.PlaneGeometry(0.17, 0.26).rotateY(q * Math.PI / 2)
+        .translate(lx + 0.44 + [0, 0.14, 0, -0.14][q], ly + 2.76, lz + [0.14, 0, -0.14, 0][q]));
+      col.add({ type: 'capsule', a: V3(lx, ly, lz), b: V3(lx, ly + 3.0, lz), r: 0.16 });
+    };
+    const stall = (sx, sz, a2, canvas) => {
+      const sy = h(sx, sz), L = (g) => g.rotateY(a2).translate(sx, sy, sz);   // local frame: +z faces the customers
+      for (const q of [-1, 1]) for (const q2 of [-1, 1]) { const ph = q2 < 0 ? 2.75 : 2.25;
+        K(L(new THREE.BoxGeometry(0.15, ph, 0.15).translate(q * 1.55, ph / 2, q2 * 1.05)), OAK2); }
+      K(L(new THREE.BoxGeometry(3.4, 0.12, 1.2).translate(0, 0.98, 0.45)), OAK);                    // counter
+      K(L(new THREE.BoxGeometry(3.4, 0.55, 0.07).translate(0, 0.66, 1.02)), OAK2);                  // apron board
+      K(L(new THREE.BoxGeometry(3.2, 0.10, 0.9).translate(0, 0.48, -0.70)), OAK);                   // back shelf
+      // canted canvas — REAL thickness and a 20° pitch: a 5 cm plate a metre above eye height reads as
+      // a floating razor line from 15 m (it did — the wave's "white beam across the lane")
+      W(L(new THREE.BoxGeometry(3.8, 0.14, 2.85).rotateX(0.34).translate(0, 2.55, 0.10)), canvas);
+      W(L(new THREE.SphereGeometry(0.30, 7, 6).scale(1, 0.72, 1).translate(-0.9, 1.20, 0.42)), [0.80, 0.72, 0.58]);  // sacks of goods
+      W(L(new THREE.SphereGeometry(0.26, 7, 6).scale(1, 0.75, 1).translate(-0.35, 1.16, 0.55)), [0.72, 0.62, 0.48]);
+      K(L(new THREE.BoxGeometry(0.50, 0.50, 0.50).translate(0.95, 1.29, 0.45)), OAK);               // a crate on the counter
+      K(L(new THREE.BoxGeometry(0.56, 0.07, 0.56).translate(0.95, 1.51, 0.45)), OAK2);
+      col.add({ type: 'sphere', pos: V3(sx, sy + 0.8, sz), r: 1.7 });
+    };
+    const crate = (px, pz, s, a2) => { const py = h(px, pz);
+      K(new THREE.BoxGeometry(s, s, s).rotateY(a2).translate(px, py + s / 2, pz), OAK);
+      K(new THREE.BoxGeometry(s + 0.06, 0.07, s + 0.06).rotateY(a2).translate(px, py + s - 0.04, pz), OAK2); };
+    const gsack = (px, pz, s, t) => { const py = h(px, pz);
+      W(new THREE.SphereGeometry(0.34 * s, 7, 6).scale(1, 0.72, 1).translate(px, py + 0.24 * s, pz), t ?? [0.80, 0.72, 0.58]); };
+    const bench = (bx, bz, a2) => { const by = h(bx, bz), L = (g) => g.rotateY(a2).translate(bx, by, bz);
+      K(L(new THREE.BoxGeometry(1.75, 0.10, 0.48).translate(0, 0.52, 0)), OAK);
+      for (const q of [-1, 1]) K(L(new THREE.BoxGeometry(0.12, 0.50, 0.44).translate(q * 0.72, 0.26, 0)), OAK2);
+      col.add({ type: 'sphere', pos: V3(bx, by + 0.3, bz), r: 0.75 }); };
+    const board = (bx, bz, a2) => {
+      const by = h(bx, bz), L = (g) => g.rotateY(a2).translate(bx, by, bz);
+      for (const q of [-1, 1]) K(L(new THREE.BoxGeometry(0.15, 2.35, 0.15).translate(q * 0.95, 1.17, 0)), OAK2);
+      K(L(new THREE.BoxGeometry(2.10, 1.15, 0.09).translate(0, 1.62, 0)), OAK);
+      for (const q of [-1, 1]) R(L(new THREE.BoxGeometry(1.25, 0.09, 0.55).rotateZ(q * 0.42).translate(q * 0.55, 2.42, 0)), THA2);
+      const bR = mulberry32((bx * 31 + bz * 17) | 0);
+      for (let q = 0; q < 4; q++) W(L(new THREE.BoxGeometry(0.30 + bR() * 0.14, 0.36 + bR() * 0.18, 0.025).rotateZ((bR() - 0.5) * 0.16)
+        .translate(-0.72 + q * 0.47, 1.60 + (bR() - 0.5) * 0.22, 0.06)), [0.97, 0.94, 0.86]);       // pinned notices
+      col.add({ type: 'box', box: new THREE.Box3(V3(bx - 1.1, by, bz - 0.4), V3(bx + 1.1, by + 2.5, bz + 0.4)) });
+    };
+    const aWell = (x, z) => Math.atan2(CX - x, CZ - z);                       // face the well
+    stall(CX - 4.5, CZ + 6.5, aWell(CX - 4.5, CZ + 6.5), [0.92, 0.40, 0.38]); // wine-red canvas
+    stall(CX + 7.2, CZ + 4.2, aWell(CX + 7.2, CZ + 4.2), [0.24, 0.31, 0.74]); // deep blue canvas (0.4/0.48/0.92 read as washed silver in full sun)
+    crate(CX - 7.6, CZ + 8.8, 0.62, 0.4); crate(CX - 8.4, CZ + 9.9, 0.55, 1.1); crate(CX - 7.2, CZ + 10.1, 0.48, 0.8);
+    gsack(CX - 6.9, CZ + 9.6, 1.0); gsack(CX - 6.3, CZ + 9.0, 0.85, [0.72, 0.62, 0.48]);
+    col.add({ type: 'sphere', pos: V3(CX - 7.8, h(CX - 7.8, CZ + 9.4) + 0.4, CZ + 9.4), r: 1.4 });
+    board(CX - 19, CZ + 11, Math.atan2(0.866, -0.499));                       // on the plaza lane, facing back up it
+    bench(CX + 2.9, CZ - 3.8, aWell(CX + 2.9, CZ - 3.8));
+    bench(12.6, -20.5, Math.atan2(-12.6, -7.5));                              // plaza edge, facing the Aetheryte
+    // lantern posts: two at the market, four pacing the lane from the hamlet toward the Aetheryte plaza
+    const DP = [-0.866, 0.499];                                               // village -> plaza, unit
+    lantern(CX - 6.8, CZ + 3.2); lantern(CX + 9.0, CZ + 7.8);
+    for (let li = 0; li < 4; li++) { const dd = 34 + li * 18, sd = li % 2 ? 2.3 : -2.3;
+      lantern(CX + DP[0] * dd + 0.499 * sd, CZ + DP[1] * dd + 0.866 * sd); }
+
     // warm windows: additive quads that only light up as the sun goes down (same trick the mushrooms use).
     // No point lights — nine cottages would be nine shadow-casting lights for one visual beat.
     // ...now sitting exactly inside the reveals built above (`c.wins` carries their real world placement),
@@ -1980,6 +2049,7 @@ export class Props {
     const winGeo = [], WIN = new THREE.PlaneGeometry(0.92, 0.80);
     for (const c of this._cottages ?? []) for (const [wx, wy2, wz, wry] of c.wins ?? [])
       winGeo.push(WIN.clone().rotateY(wry).translate(wx, wy2, wz));
+    for (const g2 of lampGlass) winGeo.push(g2);   // the lantern panes share the hearth material + night driver
     if (winGeo.length) {
       // saturated warm hearth, capped: 1.55/0.92/0.36 tone-maps to amber, not to white, and the driver in
       // update() tops out at 0.9 opacity. Additive on a 0.9 x 0.8 m quad seated in a masonry reveal.
@@ -1996,6 +2066,116 @@ export class Props {
       m.castShadow = m.receiveShadow = shadow; m.name = nm; scene.add(m);
     }
     this.landmarks.village = V3(CX, wy, CZ);
+  }
+
+  /**
+   * THE VILLAGERS (user ask "fill up the towns with npcs"). Eleven clones of the rigged wayfinder GLB —
+   * scene AND materials cloned per instance (ASSETS.md rule) — differentiated by a per-instance robe
+   * re-tint on the house palette (deep blue / wine / forest green / undyed / violet / warm brown, value
+   * varied, gold trim untouched because the tint is a moderate multiplier), a 0.93-1.05 scale spread, a
+   * desynced idle phase, and three villagers on slow A-to-B walk loops. Each is ONE skinned draw (the GLB
+   * is one mesh / one material) and only exists on screen inside SHOW m; mixers run distance-banded like
+   * enemies (full rate to 35 m, quarter to 80 m, 1/12 beyond, pose HELD entirely when invisible).
+   *
+   * Named villagers are published on `this.npcs` = [{ id, name, position, object }] (game.world.props.npcs)
+   * so the rpg lane's quest data/markers can address them by stable id. Walker positions are live refs.
+   */
+  _buildVillagers(h, col) {
+    const { scene } = this.game;
+    this.villagers = []; this.npcs = [];
+    const src = this.game.assets?.model?.('wayfinder') ?? null;
+    const clips = this.game.assets?.clips?.('wayfinder') ?? [];
+    if (!src || !clips.length) { console.log('[props] villagers: wayfinder GLB missing, hamlet stays quiet'); return; }
+    const box = new THREE.Box3().setFromObject(src);
+    const baseScl = 1.78 / Math.max(0.5, box.max.y - box.min.y);
+    const idle = THREE.AnimationClip.findByName(clips, 'idle') ?? clips.find((c) => /idle/i.test(c.name)) ?? clips[0];
+    const walkC = THREE.AnimationClip.findByName(clips, 'walk') ?? clips.find((c) => /walk/i.test(c.name)) ?? null;
+    const rng = mulberry32(this.game.seed + 7707);
+    const CX = 118, CZ = -96;                                                  // Hearthfall's centre (see _buildVillage)
+    const _c = new THREE.Color();
+    const spawn = (x, z, yaw, o = {}) => {
+      const P = (o.path && walkC) ? { ax: o.path[0], az: o.path[1], bx: o.path[2], bz: o.path[3], t: rng() * 0.9, dir: 1, speed: 0.85 } : null;
+      if (P) { P.len = Math.max(1, Math.hypot(P.bx - P.ax, P.bz - P.az)); x = P.ax + (P.bx - P.ax) * P.t; z = P.az + (P.bz - P.az) * P.t; }
+      const inst = cloneSkinned(src);
+      const T = o.tint ?? [1, 1, 1], val = 0.88 + rng() * 0.18;                // palette hue x a value spread: twelve robes, no two alike
+      let skin = null;
+      inst.traverse((obj) => { if (obj.isMesh) { skin = obj; obj.castShadow = obj.receiveShadow = true;
+        if (obj.material) { obj.material = obj.material.clone(); obj.material.color?.multiply?.(_c.setRGB(T[0] * val, T[1] * val, T[2] * val)); } } });
+      const scl = baseScl * (o.scale ?? (0.93 + rng() * 0.12));
+      const y = h(x, z), baseY = -box.min.y * scl;
+      inst.scale.setScalar(scl);
+      inst.position.set(x, y + baseY, z);
+      inst.rotation.y = yaw + Math.PI;                                        // the Tripo rig is authored facing -Z (same as the wayfinders)
+      inst.visible = false;
+      scene.add(inst);
+      const mixer = new THREE.AnimationMixer(inst);
+      mixer.clipAction(P ? walkC : idle).play();
+      mixer.update(rng() * 4);                                                // desync the loop phases
+      // Collider so you cannot walk through anyone. For a walker it is REGISTERED spanning the whole
+      // path (broadphase cells are computed once, at add) and then pinched to the body — the grid keeps
+      // covering the path while the capsule itself follows the villager. See Colliders._bounds.
+      const ca = col.add(P
+        ? { type: 'capsule', a: V3(P.ax, y, P.az), b: V3(P.bx, y + 1.55, P.bz), r: 0.38 }
+        : { type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });
+      if (P) { ca.a.set(x, y, z); ca.b.set(x, y + 1.55, z); }
+      const v = { mesh: inst, skin, mixer, yaw, path: P, colA: ca.a, colB: ca.b, acc: 0, baseY };
+      this.villagers.push(v);
+      if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
+      return v;
+    };
+    const BLU = [0.72, 0.79, 1.07], WIN = [1.07, 0.70, 0.72], GRN = [0.74, 0.95, 0.72],
+      UND = [1.03, 0.99, 0.90], VIO = [0.87, 0.79, 1.05], BRN = [1.05, 0.90, 0.74];
+    // doorway idlers: someone in their own door, watching the lane
+    for (const [ci, tt] of [[1, GRN], [5, BRN]]) { const c = this._cottages?.[ci]; if (!c) continue;
+      const ez = [Math.sin(c.ry), Math.cos(c.ry)];
+      spawn(c.x + ez[0] * (c.d / 2 + 1.25), c.z + ez[1] * (c.d / 2 + 1.25), Math.atan2(ez[0], ez[1]), { tint: tt }); }
+    // a pair stopped mid-lane, talking — southeast of the well, clear of Wick, the stalls and the bench
+    { const ax = CX + 8.0, az = CZ - 1.5, bx = CX + 9.3, bz = CZ - 0.6;
+      spawn(ax, az, Math.atan2(bx - ax, bz - az), { tint: VIO });
+      spawn(bx, bz, Math.atan2(ax - bx, az - bz), { tint: UND }); }
+    // THE NAMED FIVE — ids and home positions come from the town quests' giver data
+    // (src/rpg/quests/meadow.js: 'npc:maren|tam|serel|wick|bram'), so QuestMarkers.npcAt(id) resolves
+    // every town quest giver to a real body instead of its fx/fz fallback point. Do not rename one side
+    // without the other. The plaza guard is published too, for future quest content.
+    spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94 });
+    spawn(130, -104, Math.atan2(12, -8), { id: 'tam', name: 'Old Tam the Shepherd', tint: BRN, scale: 1.04 });  // watching the strips past the field walls
+    spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO });        // tending the market lantern
+    spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03 });      // eyeing somebody's stonework
+    spawn(0, 0, 0, { id: 'maren', name: 'Maren the Herbwife', tint: GRN, path: [104, -90, 122, -86] });        // gathering along the lane
+    // the stall vendor, the plaza-edge watcher, and a second walker down the lantern lane
+    spawn(CX - 4.5 - Math.sin(2.536) * 0.35, CZ + 6.5 - Math.cos(2.536) * 0.35, 2.536, { tint: UND });         // behind the stall counter
+    spawn(11.4, -19.6, Math.atan2(-11.4, -8.4), { id: 'warden-guard', name: 'Warden Aldric', tint: BLU, scale: 1.05 });  // plaza edge, watching the Aetheryte
+    spawn(0, 0, 0, { tint: WIN, path: [CX - 22.5, CZ + 13, CX - 52, CZ + 30] });
+    console.log(`[props] villagers: ${this.villagers.length} (${this.npcs.length} named, ${this.villagers.filter((v) => v.path).length} walking)`);
+  }
+
+  /** Distance-banded villager animation: full rate to 35 m, 1/4 to 80 m, 1/12 to SHOW, pose held beyond. */
+  _updateVillagers(dt) {
+    const vs = this.villagers; if (!vs || !vs.length) return;
+    const cam = this.game.camera.position, terrain = this.game.terrain;
+    this._vTick = (this._vTick | 0) + 1;
+    for (let i = 0; i < vs.length; i++) {
+      const v = vs[i], m = v.mesh, d2 = m.position.distanceToSquared(cam);
+      m.visible = d2 < 140 * 140;                       // written every frame, not edge-triggered (warmScene snapshot — same reason as the wayfinders)
+      if (v.skin) v.skin.castShadow = d2 < 3600;        // a 15k-tri shadow caster at 60+ m is pure CSM tri tax
+      v.acc += dt;
+      if (!m.visible) continue;                          // held pose costs zero
+      const every = d2 < 1225 ? 1 : d2 < 6400 ? 4 : 12;
+      if ((this._vTick + i) % every) continue;
+      const step = Math.min(v.acc, 0.25); v.acc = 0;
+      const P = v.path;
+      if (P) {
+        P.t += P.dir * P.speed * step / P.len;
+        if (P.t > 1) { P.t = 1; P.dir = -1; } else if (P.t < 0) { P.t = 0; P.dir = 1; }
+        const x = P.ax + (P.bx - P.ax) * P.t, z = P.az + (P.bz - P.az) * P.t, y = terrain.heightAt(x, z);
+        m.position.set(x, y + v.baseY, z);
+        const want = Math.atan2((P.bx - P.ax) * P.dir, (P.bz - P.az) * P.dir);
+        let dy = want - v.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        v.yaw += dy * (1 - Math.exp(-4 * step)); m.rotation.y = v.yaw + Math.PI;
+        v.colA.set(x, y, z); v.colB.set(x, y + 1.55, z); // the capsule follows; its broadphase cells already span the path
+      }
+      v.mixer.update(step);
+    }
   }
 
 
@@ -3693,6 +3873,9 @@ export class Props {
   /** props.steleAt(regionId) -> Vector3 | null. The quest engine's whole contract: truthy => real quest-giver flow. */
   steleAt(regionId) { return this.steles?.[regionId] ?? null; }
 
+  /** props.npcAt('maren') -> Vector3 | null — QuestMarkers' resolver for 'npc:<id>' givers (live ref: walkers move). */
+  npcAt(id) { const n = this.npcs?.find((r) => r.id === id); return n ? n.position : null; }
+
   /**
    * Proximity + [E] read, mirroring _updateChests exactly (hud.prompt + justPressed('KeyE')).
    *
@@ -4440,7 +4623,10 @@ export class Props {
     this._updateChests(t);
     this._updateSteles();
     this._updateWayfinders(dt, t);
-    this._updateQuestMarkers(t);
+    this._updateVillagers(dt);
+    // _updateQuestMarkers retired (orchestrator, 2026-08-27): src/rpg/QuestMarkers.js now owns the !/?
+    // read as WORLD-SPACE billboards (occluded, night-graded, one visual language over steles AND
+    // villagers). Running both stacked a double ! over every stele. The method stays for reference.
     // CEREMONIAL LAMPS (celestial gate, lost Convergence): dark at noon, the region's warm source after
     // dusk. pow 2.2 for the same reason divineMat uses it — at golden hour sunI is still ~0.35, and a linear
     // ramp has the lamp already at three-quarters with the sun up, which flattens the metal it is lighting.

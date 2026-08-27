@@ -502,6 +502,17 @@ export class HUD {
       c.fillStyle = 'rgba(20,14,6,0.85)'; c.beginPath(); c.arc(x, y, 3.4, 0, 6.2832); c.fill();
       c.fillStyle = '#e9c46a'; c.beginPath(); c.arc(x, y, 2.1, 0, 6.2832); c.fill();
     }
+    // quest-giver pips — ! (new) / ? (turn-in) / grey ? (in progress). Data owned by rpg
+    // (QuestMarkers.pips(), a cached array rebuilt at its own poll rate — this is a pure read).
+    for (const m of g.rpg?.markers?.pips?.() ?? []) {
+      const x = toX(m.x), y = toY(m.z);
+      if (x < 6 || x > W - 6 || y < 6 || y > W - 6) continue;
+      c.font = '900 11px Georgia, serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineWidth = 3; c.strokeStyle = 'rgba(20,14,6,0.9)';
+      c.fillStyle = m.state === 'progress' ? '#9aa0a8' : '#ffd24a';
+      const ch = m.state === 'offer' ? '!' : '?';
+      c.strokeText(ch, x, y); c.fillText(ch, x, y);
+    }
     // enemies you can already see on the tracker: red pips, cheap (list is short).
     // A NAMED RARE is the one enemy on this disc that is a destination, so it gets the treatment the
     // genre gives a wandering elite: bigger, gold, ringed, and clamped to the rim with a chevron when
