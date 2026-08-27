@@ -84,9 +84,16 @@ const BLACK = new THREE.Color(0, 0, 0);
 //    its own scene + PMREM), so the factor there is exactly 1.0 and the gun's gold is untouched — a flat
 //    constant here would have tripled it and blown the viewmodel out.
 //  - capped, so a near-black midnight probe cannot divide its way to a huge multiplier.
+//  - OFF for skinned meshes (AETHER_SKIN). The boost was built for gold ORNAMENT on architecture; Tripo
+//    creature GLBs run metalness~1 wherever their ORM map says so, which handed entire CREATURES the
+//    2.5-3x specular boost on a probe wave 5 also brightened — the coherence critic's "near-white-cyan
+//    stickers", and half the combat wash. USE_SKINNING is a vertex-only define in r185, so the fragment
+//    chunk cannot test it; update() tags every SkinnedMesh material with AETHER_SKIN instead (creatures
+//    and the NPC are the only skinned meshes in the game), restoring their pre-wave-5 env response while
+//    keeping the gold fix on architecture.
 const SPEC_ENV_CAP = 3.0;
 const METAL_ENV = /* glsl */`
-#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular ) && defined( STANDARD )
+#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular ) && defined( STANDARD ) && !defined( AETHER_SKIN )
 	radiance *= mix( 1.0, clamp( 1.0 / max( envMapIntensity, 0.05 ), 1.0, ${SPEC_ENV_CAP.toFixed(1)} ), material.metalness );
 #endif
 `;
@@ -373,6 +380,7 @@ export class Lighting {
   update() {
     const { sky, renderer, scene } = this.game;
     this._frame++;
+    if ((this._frame & 15) === 1) this.tagSkinned();   // creatures spawn/stream at any time; a new one runs boosted for <= 16 frames
     this._updateKey();
     if (!this.freezeShadows) this._fitCascades();     // freezeShadows: debug/perf knob — keep last maps, skip the shadow pass
     this.hemi.color.copy(sky.ambientColor ?? sky.skyColor); this.hemi.groundColor.copy(sky.groundColor ?? sky.horizonColor);
@@ -539,6 +547,20 @@ export class Lighting {
     mat.defines = Object.assign(mat.defines || {}, { AETHER_CSM: this.cascades.length });
     mat.needsUpdate = true;
     return mat;
+  }
+
+  /** Tag every SkinnedMesh material with the AETHER_SKIN opt-out from METAL_ENV (see the chunk's comment).
+   *  One recompile per material, then a no-op. tagSkinned(false) is the debug A/B: put the boost back. */
+  tagSkinned(on = true) {
+    this.game.scene.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!m) continue;
+        const has = !!m.defines?.AETHER_SKIN;
+        if (on && !has) { (m.defines ??= {}).AETHER_SKIN = 1; m.needsUpdate = true; }
+        else if (!on && has) { delete m.defines.AETHER_SKIN; m.needsUpdate = true; }
+      }
+    });
   }
 
   // ---------- debug ----------

@@ -345,5 +345,41 @@ for (const f of srcFiles) {
   }
 }
 
+// ---------------------------------------------------------------- (o) combat-VFX min-channel discipline
+// The wave-5 regression: fighting a region's own bestiary blew the screen to near-white in 8 of 10
+// regions while the gate passed. The mechanical rule that closed it: a hue survives ACES iff its
+// SMALLEST channel stays under clip — so every author of small bright combat elements now carries a
+// min-channel cap, and the two screen-filling paths carry a near-camera coverage fade. These greps pin
+// the guards, not the tuning; tools/combatcheck.py (gate 1b) is the behavioural check.
+{
+  const brush = read(join('src', 'vfx', 'Brush.js'));
+  if (brush) {
+    const cap = brush.match(/BRUSH_MINCH_CAP\s*=\s*([0-9.]+)/);
+    if (!cap) fail('Brush.js lost BRUSH_MINCH_CAP — the structural min-channel cap every pool particle passes through; without it white cores at hdr>=3 clip to cream through ACES (wave-5 combat wash)');
+    else if (parseFloat(cap[1]) > 1.0) fail(`BRUSH_MINCH_CAP ${cap[1]} > 1.0 — above clip the cap no longer prevents whites from blooming`);
+  }
+  const parts = read(join('src', 'vfx', 'Particles.js'));
+  if (parts && !/smoothstep\(\s*1\.2\s*,\s*2\.4\s*,\s*size\s*\/\s*max\(\s*depth/.test(parts))
+    fail('Particles.js lost the near-camera coverage fade (env *= 1.0 - smoothstep(1.2, 2.4, size/max(depth,...))) — an enemy bolt detonating at the lens fills the frame with additive quads again (infernal "near-solid white in 0.5 s")');
+  const combat = read(join('src', 'combat', 'Combat.js'));
+  if (combat) {
+    if (/coreColor[\s\S]{0,120}?\.lerp\(\s*WHITE/.test(combat))
+      fail('Combat.js bolt coreColor lerps toward WHITE again — that plus the HDR multiplier is the exact cream bolt/pillar the wave-5 vale/shadowfen critics sampled (rgb ~225,238,233); keep the min-channel discipline instead');
+    if (!/min\(p\.coreColor\.r,\s*p\.coreColor\.g,\s*p\.coreColor\.b\)/.test(combat))
+      fail('Combat.js bolt coreColor lost its min-channel cap — the dominant channel may run hot, the smallest must stay under clip');
+    if (!/vFade\s*=\s*1\.0\s*-\s*smoothstep\(\s*1\.2\s*,\s*2\.4\s*,\s*aSize/.test(combat))
+      fail('Combat.js HALO_VERT lost its near-camera coverage fade (vFade) — stacked volley halos at the lens were the celestial 41k-px pale disc');
+  }
+  const mats = read(join('src', 'enemies', 'materials.js'));
+  if (mats && !/uGLB\s*>\s*0\.5/.test(mats))
+    fail('materials.js lost the uGLB body ceiling — rigged GLBs ship aGlow 0 on every vertex, so without it all 13 GLB creatures bypass BOTH aether caps (luminance 6.0 / channel 8.0 = inert)');
+  const lit = read(join('src', 'render', 'Lighting.js'));
+  if (lit && !/AETHER_SKIN/.test(lit))
+    fail('Lighting.js lost the AETHER_SKIN opt-out on METAL_ENV — the 2.5-3x env-specular gold boost lands on skinned creatures with ORM metalness 1 again (wave-5 "stickers" + wash amplifier)');
+  const pfx = read(join('src', 'render', 'PostFX.js'));
+  if (pfx && !/aeKnee/.test(pfx))
+    fail('PostFX.js lost the aeKnee highlight rolloff on auto-exposure — the AE boost (up to 1.3x) multiplies hot emissives before ACES in veil-darkened regions (void/infernal), re-arming the wash');
+}
+
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');
 process.exit(failed ? 1 : 0);

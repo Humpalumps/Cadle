@@ -147,16 +147,27 @@ class AOEffect extends Effect {
 // ---- Auto exposure: GPU scene-luminance (128^2 luminance -> mips -> 1x1 temporally adapted), bounded factor applied pre-tone-map.
 //      Measures PRE-exposure luminance so there is no feedback loop; the time-of-day exposure stays the base.
 const AE_FRAG = /* glsl */`
-uniform lowp sampler2D lumBuffer; uniform vec3 aeParams; // target, min, max
+uniform lowp sampler2D lumBuffer; uniform vec3 aeParams; uniform vec2 aeKnee; // target, min, max; highlight-rolloff knee (start, end luminance)
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor){
   float la = unpackRGBAToFloat(texture2D(lumBuffer, vec2(0.5)));
   float f = clamp(aeParams.x / max(la, 1e-3), aeParams.y, aeParams.z);
-  outputColor = vec4(inputColor.rgb * f, inputColor.a);
+  // Adaptation brightens the SCENE, never what is already hot. When a dark region (wave-5 Void/Infernal
+  // noon) rides the max boost, that frame-wide multiplier lands on emissive/additive combat VFX that were
+  // tuned to sit just under clip — every channel goes high and ACES washes the hue to white (the combat
+  // wash decree). So the BOOST (f > 1) rolls off to 1.0 as the pixel's own luminance approaches the ACES
+  // shoulder: midtones and shadows adapt in full, hot cores keep their tuned values. Darkening (f < 1)
+  // applies everywhere — night adaptation and bright-scene pulldown are untouched. Note the bloom
+  // threshold never saw the AE factor (BloomEffect's luminance pass reads this pass's INPUT buffer): the
+  // coupling was AE x ACES, and this is the term that closes it.
+  float l = dot(inputColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float fp = mix(f, min(f, 1.0), smoothstep(aeKnee.x, aeKnee.y, l));
+  outputColor = vec4(inputColor.rgb * fp, inputColor.a);
 }`;
 class AutoExposureEffect extends Effect {
   constructor({ target = 0.3, min = 0.8, max = 1.3, tau = 1.6 } = {}) {
     super('AutoExposureEffect', AE_FRAG, { blendFunction: BlendFunction.SRC,
-      uniforms: new Map([['lumBuffer', new THREE.Uniform(null)], ['aeParams', new THREE.Uniform(new THREE.Vector3(target, min, max))]]) });
+      uniforms: new Map([['lumBuffer', new THREE.Uniform(null)], ['aeParams', new THREE.Uniform(new THREE.Vector3(target, min, max))],
+        ['aeKnee', new THREE.Uniform(new THREE.Vector2(0.9, 2.2))]]) });   // rolloff starts just under sunlit-white (~1.0), boost fully gone by 2.2; set (1e6, 1e6) to A/B the old behaviour
     const size = 128, exp = Math.log2(size);
     this.rtLum = new THREE.WebGLRenderTarget(size, size, { minFilter: THREE.LinearMipmapLinearFilter, depthBuffer: false });
     this.rtLum.texture.generateMipmaps = true;

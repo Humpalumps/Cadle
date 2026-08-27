@@ -131,11 +131,15 @@ class Projectile {
 // halo = view-oriented quad stretched along the screen-space velocity (Destiny "hot dart": white-hot core + saturated tail)
 const HALO_VERT = /* glsl */`
 attribute vec3 aPos; attribute vec3 aVel; attribute vec3 aColor; attribute float aSize;
-varying vec2 vUv; varying vec3 vColor;
+varying vec2 vUv; varying vec3 vColor; varying float vFade;
 #include <fog_pars_vertex>
 void main() {
   vColor = aColor;
   vec4 mvPosition = modelViewMatrix * vec4(aPos, 1.0);
+  // near-camera coverage fade: a bolt detonating at the lens projects its halo over much of the frame,
+  // and several volley halos additively summed there was the celestial "41k-px pale disc" gate finding.
+  // Fade by projected coverage (size/depth) — same discipline as the particle pool's wash guard.
+  vFade = 1.0 - smoothstep(1.2, 2.4, aSize / max(-mvPosition.z, 0.05));
   vec3 vv = (modelViewMatrix * vec4(aVel, 0.0)).xyz;
   vec2 sd = vv.xy; float sl = length(sd);
   vec2 axis = sl > 1e-4 ? sd / sl : vec2(1.0, 0.0);
@@ -147,7 +151,7 @@ void main() {
   #include <fog_vertex>
 }`;
 const HALO_FRAG = /* glsl */`
-varying vec2 vUv; varying vec3 vColor;
+varying vec2 vUv; varying vec3 vColor; varying float vFade;
 #include <fog_pars_fragment>
 void main() {
   float d2 = dot(vUv, vUv);
@@ -158,7 +162,7 @@ void main() {
   float wide = t * t;                                          // broad soft glow, exactly 0 at the rim -> no visible disc edge on bright sky
   float tight = (exp(-9.0 * d2) - 1.2341e-4) * 1.000123;
   float core = exp(-58.0 * d2);                                // only this pinhead goes white-hot (bloom turns it into the sizzle)
-  vec3 col = vColor * (wide * 0.55 + tight) + mix(vColor, vec3(1.0), 0.65) * core * 1.35;
+  vec3 col = (vColor * (wide * 0.55 + tight) + mix(vColor, vec3(1.0), 0.65) * core * 1.35) * vFade;
   #ifdef USE_FOG
     #ifdef FOG_EXP2
       float ff = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
@@ -558,9 +562,14 @@ export class Combat {
     p.color.set(visual?.color ?? BOLT_COLORS[element] ?? ELEMENT_COLORS[element] ?? 0xffffff);
     p.size = visual?.size ?? Math.max(0.06, radius * 0.8); p.stretch = visual?.stretch ?? 3.5; p.glow = visual?.glow ?? 1;
     p.hasCore = !visual?.mesh;
-    // core: solid dart body, hue-locked and only lightly whitened — a near-white 3x sphere is what made bolts read as balloons
+    // core: solid dart body, hue-locked. The old `.lerp(WHITE, 0.3)` then ×1.9 put every channel over
+    // clip, so every enemy bolt tone-mapped to the exact cream the combat gate flags (rgb ~225,238,233 —
+    // the wave-5 vale finding) and the velocity-stretched instance read as a pale pillar. Min-channel
+    // discipline instead (same rule as Brush's BRUSH_MINCH_CAP): the dominant channel keeps the ×1.9
+    // heat, the smallest stays under clip so the hue survives ACES.
     p.color.getHSL(_hsl);
-    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.15), Math.min(0.58, _hsl.l)).lerp(WHITE, 0.3).multiplyScalar(1.9);
+    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.3), Math.min(0.58, _hsl.l)).multiplyScalar(1.9);
+    { const m = Math.min(p.coreColor.r, p.coreColor.g, p.coreColor.b); if (m > 0.98) p.coreColor.multiplyScalar(0.98 / m); }
     if (visual?.mesh) { p.mesh = visual.mesh; p.node.add(visual.mesh); }
     this.game.scene.add(p.node);
     if (visual?.trail ?? true) p.trail = this.game.vfx?.attach?.('spark-trail', p.node, { color: p.color.getHex(), element, size: p.size }) ?? null;
@@ -644,7 +653,12 @@ export class Combat {
       this._gPos[gi] = p.position.x; this._gPos[gi + 1] = p.position.y; this._gPos[gi + 2] = p.position.z;
       this._gVel[gi] = p.velocity.x; this._gVel[gi + 1] = p.velocity.y; this._gVel[gi + 2] = p.velocity.z;
       this._gSize[i] = p.size * 1.3 * p.glow;
-      this._gCol[gi] = p.color.r * 1.5 * p.glow; this._gCol[gi + 1] = p.color.g * 1.5 * p.glow; this._gCol[gi + 2] = p.color.b * 1.5 * p.glow;
+      // halo colour: ×1.5×glow, min-channel-capped at 0.98 — N stacked volley halos sum additively, and
+      // a pale element colour (kinetic 0xffe3b0) at 1.5x already clips all three channels on its own.
+      let gr = p.color.r * 1.5 * p.glow, gg = p.color.g * 1.5 * p.glow, gb = p.color.b * 1.5 * p.glow;
+      const gm = Math.min(gr, gg, gb);
+      if (gm > 0.98) { const gs = 0.98 / gm; gr *= gs; gg *= gs; gb *= gs; }
+      this._gCol[gi] = gr; this._gCol[gi + 1] = gg; this._gCol[gi + 2] = gb;
     }
     this.coreMesh.count = ci; this.coreMesh.visible = ci > 0;
     this.glowMesh.visible = live.length > 0; this.glowMesh.geometry.instanceCount = live.length;

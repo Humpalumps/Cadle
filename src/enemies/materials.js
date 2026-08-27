@@ -24,7 +24,7 @@ function creatureOnBeforeCompile(shader) {
     .replace('#include <common>', `#include <common>\nattribute float aGlow; varying float vGlow; varying vec3 vEPos;`)
     .replace('#include <begin_vertex>', `#include <begin_vertex>\nvGlow = aGlow; vEPos = position;`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\nuniform vec3 uTint; uniform vec3 uEmissive; uniform float uGlow; uniform float uFlash; uniform float uDissolve; uniform float uTime; uniform float uRim; uniform float uBump; uniform float uGhost; uniform vec2 uHem; uniform float uGrain; uniform float uRghMin;\nvarying float vGlow; varying vec3 vEPos;\n${NOISE_GLSL}`)
+    .replace('#include <common>', `#include <common>\nuniform vec3 uTint; uniform vec3 uEmissive; uniform float uGlow; uniform float uFlash; uniform float uDissolve; uniform float uTime; uniform float uRim; uniform float uBump; uniform float uGhost; uniform vec2 uHem; uniform float uGrain; uniform float uRghMin; uniform float uGLB;\nvarying float vGlow; varying vec3 vEPos;\n${NOISE_GLSL}`)
     .replace('#include <color_fragment>', `#include <color_fragment>
       float n1 = enoise(vEPos * 9.0), n2 = enoise(vEPos * 31.0), n3 = enoise(vEPos * 90.0);
       float grain = n1 * 0.45 + n2 * 0.35 + n3 * 0.2;
@@ -86,14 +86,28 @@ function creatureOnBeforeCompile(shader) {
       float pulse = 0.82 + 0.18 * sin(uTime * 3.1 + vEPos.y * 2.5 + vEPos.x * 1.7);
       totalEmissiveRadiance += ecol * (vGlow * uGlow * pulse);
       float edge = smoothstep(0.14, 0.0, dn - uDissolve) * step(0.001, uDissolve);
-      totalEmissiveRadiance += ecol * edge * 4.0;
+      // DEATH-DISSOLVE EDGE — the one emissive that is ALLOWED to bloom, but in its HUE, never white.
+      // ecol*4 put every channel of a warm element over clip (up to ~8.8), so through ACES the burn-away
+      // read as a white rind. Hue survives ACES iff the SMALLEST channel stays under clip: rescale so the
+      // min channel lands at <= 1.0 while the dominant channel keeps the punch (violet stays ~2+ blue).
+      vec3 edgeCol = ecol * (edge * 4.0);
+      float edgeMin = min(edgeCol.r, min(edgeCol.g, edgeCol.b));
+      if (edgeMin > 1.0) edgeCol /= edgeMin;
+      totalEmissiveRadiance += edgeCol;
       // ghost hem: the shredding boundary carries a LOW, hue-locked ember. 0.55 not 4.0 — the death dissolve is a
       // one-off event you are meant to look at, the hem is on screen for the creature's whole life.
       totalEmissiveRadiance += ecol * smoothstep(0.09, 0.0, hemN - hemT) * step(0.001, hemT) * 0.55;`)
     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
       float rim = pow(1.0 - saturate(dot(normal, geometryViewDir)), 3.0);
       rim *= smoothstep(1.8, 8.0, length(vViewPosition));   // fade the aether rim out at point-blank: creature reads as a body, not blue glass
-      reflectedLight.indirectDiffuse += ecol * rim * uRim * (0.6 + 0.4 * pulse);
+      // RIM CEILING (all bodies). This add lands on vGlow=0 pixels, so neither aether cap below ever saw
+      // it — at def.rim 0.75 a grazing silhouette carried ecol*0.75 = ~1.65/channel, over the 1.05 bloom
+      // threshold with nothing catching it (the wave-5 "fighting the bestiary whites the screen" wash).
+      // Hue-preserving: cap the add's dominant channel at 1.02, just under the day bloom threshold.
+      vec3 rimAdd = ecol * (rim * uRim * (0.6 + 0.4 * pulse));
+      float rimMax = max(rimAdd.r, max(rimAdd.g, rimAdd.b));
+      if (rimMax > 1.02) rimAdd *= 1.02 / rimMax;
+      reflectedLight.indirectDiffuse += rimAdd;
       if (uGhost > 0.001) {
         // A GHOST IS A RIM, NOT A BALLOON. The wave-3 shadowfen verdict on the Fen Wraith was "a flat violet
         // balloon": a big smooth lit volume reads as a party balloon at every range, because the lit term is
@@ -122,7 +136,13 @@ function creatureOnBeforeCompile(shader) {
       // blobcheck.py is scoped to the RED ground-cover mask, so it is structurally blind to a creature-sized
       // blob — the ceiling has to live here.
       if (uFlash > 0.001) {
-        vec3 hot = gl_FragColor.rgb * (1.0 + uFlash * 2.4) + ecol * uFlash * 0.35;
+        // Gain attenuated where the albedo is already bright: on a GLB painted with 255-value texels (the
+        // golem chest crystal) a flat 2.4x gain pushed the whole region past the knee onto one uniform
+        // ~1.0 value — a flat white card with a crisp rim (uGrain 0 on GLB means no noise break-up). A
+        // bright region now keeps its own shading and takes the flash as the ELEMENT tint instead.
+        float preLum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float fgain = uFlash * 2.4 * (1.0 - 0.8 * saturate(preLum));
+        vec3 hot = gl_FragColor.rgb * (1.0 + fgain) + ecol * uFlash * 0.35;
         // Hue-preserving SOFT KNEE on the brightest channel, not a hard clamp. A hard clamp is enough to stop
         // the blob but it flattens every lit plate onto the same value, so the creature reads as one pale card
         // — the detail the flash is supposed to make you notice is exactly what it erases. Below FKNEE nothing
@@ -155,6 +175,20 @@ function creatureOnBeforeCompile(shader) {
       float aetherMax = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
       float aetherChan = mix(8.0, 1.02, smoothstep(0.05, 0.40, vGlow));
       if (aetherMax > aetherChan) gl_FragColor.rgb *= aetherChan / aetherMax;
+      // GLB BODY CEILING (uGLB 1). A rigged GLB ships aGlow 0 on every vertex (glbBody.js), so BOTH
+      // vGlow-keyed caps above relax to 6.0/8.0 on it — i.e. on most of the bestiary they were inert,
+      // which is the wave-5 combat wash. Key on the DECREE directly: a hue survives ACES iff its
+      // SMALLEST channel stays under clip. Cap the min channel at 1.0 — anything trending white (all
+      // channels high: rim + emissive stacking, exposure) is pulled back under the bloom threshold,
+      // while saturated aether (the dissolve edge, a violet rim) keeps its dominant-channel punch and
+      // blooms in its hue. Ordinary lit albedo never reaches a min channel of 1.0, so it is untouched.
+      // A hard dominant-channel lid at 2.5 bounds the punch itself.
+      if (uGLB > 0.5) {
+        float bMin = min(gl_FragColor.r, min(gl_FragColor.g, gl_FragColor.b));
+        if (bMin > 1.0) gl_FragColor.rgb /= bMin;
+        float bMax = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b));
+        if (bMax > 2.5) gl_FragColor.rgb *= 2.5 / bMax;
+      }
       // GHOST CEILING. The two caps above key off vGlow, so they see a creature's crystals and eyes but not its
       // BODY — and an ethereal body is lit almost entirely at grazing angles, which is where a fresnel term
       // peaks. Cap the whole ghost, channel first: a wraith must never out-value the world it haunts.
@@ -171,7 +205,7 @@ function creatureUniforms({ tint, emissive, ghost, hem }, extra) {
     uTint: { value: new THREE.Color(tint) }, uEmissive: { value: new THREE.Color(emissive) },
     uGlow: { value: 2.2 }, uFlash: { value: 0 }, uDissolve: { value: 0 }, uTime: { value: 0 }, uRim: { value: 0.35 }, uBump: { value: 0.05 },
     uGhost: { value: ghost }, uHem: { value: new THREE.Vector2(hem[0], hem[1]) },
-    uGrain: { value: 1 }, uRghMin: { value: 0 },
+    uGrain: { value: 1 }, uRghMin: { value: 0 }, uGLB: { value: 0 },
     ...extra,
   };
 }
@@ -221,7 +255,7 @@ export function createCreatureMaterialGLB({ tex = null, tint = 0xffffff, emissiv
     roughnessMap: tex?.roughnessMap ?? null, metalnessMap: tex?.metalnessMap ?? null,
   });
   m.userData.u = creatureUniforms({ tint, emissive, ghost, hem }, {
-    uBump: { value: 0.015 }, uGrain: { value: 0 }, uRghMin: { value: 0.45 },
+    uBump: { value: 0.015 }, uGrain: { value: 0 }, uRghMin: { value: 0.45 }, uGLB: { value: 1 },
   });
   m.onBeforeCompile = creatureOnBeforeCompile;
   m.customProgramCacheKey = () => 'aether-creature-glb';

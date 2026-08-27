@@ -45,6 +45,11 @@ const VERT = /* glsl */`
     }
     float depth = -vp.z;
     env *= smoothstep(0.12, 0.55, depth);         // fade particles crossing the camera
+    // near-camera wash guard (blob decree): an enemy bolt detonates AT the player, so explosion quads used
+    // to sit 0.5 m from the eye and fill the whole frame. Fade by projected COVERAGE (size/depth): a quad
+    // spanning ~2/3 of the frame starts fading, past ~1.3 frames it is gone. Muzzle sprites (~0.3 m at the
+    // barrel) stay under the threshold; a 3 m fireball 10 m away is untouched.
+    env *= 1.0 - smoothstep(1.2, 2.4, size / max(depth, 0.05));
     vFog = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
     vCol = vec4(mix(iCol0, iCol1, t), iAR.x * env);
     float tex = iTS.x;

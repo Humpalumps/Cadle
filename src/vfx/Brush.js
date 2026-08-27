@@ -5,6 +5,12 @@ const _c = new THREE.Color();
 const _c2 = new THREE.Color();
 // how far a pure-white hot core is pulled toward its element hue (see color()). 0 = white, 1 = fully tinted.
 const HOT_TINT = 0.55;
+// Hue-preserving ceiling on every particle's resolved colour×hdr (see burst()). A hue survives ACES iff its
+// SMALLEST channel stays under clip: if min(r,g,b) exceeds this, the whole colour is rescaled so the min
+// channel lands here (just under the 1.05 day bloom threshold). White/near-white can then NEVER clip to a
+// bloomed ball, while a saturated hue keeps a hot dominant channel and still blooms in its own colour.
+// This closes every path at once — near-white literals, HOT_TINT products at high hdr, vary() jitter.
+const BRUSH_MINCH_CAP = 0.98;
 const UP = { x: 0, y: 1, z: 0 };
 
 /**
@@ -105,8 +111,14 @@ export class Brush {
       else { d[o + 3] = dx * spd + this.vx; d[o + 4] = dy * spd + this.vy; d[o + 5] = dz * spd + this.vz; }
       d[o + 6] = 0; d[o + 7] = 1 / life; d[o + 8] = sz; d[o + 9] = sz * this.zEnd;
       const h0 = this.h0 * v, h1 = this.h1 * v;
-      d[o + 10] = this.c0r * h0; d[o + 11] = this.c0g * h0; d[o + 12] = this.c0b * h0;
-      d[o + 13] = this.c1r * h1; d[o + 14] = this.c1g * h1; d[o + 15] = this.c1b * h1;
+      let r0 = this.c0r * h0, g0 = this.c0g * h0, b0 = this.c0b * h0;
+      let m = Math.min(r0, g0, b0);
+      if (m > BRUSH_MINCH_CAP) { const f = BRUSH_MINCH_CAP / m; r0 *= f; g0 *= f; b0 *= f; }
+      let r1 = this.c1r * h1, g1 = this.c1g * h1, b1 = this.c1b * h1;
+      m = Math.min(r1, g1, b1);
+      if (m > BRUSH_MINCH_CAP) { const f = BRUSH_MINCH_CAP / m; r1 *= f; g1 *= f; b1 *= f; }
+      d[o + 10] = r0; d[o + 11] = g0; d[o + 12] = b0;
+      d[o + 13] = r1; d[o + 14] = g1; d[o + 15] = b1;
       d[o + 16] = this.a; d[o + 17] = this.rotR ? Math.random() * 6.2832 : 0;
       d[o + 18] = this.sp0 + Math.random() * (this.sp1 - this.sp0);
       d[o + 19] = this.g; d[o + 20] = this.d; d[o + 21] = this.t; d[o + 22] = this.st; d[o + 23] = this.fi; d[o + 24] = this.fo;

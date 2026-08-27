@@ -879,7 +879,10 @@ export class Enemy {
     const u = this.u;
     u.uTime.value = t + this.seedT; u.uFlash.value = this.flash * 0.8;
     const tg = this.telegraph, phaseF = this.phaseFlash;
-    u.uGlow.value = this.def.glow * (this.sys.dayGlow ?? 1) * (1 + tg * 1.6 + phaseF * 2) * (this.state === 'dead' ? Math.max(0, 1 - this.deathT) : 1);
+    // Math.min(6, ...): telegraph x phase x dayGlow stacked to ~21x def.glow on a golem, ~37x on a phasing
+    // warden. The shader's aether caps absorb it today, but an uncapped input is a blob handed to any future
+    // body path that forgets a cap — close it at the source too.
+    u.uGlow.value = Math.min(6, this.def.glow * (this.sys.dayGlow ?? 1) * (1 + tg * 1.6 + phaseF * 2)) * (this.state === 'dead' ? Math.max(0, 1 - this.deathT) : 1);
     // uGlow only ever multiplies vGlow terms, and vGlow is 0 across a rigged GLB (no aGlow mask — see
     // createCreatureMaterialGLB). Without this the wind-up and the boss-phase flash have no emissive read at
     // all on a GLB creature, which is a combat cue the player is entitled to. Route it through the aether RIM
