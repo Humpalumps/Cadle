@@ -22,6 +22,41 @@ the next agent works on this same machine.
 > agent mid-campaign, so update it after every milestone, not at session end. It is the only thing
 > your replacement gets.
 
+### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
+
+**Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
+`node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
+(298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
+
+**The wave-5 JUDGE workflow was DELIBERATELY STOPPED, not lost.** It was killed to stop it burning
+the user's last few percent of weekly usage on a run that could not have survived the session anyway
+(workflow runs are session-scoped; `resumeFromRunId` is same-session only, so `wf_23885d22-fc9` is
+gone regardless). **Re-firing it is the FIRST thing you should do** — the script is in the repo:
+
+```
+Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
+```
+
+It runs 11 agents at once (ten fresh region critics, each pre-loaded with its own wave-4 findings so
+it must report whether they were CLOSED, plus the whole-game coherence agent), then the ANIMATION
+inspect-and-fix lane, then a collator that writes `tools/out/wave5-summary.txt` and
+`wave5-verdicts.json` in the wave-4 format. Partial output from the killed run may exist under
+`tools/out/crit5-*`, `tools/out/coh*` and `tools/scripts/coh/*` - it is safe to ignore or reuse.
+
+**WHY THE SCOREBOARD BELOW STILL SHOWS WAVE-4 NUMBERS:** wave 5 was BUILT but never JUDGED. Six
+builder lanes landed real work and the creature GLBs are wired in, but a region's score only moves
+when a fresh critic re-scores it. Do not read the table as "wave 5 achieved nothing" - it has simply
+not been measured. Firing the judge workflow above is what produces wave-5 numbers.
+
+**Parallelism, since it came up:** the fan-out is capped by FILE OWNERSHIP, not agent budget -
+per-region work all lands in the same few single-owner files (`Props.js` owns all ten landmarks,
+`Terrain.js` all ground), which is why wave 5 was six FILE-owned lanes rather than ten region lanes.
+Critics additionally need a FROZEN build, and every judging agent drives headless Chromium on the
+real GPU (16 live Chromium processes today made an agent unable to run the gate at all). **The unlock
+not yet used: the Workflow tool's `isolation: 'worktree'`** gives each agent its own git worktree, so
+two agents CAN own the same file and you merge after - worth it for genuinely separable landmarks,
+not for a shared helper library where every agent touches the same functions.
+
 ### The method the user asked for (keep using it)
 
 Break work into the smallest judgeable pieces; fan out sub-agents with strictly owned files
@@ -66,42 +101,7 @@ because per-region work all lands in the same few single-owner files.
 4. **Gold renders black-brown and aether washes to white.** Both are the same missing piece: metal
    with no environment to reflect goes black, and an uncapped aether clips to white. Lighting lane.
 
-### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
-
-**Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
-`node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
-(298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
-
-**The wave-5 JUDGE workflow was DELIBERATELY STOPPED, not lost.** It was killed to stop it burning
-the user's last few percent of weekly usage on a run that could not have survived the session anyway
-(workflow runs are session-scoped; `resumeFromRunId` is same-session only, so `wf_23885d22-fc9` is
-gone regardless). **Re-firing it is the FIRST thing you should do** — the script is in the repo:
-
-```
-Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
-```
-
-It runs 11 agents at once (ten fresh region critics, each pre-loaded with its own wave-4 findings so
-it must report whether they were CLOSED, plus the whole-game coherence agent), then the ANIMATION
-inspect-and-fix lane, then a collator that writes `tools/out/wave5-summary.txt` and
-`wave5-verdicts.json` in the wave-4 format. Partial output from the killed run may exist under
-`tools/out/crit5-*`, `tools/out/coh*` and `tools/scripts/coh/*` - it is safe to ignore or reuse.
-
-**WHY THE SCOREBOARD BELOW STILL SHOWS WAVE-4 NUMBERS:** wave 5 was BUILT but never JUDGED. Six
-builder lanes landed real work and the creature GLBs are wired in, but a region's score only moves
-when a fresh critic re-scores it. Do not read the table as "wave 5 achieved nothing" - it has simply
-not been measured. Firing the judge workflow above is what produces wave-5 numbers.
-
-**Parallelism, since it came up:** the fan-out is capped by FILE OWNERSHIP, not agent budget -
-per-region work all lands in the same few single-owner files (`Props.js` owns all ten landmarks,
-`Terrain.js` all ground), which is why wave 5 was six FILE-owned lanes rather than ten region lanes.
-Critics additionally need a FROZEN build, and every judging agent drives headless Chromium on the
-real GPU (16 live Chromium processes today made an agent unable to run the gate at all). **The unlock
-not yet used: the Workflow tool's `isolation: 'worktree'`** gives each agent its own git worktree, so
-two agents CAN own the same file and you merge after - worth it for genuinely separable landmarks,
-not for a shared helper library where every agent touches the same functions.
-
-### WHAT LANDED THIS SESSION### WHAT LANDED THIS SESSION
+### WHAT LANDED THIS SESSION
 
 - **`creature-glb-integration`** (`wf_6dc753f5-91b`) - **LANDED, 8 agents, 0 errors.** All 12 creature
   GLBs preload through `game.assets` (7.91 MiB, 73/73 assets in ~4.3 s, not the boot critical path);
