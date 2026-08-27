@@ -43,7 +43,7 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 
 ## Stack / commands
 - Vite 8 + three r185 (WebGL2) + `postprocessing` 6.39. Plain ES modules, no TypeScript, no frameworks. Node 22.
-- Dev server: **always already running at `http://127.0.0.1:5173/`** (started by the orchestrator: `npm run dev`). Do NOT start another one. If it's down (curl fails), start it: `npx vite --port 5173 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &` then wait 5s.
+- Dev server: **THE PORT DEPENDS ON WHICH CHECKOUT YOU ARE IN.** 5173 serves the MAIN checkout; a worktree gets its own port (the `cadle-character-load-perf-ee5b7b` worktree uses **5179**). **Measuring or screenshotting the wrong one tests a tree that does not contain your work** — that cost this project a full wave (HANDOVER 4a-bis). Confirm before you trust a number: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:<port>/`. If yours is down, start it — bash: `npx vite --port <port> --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &` · PowerShell: `Start-Process npx -ArgumentList 'vite','--port','<port>','--strictPort','--host','127.0.0.1'` — then wait 5s. Never start a second server on a port that already answers.
 - Vite hot-reloads; the harness always loads a fresh page anyway.
 - Inspect the running game: `node tools/inspect.mjs --name <label> [--steps '<json>' | --script file.json] [--w 1920 --h 1080] [--q high]` → `tools/out/<label>/{shot-*.png, report.json, console.log}`. See the header of `tools/inspect.mjs` for step types. Runs headless Chromium WITH the real GPU (RTX 3060). fps is **uncapped** (no vsync) so frame ms = real cost.
 - **Hunt hitches: `node tools/hitchhunt.mjs --name <label> [--route tp|combat] [--url ...] [--params ...]`** →

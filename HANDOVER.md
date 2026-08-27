@@ -7,20 +7,25 @@ this file is state and hard-won knowledge. **Keep it current; delete what has st
 
 Repo: `https://github.com/Humpalumps/Cadle`. **You are in the worktree
 `.claude/worktrees/cadle-character-load-perf-ee5b7b` on branch `claude/session-e5730b`, and its dev
-server is `http://127.0.0.1:5179/` — NOT 5173, which serves the main checkout.** This session's work
-is COMMITTED (`6fd9f73`) but **NOT pushed** — decide whether to push; nothing downstream needs it,
-the next agent works on this same machine.
+server is `http://127.0.0.1:5179/` — NOT 5173, which serves the main checkout.** All of this session's work is COMMITTED **and PUSHED**:
+HEAD `913ed1c` on branch `claude/session-e5730b`, 31 commits, **deliberately NOT merged to `main`**.
 
 ---
 
 ## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
-> **Written 2026-08-27 as a deliberate HANDOVER at the end of a session.** Wave 5 is BUILT and
-> COMMITTED but NOT YET JUDGED. Everything a fresh agent needs is in this section; start with "FIRST
-> THING TO DO ON TAKEOVER" immediately below.
-> **Keep this section current as you go** — the user hits weekly usage limits and swaps in a fresh
-> agent mid-campaign, so update it after every milestone, not at session end. It is the only thing
-> your replacement gets.
+> **Written 2026-08-27 as a deliberate HANDOVER at the end of a session. Wave 5 is BUILT, COMMITTED,
+> PUSHED and JUDGED — and it went BACKWARDS (4.9/10, was 5.8, with 5 blob violations).**
+> **YOU ARE THE ORCHESTRATOR.** That matters: it means you own `tools/`, `progress.html`, git and
+> this file — the "never edit files you don't own" rule in CLAUDE.md binds the sub-agents you spawn,
+> not you. You may edit any file; your BUILDERS may not.
+> **YOUR SHELL IS PowerShell** (a Bash tool is also available; each takes its own syntax). Commands in
+> this repo's older notes are written for bash — `cmd > log 2>&1 &` is a parse error in PowerShell.
+> **THE CAMPAIGN METHOD ASSUMES THE `Workflow` TOOL** (fan out sub-agents, file-owned lanes). If your
+> session does not have it, use the Agent tool instead and say so — every "fire this workflow"
+> instruction below is really "run these agents in parallel with these prompts".
+> Keep this section current after every milestone, not at session end: the user hits weekly usage
+> limits and swaps in a fresh agent mid-campaign, and this file is all your replacement gets.
 
 ### WAVE 5 IS JUDGED - IT WENT BACKWARDS, AND WHY (read before doing anything else)
 
@@ -66,6 +71,30 @@ horizontal contour-line banding that reads as a texture bug, the impact decal is
 circle, the super is two flat yellow clip-art hands, the only NPC has no face, and creatures charging
 the spawn meadow blow the grass out.
 
+### READ THIS BEFORE TRUSTING ANYTHING BELOW SECTION 0
+
+**Section 0 is current. Sections 2-5 are an archive and parts of them are STALE.** They were written
+across earlier waves and were not rewritten when later waves changed the same files. Specifically:
+
+- **Section 2's per-region `gap:` lists are dated 2026-08-23** and predate wave 5, which shipped
+  lanes for `Terrain.js`, `Sky.js`, `Lighting.js`, `Props.js`, `Vegetation.js` and `Water.js`.
+  **Use the wave-5 verdicts in `tools/out/wave5-summary.txt` for what is wrong TODAY**; section 2 is
+  still good for what each region IS SUPPOSED TO BE (the spec), which has not changed.
+- **Section 3 tells you to "start from the main checkout and make a fresh branch."** That is a whole
+  wave out of date. You are in the `cadle-character-load-perf-ee5b7b` worktree on
+  `claude/session-e5730b`. Ignore it.
+- **Ports quoted in sections 3-5 (5173 / 5174 / 5198) are from earlier worktrees.** This one is 5179.
+- Two counts disagree with CLAUDE.md and CLAUDE.md is the older number: enemies alive is **72**
+  (`MAX_ALIVE`), not 40; the washed-white-blob bug has now shipped **six** times, not five.
+- **CLAUDE.md contradicts itself on GLBs in adjacent bullets** (one says monsters/NPCs ARE rigged
+  GLBs, the next says "no GLB reaches the runtime"). The FIRST is current — the route changed
+  2026-08-26 and `tools/invariants.mjs` rule (n) enforces the new rule mechanically: creature GLBs
+  are allowed from `Assets.js` and `src/enemies/` and banned everywhere else. Architecture stays
+  procedural.
+- **CLAUDE.md's three-gate sign-off lists PERFORMANCE as mandatory; the user later deferred it**
+  (2026-08-26). The deferral is current — do not gate a wave on frame time. Graphics, animation and
+  game-mechanics gates still bind.
+
 ### ENVIRONMENT & ACCESS - what survives a different Claude account / a different machine
 
 **The code is safe and portable.** Pushed 2026-08-27 to
@@ -105,14 +134,18 @@ before.**
 
 ### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
 
-**Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
+**Everything is COMMITTED AND PUSHED: HEAD `913ed1c` on branch `claude/session-e5730b`, not merged
+to `main`.** Working tree is clean,
 `node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
 (298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
 
-**The wave-5 JUDGE workflow was DELIBERATELY STOPPED, not lost.** It was killed to stop it burning
-the user's last few percent of weekly usage on a run that could not have survived the session anyway
-(workflow runs are session-scoped; `resumeFromRunId` is same-session only, so `wf_23885d22-fc9` is
-gone regardless). **Re-firing it is the FIRST thing you should do** — the script is in the repo:
+**YOUR FIRST ACTION IS JOB 0 IN "NEXT JOBS" — close the gate's combat-VFX coverage hole, then fix
+the five blobs. Nothing else comes before it.**
+
+Do NOT start by re-firing the wave-5 judge workflow: wave 5 is already judged (verdicts are written
+to `tools/out/wave5-summary.txt`), and re-judging a build whose blockers you have not fixed just
+reproduces the same five verdicts. The judge script stays in the repo for the NEXT wave, after you
+have fixed something:
 
 ```
 Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
@@ -124,10 +157,8 @@ inspect-and-fix lane, then a collator that writes `tools/out/wave5-summary.txt` 
 `wave5-verdicts.json` in the wave-4 format. Partial output from the killed run may exist under
 `tools/out/crit5-*`, `tools/out/coh*` and `tools/scripts/coh/*` - it is safe to ignore or reuse.
 
-**WHY THE SCOREBOARD BELOW STILL SHOWS WAVE-4 NUMBERS:** wave 5 was BUILT but never JUDGED. Six
-builder lanes landed real work and the creature GLBs are wired in, but a region's score only moves
-when a fresh critic re-scores it. Do not read the table as "wave 5 achieved nothing" - it has simply
-not been measured. Firing the judge workflow above is what produces wave-5 numbers.
+**THE SCOREBOARD BELOW NOW HAS A w5 COLUMN and it is worse than w4.** That is real, not a
+measurement artifact — read "WAVE 5 IS JUDGED" above for why.
 
 **Parallelism, since it came up:** the fan-out is capped by FILE OWNERSHIP, not agent budget -
 per-region work all lands in the same few single-owner files (`Props.js` owns all ten landmarks,
@@ -376,9 +407,22 @@ settling is not strobing.
    scenario does the same thing again. Thresholds are orchestrator-owned; do not widen them.
 0b. ~~Read the wave-5 judge verdicts~~ **DONE** - they are at the top of this section, and
    `tools/out/wave5-summary.txt` / `wave5-verdicts.json` / `wave5-raw.json` are written.
-1. **WIRE THE ANIMATION MIXER. This is the decisive next creature job** - it is what turns a smooth *procedural*
-   gait into a real retargeted walk cycle, and it is also what decides the Blender/Mixamo question
-   above. Five steps, and step 1 is the trap - see "THE MIXER JOB, concretely" above.
+1. **WIRE THE ANIMATION MIXER. The decisive next creature job** - it turns a smooth *procedural* gait
+   into a real retargeted walk cycle, and it is what decides whether Blender+Mixamo is worth adding
+   (that evaluation is in `docs/CREATURE-PIPELINE.md`, "EVALUATED AND DEFERRED"). Five steps:
+   **(1) THE TRAP: `src/core/Assets.js` currently THROWS THE CLIPS AWAY** -
+   `gltfLoader.loadAsync(url).then((g) => { this.models[name] = g.scene; })` drops `g.animations` on
+   the floor, so swapping the animated GLBs in without fixing this looks like "the clips did not
+   work". Keep them (`this.clips[name] = g.animations`) and add a `clips(name)` accessor.
+   (2) `src/enemies/glbBody.js` - pass the clips onto the asset it returns.
+   (3) `src/enemies/Enemy.js` - an `AnimationMixer` per instance, actions cross-faded by `e.speedN`;
+   clip names as merged are `idle`, `walk` (or `quadruped-walk` on quadrupeds), `run`.
+   (4) `src/enemies/glbAnim.js` - keep procedural attack/stagger/death and layer them AFTER
+   `mixer.update()`, since both write bone rotations.
+   (5) copy `tools/out/anims/*.glb` -> `public/assets/creatures/` (10 creatures have clips; serpent
+   and giant have no reachable rig task id; wisp is procedural by decision).
+   **Prerequisite:** the `animEvery` band fix is already in, but if a second rate limiter is still
+   holding poses (job 2) the baked clips will strobe exactly as the procedural gait did.
 2. **Find the SECOND pose rate limiter.** After the `animEvery` fix, `_animate` was measured running
    60/60 frames at lod 0, yet `tools/out/animfull2` still failed
    `hound, sprite, skyserpent, magmagolem, leviathan, riftling` on STEPPED POSE - riftling at
