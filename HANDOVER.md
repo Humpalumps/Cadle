@@ -172,6 +172,21 @@ before.**
      class object), photographed in `tools/out/skyw5-wedge/`. The vfx redo lane owns it.
    - Terrain lane could not capture 3 of its after-shots (the boot breakage window); re-shoot
      sunken/fen/forest down-looks when convenient — the code paths are shared with verified shots.
+2b. **REDO RESOLVED (later that evening): all three redo lanes landed, COMMITTED+PUSHED**
+   (`02965f4` enemies, `165ea18` props, `107bd90` vfx). Headlines: the mixer is wired but **USE_CLIPS
+   ships all-false — every Tripo retarget lost the eye A/B against the procedural gait** (sheets in
+   `tools/out/eyepass-clips/`); regenerating better locomotion clips is an OPEN product question —
+   with better clips, flipping a body's USE_CLIPS entry after its A/B sheet is the whole integration.
+   animcheck 23/23 (serpent vertical wave + arch, wraith aux streaming, spine breath de-phase, seraph
+   arm-chain trim fixes all six sentinel-body types). The infernal blue wedge was 5+ stacked unfogged
+   LOOT BEACONS (dropmesh.js fogged/translucent; **ASK for rpg lane: scatter multi-drops ~2 m**).
+   Firing wedge = tracer endpoint behind the eye mirror-projecting; near-plane clip in Extras TR_VERT
+   fixes tracers AND beams. Impact decal rebuilt; Starfall redone, barrel warp REMOVED. Combat gate
+   42→21 during the lanes; the orchestrator then fixed the two attributed residual authors (wisp
+   WHITE core albedo → mid-neutral 0x8e97a8 so ecol dominates; aether-burst deep-clamp L≤0.55/S≥0.7
+   for pastel glowColors; bolt-core view-normal shading in Combat.js) — verification run r5 lands in
+   `tools/out/cvfx-r5/` + `cvfx-r5-check.txt`. **BOSS TIER decision (user): bosses convert at ~30k
+   tris with wing/finger chains kept — docs/CREATURE-PIPELINE.md.**
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
