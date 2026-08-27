@@ -102,7 +102,9 @@ export class QuestMarkers {
     for (const [key, rec] of this._npcs) {
       const s = states[key]; if (!s) continue;
       const at = this._npcPos(rec);
-      sites.push({ x: at.x, y: at.y + 2.4, z: at.z, state: s });
+      // keep the LIVE position ref: walkers move between the 0.5 s polls, and a marker placed from a
+      // snapshot visibly lags behind them (user report). update() tracks refs per frame.
+      sites.push({ x: at.x, y: at.y + 2.4, z: at.z, state: s, ref: at });
       if (p) { const dx = p.x - at.x, dz = p.z - at.z; if (dx * dx + dz * dz < TALK2) talk = { key, name: rec.name }; }
     }
     this._talkTarget = talk;
@@ -111,7 +113,7 @@ export class QuestMarkers {
       if (!m) { m = new THREE.Mesh(this._geo, this._mats.offer); m.userData.seed = i * 2.4; this._group.add(m); this._pool[i] = m; }
       const s = sites[i];
       m.material = this._mats[s.state];
-      m.position.set(s.x, s.y, s.z); m.userData.baseY = s.y;
+      m.position.set(s.x, s.y, s.z); m.userData.baseY = s.y; m.userData.ref = s.ref ?? null;
       m.visible = true;
     }
     for (let i = sites.length; i < this._pool.length; i++) this._pool[i].visible = false;
@@ -128,6 +130,8 @@ export class QuestMarkers {
     const p = g.player?.position, cam = g.camera; if (!p || !cam) return;
     for (let i = 0; i < this._live; i++) {
       const m = this._pool[i];
+      const ref = m.userData.ref;
+      if (ref) { m.position.x = ref.x; m.position.z = ref.z; m.userData.baseY = ref.y + 2.4; }   // walkers: glued per frame
       const dx = m.position.x - p.x, dz = m.position.z - p.z;
       const near = dx * dx + dz * dz < RANGE2;
       m.visible = near;
