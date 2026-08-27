@@ -399,12 +399,47 @@ settling is not strobing.
 
 ### NEXT JOBS, in order
 
-0. **CLOSE THE GATE'S COVERAGE HOLE, THEN FIX THE FIVE BLOBS.** `tools/gate.mjs` reported PASS while
-   five independent critics were measuring full-screen white-outs in ordinary combat, because
-   `blobcheck` is scoped to GROUND COVER in a scripted meadow burst. Add a COMBAT-VFX scenario -
-   spawn a region's own bestiary at 8-18 m, drop passive, player fires nothing, sample the frame -
-   so the gate can SEE the failure. Only then fix the five instances; otherwise the next uncovered
-   scenario does the same thing again. Thresholds are orchestrator-owned; do not widen them.
+0. ~~CLOSE THE GATE'S COVERAGE HOLE~~ **GATE HALF DONE 2026-08-27 (new session): the coverage hole is
+   CLOSED, the fix lanes are IN FLIGHT.** What exists now:
+   - `tools/scripts/combat-blob-steps.json` — drives all ten regions: own bestiary spawned 8-18 m,
+     aggroed (alert forced), one `takeDamage({amount:6})` landed on every enemy (hit-flash path), a
+     late "sustain" burst so slow volleys (void: 0.7 windup + 2.2 cd + 4.5 s flight) detonate at the
+     lens inside the capture, player NEVER fires. Bursts `cvfx-<region>-{a,hit,c}`.
+   - `tools/combatcheck.py` — the detector. Washed = bright AND desaturated (the decree verbatim: a
+     hue that survives tone mapping passes by construction). WASH >5.5% of non-sky / CATASTROPHE
+     >40% of whole frame / WHITE CORE clusters (blobcheck's cluster+local-contrast machinery, scoped
+     to all non-sky). numpy-vectorised, 180 frames ~19 s. `--selftest <frame>` paints a synthetic
+     wash + core and asserts both caught — run it after ANY change. Fail-closed on missing masks
+     (exit 2). blobcheck.py gained an `if __name__` guard so its machinery imports (selftest re-run:
+     PASS).
+   - `tools/gate.mjs` — new section 1b runs the scenario at q=high + combatcheck (~12 min; q=high
+     only is justified: presets differ only in pixelRatio/shadows/aniso, bloom/exposure identical).
+   - **Calibration on the wave-5 build (`tools/out/cvfx-cal/combatcheck.json`): EIGHT of ten regions
+     fail, not five** — peak washFrac dragon .84, celestial .83, infernal .76, lost .75, sunken .63,
+     shadowfen .55, tundra .31, vale white-cores at rgb(225,238,233) = the critic's sampled value;
+     forest alone clean. The wave-5 critics under-sampled: every region with explosive bolts washes.
+   - **Root causes diagnosed to the line** (4-agent read-only workflow, results in this session's
+     journal `wf_87c26cc4-dfc`): (1) the 'explosion' preset (core 0xffffff×hdr8, flare 0xfff4d8×4)
+     fires for EVERY enemy explosive bolt via 'combat:explosion' with NO near-camera fade on the
+     quads — bolts detonate AT the camera; (2) 'impact-enemy' 0xffffff×hdr(6+3day) = the lost golem
+     "egg"; (3) 'impact-terrain' 0xfff0d0×3 discards the element colour = the vale bolt core;
+     (4) HOT_TINT only fires on exact 0xffffff and cannot cap sums; (5) 'spark-trail' 70 Hz on every
+     enemy bolt stacks ~59 additive/bolt (the 'trail' preset's range-fade fix was never propagated);
+     (6) additive pool shader has NO output cap of any kind; (7) GLB creatures have all-zero aGlow so
+     BOTH aether caps are inert on 13 creatures, and the rim add (~1.43/ch) bypasses caps everywhere;
+     (8) wave-5 METAL_ENV (2.5-3x env specular) reaches skinned creatures with ORM metalness 1;
+     (9) wave-5 veil-darkening makes auto-exposure ride its 1.3x cap in void/infernal — a frame-wide
+     multiplier applied before the bloom threshold test.
+   - **Fix workflow `wf_c4b8377c-1cf` launched**: three file-owned lanes (vfx: Brush min-channel
+     hue-preserving cap + additive-pool near-camera fade + preset re-author; materials: uGLB-keyed
+     aether caps + rim/dissolve/hit-flash/telegraph caps; lighting: USE_SKINNING guard on METAL_ENV +
+     AE-bloom decoupling) + a serialized verifier that re-runs the combat gate. If it died mid-run,
+     resume: `Workflow({scriptPath: '<session workflows dir>/blob-fix-wf_c4b8377c-1cf.js',
+     resumeFromRunId: 'wf_c4b8377c-1cf'})` — or just read the lanes' reports in its journal and run
+     the verifier steps by hand (invariants → combat capture → combatcheck).
+   **After the fix lands: re-run gate (all four checks), then a fresh-eyes PUNCH critic (combat must
+   still look Destiny-vivid, not nerfed), then pin the new constants in invariants.mjs (rule for the
+   Brush cap constant, near-camera fade, preset near-white ban).** Thresholds stay orchestrator-owned.
 0b. ~~Read the wave-5 judge verdicts~~ **DONE** - they are at the top of this section, and
    `tools/out/wave5-summary.txt` / `wave5-verdicts.json` / `wave5-raw.json` are written.
 1. **WIRE THE ANIMATION MIXER. The decisive next creature job** - it turns a smooth *procedural* gait

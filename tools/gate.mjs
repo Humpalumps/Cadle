@@ -55,6 +55,25 @@ for (const q of ['high', 'low']) {
   if (r3.status !== 0) failed = true;
 }
 
+// --- 1b: COMBAT-VFX white-out check (the wave-5 coverage hole) ---
+// Five regions shipped with "fighting the region's own bestiary blows the screen to white" while this
+// gate PASSED, because blobcheck is scoped to ground cover in a scripted meadow burst. This scenario
+// spawns each region's own bestiary at 8-18 m, aggroes it, has every enemy take a hit, and never fires
+// the player's gun; combatcheck.py then fails any frame where the visible world goes near-white
+// DESATURATED (a hue that survives tone mapping passes by construction — the decree is "saturate the
+// colour, cap the intensity"). Runs at q=high only: bloom thresholds, exposure and ACES are identical
+// across quality presets (verified 2026-08-27 — presets differ only in pixelRatio/shadows/aniso), so
+// quality cannot be the variable that hides or causes a wash.
+{
+  console.log('[gate] combat-VFX white-out check (10 regions, ~10 min)...');
+  const r1 = spawnSync('node', ['tools/inspect.mjs', '--nolock', '--name', 'gate-combat', '--q', 'high', '--script', 'tools/scripts/combat-blob-steps.json', '--url', BASE], { stdio: 'inherit', timeout: 1200000 });
+  if (r1.status !== 0) { console.error('[gate] combat harness run failed'); failed = true; }
+  else {
+    const r2 = spawnSync('python', ['tools/combatcheck.py', 'tools/out/gate-combat'], { stdio: 'inherit' });
+    if (r2.status !== 0) failed = true;
+  }
+}
+
 // --- 3: pointer lock behavior ---
 console.log('[gate] pointer lock check...');
 try {
