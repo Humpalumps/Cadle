@@ -449,7 +449,11 @@ export class VFX {
     const r = o.radius ?? 3, c = this._col(o, 0xffffff), b = this.brush;
     if (o.normal) { _v3.set(p.x + o.normal.x * 0.95, p.y + o.normal.y * 0.95, p.z + o.normal.z * 0.95); b.reset(this.add, _v3).axis(o.normal).flat(); } // lift clear of 1 m meadow grass
     else b.reset(this.add, p).rot();
-    b.tex(TEX.RING).size(r * 0.16, r * 0.16, 2 / 0.16).life(o.duration ?? 0.5).color(0xffffff, c).hdr(3.5 + 1.5 * this.day, 1.8).alpha(0.95).fade(0, 0.15).burst(1);
+    // deepened start, not white: an icegiant slam's 6 m expanding ring at hdr ~5 was a thick WHITE
+    // annulus across the whole ground (combat gate r8, tundra 7.3k px). The ring reads by its sweep
+    // and size; the colour is the element's.
+    const dc = deepen(_c.copy(c));
+    b.tex(TEX.RING).size(r * 0.16, r * 0.16, 2 / 0.16).life(o.duration ?? 0.5).color(dc, dc).hdr(2.4 + 0.8 * this.day, 1.2).alpha(0.95).fade(0, 0.15).burst(1);
   }
   sigil(p, o = NOPTS) { return this.sigils.add(p, o.normal, { color: this._col(o, GOLD), size: o.size ?? 3, duration: o.duration ?? 1.5, spin: o.spin ?? 1.2, hdr: o.hdr ?? 2.2 }); }
   stats() { return { additive: this.add.n, alpha: this.alpha.n, tracers: this.tracers.n, decals: this.decals.n, sigils: this.sigils.items.filter((s) => s.live).length, emitters: this.emitters.filter((e) => e.live).length, day: this.day }; }
@@ -564,7 +568,12 @@ const axisOf = (o, def) => o.normal ?? o.dir ?? def;
 // feeds presets a PASTEL glowColor (frost 0x9fd8ff, seraph 0xffd27a) — the combat gate's residual
 // pale pops (r5: tundra death ball, sunken/lost/celestial glints) were all pastel survivors.
 // A colour only reads as magic through ACES if it starts deep: S >= 0.7, L <= 0.55.
-const deepen = (col) => { col.getHSL(_hsl2); if (_hsl2.l > 0.55 || _hsl2.s < 0.7) col.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55)); return col; };
+const deepen = (col) => {
+  col.getHSL(_hsl2);
+  if (_hsl2.s < 0.05) { col.set(0x8a5cff); col.getHSL(_hsl2); }   // a grey/white input has NO hue to deepen — clamping would invent red (hue 0); fall back to the house aether violet
+  if (_hsl2.l > 0.55 || _hsl2.s < 0.7) col.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55));
+  return col;
+};
 
 const PRESETS = {
   // ---- Destiny: guns -----------------------------------------------------------------------------------------------
@@ -758,11 +767,18 @@ const PRESETS = {
     // base washes at ANY strength; the veil is the dark the burst reads against. Still brief and violet-dark,
     // so at noon it reads as roiled aether shadow, not an ink blob.
     b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.3 * s, 0.44 * s, 1.8).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.42 * (2 - pk)).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
-    b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr((1.6 + 0.6 * day2) * pk, 0.5 * pk).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
-    b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(0xffffff, sat).hdr((4 + 2 * day2) * pk, 1.8 * pk).alpha(0.9).fade(0, 0.3).burst(1);
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.7 + 1.0 * day2) * pk, 1.8 * pk).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(90 * k);   // 2x mote size, saturated; hdr 2.7 not 3.2 — swirling stars over snow were the tundra 21-cluster sparkle field
-    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr((2.2 + 0.8 * day2) * pk).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(42 * k);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr((2.4 + 1.0 * day2) * pk, 0.9 * pk).alpha(0.95).fade(0, 0.2).burst(1);
+    // o.tick = a PERIODIC caller (the hazard fountain re-fires this every 0.4 s at ONE spot). The big
+    // halo layers have 0.3-0.45 s lives, so ticks keep 2+ of them overlapping at the same pixels forever
+    // — even a deep hue stacks pale that way (combat gate r7: the tundra 7.3k / shadowfen 3.1k patches
+    // at the hazard site). A tick gets veil + a modest mote plume only; the one-shot burst keeps its pop.
+    if (!o.tick) {
+      b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr((1.6 + 0.6 * day2) * pk, 0.5 * pk).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
+      b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(sat, sat).hdr((4 + 2 * day2) * pk, 1.8 * pk).alpha(0.9).fade(0, 0.3).burst(1);
+    }
+    const mk = o.tick ? 0.3 : 1;
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.7 + 1.0 * day2) * pk * mk, 1.8 * pk * mk).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(Math.max(3, Math.round(90 * k * mk)));   // 2x mote size, saturated; hdr 2.7 not 3.2 — swirling stars over snow were the tundra 21-cluster sparkle field
+    b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr((2.2 + 0.8 * day2) * pk * mk).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(Math.max(2, Math.round(42 * k * mk)));
+    if (!o.tick) b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr((2.4 + 1.0 * day2) * pk, 0.9 * pk).alpha(0.95).fade(0, 0.2).burst(1);
   },
   death(v, p, o, k, s, c) {
     // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game
@@ -789,7 +805,8 @@ const PRESETS = {
     const n = o.normal ?? UP;
     _v2.set(p.x + n.x * 1.0, p.y + n.y * 1.0, p.z + n.z * 1.0);   // lift clear of grass blades (~1 m meadow)
     const b = v.brush.reset(v.add, _v2).axis(n).flat();
-    b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(0xffffff, c).hdr(3.5, 1.8).alpha(0.9).fade(0, 0.2).burst(1);
+    const rc = deepen(_c.copy(c));   // shield-break/telegraph rings grow large — a white start is a white annulus (same law as shockwave)
+    b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(rc, rc).hdr(2.6, 1.4).alpha(0.9).fade(0, 0.2).burst(1);
   },
   sigil(v, p, o, k, s, c) {
     const size = o.size ?? (o.radius ? o.radius * 2 : 2.4 * s);

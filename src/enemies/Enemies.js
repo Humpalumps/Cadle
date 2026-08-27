@@ -432,7 +432,7 @@ export class Enemies {
       if (t > h.next) {   // a puff every 0.4 s: the patch has to be visible or it is an unfair invisible trap
         h.next = t + 0.4;
         _v.set(h.x, h.y + 0.1, h.z);
-        this.game.vfx?.emit?.('aether-burst', _v, { color: h.color, count: 5, scale: r6(h.r) });
+        this.game.vfx?.emit?.('aether-burst', _v, { color: h.color, count: 5, scale: r6(h.r), tick: true });   // tick: lean variant — a 0.4 s fountain must not stack halos into a pale patch (combat gate r7)
       }
       const dx = P.position.x - h.x, dz = P.position.z - h.z;
       if (dx * dx + dz * dz < h.r * h.r && Math.abs(P.position.y - h.y) < 3) P.damage?.(h.dps * dt, null, { element: h.element, source: 'hazard' });
