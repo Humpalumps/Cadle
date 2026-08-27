@@ -187,6 +187,15 @@ before.**
    for pastel glowColors; bolt-core view-normal shading in Combat.js) — verification run r5 lands in
    `tools/out/cvfx-r5/` + `cvfx-r5-check.txt`. **BOSS TIER decision (user): bosses convert at ~30k
    tris with wing/finger chains kept — docs/CREATURE-PIPELINE.md.**
+2c. **QUEUE (user asks, 2026-08-27 late): after content batch 1 lands** (workflow `wf_62b76999-b8e`,
+   script archived `tools/out/wave6-content-1.js` — quest !/? markers + town quests | first-person
+   arms | town NPCs): (i) **BANDIT/PIRATE CAMP lane** (raider enemy types on existing GLB bodies +
+   camp set pieces + quests naming them; needs enemies files free — the combat-gate closer holds
+   them); (ii) **COLLISION lane** (user: "I can go through buildings / fall through floor" — audit +
+   fix wall/floor colliders in Props/Vegetation via the registry, bisect prop-floor vs heightAt vs
+   streaming causes, and build a tools/collidecheck probe that drives the player at every
+   building/landmark and asserts no clip-through/sink; needs Props.js free — the town lane holds it).
+   THEN: full gate + curvecheck + questgate capstone, THEN the Opus-high judge fleet.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
