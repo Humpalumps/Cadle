@@ -173,13 +173,19 @@ export function makeMaterials(assets = null) {
     grip: std({ color: glove ? 0xcfc6ba : 0x2e211a, map: glove, roughness: 0.85, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(glove ? 0.6 : 1.1, glove ? 0.6 : 1.1) }),
     ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05, normalMap: T.normal, normalScale: new THREE.Vector2(0.45, 0.45) }),
     white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0 }),   // sights stay lit-white but under the day bloom threshold (1.05): 2.2 bloomed into permanent white balls over the grass
-    glass: std({ color: 0x9fd0ff, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.28, depthWrite: false, emissive: 0x4080c0, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    // envMapIntensity 0.5 + roughness 0.08: at night the flat ocular/objective discs mirrored the bright aurora
+    // sky as a uniform washed-white sheet filling the whole lens — soften the reflection so the lens reads as glass
+    glass: std({ color: 0x9fd0ff, roughness: 0.08, metalness: 0.0, transparent: true, opacity: 0.28, depthWrite: false, emissive: 0x4080c0, emissiveIntensity: 0.25, envMapIntensity: 0.5, side: THREE.DoubleSide }),
     glow: {}, flash: {}, tex: T,
   };
   for (let i = 0; i < 3; i++) mats['filigree' + i] = std({ color: 0xe0b24f, map: T.filigrees[i], alphaTest: 0.5, roughness: 0.28, metalness: 1.0, envMapIntensity: 1.2, emissive: 0x3a2606, emissiveIntensity: 0.5, side: THREE.DoubleSide });
   mats.filigree = mats.filigree0; // back-compat alias
   for (const [el, hex] of Object.entries(ELEMENT_COLORS)) {
-    mats.glow[el] = std({ color: hex, emissive: hex, emissiveIntensity: 2.4, roughness: 0.35, metalness: 0 });
+    // hue-preserving intensity cap (Brush.js min-channel discipline): an emissive survives ACES iff its SMALLEST
+    // channel stays under clip. 2.4 flat was fine for saturated solar (min ch 0.24) but tone-mapped the pale
+    // elements to white at night — arc (min 0.50) vents read as white blocks, void (0.44) reticle rings washed out.
+    const minCh = Math.min(hex >> 16 & 255, hex >> 8 & 255, hex & 255) / 255;
+    mats.glow[el] = std({ color: hex, emissive: hex, emissiveIntensity: Math.min(2.4, 0.85 / Math.max(minCh, 0.01)), roughness: 0.35, metalness: 0 });
     mats.flash[el] = { petal: new THREE.MeshBasicMaterial({ color: hex, map: T.petal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
                        star: new THREE.MeshBasicMaterial({ color: hex, map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }) };
   }
