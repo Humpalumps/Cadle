@@ -331,9 +331,14 @@ settling is not strobing.
 
 ### NEXT JOBS, in order
 
-0. **Read the wave-5 judge verdicts when `wf_e10788fa-a48` finishes** (`tools/out/wave5-summary.txt`),
-   update the scoreboard in this file and on `progress.html`, and run the correction loop on whatever
-   the critics call a blocker.
+0. **CLOSE THE GATE'S COVERAGE HOLE, THEN FIX THE FIVE BLOBS.** `tools/gate.mjs` reported PASS while
+   five independent critics were measuring full-screen white-outs in ordinary combat, because
+   `blobcheck` is scoped to GROUND COVER in a scripted meadow burst. Add a COMBAT-VFX scenario -
+   spawn a region's own bestiary at 8-18 m, drop passive, player fires nothing, sample the frame -
+   so the gate can SEE the failure. Only then fix the five instances; otherwise the next uncovered
+   scenario does the same thing again. Thresholds are orchestrator-owned; do not widen them.
+0b. ~~Read the wave-5 judge verdicts~~ **DONE** - they are at the top of this section, and
+   `tools/out/wave5-summary.txt` / `wave5-verdicts.json` / `wave5-raw.json` are written.
 1. **WIRE THE ANIMATION MIXER. This is the decisive next creature job** - it is what turns a smooth *procedural*
    gait into a real retargeted walk cycle, and it is also what decides the Blender/Mixamo question
    above. Five steps, and step 1 is the trap - see "THE MIXER JOB, concretely" above.
