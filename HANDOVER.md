@@ -215,6 +215,14 @@ before.**
    ECONOMY lane owed: gold drops with ammo-style magnet pickup + vendor NPCs (ammo/weapons/armor,
    prices as data). QUEST OFFER CARD owed: E opens name/pitch/objectives/rewards Accept/Decline
    before accepting. Wayfinder STAYS as unique first-contact guide.
+2e. **USER ASK (2026-08-28): PRE-JUDGE PERF PASS — the performance deferral is LIFTED for this.**
+   Before the Opus fleet: `node tools/hitchhunt.mjs --route combat` on the densest case AND the hamlet
+   viewpoint, fix what it blames, re-measure. Budget: mean <=7 ms, p99 <=14 ms, <=350 calls, <=4 M
+   tris, memMB flat 30 s. KNOWN DEBTS going in: village angle measured 4.79 M tris (over budget —
+   pre-existing 4.46 + villagers 0.34); assets payload 66.95 MB vs 40 target (boot bandwidth — webp/
+   quality trim candidates); 12 villager mixers (distance-banded already); collision added ~1000
+   static AABBs (broadphase, cheap). Sequence: pirates lane -> perf pass -> full gate battery
+   (invariants, combat, anim, collide, meadow, pointer, curvecheck, questgate) -> Opus judges.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
