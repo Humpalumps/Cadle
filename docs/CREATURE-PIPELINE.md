@@ -84,6 +84,14 @@ asset — behind the start screen, never streamed mid-game. `tools/invariants.mj
 anywhere else, so **architecture cannot quietly follow monsters onto this path**.
 
 
+> **HUMANOID ANIMATION TRAPS (user-observed 2026-08-28, villager walkers): "wiggly legs and moving
+> sideways."** (1) SIDEWAYS = facing-axis mismatch — upright Tripo models face +X (with exceptions);
+> MEASURE every new model's forward axis and set its yaw in the body config, never assume. A wrong
+> yaw strafes the whole body along its travel direction. (2) WIGGLY LEGS = Tripo biped retarget leg
+> quality — judge every humanoid locomotion clip BY EYE (contact sheet) against the procedural gait
+> and ship the better one per body (USE_CLIPS opt-in pattern). Ambient NPC strolling is cut entirely
+> by user decision — villagers idle in place; only combat AI moves humanoids.
+
 > **BOSS TIER (user decision 2026-08-27): bosses get a HIGHER conversion tier.** The standard tiers
 > (biped 15k / quadruped 10k / small 5k, joints pruned at 1.2% skin weight) are calibrated for trash
 > and rares seen at 5-40 m; a boss is a sustained close-up with attention on it, and the places the
