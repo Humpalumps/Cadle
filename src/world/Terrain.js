@@ -46,7 +46,7 @@ const ss = smoothstep, mix = lerp;
 // recomputed 2026-08-25 for the wave-1 retextures: ash_basalt / snow_sastrugi / peat_muck / flagstone_violet /
 // seabed_ripple + the teal-litter forest floor — asset mean sRGB x gain x biomeSet tint, decoded to linear)
 // (2026-08-26: 7 sunken re-graded off seabed sand onto wet cool river rock — cliff_strata x its cool tint)
-const BALB = [[0.056, 0.062, 0.029], [0.36, 0.40, 0.44], [0.40, 0.43, 0.53], [0.185, 0.192, 0.196], [0.019, 0.020, 0.022], [0.060, 0.037, 0.097], [0.023, 0.023, 0.012], [0.100, 0.116, 0.119], [0.052, 0.044, 0.070]];
+const BALB = [[0.072, 0.077, 0.036], [0.36, 0.40, 0.44], [0.40, 0.43, 0.53], [0.185, 0.192, 0.196], [0.019, 0.020, 0.022], [0.060, 0.037, 0.097], [0.023, 0.023, 0.012], [0.100, 0.116, 0.119], [0.052, 0.044, 0.070]];
 const BCOV = [0.72, 1.0, 0.55, 0.6, 1.0, 0.9, 0.8, 0.95, 1.0];
 
 export class Terrain {
@@ -548,7 +548,7 @@ vec4 lyrHex(vec2 uv, float i, float sharp) { return lyrHexG(uv, i, sharp, dFdx(u
 //   a lava caldera in white snowcaps (filed three waves running for infernal, twice for void). 0 = never.
 void biomeSet(float k, out float layer, out float scl, out float rough, out float cov, out float snow, out float rockCut, out float steep, out float mvar, out float snowK, out vec3 tint) {
   layer = 1.0; scl = 3.6; rough = 0.90; cov = 0.72; snow = 0.0; rockCut = 0.0; steep = 0.0; mvar = 1.0; snowK = 1.0; tint = vec3(1.0);
-  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.92; snowK = 0.70; tint = vec3(0.50, 0.62, 0.55); }                  // Whisperwood floor: moss + leaf litter in SHADE. It was 0.86/1.10/0.80 — a lit lawn with a treeline round it; Ashenvale's floor is the darkest ground in the world, not the brightest
+  if (k < 0.5)      { layer = 1.0;  scl = 3.4; cov = 0.92; snowK = 0.70; tint = vec3(0.64, 0.77, 0.68); }                  // Whisperwood floor: moss + leaf litter in SHADE. 0.86/1.10/0.80 was a lit lawn; 0.50/0.62/0.55 over-corrected into "a featureless smear over a near-black floor" (wave-5) — +26% value keeps it the darkest ground in the world while the litter still reads. BALB[0] tracks this
   else if (k < 1.5) { layer = 9.0;  scl = 6.5; cov = 1.00; rough = 0.78; snow = 0.30; rockCut = 0.45; steep = 0.55; mvar = 0.35; snowK = 1.00; tint = vec3(0.97, 1.00, 1.06); }   // tundra: snow_sastrugi owns the flats (wind streaks); generic snow(5) only dusts the drift line. Matte — ice gloss on snow read as soap. Tint cooled: snow albedo has to hold blue against a warm key (see uSunWarm)
   else if (k < 2.5) { layer = 6.0;  scl = 4.6; cov = 0.86; rough = 0.55; steep = 0.95; snowK = 0.90; tint = vec3(0.98, 1.14, 1.46); }    // celestial: celestial_marble.jpg is TAN (linear ratio 1 : 0.85 : 0.61) and the old warm tint pushed it further, which is why the Isles read as a sand desert. This inverts the asset's own hue to a warm WHITE marble. steep: the plaza is ARCHITECTURE — it must never climb a 40-deg mountainside (wave-3 celestial "texture-splat error")
   else if (k < 3.5) { layer = 3.0;  scl = 6.0; cov = 0.88; rockCut = 0.12; steep = 1.0; snowK = 1.00; tint = vec3(0.70, 0.655, 0.60); }   // dragon rock. Was (0.84, 0.88, 1.02) — a BLUE lift on an already-bright plate, which is why the gate forecourt floor photographed as white broken concrete (sc-B/shot-dragon-near-noon). Darker and hue-neutral so the iron-grey walls (bDrg grade) can sit against it. rockCut stays LOW on purpose: the triplanar cliff (cR) is the only layer with real crag detail; steep=1 hands every face >~30 deg to it so the top-projected floor can no longer smear into corduroy
@@ -608,7 +608,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float nearF = 1.0 - smoothstep(2.0, 16.0, camD);   // crisp micro octave right underfoot (10 -> 16 m: free, det0 is already fetched, and 10 m left a bald ring just past the boots)
   vec3 bump = vec3(det.r * 2.0 - 1.0, 0.0, det.g * 2.0 - 1.0) * 0.8 * detFade
             + vec3(det2.r * 2.0 - 1.0, 0.0, det2.g * 2.0 - 1.0) * 0.35 * (1.0 - far)
-            + vec3(det0.r * 2.0 - 1.0, 0.0, det0.g * 2.0 - 1.0) * 0.55 * nearF;
+            + vec3(det0.r * 2.0 - 1.0, 0.0, det0.g * 2.0 - 1.0) * 0.75 * nearF;   // 0.55 -> 0.75 (wave-5 near-field): the 2-8 m band needs pebble-scale lighting response, and this octave is windowed out by 16 m so nothing can shimmer at distance
   // --- biome / region masks (analytic, same layout as Terrain.biomeAt) ---
   float lakeD = length(P.xz - vec2(-170.0, -70.0));
   float lakeM = 1.0 - smoothstep(105.0, 150.0, lakeD);
@@ -669,6 +669,7 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float bCel = mix(bW * step(1.5, bK) * step(bK, 2.5), bW2 * step(1.5, bK2) * step(bK2, 2.5), bMix);
   wB *= mix(1.0, smoothstep(46.0, 62.0, P.y), bCel);
   float bShf = mix(bW * step(5.5, bK) * step(bK, 6.5), bW2 * step(5.5, bK2) * step(bK2, 6.5), bMix);   // shadowfen: bed-depth grade under the standing water
+  float bFor = mix(bW * step(bK, 0.5), bW2 * step(bK2, 0.5), bMix);   // whisperwood deep: floor AO lift under the canopy
   // ---- THE MOUNTAIN RING WEARS THE REGION'S CLOTHES ------------------------------------------------
   // Third-wave-unfixed finding: the ring inside the Wastes still had white snowcaps and Utah-sandstone
   // corduroy, and the Void's ring was "snow-capped crisp". The MECHANISM: every per-region override above
@@ -861,20 +862,12 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
     // far-field tiling break: a 143 m value swing over every cliff (macroC is already in registers — free).
     // The masonry-course repeat read at distance because each 13 m hex cell kept the same mean value.
     cR.rgb *= mix(1.0, 0.70 + 0.60 * macroC, farC * 0.75);
-    // per-region strata: frequency, TILT, phase drift and PRESENCE all vary (steep faces only, never one global
-    // corduroy). Suppressed where columnar basalt owns the face, and mostly on dragon faces — the huge Peaks
-    // walls turned the wandering bedding into "vertical stacked-shale banding" (wave-1 dragon verdict).
-    // The band is sin(P.y): on a genuinely steep FACE that reads as bedding, but on a shallow bowl the
-    // iso-height contours are CIRCLES and it draws concentric rings — the void's "giant thumbprint" pit
-    // (crit3-void-c/shot-pit-down). Gate raised 0.28->0.38 so only real faces band, and killed in the Void.
-    float steep = smoothstep(0.38, 0.60, slope);
-    float reg = lyr(P.xz * (1.0 / 301.0) + 0.57, 7.0).a;
-    float regB = lyr(P.xz * (1.0 / 151.0) + 0.19, 7.0).a;                 // 75/38/19 m bedding-phase drift: bands wander and pinch out
-    float bandOn = smoothstep(0.30, 0.62, lyr(P.xz * (1.0 / 430.0) + 0.83, 7.0).a);   // whole massifs with no visible bedding at all
-    bandOn *= max(0.0, 1.0 - bInf - 0.60 * bDrg - 0.90 * bVod);
-    float bandA = 0.25 + 0.75 * smoothstep(0.30, 0.65, reg);
-    float sc = smoothstep(-0.3, 0.8, sin(P.y * mix(0.16, 0.52, reg) + (P.x - P.z) * (reg - 0.5) * 0.09 + regB * 12.0 + det2.b * 0.8));
-    cR.rgb *= mix(1.0, 0.72 + 0.44 * sc, steep * bandA * bandOn);         // asymmetric ledge shading, floor lifted (no near-black clip)
+    // The sin(P.y) "per-region strata" bedding term used to live here. DELETED (wave-5 blocker): a band that
+    // is periodic in HEIGHT draws iso-height contour stripes across every peak of the ring — "hard parallel
+    // horizontal light/dark stripes... like a topographic map" in 6 of 9 region shots. Three waves of tilt,
+    // phase drift and presence gates could not stop it being height-quantized at heart, because sin(P.y) IS
+    // a contour map. The wall's value hierarchy now comes from the 26 m ridged macro relief + cavity below
+    // (isotropic, cannot band) — do not reintroduce any albedo term periodic in P.y.
     cR.rgb = mix(cR.rgb, cR.rgb * vec3(0.84, 0.86, 0.95), alt * 0.35);    // high crags: slightly cooler granite
     tAO = mix(tAO, min(1.0, tAO * 1.25 + 0.22), wRock);                   // shadowed faces keep readable detail (no near-black clip)
     // triplanar detail bump for cliffs
@@ -933,6 +926,14 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
       float gA = lyrHexG(P.xz * gs, bLayer, 4.0, pdx * gs, pdy * gs).a;
       cB.rgb *= 1.0 + (gA - 0.5) * 0.62 * fNear;
       cB.a = mix(cB.a, gA, fNear * 0.35);                          // blend sharpening follows the grain too
+      // REAL grain, not more of the plate's own mip (wave-5: "every surface within eight metres of your face
+      // is a flat plane" — sunken "one tiled plane", lost "purple mush"). Every floor plate tiles at 3-6.5 m,
+      // so at 2 m the sampler is magnified past its texel density and all detail is gone; the plate's own
+      // 0.85 m alpha re-tap above suffers the same blur. The rock path solved this with granite_detail
+      // (layer 16) — borrow it: a 1.7 m fine-grain luma multiply, sampled on dP (the slope-safe blended uv),
+      // value-only and centred on 1.0, so region hue and identity are untouched and nothing can bloom.
+      float gL = dot(lyrG(dP * (1.0 / 1.7), 16.0, pdx * (1.0 / 1.7), pdy * (1.0 / 1.7)).rgb, vec3(0.30, 0.55, 0.15)) * 5.7;   // 5.7 = 1/mean-luma of granite_detail.jpg — remeasure if replaced
+      cB.rgb *= mix(1.0, clamp(gL, 0.50, 1.60), fNear * 0.50);
     }
     cB.rgb *= bTint * bMac;
     // Dragon Peaks bowl: talus and scree. A 150 m wall towers over a floor that had nothing on it but pavement.
@@ -996,6 +997,11 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
         cB.rgb = mix(cB.rgb, cI.rgb, iceM); cB.a = mix(cB.a, cI.a, iceM);
       }
     }
+    // Whisperwood floor AO lift (wave-5 "featureless smear over a near-black floor"): under the ~95%-closed
+    // canopy the indirect fill is the only light the floor gets, and the baked cavity AO was eating a third
+    // of it. Lift the FLOOR's indirect response only, keyed to region weight — the canopy shade itself
+    // (Lighting/Sky) is untouched, so the closed-canopy mood stays.
+    if (bFor > 0.002) tAO = mix(tAO, min(1.0, tAO * 1.25 + 0.20), bFor * 0.85);
     if (bMix > 0.004) {                                           // inside a border band: fade the neighbour's floor in
       vec4 cN = lyrHexG(P.xz / bScl2, bLayer2, 3.0, pdx / bScl2, pdy / bScl2);
       cN.rgb *= bTint2 * bMac;

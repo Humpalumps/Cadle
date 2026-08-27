@@ -302,12 +302,12 @@ export function heightAt(x, z) {
         // like a slope" report — pass * everything flattened the whole gap into a dune)
         let m = wall * (12 + 26 * teeth) * (0.35 + 0.65 * pass)
               + mt * ((14 + 54 * massif) * summit * pass + 52 * teeth * (0.25 + 0.75 * pass));   // ring crests ~120-175 m (CLAUDE.md: ~150); a pass bottoms out ~35 m over the meadow
-        // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
-        const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
-        const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
-        // ~23 m-period ledges cut ACROSS the faces. At 400 m the step edge is what reads as rock rather than
-        // felt, and it costs one sin of a value we already have; amplitude raised with the steeper faces.
-        if (bandAmt > 0.01) m -= (4.5 + 8.5 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
+        // The sin(m) "bedding ledges" used to be cut here. DELETED (wave-5 blocker): a ledge periodic in the
+        // mountain's own HEIGHT is a contour map — under a key light every riser goes dark and every tread
+        // goes light, so the whole ring wore "hard parallel horizontal light/dark stripes... like a stack of
+        // pancakes" in 6 of 9 region shots. Ledge/step read now comes from non-periodic terms only: the
+        // squared-crag teeth here, and the 26 m ridged macro-relief bump + cavity in Terrain's cliff shader.
+        // Do not reintroduce any height-periodic term on the ring (its albedo twin in Terrain.js is gone too).
         h += m * env;
       }
     }
