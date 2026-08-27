@@ -84,6 +84,16 @@ for (const q of ['high', 'low']) {
   if (r.status !== 0) { console.error('[gate] animation gate failed'); failed = true; }
 }
 
+// --- 2c: collision gate ---
+// The user could walk through buildings and fall through prop floors (collider DATA gaps on rotated
+// props and floor decks). collidecheck drives the player into 23 probe sites (wall penetration, floor
+// sink, doorway-admits) and fails on any named site. ~3 min. Sites live in tools/collidecheck.mjs.
+{
+  console.log('[gate] collision check (collidecheck)...');
+  const r = spawnSync('node', ['tools/collidecheck.mjs', '--url', BASE], { stdio: 'inherit', timeout: 420000 });
+  if (r.status !== 0) { console.error('[gate] collision gate failed'); failed = true; }
+}
+
 // --- 3: pointer lock behavior ---
 console.log('[gate] pointer lock check...');
 try {
