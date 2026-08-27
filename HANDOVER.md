@@ -5,17 +5,22 @@ Order: **§1 the job → §2 the next job (biomes) → §3 the machine → §4 t
 `CLAUDE.md` is the contract (file ownership, conventions, perf budget, world layout, `window.__game` API) —
 this file is state and hard-won knowledge. **Keep it current; delete what has stopped being true.**
 
-Repo: `https://github.com/Humpalumps/Cadle` · branch `main` · everything below is merged and pushed.
+Repo: `https://github.com/Humpalumps/Cadle`. **You are in the worktree
+`.claude/worktrees/cadle-character-load-perf-ee5b7b` on branch `claude/session-e5730b`, and its dev
+server is `http://127.0.0.1:5179/` — NOT 5173, which serves the main checkout.** This session's work
+is COMMITTED (`6fd9f73`) but **NOT pushed** — decide whether to push; nothing downstream needs it,
+the next agent works on this same machine.
 
 ---
 
 ## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
-> **Last updated 2026-08-27, mid-session, WHILE WAVE 5 IS RUNNING.** If you are a fresh agent picking
-> this up cold, everything you need is in this section. Work in this worktree; its dev server is
-> **`http://127.0.0.1:5179/`** (5173 is the MAIN checkout - measuring it is the classic wrong-tree
-> trap, see 4a-bis). **Keep this section current as you go: the user is near a usage limit and a
-> replacement agent gets this file and nothing else.**
+> **Written 2026-08-27 as a deliberate HANDOVER at the end of a session.** Wave 5 is BUILT and
+> COMMITTED but NOT YET JUDGED. Everything a fresh agent needs is in this section; start with "FIRST
+> THING TO DO ON TAKEOVER" immediately below.
+> **Keep this section current as you go** — the user hits weekly usage limits and swaps in a fresh
+> agent mid-campaign, so update it after every milestone, not at session end. It is the only thing
+> your replacement gets.
 
 ### The method the user asked for (keep using it)
 
@@ -61,17 +66,41 @@ because per-region work all lands in the same few single-owner files.
 4. **Gold renders black-brown and aether washes to white.** Both are the same missing piece: metal
    with no environment to reflect goes black, and an uncapped aether clips to white. Lighting lane.
 
-### RUNNING RIGHT NOW: the wave-5 JUDGE phase (`wf_e10788fa-a48`)
+### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
 
-Fired 2026-08-27 from `tools/out/wave5-judge-workflow.js`. Ten fresh region critics (each pre-loaded
-with its own wave-4 findings so it reports whether they were actually CLOSED), an ANIMATION
-inspect-and-fix lane backed by `tools/animcheck.mjs` (the only agent there allowed to edit source,
-and only under `src/enemies/`), and **the whole-game coherence agent that plays it end to end**. It
-writes `tools/out/wave5-summary.txt` and `wave5-verdicts.json` in the wave-4 format.
-**Until it finishes, every score on `progress.html` is a WAVE-4 number** - wave 5 was built but not
-judged, which is why nothing appeared to improve.
+**Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
+`node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
+(298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
 
-### WHAT LANDED THIS SESSION
+**A wave-5 JUDGE workflow was running when the session ended and IT DID NOT SURVIVE.** Workflow runs
+are session-scoped and `resumeFromRunId` is same-session only, so run `wf_23885d22-fc9` is gone. The
+script is IN THE REPO, so just fire it again:
+
+```
+Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
+```
+
+It runs 11 agents at once (ten fresh region critics, each pre-loaded with its own wave-4 findings so
+it must report whether they were CLOSED, plus the whole-game coherence agent), then the ANIMATION
+inspect-and-fix lane, then a collator that writes `tools/out/wave5-summary.txt` and
+`wave5-verdicts.json` in the wave-4 format. Partial output from the killed run may exist under
+`tools/out/crit5-*`, `tools/out/coh*` and `tools/scripts/coh/*` - it is safe to ignore or reuse.
+
+**WHY THE SCOREBOARD BELOW STILL SHOWS WAVE-4 NUMBERS:** wave 5 was BUILT but never JUDGED. Six
+builder lanes landed real work and the creature GLBs are wired in, but a region's score only moves
+when a fresh critic re-scores it. Do not read the table as "wave 5 achieved nothing" - it has simply
+not been measured. Firing the judge workflow above is what produces wave-5 numbers.
+
+**Parallelism, since it came up:** the fan-out is capped by FILE OWNERSHIP, not agent budget -
+per-region work all lands in the same few single-owner files (`Props.js` owns all ten landmarks,
+`Terrain.js` all ground), which is why wave 5 was six FILE-owned lanes rather than ten region lanes.
+Critics additionally need a FROZEN build, and every judging agent drives headless Chromium on the
+real GPU (16 live Chromium processes today made an agent unable to run the gate at all). **The unlock
+not yet used: the Workflow tool's `isolation: 'worktree'`** gives each agent its own git worktree, so
+two agents CAN own the same file and you merge after - worth it for genuinely separable landmarks,
+not for a shared helper library where every agent touches the same functions.
+
+### WHAT LANDED THIS SESSION### WHAT LANDED THIS SESSION
 
 - **`creature-glb-integration`** (`wf_6dc753f5-91b`) - **LANDED, 8 agents, 0 errors.** All 12 creature
   GLBs preload through `game.assets` (7.91 MiB, 73/73 assets in ~4.3 s, not the boot critical path);
