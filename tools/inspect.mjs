@@ -193,7 +193,10 @@ if (!args.noready) {   // --noready: the page never starts the game loop by itse
   // 150 s, not 60: a cold headless boot is now ~30 s on this box (terrain full bake ~9 s, impostor bakes ~5 s)
   // and lands near the old ceiling whenever the GPU is busy, so runs were dying with TIMEOUT before they
   // rendered a frame. A too-short ceiling here reads exactly like a broken build.
-  try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), { timeout: 150000 }); }
+  // waitForFunction(fn, ARG, options): {timeout} in the 2nd slot becomes the page-function's ARGUMENT
+  // and the wait silently runs at the 30 s default — two agents independently hit this class
+  // (collidecheck carried the same latent bug). The null arg slot is load-bearing.
+  try { await page.waitForFunction(() => window.__game && (window.__game.errors.length > 0 || window.__game.game?._running), null, { timeout: 150000 }); }
   catch (e) { report.errors.push('TIMEOUT waiting for game to start: ' + e.message); }
 }
 const t0 = Date.now();

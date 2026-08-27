@@ -2117,13 +2117,17 @@ export class Props {
   }
 
   /**
-   * THE VILLAGERS (user ask "fill up the towns with npcs"). Eleven clones of the rigged wayfinder GLB —
-   * scene AND materials cloned per instance (ASSETS.md rule) — differentiated by a per-instance robe
-   * re-tint on the house palette (deep blue / wine / forest green / undyed / violet / warm brown, value
-   * varied, gold trim untouched because the tint is a moderate multiplier), a 0.93-1.05 scale spread, a
-   * desynced idle phase, and three villagers on slow A-to-B walk loops. Each is ONE skinned draw (the GLB
-   * is one mesh / one material) and only exists on screen inside SHOW m; mixers run distance-banded like
-   * enemies (full rate to 35 m, quarter to 80 m, 1/12 beyond, pose HELD entirely when invisible).
+   * THE VILLAGERS (user ask "the towns people should have their own skins"). Twelve clones of THREE
+   * dedicated villager GLBs — herbwife / merchant / mason (15k tris, one draw each, idle+walk clips,
+   * walk root travel detrended to in-place at merge) — scene AND materials cloned per instance
+   * (ASSETS.md rule). The wayfinder GLB stays UNIQUE to the guide at the Aetheryte. Bodies go by role
+   * (women -> herbwife, trade -> merchant, labour -> mason), differentiated further by a SUBTLE
+   * per-instance robe tint (the painterly albedos carry the colour now — the tint only nudges value and
+   * hue, deviation-from-1 roughly halved vs the wayfinder-era tints), a 0.93-1.05 scale spread, desynced
+   * phases, and two villagers on slow A-to-B walk loops. No body+tint combo repeats. herbwife/mason clips
+   * carry no spine channels (rig-labeling fix), so those two get a tiny procedural breath on the spine
+   * bone after the mixer. Mixers run distance-banded like enemies (full rate to 35 m, quarter to 80 m,
+   * 1/12 beyond, pose HELD entirely when invisible).
    *
    * Named villagers are published on `this.npcs` = [{ id, name, position, object }] (game.world.props.npcs)
    * so the rpg lane's quest data/markers can address them by stable id. Walker positions are live refs.
@@ -2131,33 +2135,39 @@ export class Props {
   _buildVillagers(h, col) {
     const { scene } = this.game;
     this.villagers = []; this.npcs = [];
-    const src = this.game.assets?.model?.('wayfinder') ?? null;
-    const clips = this.game.assets?.clips?.('wayfinder') ?? [];
-    if (!src || !clips.length) { console.log('[props] villagers: wayfinder GLB missing, hamlet stays quiet'); return; }
-    const box = new THREE.Box3().setFromObject(src);
-    const baseScl = 1.78 / Math.max(0.5, box.max.y - box.min.y);
-    const idle = THREE.AnimationClip.findByName(clips, 'idle') ?? clips.find((c) => /idle/i.test(c.name)) ?? clips[0];
-    const walkC = THREE.AnimationClip.findByName(clips, 'walk') ?? clips.find((c) => /walk/i.test(c.name)) ?? null;
+    const bodies = {};
+    for (const n of ['herbwife', 'merchant', 'mason']) {
+      const s = this.game.assets?.model?.(n) ?? null, c = this.game.assets?.clips?.(n) ?? [];
+      if (!s || !c.length) continue;
+      const bb = new THREE.Box3().setFromObject(s);
+      bodies[n] = { src: s, minY: bb.min.y, scl: 1.78 / Math.max(0.5, bb.max.y - bb.min.y),
+        idle: THREE.AnimationClip.findByName(c, 'idle') ?? c.find((k) => /idle/i.test(k.name)) ?? c[0],
+        walk: THREE.AnimationClip.findByName(c, 'walk') ?? c.find((k) => /walk/i.test(k.name)) ?? null };
+    }
+    const bNames = Object.keys(bodies);
+    if (!bNames.length) { console.log('[props] villagers: no villager bodies loaded, hamlet stays quiet'); return; }
     const rng = mulberry32(this.game.seed + 7707);
     const CX = 118, CZ = -96;                                                  // Hearthfall's centre (see _buildVillage)
     const _c = new THREE.Color();
     const spawn = (x, z, yaw, o = {}) => {
-      const P = (o.path && walkC) ? { ax: o.path[0], az: o.path[1], bx: o.path[2], bz: o.path[3], t: rng() * 0.9, dir: 1, speed: 0.85 } : null;
+      const B = bodies[o.body] ?? bodies[bNames[0]];                           // missing body -> first loaded, never the wayfinder
+      const P = (o.path && B.walk) ? { ax: o.path[0], az: o.path[1], bx: o.path[2], bz: o.path[3], t: rng() * 0.9, dir: 1, speed: 0.85 } : null;
       if (P) { P.len = Math.max(1, Math.hypot(P.bx - P.ax, P.bz - P.az)); x = P.ax + (P.bx - P.ax) * P.t; z = P.az + (P.bz - P.az) * P.t; }
-      const inst = cloneSkinned(src);
-      const T = o.tint ?? [1, 1, 1], val = 0.88 + rng() * 0.18;                // palette hue x a value spread: twelve robes, no two alike
-      let skin = null;
-      inst.traverse((obj) => { if (obj.isMesh) { skin = obj; obj.castShadow = obj.receiveShadow = true;
+      const inst = cloneSkinned(B.src);
+      const T = o.tint ?? [1, 1, 1], val = 0.90 + rng() * 0.16;                // subtle value spread on top of the palette nudge
+      let skin = null, spine = null;
+      inst.traverse((obj) => { if (obj.isBone && !spine && /spine/i.test(obj.name)) spine = obj;
+        if (obj.isMesh) { skin = obj; obj.castShadow = obj.receiveShadow = true;
         if (obj.material) { obj.material = obj.material.clone(); obj.material.color?.multiply?.(_c.setRGB(T[0] * val, T[1] * val, T[2] * val)); } } });
-      const scl = baseScl * (o.scale ?? (0.93 + rng() * 0.12));
-      const y = h(x, z), baseY = -box.min.y * scl;
+      const scl = B.scl * (o.scale ?? (0.93 + rng() * 0.12));
+      const y = h(x, z), baseY = -B.minY * scl;
       inst.scale.setScalar(scl);
       inst.position.set(x, y + baseY, z);
-      inst.rotation.y = yaw + Math.PI;                                        // the Tripo rig is authored facing -Z (same as the wayfinders)
+      inst.rotation.y = yaw + Math.PI;                                        // the Tripo rigs are authored facing -Z (same as the wayfinder)
       inst.visible = false;
       scene.add(inst);
       const mixer = new THREE.AnimationMixer(inst);
-      mixer.clipAction(P ? walkC : idle).play();
+      mixer.clipAction(P ? B.walk : B.idle).play();
       mixer.update(rng() * 4);                                                // desync the loop phases
       // Collider so you cannot walk through anyone. For a walker it is REGISTERED spanning the whole
       // path (broadphase cells are computed once, at add) and then pinched to the body — the grid keeps
@@ -2166,34 +2176,38 @@ export class Props {
         ? { type: 'capsule', a: V3(P.ax, y, P.az), b: V3(P.bx, y + 1.55, P.bz), r: 0.38 }
         : { type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });
       if (P) { ca.a.set(x, y, z); ca.b.set(x, y + 1.55, z); }
-      const v = { mesh: inst, skin, mixer, yaw, path: P, colA: ca.a, colB: ca.b, acc: 0, baseY };
+      // herbwife/mason idle+walk have no spine channels — a tiny breath keeps the torso alive.
+      // merchant's clips DO animate the spine, so overwriting there would kill the clip: skip it.
+      const sway = (spine && o.body !== 'merchant') ? { b: spine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
+      const v = { mesh: inst, skin, mixer, yaw, path: P, colA: ca.a, colB: ca.b, acc: 0, baseY, sway };
       this.villagers.push(v);
       if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
       return v;
     };
-    const BLU = [0.72, 0.79, 1.07], WIN = [1.07, 0.70, 0.72], GRN = [0.74, 0.95, 0.72],
-      UND = [1.03, 0.99, 0.90], VIO = [0.87, 0.79, 1.05], BRN = [1.05, 0.90, 0.74];
+    // subtle nudges — the painterly robe albedos own the colour, the tint only leans it
+    const BLU = [0.86, 0.90, 1.04], WIN = [1.04, 0.85, 0.86], GRN = [0.87, 0.98, 0.86],
+      UND = [1.02, 1.00, 0.95], VIO = [0.94, 0.90, 1.03], BRN = [1.03, 0.95, 0.87];
     // doorway idlers: someone in their own door, watching the lane
-    for (const [ci, tt] of [[1, GRN], [5, BRN]]) { const c = this._cottages?.[ci]; if (!c) continue;
+    for (const [ci, tt, bd] of [[1, UND, 'herbwife'], [5, GRN, 'mason']]) { const c = this._cottages?.[ci]; if (!c) continue;
       const ez = [Math.sin(c.ry), Math.cos(c.ry)];
-      spawn(c.x + ez[0] * (c.d / 2 + 1.25), c.z + ez[1] * (c.d / 2 + 1.25), Math.atan2(ez[0], ez[1]), { tint: tt }); }
+      spawn(c.x + ez[0] * (c.d / 2 + 1.25), c.z + ez[1] * (c.d / 2 + 1.25), Math.atan2(ez[0], ez[1]), { tint: tt, body: bd }); }
     // a pair stopped mid-lane, talking — southeast of the well, clear of Wick, the stalls and the bench
     { const ax = CX + 8.0, az = CZ - 1.5, bx = CX + 9.3, bz = CZ - 0.6;
-      spawn(ax, az, Math.atan2(bx - ax, bz - az), { tint: VIO });
-      spawn(bx, bz, Math.atan2(ax - bx, az - bz), { tint: UND }); }
+      spawn(ax, az, Math.atan2(bx - ax, bz - az), { tint: VIO, body: 'herbwife' });
+      spawn(bx, bz, Math.atan2(ax - bx, az - bz), { tint: UND, body: 'merchant' }); }
     // THE NAMED FIVE — ids and home positions come from the town quests' giver data
     // (src/rpg/quests/meadow.js: 'npc:maren|tam|serel|wick|bram'), so QuestMarkers.npcAt(id) resolves
     // every town quest giver to a real body instead of its fx/fz fallback point. Do not rename one side
     // without the other. The plaza guard is published too, for future quest content.
-    spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94 });
-    spawn(130, -104, Math.atan2(12, -8), { id: 'tam', name: 'Old Tam the Shepherd', tint: BRN, scale: 1.04 });  // watching the strips past the field walls
-    spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO });        // tending the market lantern
-    spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03 });      // eyeing somebody's stonework
-    spawn(0, 0, 0, { id: 'maren', name: 'Maren the Herbwife', tint: GRN, path: [104, -90, 122, -86] });        // gathering along the lane
+    spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94, body: 'herbwife' });
+    spawn(130, -104, Math.atan2(12, -8), { id: 'tam', name: 'Old Tam the Shepherd', tint: BRN, scale: 1.04, body: 'mason' });  // watching the strips past the field walls
+    spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO, body: 'merchant' });      // tending the market lantern
+    spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03, body: 'mason' });       // eyeing somebody's stonework
+    spawn(0, 0, 0, { id: 'maren', name: 'Maren the Herbwife', tint: GRN, path: [104, -90, 122, -86], body: 'herbwife' });      // gathering along the lane
     // the stall vendor, the plaza-edge watcher, and a second walker down the lantern lane
-    spawn(CX - 4.5 - Math.sin(2.536) * 0.35, CZ + 6.5 - Math.cos(2.536) * 0.35, 2.536, { tint: UND });         // behind the stall counter
-    spawn(11.4, -19.6, Math.atan2(-11.4, -8.4), { id: 'warden-guard', name: 'Warden Aldric', tint: BLU, scale: 1.05 });  // plaza edge, watching the Aetheryte
-    spawn(0, 0, 0, { tint: WIN, path: [CX - 22.5, CZ + 13, CX - 52, CZ + 30] });
+    spawn(CX - 4.5 - Math.sin(2.536) * 0.35, CZ + 6.5 - Math.cos(2.536) * 0.35, 2.536, { tint: BRN, body: 'merchant' });       // behind the stall counter
+    spawn(11.4, -19.6, Math.atan2(-11.4, -8.4), { id: 'warden-guard', name: 'Warden Aldric', tint: BLU, scale: 1.05, body: 'mason' });  // plaza edge, watching the Aetheryte
+    spawn(0, 0, 0, { tint: WIN, path: [CX - 22.5, CZ + 13, CX - 52, CZ + 30], body: 'merchant' });
     console.log(`[props] villagers: ${this.villagers.length} (${this.npcs.length} named, ${this.villagers.filter((v) => v.path).length} walking)`);
   }
 
@@ -2223,6 +2237,11 @@ export class Props {
         v.colA.set(x, y, z); v.colB.set(x, y + 1.55, z); // the capsule follows; its broadphase cells already span the path
       }
       v.mixer.update(step);
+      if (v.sway) {                                      // herbwife/mason clips carry no spine channels: tiny breath + sway, applied after the mixer
+        const S = v.sway; S.t += step;
+        S.b.rotation.x = S.rx + Math.sin(S.t * 1.7) * 0.022;
+        S.b.rotation.z = S.rz + Math.sin(S.t * 0.9 + 1.3) * 0.014;
+      }
     }
   }
 
