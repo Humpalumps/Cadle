@@ -30,7 +30,8 @@ import { isVendor } from './shop.js';
 
 const RANGE2 = 120 * 120;       // marker draw distance (readable well past 40 m; fog owns the far fade)
 const TALK2 = 3.2 * 3.2;        // [E] radius at a villager — matches the stele's own 4 m feel
-const GOLD = 0xffc84d;          // <= 1.0/channel: tone-maps to gold, never white (blob decree)
+const GOLD = 0xffc84d;
+const _box = new THREE.Box3();   // scratch for the head-anchor bbox (2 Hz rebuild only)          // <= 1.0/channel: tone-maps to gold, never white (blob decree)
 const GREY = 0x9aa0a8;
 
 function glyphTexture(ch) {
@@ -78,14 +79,25 @@ export class QuestMarkers {
     return true;
   }
 
-  /** villager world position: the live NPC body when one exists (Props publishes props.npcs =
-   *  [{id:'npc-<id>', name, position}], position a LIVE ref — walkers keep their marker), else the
-   *  quest's authored giverPos anchor, so the quest stays playable with the GLB missing. */
+  /** villager marker anchor. USER REPORT: "the exclamation mark isn't directly above their head —
+   *  it's slightly off." Two causes closed here: (1) npcAt() returns the npc RECORD {id,name,
+   *  position,object}, and the old code read `.x` off the record, silently falling back to the
+   *  quest's AUTHORED [x,z] — a marker floating at the placement coordinate while the body idles a
+   *  step away; (2) the spawn-root position is not the visual centre of a posed body. The anchor is
+   *  now the model's world bounding box: centre x/z, top y + margin — directly over the head. */
   _npcPos(rec) {
     const props = this.game.world?.props ?? this.game.props;
-    const live = props?.npcAt?.(rec.id)
-      ?? props?.npcs?.find?.((n) => n && (n.id === rec.id || n.id === 'npc-' + rec.id || n.name === rec.id))?.position;
-    if (live?.x != null) return { x: live.x, y: live.y ?? this._groundY(live.x, live.z), z: live.z };
+    const ent = props?.npcAt?.(rec.id)
+      ?? props?.npcs?.find?.((n) => n && (n.id === rec.id || n.id === 'npc-' + rec.id || n.name === rec.id));
+    const obj = ent?.object;
+    if (obj?.isObject3D) {
+      _box.setFromObject(obj);
+      if (Number.isFinite(_box.max.y) && _box.max.y > _box.min.y) {
+        return { x: (_box.min.x + _box.max.x) / 2, y: _box.max.y + 0.45, z: (_box.min.z + _box.max.z) / 2, top: true };
+      }
+    }
+    const pos = ent?.position ?? (ent?.x != null ? ent : null);
+    if (pos?.x != null) return { x: pos.x, y: pos.y ?? this._groundY(pos.x, pos.z), z: pos.z };
     return { x: rec.fx, y: this._groundY(rec.fx, rec.fz), z: rec.fz };
   }
   _groundY(x, z) { return this.game.terrain?.heightAt?.(x, z) ?? 0; }
@@ -107,7 +119,7 @@ export class QuestMarkers {
       const at = this._npcPos(rec);
       // keep the LIVE position ref: walkers move between the 0.5 s polls, and a marker placed from a
       // snapshot visibly lags behind them (user report). update() tracks refs per frame.
-      if (s) sites.push({ x: at.x, y: at.y + 2.4, z: at.z, state: s, ref: at });
+      if (s) sites.push({ x: at.x, y: at.top ? at.y : at.y + 2.4, z: at.z, state: s, ref: at });
       if (p) {
         const dx = p.x - at.x, dz = p.z - at.z;
         // quests-first rule: a pending exchange (turn-in or a fresh offer) takes the press; a vendor
@@ -139,7 +151,7 @@ export class QuestMarkers {
     for (let i = 0; i < this._live; i++) {
       const m = this._pool[i];
       const ref = m.userData.ref;
-      if (ref) { m.position.x = ref.x; m.position.z = ref.z; m.userData.baseY = ref.y + 2.4; }   // walkers: glued per frame
+      if (ref) { m.position.x = ref.x; m.position.z = ref.z; m.userData.baseY = ref.top ? ref.y : ref.y + 2.4; }   // glued to the resolved head anchor
       const dx = m.position.x - p.x, dz = m.position.z - p.z;
       const near = dx * dx + dz * dz < RANGE2;
       m.visible = near;
