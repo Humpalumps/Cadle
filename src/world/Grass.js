@@ -285,7 +285,11 @@ vec3 transformed; vec3 objectNormal;
   float mac2 = gNoise(rootXZ * 0.047, 17u);                        // meso brightness patchiness ~20 m
   dry = clamp(dry + smoothstep(0.47, 0.82, mac) * 0.95, 0.0, 1.0);
   dry = max(dry, 0.55 * reedW);                                    // fen reeds lean dead-straw, never lawn-green
-  vec3 tipC = mix(vec3(0.11, 0.27, 0.045), vec3(0.32, 0.30, 0.06), dry * 0.7 + r4 * r4 * 0.2);
+  // Central Shroud retune (coherence pass 2026-08-27): the old base pair (0.11,0.27,0.045)/(0.32,0.30,0.06)
+  // sat 0.83/0.81 read as neon chroma-green against the pale sky and mountains. Same hues, chroma pulled to
+  // ~0.64/0.68 by lifting the QUIET channels (soft sage green / warm straw); luminance goes DOWN on both ends
+  // (0.220->0.213 wet, 0.287->0.266 dry), so every downstream cap and the blob-gate calibration only relax.
+  vec3 tipC = mix(vec3(0.150, 0.245, 0.088), vec3(0.295, 0.275, 0.095), dry * 0.7 + r4 * r4 * 0.2);
   tipC = mix(tipC, tcol * 1.35, 0.3);
   // Biome hue coupling. tcol is terrain.colorAt, which is biome-tinted, so dividing its hue by the Vale's
   // reference hue gives EXACTLY 1.0 in the meadow (the tuned look is untouched) and swings the blades olive
@@ -349,8 +353,11 @@ vec3 transformed; vec3 objectNormal;
   // two quiet channels cannot. Measured across six representative post-cap blade albedos, this pass's
   // worst max channel is 1.050 and worst luminance 0.659, against 1.091 / 0.678 for what shipped — i.e.
   // strictly SAFER on both axes, while the meadow's hue range roughly doubles (83-127 deg -> 63-141 deg).
-  // per-blade axis, the strong one: deep blue-green <-> gold-olive.
-  tipC *= mix(vec3(0.30, 1.00, 1.48), vec3(1.55, 0.94, 0.26), r8);
+  // per-blade axis, the strong one: deep blue-green <-> gold-olive. Narrowed for the Shroud retune
+  // (was 0.30,1.00,1.48 <-> 1.55,0.94,0.26): the extreme ends flickered as acid-teal / acid-gold specks
+  // against the softer base. Every channel move is strictly INSIDE the shipped envelope, so the measured
+  // max-channel/luminance bounds the caps were calibrated against only shrink.
+  tipC *= mix(vec3(0.55, 1.00, 1.30), vec3(1.42, 0.95, 0.42), r8);
   // ...and the same axis at ~20 m patch scale, which is the one that still reads at distance. Deliberately
   // mild: three broad axes that could all land on "warm" at once is how a hue term turns into a value term.
   tipC *= mix(vec3(0.88, 1.00, 1.14), vec3(1.12, 0.99, 0.74), mac2);
@@ -363,7 +370,9 @@ vec3 transformed; vec3 objectNormal;
   // ...and the exposure drives HUE, not just value: buried bases go deep blue-green shadow, sunlit tops go
   // yellow-olive. Ends measure 0.909 / 1.005 luminance (both BELOW what shipped), so this buys hue range
   // and costs nothing in brightness — it cannot walk anything toward the bloom threshold.
-  col *= mix(vec3(0.74, 0.97, 1.22), vec3(1.10, 1.00, 0.72), vExp);
+  // Shroud retune: base a touch deeper/cooler, tips a touch more yellowed (was 0.74,0.97,1.22 <-> 1.10,1.00,0.72).
+  // Ends measure 0.901 / 1.003 luminance — both BELOW the shipped 0.909 / 1.005, so still hue-only.
+  col *= mix(vec3(0.68, 0.93, 1.26), vec3(1.13, 1.00, 0.66), vExp);
   // Sun-bleached straw on the tips of the TALLEST blades (r2*r2 is the height random). Weighted by
   // (1 - r8): a blade already sitting at the warm end of the per-blade axis barely takes it, so this adds
   // contrast between neighbours instead of stacking onto the same few blades and over-cooking them.
