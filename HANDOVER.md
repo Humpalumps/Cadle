@@ -22,6 +22,50 @@ the next agent works on this same machine.
 > agent mid-campaign, so update it after every milestone, not at session end. It is the only thing
 > your replacement gets.
 
+### WAVE 5 IS JUDGED - IT WENT BACKWARDS, AND WHY (read before doing anything else)
+
+**Average 4.9/10, down from 5.8. Five of ten regions carry a BLOB VIOLATION; wave 4 had none.**
+Full verdicts: `tools/out/wave5-summary.txt` and `wave5-verdicts.json` (I wrote these by hand from the
+workflow journal - the collator agent never ran, see the takeover note below). Raw journal returns:
+`tools/out/wave5-raw.json`.
+
+**ALL FIVE BLOBS ARE THE SAME BUG, AND IT IS NOT THE PLAYER'S GUNFIRE: fighting a region's own
+bestiary blows the screen to white.** Five independent critics found it separately, several with the
+player never firing a shot:
+
+| region | what they measured |
+|---|---|
+| dragon | a wyvern's breath attack tone-maps to pure cream-white and swallows the entire frame |
+| vale | wisp bolt impact renders as a hard white core, sampled **rgb 229,238,233**, on the spawn meadow grass |
+| void | riftling + voidhorror at 16-18 m; **437 additive + 291 alpha particles**; player never fired (ammo still 6/60) |
+| infernal | imp/magmagolem/drake at 8-12 m, drop passive, viewport near-solid within **0.5 s** |
+| lost | Stone Golem hit -> hard-edged opaque near-white egg over its chest crystal, **rgb 236,232,221**, crisp rim, no falloff |
+
+**THE REAL LESSON, and it is bigger than the bug: `node tools/gate.mjs` PASSED while the game was in
+this state.** `blobcheck` is scoped to GROUND COVER in a scripted meadow burst, so a full-screen
+combat-VFX wash is simply outside what it looks at. A gate with a coverage hole reads as a clean bill
+of health, and this campaign has now been burned twice by trusting a green gate over a person looking
+at the screen (the other time was the animation gate passing 23/23 while creatures visibly jittered).
+**WAVE 6's FIRST JOB IS TO CLOSE THAT HOLE - a combat-VFX blobcheck scenario - BEFORE any new art.**
+Do not simply fix the five instances; the next uncovered scenario will do the same thing again.
+
+**Suspects for the regression, in order** (none verified - this is where to start, not a conclusion):
+enemy attack/impact VFX intensity; whatever the wave-5 LIGHTING lane changed about the environment /
+PMREM to make gold read as metal (a hotter env raises everything); and the new GLB creature material.
+Note `GLB_RIM_MAX` was already lowered 0.75 -> 0.30 this session, so the rim is not it.
+
+**THE COHERENCE PASS (first ever run) is the good news and it is worth reading in full** at the end of
+`wave5-summary.txt`. Its verdict: Cadle is *"unmistakably a game rather than a tech demo"* - a real
+quest spine (55 written quests, a closed 1-50 XP curve, drop pity that holds), an MMO-grade parchment
+map and quest log, a measurably correct Destiny-shaped movement core (walk 6.61 / sprint 10.18 m/s,
+sprint FOV kick in 300 ms, ADS 220 ms, slide boosting to 11.54), and ten regions you can genuinely
+WALK between - it held W for 200 seconds from the Vale meadow through a pass into the Whisperwood and
+out to the world's edge with no teleport. Its blocker list: **every surface within 8 m of your face is
+a flat plane with low-frequency noise on it in seven of ten regions**, the mountain ring shows
+horizontal contour-line banding that reads as a texture bug, the impact decal is a 200-pixel pure-black
+circle, the super is two flat yellow clip-art hands, the only NPC has no face, and creatures charging
+the spawn meadow blow the grass out.
+
 ### FIRST THING TO DO ON TAKEOVER (session handed over 2026-08-27 at ~3% usage)
 
 **Everything is COMMITTED: `6fd9f73` on branch `claude/session-e5730b`.** Working tree is clean,
@@ -68,20 +112,20 @@ experience. The user is usually away: **act, do not ask.** Report what you did a
 
 ### Wave scoreboard (fresh critics, blind vs the real Destiny 2 / FF14)
 
-| region | w1 | w2 | w3 | w4 |
-|---|---|---|---|---|
-| forest | 3 | 6 | 6 | 5 |
-| tundra | 4.5 | 6 | 5 | 6 (TOSSUP) |
-| celestial | 3.5 | 4.5 | 6 | 6.5 |
-| dragon | 3.5 | 5 | 4 | 5 |
-| infernal | 4 | 5.5 | 6 | 6.5 |
-| lost | 3.5 | 5 | 6 | 6.5 (TOSSUP) |
-| shadowfen | 4 | 5.5 | 5 | 6 |
-| sunken | 3 | (redesign) | 4 | 4.5 |
-| void | 4 | 5.5 | 5 | 5.5 |
-| vale | 6.5 | 7 | 5 | 6 (TOSSUP) |
+| region | w1 | w2 | w3 | w4 | **w5** |
+|---|---|---|---|---|---|
+| forest | 3 | 6 | 6 | 5 | **4.5** |
+| tundra | 4.5 | 6 | 5 | 6 | **5.5** |
+| celestial | 3.5 | 4.5 | 6 | 6.5 | **5.5** |
+| dragon | 3.5 | 5 | 4 | 5 | **4.5** **BLOB** |
+| infernal | 4 | 5.5 | 6 | 6.5 | **4.5** **BLOB** |
+| lost | 3.5 | 5 | 6 | 6.5 | **5.5** **BLOB** |
+| shadowfen | 4 | 5.5 | 5 | 6 | **5.5** |
+| sunken | 3 | (redesign) | 4 | 4.5 | **5** |
+| void | 4 | 5.5 | 5 | 5.5 | **4.5** **BLOB** |
+| vale | 6.5 | 7 | 5 | 6 | **4** **BLOB** |
 
-Average 3.9 -> 5.7 -> 5.2 -> **5.8**. Nothing is at the bar. Per-finding evidence:
+Average 3.9 -> 5.7 -> 5.2 -> 5.8 -> **4.9 (REGRESSION)**. Nothing is at the bar, and wave 5 went BACKWARDS. Per-finding evidence:
 `tools/out/wave{1,2,3,4}-summary.txt`, `wave{1,2,3,4}-verdicts.json`, screenshots in
 `tools/out/crit{1,2,3,4}-<region>*/`. Wave 4 closed with a **full GATE PASS** and curvecheck OK.
 
