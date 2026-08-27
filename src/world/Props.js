@@ -93,6 +93,33 @@ function runeColumnTexture(rng) {
 
 // ---------------------------------------------------------------- geometry helpers
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+/**
+ * Covering-grid collider for a ry-ROTATED rectangular footprint. The registry and every consumer
+ * (PlayerController._collide, Combat.rayWorld, Enemy avoidance) speak world-axis AABBs only, so a rotated
+ * solid is approximated by a grid of small AABB tiles that fully COVER the rotated rect: nothing can be
+ * walked through, and the bulge past the true face is <= ~tile * |sin ry cos ry| (~0.5 m at 45 deg) —
+ * on a dressed building that is the plinth/sill/shutter line. (An inscribed approximation, like the
+ * Empyrean walkTop grid, is right for FLOOR tops but leaves penetrable wedges when used as walls.)
+ * Local frame matches THREE's rotateY(ry): local +X -> world (cos ry, -sin ry), local +Z -> (sin ry, cos ry).
+ * ponytail: O(nx*nz) tiles per prop; a real OBB type in Colliders + all consumers is the upgrade path.
+ */
+const obbCol = (col, cx, cz, ry, hw, hd, y0, y1, opts = {}) => {
+  const c = Math.cos(ry), s = Math.sin(ry), tile = opts.tile ?? 1.3, walkable = opts.walkable;
+  const ac = Math.abs(c), as = Math.abs(s);
+  if (Math.min(ac, as) < 0.045) {                                   // near axis-aligned: one exact box
+    const ex = hw * ac + hd * as, ez = hw * as + hd * ac;
+    col.add({ type: 'box', box: new THREE.Box3(V3(cx - ex, y0, cz - ez), V3(cx + ex, y1, cz + ez)), walkable });
+    return;
+  }
+  const nx = Math.max(1, Math.ceil((hw * 2) / tile)), nz = Math.max(1, Math.ceil((hd * 2) / tile));
+  const tw = hw / nx, td = hd / nz;                                 // tile half-extents, local frame
+  const ex = tw * ac + td * as, ez = tw * as + td * ac;             // world AABB half-extents of one rotated tile
+  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+    const lx = (2 * i + 1 - nx) * tw, lz = (2 * j + 1 - nz) * td;   // tile centre, local
+    const px = cx + lx * c + lz * s, pz = cz - lx * s + lz * c;
+    col.add({ type: 'box', box: new THREE.Box3(V3(px - ex, y0, pz - ez), V3(px + ex, y1, pz + ez)), walkable });
+  }
+};
 // per-landmark sigil colour (linear HDR: additive rings must read at noon without tone-mapping to white,
 // so the HUE is saturated and only one channel goes above 1)
 const LANDMARK_STONE = {
@@ -1588,8 +1615,15 @@ export class Props {
         P(new THREE.TorusGeometry(GAP + 0.6, 0.85, 6, 18, Math.PI).rotateY(ryG).translate(gx + Math.cos(nb) * zf * 2.4, spr, gz + Math.sin(nb) * zf * 2.4), VIO);
         PG(new THREE.TorusGeometry(GAP + 1.9, 0.5, 5, 16, Math.PI).rotateY(ryG).translate(gx + Math.cos(nb) * zf * 2.7, spr, gz + Math.sin(nb) * zf * 2.7), GLD);   // gold archivolt
       }
-      for (const sd of [-1, 1]) P(new THREE.BoxGeometry(4.0, spr - sill.y + 3.0, 6.4).rotateY(ryG)
-        .translate(gx + gtx * sd * (GAP + 1.6), sill.y - 1.6 + (spr - sill.y + 3.0) / 2, gz + gtz * sd * (GAP + 1.6)), VIO2);   // jambs
+      for (const sd of [-1, 1]) {
+        P(new THREE.BoxGeometry(4.0, spr - sill.y + 3.0, 6.4).rotateY(ryG)
+          .translate(gx + gtx * sd * (GAP + 1.6), sill.y - 1.6 + (spr - sill.y + 3.0) / 2, gz + gtz * sd * (GAP + 1.6)), VIO2);   // jambs
+        obbCol(col, gx + gtx * sd * (GAP + 1.6), gz + gtz * sd * (GAP + 1.6), ryG, 2.2, 3.4, sill.y - 2, spr + 2, { tile: 1.2 });   // the jambs had NO collider: you walked through the gate's frame
+        if (sd === 1) { const jx = gx + gtx * (GAP + 1.6), jz = gtz * (GAP + 1.6) + gz, bx2 = Math.cos(nb), bz2 = Math.sin(nb);
+          (this.colProbes ??= []).push({ kind: 'wall', name: 'lost-gate-jamb', sx: jx + bx2 * 5.8, sz: jz + bz2 * 5.8, dx: -bx2, dz: -bz2, maxTravel: 6.0, fp: { cx: jx, cz: jz, ry: ryG, hw: 1.8, hd: 3.0 } });
+          (this.colProbes ??= []).push({ kind: 'door', name: 'lost-gate-arch', sx: gx - bx2 * 10, sz: gz - bz2 * 10, dx: bx2, dz: bz2, minTravel: 13, dur: 3.5 });
+        }
+      }
       P(new THREE.BoxGeometry(GAP * 2 + 9, 2.4, 7.0).rotateY(ryG).translate(gx, spr + GAP + 1.6, gz), VIO);                     // lintel band over the head
       PG(new THREE.BoxGeometry(GAP * 2 + 4, 1.0, 7.4).rotateY(ryG).translate(gx, spr + GAP + 3.2, gz), GLD);
       P(new THREE.BoxGeometry(GAP * 0.9, 2.6, 6.6).rotateZ(0.30).rotateY(ryG).translate(gx - gtx * GAP * 0.5, spr + GAP + 4.4, gz - gtz * GAP * 0.5), VIO2);   // the parapet, snapped off over half the span
@@ -1887,8 +1921,13 @@ export class Props {
         win(-ez[0] * (d / 2) + ex[0] * w * 0.26 * sd, -ez[1] * (d / 2) + ex[1] * w * 0.26 * sd, ez, -1, wh * 0.55);
         win(ex[0] * (w / 2) * sd, ex[1] * (w / 2) * sd, ex, sd, wh * 0.55);
       }
-      const rad = Math.max(w, d) * 0.5;
-      col.add({ type: 'box', box: new THREE.Box3(V3(x - rad, y - 1, z - rad), V3(x + rad, y + wh + 1.6, z + rad)) });
+      // COLLISION FIX ("I can go through buildings"): the old single AABB had half-extent max(w,d)/2 for a
+      // ry-ROTATED cottage — the rotated corners reach hypot(w,d)/2, up to ~1.2 m of wall stood OUTSIDE the
+      // collider (walk-through at every corner), while face middles were fenced by ~1 m of invisible air.
+      obbCol(col, x, z, ry, w / 2 + 0.18, d / 2 + 0.18, y - 1, y + wh + 1.6, { tile: 1.1 });
+      // probe site for tools/collidecheck.mjs: walk INTO the worst-case rotated corner, must not end up inside
+      { const cd = Math.hypot(w, d) / 2, kx = (ex[0] * (w / 2) + ez[0] * (d / 2)) / cd, kz = (ex[1] * (w / 2) + ez[1] * (d / 2)) / cd;
+        (this.colProbes ??= []).push({ kind: 'wall', name: `cottage-${this._cottages.length - 1}-corner`, sx: x + kx * (cd + 2.2), sz: z + kz * (cd + 2.2), dx: -kx, dz: -kz, maxTravel: cd + 1.4, fp: { cx: x, cz: z, ry, hw: w / 2 - 0.2, hd: d / 2 - 0.2 } }); }
     };
 
     for (let i = 0; i < 9; i++) {
@@ -1913,6 +1952,10 @@ export class Props {
       const x = CX + Math.cos(a) * r, z = CZ + Math.sin(a) * r, y = h(x, z);
       S(new THREE.BoxGeometry(L, 0.85, 0.58).rotateY(a + Math.PI / 2).translate(x, y + 0.34, z), [0.78, 0.76, 0.70]);
       S(new THREE.BoxGeometry(L + 0.2, 0.16, 0.74).rotateY(a + Math.PI / 2).translate(x, y + 0.82, z), [0.70, 0.68, 0.63]);
+      // 0.9 m is above the 0.6 step-up, so a wall with no collider was pure walk-through; jumpable, not passable
+      obbCol(col, x, z, a + Math.PI / 2, L / 2 + 0.1, 0.37, y - 0.5, y + 0.9, { tile: 1.0 });
+      if (i < 3) { const nx2 = Math.sin(a + Math.PI / 2), nz2 = Math.cos(a + Math.PI / 2);   // wall-normal (local +Z)
+        (this.colProbes ??= []).push({ kind: 'wall', name: `fieldwall-${i}`, sx: x + nx2 * 2.4, sz: z + nz2 * 2.4, dx: -nx2, dz: -nz2, maxTravel: 2.2 }); }
     }
 
     // ---- YARD DRESSING (wave-4 vale major: "Hearthfall has zero yard dressing and zero worn ground — a
@@ -2006,7 +2049,12 @@ export class Props {
       W(L(new THREE.SphereGeometry(0.26, 7, 6).scale(1, 0.75, 1).translate(-0.35, 1.16, 0.55)), [0.72, 0.62, 0.48]);
       K(L(new THREE.BoxGeometry(0.50, 0.50, 0.50).translate(0.95, 1.29, 0.45)), OAK);               // a crate on the counter
       K(L(new THREE.BoxGeometry(0.56, 0.07, 0.56).translate(0.95, 1.51, 0.45)), OAK2);
-      col.add({ type: 'sphere', pos: V3(sx, sy + 0.8, sz), r: 1.7 });
+      // was a single r=1.7 sphere at the centre: the counter ends (x +-1.7) and the corner posts (+-1.55, +-1.05)
+      // were outside it — you walked straight through the stall. Rotated footprint, fully covered.
+      obbCol(col, sx, sz, a2, 1.8, 1.2, sy - 0.5, sy + 2.2, { tile: 1.3 });
+      { const c2 = Math.cos(a2), s2 = Math.sin(a2), kx = c2 * 1.55, kz = -s2 * 1.55;   // counter END (local +X), the old sphere's blind spot
+        const kd = Math.hypot(kx, kz), ux2 = kx / kd, uz2 = kz / kd;
+        (this.colProbes ??= []).push({ kind: 'wall', name: `stall-${(this.colProbes ?? []).filter((p) => p.name.startsWith('stall')).length}`, sx: sx + ux2 * (kd + 2.2), sz: sz + uz2 * (kd + 2.2), dx: -ux2, dz: -uz2, maxTravel: 2.6, fp: { cx: sx, cz: sz, ry: a2, hw: 1.4, hd: 0.9 } }); }
     };
     const crate = (px, pz, s, a2) => { const py = h(px, pz);
       K(new THREE.BoxGeometry(s, s, s).rotateY(a2).translate(px, py + s / 2, pz), OAK);
@@ -2025,7 +2073,7 @@ export class Props {
       const bR = mulberry32((bx * 31 + bz * 17) | 0);
       for (let q = 0; q < 4; q++) W(L(new THREE.BoxGeometry(0.30 + bR() * 0.14, 0.36 + bR() * 0.18, 0.025).rotateZ((bR() - 0.5) * 0.16)
         .translate(-0.72 + q * 0.47, 1.60 + (bR() - 0.5) * 0.22, 0.06)), [0.97, 0.94, 0.86]);       // pinned notices
-      col.add({ type: 'box', box: new THREE.Box3(V3(bx - 1.1, by, bz - 0.4), V3(bx + 1.1, by + 2.5, bz + 0.4)) });
+      obbCol(col, bx, bz, a2, 1.15, 0.35, by - 0.5, by + 2.5, { tile: 1.0 });   // was an unrotated AABB for a rotated board
     };
     const aWell = (x, z) => Math.atan2(CX - x, CZ - z);                       // face the well
     stall(CX - 4.5, CZ + 6.5, aWell(CX - 4.5, CZ + 6.5), [0.92, 0.40, 0.38]); // wine-red canvas
@@ -2547,7 +2595,10 @@ export class Props {
           for (let lx = -15.1; lx <= 15.11; lx += sp) for (let lz = -7.6; lz <= 12.81; lz += sp) {
             const p = WD(lx, lz);
             col.add({ type: 'box', box: new THREE.Box3(V3(p[0] - s, gy - 3, p[1] - s), V3(p[0] + s, PY, p[1] + s)), walkable: true });
-          } }
+          }
+          { const pp = WD(0, 9);   // collidecheck: the grid must hold, no sink into the marble. Local (0,9) = the processional walkway between the facade (piers at |lx| 6.6..14, lz -5..5, PLUS their rotation-bulged world AABBs) and the stair top at lz 14.4 — the one stretch of podium guaranteed to be open floor.
+            (this.colProbes ??= []).push({ kind: 'floor', name: 'empyrean-podium', x: pp[0], z: pp[1], y: PY }); }
+        }
         // THE STAIR — outside the podium footprint (the first pass buried it inside the base course) and
         // walked down the slope until it MEETS grade: 0.5 m risers because Colliders' walkable step-up is
         // 0.6, 1.5 m treads so the run reads monumental. Terrain-sampled per step, so it works on the
@@ -3354,7 +3405,11 @@ export class Props {
           }
           const dY = bY - 0.35 + SPN * RISE;
           PW(new THREE.BoxGeometry(2.6, 0.42, (nrib - 1) * 1.55 + 1.4).rotateY(ryA).translate(px, dY + 0.2, pz), [0.46, 0.38, 0.29]);   // the deck along the keel
-          col.add({ type: 'box', box: new THREE.Box3(V3(px - 3.2, bY - 1, pz - 3.2), V3(px + 3.2, dY + 0.42, pz + 3.2)), walkable: true });
+          // was one 6.4 m square AABB for a rotated 2.6 x ~9.2 m deck: the deck ENDS were uncovered (fall
+          // through onto the rapids) and ~1.9 m of invisible floor hung off each side over the white water.
+          const hlen = (nrib - 1) * 0.775 + 0.9;
+          obbCol(col, px, pz, ryA, 1.5, hlen, bY - 1, dY + 0.41, { tile: 1.4, walkable: true });
+          (this.colProbes ??= []).push({ kind: 'floor', name: `wreck-deck-${rr}`, x: px + Math.sin(ryA) * (hlen - 0.8), z: pz + Math.cos(ryA) * (hlen - 0.8), y: dY + 0.41 });
         }
         // The hoard at the foot of the throne. The Sunken Kingdom is the one region you have to hold your
         // breath to reach the bottom of and there was nothing down there to find — so: spilled coin, a
@@ -4168,7 +4223,7 @@ export class Props {
         }
         // the cap you stand on: one walkable box, inset so you cannot stand on thin air past the rim
         col.add({ type: 'box', box: new THREE.Box3(V3(x - R * 0.62, y - 8, z - R * 0.6), V3(x + R * 0.62, y + R * 0.2, z + R * 0.6)), walkable: true });
-        isles.push({ x, y: y + R * 0.2, z, R });
+        isles.push({ x, y: y + R * 0.2, z, R, up: i % 3 === 0 ? (i === 0 ? 13 : 8) : 0 });
         if (i % 3 === 0) this.updrafts.push({ x, z, r: i === 0 ? 13 : 8, top: y + 26 });   // a way back up from most of the ring
         // SOMETHING ON THE ISLE. An archipelago you can walk to and find nothing on is a platforming test,
         // not a place — both float regions shipped as bare rock caps. Each isle now carries the region's own
@@ -4237,7 +4292,18 @@ export class Props {
             parts.push(put(new THREE.BoxGeometry(0.5, 1.2, 0.5).translate(sd * 1.5, 0.8, -(L * 0.5 - 0.3))));
             tints.push([s.tint[0] * 0.98, s.tint[1] * 0.98, s.tint[2] * 0.98]);
           }
-          col.add({ type: 'box', box: new THREE.Box3(V3(px - 1.6, py - 0.3, pz - 1.6), V3(px + 1.6, py + 0.28, pz + 1.6)), walkable: true });
+          // FALL-THROUGH FIX: the old single 3.2 m box at the segment CENTRE left up to ~13 m of a 16 m
+          // segment with no floor — the guaranteed "fell through the bridge" repro. A chain of 1 m-spaced
+          // flat-topped tiles follows the deck's sag/pitch (step <= ~0.55 m, inside the 0.6 m step-up).
+          for (let f = f0; f < f1; f += 1.0) {
+            const bx2 = a.x + ux * f, bz2 = a.z + uz * f, byy = yAt(f) + 0.42;
+            col.add({ type: 'box', box: new THREE.Box3(V3(bx2 - 1.5, byy - 1.7, bz2 - 1.5), V3(bx2 + 1.5, byy, bz2 + 1.5)), walkable: true });
+          }
+          // probe at 30% along the first segment: dead centre of the stretch the old centre-box never covered
+          if (k === 0 && !(this.colProbes ?? []).some((p) => p.name === `bridge-${s.kind}`)) {
+            const f = f0 + (f1 - f0) * 0.3;
+            (this.colProbes ??= []).push({ kind: 'floor', name: `bridge-${s.kind}`, x: a.x + ux * f, z: a.z + uz * f, y: yAt(f) + 0.42 });
+          }
         }
       }
       // one mesh per region so each archipelago rides its region's material: marble for the Isles,
