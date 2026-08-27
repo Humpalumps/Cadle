@@ -196,6 +196,25 @@ before.**
    streaming causes, and build a tools/collidecheck probe that drives the player at every
    building/landmark and asserts no clip-through/sink; needs Props.js free — the town lane holds it).
    THEN: full gate + curvecheck + questgate capstone, THEN the Opus-high judge fleet.
+2d. **CRASH RECOVERY + BATCH 3 ASSETS (2026-08-27, latest).** Claude Code crashed mid-session; the dev
+   server was restarted (same vite command), the two in-flight closers (combat gate, collision) were
+   unresumable and were RELAUNCHED as fresh agents inheriting their on-disk uncommitted edits
+   (combat: Combat.js/materials.js/VFX.js; collision: Props.js + NEW tools/collidecheck.mjs).
+   **NPC/RAIDER ASSET BATCH 3 (npcs get their own skins — user ask):** 6 Magnific concepts (~450 cr)
+   at tools/out/assetgen/npcs/*.jpg (style-checked, excellent); 5 Tripo models generated + RIGGED
+   (herbwife-b, merchant, mason, raider, captain — *-rigged.glb on disk, task ids in npc-*-tasks.txt,
+   forge script tools/out/assetgen/npc-forge.mjs: gen|poll|rig|rigpoll|clips|clipspoll); idle+walk
+   retargets (10 tasks, ~130 cr) polling. NEXT for assets: clipspoll -> optimize each via
+   tools/optimize-creature.mjs (biped 15k tier) -> merge clips -> stage to public/assets/creatures/
+   -> Assets.js MODEL literals -> lanes consume.
+   **USER FEEDBACK QUEUE (all recorded 2026-08-27):** quest markers lagging walkers FIXED+pushed
+   (live-ref glue per frame). PIRATE CAMP spec addenda: pirates SIT (drinking ale) at camp, stand on
+   aggro and shoot GUNS (aether flintlock/musket style, coherent with the world); chest at each camp
+   centre; named captain mini-boss per camp (captain model forged). FP ARMS still not good enough by
+   the user's eye — a dedicated arms-quality redo lane is owed (judge by screenshots, not by "exists").
+   ECONOMY lane owed: gold drops with ammo-style magnet pickup + vendor NPCs (ammo/weapons/armor,
+   prices as data). QUEST OFFER CARD owed: E opens name/pitch/objectives/rewards Accept/Decline
+   before accepting. Wayfinder STAYS as unique first-contact guide.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
