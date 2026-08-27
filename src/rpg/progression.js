@@ -349,6 +349,14 @@ function afford(cost) {
 }
 function spend(cost) { for (const k in cost) S.currencies[k] -= cost[k]; }
 
+/** Check-and-spend in one call (the shop's buy path). Returns false, wallet untouched, when short. */
+export function trySpend(ctx, cost) {
+  if (!afford(cost)) return false;
+  spend(cost);
+  ctx.events.emit('rpg:currency', S.currencies);
+  return true;
+}
+
 const findAny = (id) => S.inventory.find(x => x.id === id)
   || [...WEAPON_SLOTS, ...ARMOUR_SLOTS].map(s => S.equipped[s]).find(x => x && x.id === id);
 

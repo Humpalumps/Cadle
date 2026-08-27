@@ -112,6 +112,7 @@ const TEMPLATE = `
   <div id="wline"><span id="wname"></span><span id="welem"></span></div>
   <div id="wnums"><span id="mag">—</span><span id="res">—</span></div>
   <div id="rline"><i></i></div>
+  <div id="glim"><svg width="11" height="11" viewBox="0 0 11 11"><path d="M5.5 0 11 5.5 5.5 11 0 5.5Z" fill="#d3a548" stroke="#8a6119"/></svg><b>0</b><u>glimmer</u></div>
 </div>
 <div id="wslots"></div>
 <div id="minimap"><canvas width="164" height="164"></canvas><i class="rim"></i><b class="np">N</b><div class="zone"></div><div class="wpd"></div></div>
@@ -141,6 +142,7 @@ export class HUD {
     this.bbar = $('#bbar'); this.bFill = $('#bbar .fill');
     this.wname = $('#wname'); this.welem = $('#welem'); this.mag = $('#mag'); this.res = $('#res');
     this.rline = $('#rline'); this.rFill = $('#rline i');
+    this.glimEl = $('#glim'); this.glimNum = $('#glim b');   // wallet balance — src/rpg glimmer economy
     this.wslots = $('#wslots'); this.slotEls = [];
     this.mmCv = $('#minimap canvas'); this.mmZone = $('#minimap .zone'); this.mmWpd = $('#minimap .wpd');
     this.tgtEl = $('#tgt'); this.tgtName = $('#tgt .tn'); this.tgtLvl = $('#tgt .tlvl'); this.tgtFill = $('#tgt .tfill'); this.tgtSh = $('#tgt .tsh'); this.tgtGhost = $('#tgt .ghost');
@@ -233,6 +235,12 @@ export class HUD {
     ev.on('ability:use', ({ id }) => { const a = this.abEls[id]; a?.el.animate([{ transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' }); });
     ev.on('enemy:spawn', ({ enemy }) => { if (enemy?.def?.boss) this._boss = enemy; });
     ev.on('rpg:pickup', (e) => this.pickup(e?.name ?? 'Aether Shard'));
+    // wallet moved (mote collected, quest paid, shop purchase): tick the balance at once + a brief pulse
+    ev.on('rpg:currency', (c) => {
+      if (!this.glimNum) return;
+      setT(this.glimNum, String((c && c.glimmer) | 0));
+      this.glimEl.animate([{ filter: 'brightness(1.9)' }, { filter: 'brightness(1)' }], { duration: 420, easing: 'ease-out' });
+    });
   }
 
   // ---------- public API ----------
@@ -813,6 +821,9 @@ export class HUD {
       this._proxPrompt = (ae && p.position.distanceToSquared(ae) < 144) ? 'Attune to the Aetheryte' : null;
       const txt = this._extPrompt ?? this._proxPrompt;
       if (txt !== this._promptShown) { this._promptShown = txt; this.promptEl.style.opacity = txt ? 1 : 0; if (txt) setT(this.promptTxt, txt); }
+      // wallet balance (4 Hz sync — covers the save-loaded value from before the event wiring; the
+      // rpg:currency listener handles the instant tick on change)
+      if (this.glimNum) setT(this.glimNum, String((g.rpg?.ctx?.rpg?.currencies?.glimmer ?? 0) | 0));
       // second action row — only the caller that owns _extPrompt (never the aetheryte fallback) may set it
       const o = this._extPrompt ? this._extPrompt2 : null;
       const k2 = o?.key2 || '';

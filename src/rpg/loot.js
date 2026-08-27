@@ -423,7 +423,8 @@ export function init(ctx) {
   ctx.events.on('enemy:death', (e) => {              // Cadle payload: { enemy, killer }
     const en = (e && e.enemy) || e || {};
     const pos = en.position || (en.mesh && en.mesh.position) || ctx.player.position;
-    grant(ctx, { glimmer: 8 + Math.floor(Math.random() * 10) });
+    // kill glimmer is PHYSICAL now — gold motes that magnet in (src/rpg/glimmer.js), scaled by
+    // the enemy's level and tier there. The silent wallet grant that used to sit here is gone.
     // Destiny cadence: most kills give dust, some give a beam. Elites always pay out twice,
     // a region boss three times — and every one of them is rolled from the SOURCE, so the
     // level, the region's element and the creature's role all reach the item.

@@ -15,6 +15,8 @@
 import * as prog from './progression.js';
 import * as loot from './loot.js';
 import * as ammo from './ammo.js';
+import * as glimmer from './glimmer.js';
+import * as shop from './shop.js';
 import * as save from './save.js';
 import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMOUR, describe, shortLabel, ARMOUR_SLOTS, makeQuestItem } from './items.js';
 import { reserveNames } from './names.js';
@@ -81,6 +83,8 @@ export class RPG {
       // silently done nothing for the whole life of the project and no error was ever raised. The
       // swallowing catch is why: a missing API that throws gets fixed, one that no-ops does not.
       marker: (o) => g.hud?.marker?.(o),
+      // the pickup feed (left side) — glimmer.js batches mote payouts into one "+38 Glimmer" line
+      pickup: (t) => g.hud?.pickup?.(t),
     };
     const world = {
       get size() { return g.terrain?.size ?? 1024; },
@@ -158,6 +162,12 @@ export class RPG {
     R.ammo = () => ammo.state(ctx);
     R.ammoDrop = (kind, pos) => ammo.drop(ctx, kind, pos);
     R.clearBricks = ammo.clearBricks;
+    // glimmer economy — kills scatter gold motes that magnet in (glimmer.js); shops spend them
+    R.glimmerState = () => glimmer.state();
+    R.clearMotes = glimmer.clearMotes;
+    R.shopStock = (npcId) => shop.stockFor(ctx, npcId);
+    R.shopBuy = (npcId, key) => shop.buy(ctx, npcId, key);
+    R.isVendor = shop.isVendor; R.vendorFor = shop.vendorFor;
     // quest rewards pay glimmer; prog.grant existed but was never mirrored onto R, so every
     // quest's reward.glimmer would have silently paid nothing.
     R.grant = (amounts) => prog.grant(ctx, amounts);
@@ -181,6 +191,7 @@ export class RPG {
     prog.init(ctx);
     loot.init(ctx);
     ammo.init(ctx);
+    glimmer.init(ctx);
 
     // ---------- load ----------
     const d = save.read();
@@ -231,8 +242,10 @@ export class RPG {
     this.activeDrops = R.activeDrops; this.clearDrops = R.clearDrops;
     this.ammo = R.ammo; this.clearBricks = R.clearBricks; this.grant = R.grant; this.dropQuestItem = R.dropQuestItem;
     this.ammoDrop = R.ammoDrop;   // was reachable only via game.rpg.ctx.rpg.ammoDrop, unlike its siblings
+    this.glimmerState = R.glimmerState; this.clearMotes = R.clearMotes;
+    this.shopStock = R.shopStock; this.shopBuy = R.shopBuy; this.isVendor = R.isVendor;
 
-    g.events.on('player:respawn', () => { try { ammo.clearBricks(); } catch (e) {} });
+    g.events.on('player:respawn', () => { try { ammo.clearBricks(); glimmer.clearMotes(); } catch (e) {} });
 
     this.screens = new Screens(g, ctx);
     this.quest = new OpeningQuest(g, R);
@@ -247,6 +260,7 @@ export class RPG {
     prog.update(ctx, dt);
     loot.update(ctx, dt);
     ammo.update(ctx, dt);
+    glimmer.update(ctx, dt);
     // the loot prompt is re-asserted every frame it applies; clear the HUD line when it stops
     if (!this._promptSet && this._promptWas) this.game.hud?.prompt?.(null);
     this._promptWas = this._promptSet;

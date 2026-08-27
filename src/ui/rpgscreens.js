@@ -1138,6 +1138,87 @@ export function renderQuestLog(game, ctx, body) {
   }</div>`;
 }
 
+// ---------------------------------------------------------------- quest offer card
+// (user ask 2026-08-27) A giver press raises this instead of instant-accepting: the quest, the
+// written pitch, the objectives and the pay, then Accept / Decline. `o` is quest.offerInfo(id)'s
+// plain JSON — the reward choices arrive as SPECS (tier/kind/archetype/slot), not rolled items,
+// because candidates are rolled at accept and a declined card must not have moved the pity counters.
+const AR_LABEL = {
+  handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun',
+  sniper: 'Sniper Rifle', fusion: 'Fusion Rifle', scout: 'Scout Rifle', beam: 'Charge Beam',
+};
+const choiceSpecLabel = (ctx, c) => `${rarOf(ctx, c.tier).label} ${c.kind === 'armour'
+  ? (SLOT_LABEL[c.slot] || 'Armour') : (AR_LABEL[c.archetype] || 'Weapon')}`;
+
+export function renderOfferCard(ctx, o, body) {
+  if (!o) { body.innerHTML = `<div class="qlog"><div class="empty">Nothing is being offered.</div></div>`; return; }
+  const giver = o.giverName || giverLabel(o.giver);
+  const meta = [giver, o.level ? 'Level ' + n0(o.level) : null, regionLabel(o.region)].filter(Boolean).join(' · ');
+  const objs = (o.objectives || []).map((ob) => {
+    const t = typeof ob === 'string' ? ob : ob.text;                       // tolerate both shapes
+    const n = typeof ob === 'object' && ob.counted && ob.need > 1 ? `<span class="oc">× ${n0(ob.need)}</span>` : '';
+    return `<div class="qobj"><i>▸</i><span class="ot">${esc(stripObjCount(t))}</span>${n}</div>`;
+  }).join('');
+  const r = o.reward || {};
+  const bits = [];
+  if (r.xp) bits.push(`${n0(r.xp).toLocaleString()} xp`);
+  if (r.glimmer) bits.push(`${n0(r.glimmer).toLocaleString()} glimmer`);
+  if ((r.choices || []).length > 1) bits.push(`your pick of ${r.choices.length} rewards`);
+  else if (r.tier) bits.push(rarOf(ctx, r.tier).label + ' item');
+  const chips = (r.choices || []).length
+    ? `<div class="ochoices">${r.choices.map((c) =>
+        `<span class="ochip" style="--r:${rarCss(rarOf(ctx, c.tier).color)}">${esc(choiceSpecLabel(ctx, c))}</span>`).join('')}</div>`
+    : '';
+  body.innerHTML = `<div class="qoffer"><div class="qcard">
+    <div class="qhead"><span class="qname">${esc(o.name)}</span></div>
+    ${meta ? `<div class="qmeta">${esc(meta)}</div>` : ''}
+    <p class="opitch">${esc(o.text)}</p>
+    ${objs ? `<h4 class="oh">The task</h4><div class="qobjs">${objs}</div>` : ''}
+    ${bits.length ? `<h4 class="oh">The pay</h4><div class="qreward">Reward — ${bits.join(' · ')}</div>` : ''}
+    ${chips}
+    <div class="obtns">
+      <button class="btn gold" data-act="acceptquest" data-nav="act">Accept the task <kbd>E</kbd></button>
+      <button class="btn" data-act="declinequest" data-nav="act">Not now <kbd>Esc</kbd></button>
+    </div>
+  </div></div>`;
+}
+
+// ---------------------------------------------------------------- the shop
+// Vendors + prices are DATA in src/rpg/shop.js; stock rows arrive priced and buy-gated through
+// ctx.rpg.shopStock(npcId). Gear rows are real rolled items, so they get the same rewardCard
+// (stats + compare-against-worn) the quest picker uses — a purchase you can read is a purchase.
+function shopGearCard(ctx, row) {
+  return `<div class="srow${row.canBuy ? '' : ' cant'}">${rewardCard(ctx, row.item)}
+    <div class="sbuy"><span class="gp">${CUR[0][2]} ${n0(row.price)}</span>
+      <button class="btn gold" data-act="buy" data-id="${esc(row.key)}" data-nav="act"
+        ${row.canBuy ? '' : 'disabled'} title="${esc(row.why || '')}">Buy</button></div>
+  </div>`;
+}
+
+const shopGoodsRow = (r) => `<div class="grow${r.canBuy ? '' : ' cant'}">
+  <span class="gn">${esc(r.name)}<u>${esc(r.sub || '')}</u></span>
+  <span class="gp">${CUR[0][2]} ${n0(r.price)}</span>
+  <button class="btn gold" data-act="buy" data-id="${esc(r.key)}" data-nav="act"
+    ${r.canBuy ? '' : 'disabled'} title="${esc(r.why || '')}">Buy</button>
+</div>`;
+
+export function renderShop(ctx, npcId, body) {
+  const v = ctx.rpg.vendorFor ? ctx.rpg.vendorFor(npcId) : null;
+  const stock = (ctx.rpg.shopStock && ctx.rpg.shopStock(npcId)) || [];
+  if (!v) { body.innerHTML = `<div class="qlog"><div class="empty">Nobody is selling here.</div></div>`; return; }
+  const gear = stock.filter((r) => r.item);
+  const goods = stock.filter((r) => !r.item);
+  body.innerHTML = `<div class="shop">
+    ${currencyStrip(ctx, false)}
+    <p class="sgreet">“${esc(v.greet || '')}”</p>
+    ${gear.length ? `<div class="qsec"><h3>${esc(v.title || 'Wares')}</h3>
+      <div class="rgrid big">${gear.map((r) => shopGearCard(ctx, r)).join('')}</div></div>` : ''}
+    ${goods.length ? `<div class="qsec"><h3>Provisions</h3>
+      <div class="sgoods">${goods.map(shopGoodsRow).join('')}</div></div>` : ''}
+    ${stock.length ? '' : '<div class="empty">The shelves are bare — come back another day.</div>'}
+  </div>`;
+}
+
 // ---------------------------------------------------------------- actions
 // One dispatcher. Every branch calls a real ctx.rpg function and reports what it said.
 export function act(ctx, el, say) {

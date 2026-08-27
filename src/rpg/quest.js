@@ -204,7 +204,51 @@ export class Quests {
     const id = this.offersAt(region)[0];             // QUESTS order = chain first, then sides
     if (!id) { this.game.hud?.toast?.('THE STELE HAS NOTHING MORE FOR YOU', { ms: 2200 }); return ''; }
     if (this.active.size >= MAX_ACTIVE) { this.game.hud?.toast?.('YOUR QUEST LOG IS FULL', { ms: 2600 }); return ''; }
-    return this.accept(id) ? id : '';
+    return this._offerQuest(id);
+  }
+
+  /**
+   * THE OFFER CARD (user ask 2026-08-27): a giver press no longer instant-accepts. The card
+   * (Screens.showOffer -> rpgscreens.renderOfferCard) shows the name, the written pitch, the
+   * objectives and the rewards, and the player chooses: Accept calls accept(id) exactly as
+   * before, Decline closes with no change and the giver keeps offering. Two deliberate
+   * bypasses keep every old contract working: ?auto=1 (the mechanics gate has nobody to click)
+   * and a missing screens module — both fall straight through to accept(). Region auto-offer
+   * (no stele) and `next`-chaining at turn-in also still accept directly: those are not a
+   * giver press, they are the chain advancing.
+   */
+  _offerQuest(id) {
+    const screens = this.game.rpg?.screens;
+    if (this.game.auto || typeof screens?.showOffer !== 'function') return this.accept(id) ? id : '';
+    const info = this.offerInfo(id);
+    if (!info) return '';
+    screens.showOffer(info);
+    return id;                                       // the press was acted on: the card is up
+  }
+
+  /** everything the offer card renders, as plain JSON — no live objects across the UI seam */
+  offerInfo(id) {
+    const q = BY_ID[id]; if (!q) return null;
+    return {
+      id, name: q.name, level: q.level | 0, region: q.region,
+      giver: giverOf(q), giverName: q.giverName ?? '',
+      text: q.text?.offer ?? '',
+      // text WITHOUT the "0 / n" progress suffix (nothing has progressed yet) but WITH the ask:
+      // the card renders `need` as an "× n" chip so "Slay Aether Hounds × 6" reads as a contract
+      objectives: q.objectives.map((o) => ({
+        text: this._line(o, 0), need: o.count ?? 1,
+        counted: H[o.type]?.counter !== false,
+      })),
+      reward: {
+        xp: q.reward?.xp ?? 0, glimmer: q.reward?.glimmer ?? 0, tier: q.reward?.tier ?? '',
+        // the choice SPECS, not rolled items — candidates are rolled at accept (the WoW contract,
+        // see _rollChoices) and a declined card must not have moved the pity counters.
+        choices: (q.reward?.choices ?? []).map((c) => ({
+          tier: c.tier ?? q.reward?.tier ?? 'common', kind: c.kind ?? 'weapon',
+          archetype: c.archetype ?? '', slot: c.slot ?? '', set: c.set ?? '', element: c.element ?? '',
+        })),
+      },
+    };
   }
 
   /** a collect objective rolls its own drop off a tagged mob; with no quest-item runtime it self-credits */
@@ -439,7 +483,7 @@ export class Quests {
     const id = this.offersFor(giver)[0];
     if (!id) { this.game.hud?.toast?.('NOTHING MORE TO ASK OF YOU', { ms: 2200 }); return ''; }
     if (this.active.size >= MAX_ACTIVE) { this.game.hud?.toast?.('YOUR QUEST LOG IS FULL', { ms: 2600 }); return ''; }
-    return this.accept(id) ? id : '';
+    return this._offerQuest(id);
   }
 
   /**
@@ -508,7 +552,8 @@ export class Quests {
     if (cands?.length) this._offerChoice(id, q, cands, pick);
     else if (r.tier) this.rpg?.dropLoot?.(g.player.position, r.tier, { kind: r.kind ?? 'weapon' });
     g.hud?.notify?.('Quest complete', q.name);
-    g.hud?.toast?.(`+${r.xp ?? 0} XP`, { ms: 2600, kind: 'super' });
+    // the reward toast says everything the turn-in paid — glimmer included (user ask 2026-08-27)
+    g.hud?.toast?.(`+${r.xp ?? 0} XP${r.glimmer ? `  ·  +${r.glimmer} GLIMMER` : ''}`, { ms: 2600, kind: 'super' });
     g.hud?.questText?.(q.name, q.text?.done ?? '');
     if (q.next && BY_ID[q.next] && !this.done.has(q.next)) this.accept(q.next);
     this._save(); this._hud(true);

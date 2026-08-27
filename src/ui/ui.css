@@ -84,6 +84,12 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #res::before { content: '·'; margin-right: 8px; color: var(--gold-dim); }
 #rline { position: relative; height: 3px; width: 176px; margin: 3px 0 6px auto; background: rgba(216,189,122,0.18); border-radius: 2px; }
 #rline i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); border-radius: 2px; will-change: transform; }
+/* glimmer wallet — small, rides the ammo cluster (src/rpg glimmer economy) */
+#glim { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; margin-top: 4px;
+  font: 500 13.5px var(--serif); letter-spacing: 0.08em; color: var(--gold-hi);
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+#glim svg { align-self: center; filter: drop-shadow(0 0 3px rgba(211,165,72,0.55)); }
+#glim u { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-dim); text-decoration: none; }
 
 /* ---------- abilities (bottom-left) ---------- */
 #abil { position: absolute; left: 30px; bottom: 30px; }

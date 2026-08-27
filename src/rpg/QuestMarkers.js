@@ -26,6 +26,7 @@
  */
 import * as THREE from 'three';
 import { QUESTS } from './quests/index.js';
+import { isVendor } from './shop.js';
 
 const RANGE2 = 120 * 120;       // marker draw distance (readable well past 40 m; fog owns the far fade)
 const TALK2 = 3.2 * 3.2;        // [E] radius at a villager — matches the stele's own 4 m feel
@@ -100,12 +101,19 @@ export class QuestMarkers {
     }
     let talk = null; const p = this.game.player?.position;
     for (const [key, rec] of this._npcs) {
-      const s = states[key]; if (!s) continue;
+      const s = states[key];
+      const vendor = isVendor(rec.id);   // shopkeepers (src/rpg/shop.js) are speakable with no quest pending
+      if (!s && !vendor) continue;
       const at = this._npcPos(rec);
       // keep the LIVE position ref: walkers move between the 0.5 s polls, and a marker placed from a
       // snapshot visibly lags behind them (user report). update() tracks refs per frame.
-      sites.push({ x: at.x, y: at.y + 2.4, z: at.z, state: s, ref: at });
-      if (p) { const dx = p.x - at.x, dz = p.z - at.z; if (dx * dx + dz * dz < TALK2) talk = { key, name: rec.name }; }
+      if (s) sites.push({ x: at.x, y: at.y + 2.4, z: at.z, state: s, ref: at });
+      if (p) {
+        const dx = p.x - at.x, dz = p.z - at.z;
+        // quests-first rule: a pending exchange (turn-in or a fresh offer) takes the press; a vendor
+        // with nothing to say (or only an in-progress quest) trades instead.
+        if (dx * dx + dz * dz < TALK2) talk = { key, id: rec.id, name: rec.name, quest: s === 'ready' || s === 'offer', vendor };
+      }
     }
     this._talkTarget = talk;
     for (let i = 0; i < sites.length; i++) {
@@ -141,11 +149,17 @@ export class QuestMarkers {
       // shrink inside talk range so the glyph never fills the screen in a conversation (full size by 6 m)
       m.scale.setScalar(Math.min(1, 0.3 + Math.sqrt(dx * dx + dz * dz) / 8));
     }
-    // villager talk prompt — same ownership rule as Props' stele prompt: whoever raises it lowers it
+    // villager talk prompt — same ownership rule as Props' stele prompt: whoever raises it lowers it.
+    // Vendors (shop.js): quests-first-then-shop — a pending turn-in/offer takes the E press through
+    // readGiver (which now raises the offer card); with nothing quest-shaped to do, E opens the shop.
     if (this._talkTarget) {
+      const tt = this._talkTarget;
       this._promptOwned = true;
-      g.hud?.prompt?.('Speak to ' + this._talkTarget.name);
-      if (g.input?.justPressed?.('KeyE')) this.quests.readGiver?.(this._talkTarget.key);   // key IS 'npc:<id>'
+      g.hud?.prompt?.((tt.vendor && !tt.quest ? 'Trade with ' : 'Speak to ') + tt.name);
+      if (g.input?.justPressed?.('KeyE')) {
+        if (tt.quest || !tt.vendor) this.quests.readGiver?.(tt.key);            // key IS 'npc:<id>'
+        else g.rpg?.screens?.showShop?.(tt.id);
+      }
     } else if (this._promptOwned) { this._promptOwned = false; g.hud?.prompt?.(null); }
   }
 }
