@@ -91,6 +91,14 @@ const FAR_CORE = 320, FAR_EDGE = 820;
 // Rec.709 luminance of a linear THREE.Color. Module scope, not a per-call arrow: _gradeFog and _farVeil both
 // run every frame, and a closure allocated in a hot path is exactly what the perf budget bans.
 const LUM = (v) => v.r * 0.2126 + v.g * 0.7152 + v.b * 0.0722;
+// Regions whose murk must own the WHOLE region, wall to wall (wave-5 void blocker: "from inside the Void
+// at noon you can read grass-green forest canopy, warm tan ground and a blue-grey lake at 600 m"). The
+// look weight ramps 1 -> 0 across the outer band of the region, and the fog multiplier rides it straight:
+// at w 0.4 the Void's calibrated fogMul 5.0 has decayed to 2.6 and the far world comes back like a travel
+// brochure. Saturate the WEIGHT (not the density): every calibrated heart value is untouched, the walkable
+// band just reaches full murk long before the border. Void-only on purpose — the fen and the Wastes were
+// not named, and their edge reads are calibrated.
+const FOG_OWN = new Set(['void']);
 THREE.ShaderChunk.fog_vertex = /* glsl */`
 #ifdef USE_FOG
 	float fogY1 = cameraPosition.y + dot( vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] ), mvPosition.xyz );
@@ -622,6 +630,12 @@ void main() {
   // the zenith never got far enough from the horizon band to read as depth; at night there is nothing to
   // scatter and the dome is already near-black, so applying it there just crushed an abyss that was fine.
   float lid = smoothstep(0.25, 0.75, veil);
+  // Dawn/dusk warmth is NOT painted here: it is graded into uFogColor itself (_gradeFog warms a veiled
+  // region's air toward the transmitted sun at low elevation), so the dome, the deck, the aerial match
+  // AND FogExp2 on the terrain all read the SAME warmed air — grading only the dome re-opens the
+  // paper-cutout seam on fully-fogged ridges. What IS dome-only is the ember disc below (lowSun/sunHue).
+  float lowSun = smoothstep(0.42, 0.12, uSunDir.y) * sunUp;
+  vec3 sunHue = uSunDisc / max(dot(uSunDisc, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
   vec3 airS = airCol * mix(1.0, mix(1.0, 0.45, smoothstep(0.06, 0.85, d.y) * sunUp), lid);
   // the sun's place in the lid: the dome and the deck get it, the aerial-perspective match does not (it has
   // to keep matching FogExp2 on the ridge). pow 4 = broad and soft; it is a glow, never a disc.
@@ -743,6 +757,15 @@ void main() {
   // Region horizon glow (Biomes.glow/glowI): ember light off the Wastes' lava fields, the Isles' gold memory
   // at night. A broad saturated band, intensity premultiplied and capped ≤0.3 — never a point source (blob law).
   col += uGlow * exp(-max(d.y, 0.0) * 5.5);
+  // THE SUN EXISTS THROUGH A LID (wave-5 shadowfen: "no sun disc at 17:36 or 06:30"). A dull ember disc
+  // + tight glow, added AFTER the veil, the deck and the aerial match so none of them can erase it — the
+  // lid DIMS the sun, it never deletes it. Placed here (not with the raw disc above) because in a
+  // high-fogMul region the aerial-perspective match repaints everything below ~15 deg of elevation, which
+  // is exactly where a 6-deg dawn sun lives. Hue = transmitted-sun amber (sunHue, luminance-normalised,
+  // min channel ~0 at low sun -> tone-maps to ember, never white); peak added luminance ~1.07 at full
+  // lid+low sun, under the 1.2 bloom threshold, and the soft shoulder below compresses it further.
+  // lid gates it to true ceilings (fen/wastes/void); lowSun gates it to dawn/golden hour; noon unchanged.
+  col += sunHue * (disc * limb * 0.55 + 0.40 * exp(-ang * ang / (2.0 * 0.05 * 0.05)) + 0.12 * exp(-ang / 0.30)) * lid * lowSun;
   // soft shoulder (keeps hue/saturation of bright haze & cloud highlights under ACES), then the HDR sun disc for bloom/god rays
   float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
   if (lum > 1.15) col *= (1.15 + (lum - 1.15) / (1.0 + (lum - 1.15) * 0.55)) / lum;   // gentle: preserves lit-top vs belly contrast (ACES finishes the roll-off)
@@ -1074,7 +1097,9 @@ export class Sky {
     const B = b && b.w > 0.002 ? BIOMES[b.id] : null;
     // the veil eases BOTH ways, including on this early-out — otherwise walking out of the Wastes leaves
     // its smoke ceiling stuck over the Vale for the rest of the session
-    const veilT = B ? (B.skyVeil ?? 0) * b.w : 0;
+    // wOwn: the weight the AIR uses (see FOG_OWN above). Everything else (key grade, glow) keeps b.w.
+    const wOwn = B && FOG_OWN.has(b.id) ? sstep(0.05, 0.55, b.w) : (b ? b.w : 0);
+    const veilT = B ? (B.skyVeil ?? 0) * wOwn : 0;
     this._veilE = (this._veilE ?? 0) + (veilT - (this._veilE ?? 0)) * 0.03;
     // Horizon glow (Biomes.glow/glowI -> DOME_FRAG uGlow). Eased both ways here, same as the veil, so it
     // cannot stick over a neighbour. Night-weighted: an ember horizon is a night read, a faint one by day.
@@ -1146,13 +1171,21 @@ export class Sky {
     // fogLum darkens the AIR ITSELF, before the hue force: smoke/reek/murk hang DARKER than the sky above
     // them. It used to be folded into k and diluted through the 0.85 hue mix — 15% of a luminance-2 noon
     // sky leaking through is why the Wastes' "smoke" still tone-mapped to a lit cream desert (crit2-infernal).
-    const lumS = 1 + (this._fogLumE - 1) * b.w;
+    const lumS = 1 + (this._fogLumE - 1) * wOwn;
     out.r *= lumS; out.g *= lumS; out.b *= lumS;
     // hazeSun: at low sun a mist region hands part of the mix back to the time-of-day colour — water vapour
     // takes on the sunset light, so golden hour reaches the Sunken gorge instead of constant sea-mint.
-    const k = LUM(out) / Math.max(1e-4, LUM(c)), w = b.w * 0.85 * (1 - (B.hazeSun ?? 0) * gld);
+    const k = LUM(out) / Math.max(1e-4, LUM(c)), w = wOwn * 0.85 * (1 - (B.hazeSun ?? 0) * gld);
     out.setRGB(out.r + (c.r * k - out.r) * w, out.g + (c.g * k - out.g) * w, out.b + (c.b * k - out.b) * w);
-    this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * b.w);
+    // DAWN AND DUSK EXIST UNDER A LID (wave-5 shadowfen: "at 17:36 and 06:30 the sky is the same flat
+    // olive-drab wash as noon"). At low sun a reek/smoke ceiling is lit by the same transmitted amber as
+    // everything else, so grade the veiled air's HUE toward the sun colour, luminance preserved (the murk
+    // stays exactly as dark — fogLum already set its value). Done HERE, on the shared fog colour, so the
+    // dome, the deck, the aerial-perspective match and FogExp2 on the terrain all agree — a dome-only warm
+    // grade re-opens the paper-cutout seam on fully-fogged ridges. gld is the golden-hour window (0 at
+    // noon and at night), so midday identity is untouched; gated to true lids (skyVeil > 0.5).
+    if ((B.skyVeil ?? 0) > 0.5) this._hueToward(out, this.sunColor, 0.40 * gld * wOwn);
+    this._fogD = this.fogDensity * (1 + (this._fogMulE - 1) * wOwn);
   }
 
   /**
