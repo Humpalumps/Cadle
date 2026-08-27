@@ -69,6 +69,7 @@ const MODEL = Object.fromEntries([
   '/assets/creatures/treant.glb', '/assets/creatures/golem.glb', '/assets/creatures/sentinel.glb',
   '/assets/creatures/sprite.glb', '/assets/creatures/wraith.glb', '/assets/creatures/riftling.glb',
   '/assets/creatures/warden.glb', '/assets/creatures/serpent.glb', '/assets/creatures/giant.glb',
+  '/assets/creatures/wayfinder.glb',   // the NPC (15k tris, 23 joints, walk/idle/run) — Props.js consumes it
 ].map((u) => [u.split('/').pop().split('.')[0], u]));
 
 const AUDIO = {};
@@ -93,7 +94,7 @@ for (const m of ['wood', 'frost', 'choir', 'drums', 'forge', 'convergence', 'fen
 export class Assets {
   constructor(game) {
     this.game = game;
-    this.textures = {}; this.models = {}; this.audio = {}; this._decoded = {};
+    this.textures = {}; this.models = {}; this._clips = {}; this.audio = {}; this._decoded = {};
     this.deferred = {};   // name -> in-flight fetch for the region themes (not awaited by init; see AUDIO_DEFER)
     this.progress = 0; this.loadMs = 0;
   }
@@ -124,7 +125,10 @@ export class Assets {
     // loading screen's own textures are waiting for. Same total bytes either way — this just keeps the bar
     // moving. They ARE in the critical set (nothing streams mid-game), so init still awaits them.
     for (const [name, url] of Object.entries(MODEL)) jobs.push(
-      gltfLoader.loadAsync(url).then((g) => { this.models[name] = g.scene; })
+      // KEEP g.animations — dropping it here is why "the clips did not work" the first time the baked
+      // locomotion was staged (HANDOVER job 1 trap). AnimationClips are shared data: mixers bind them
+      // per-instance, so one array serves every clone of the model.
+      gltfLoader.loadAsync(url).then((g) => { this.models[name] = g.scene; this._clips[name] = g.animations ?? []; })
         .catch((e) => console.warn('[assets] model missing:', name, e?.message)).finally(() => tick(name)));
     await Promise.all(jobs);
     // Region themes start only NOW, after the critical set has landed. Firing them on the same tick still
@@ -166,6 +170,8 @@ export class Assets {
   tex(name) { return this.textures[name] ?? null; }
   /** the loaded gltf.scene, NOT cloned — clone the scene AND its materials before mutating (ASSETS.md) */
   model(name) { return this.models[name] ?? null; }
+  /** AnimationClip[] baked into the GLB (idle/walk/run where staged) — shared, do not mutate */
+  clips(name) { return this._clips[name] ?? []; }
   sfxData(name) { return this.audio[name] ?? null; }
   /** decode (once) into an AudioBuffer; decodeAudioData detaches its input, so feed it a copy */
   audioBuffer(ctx, name) {
