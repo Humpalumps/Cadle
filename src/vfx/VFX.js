@@ -579,8 +579,8 @@ const PRESETS = {
     const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
     const near = 1 - 0.72 * Math.min(1, Math.max(0, (dd - 22) / 40));
     const sat = _c2.copy(c).offsetHSL(0, 0.35, -0.05);
-    b.reset(v.add, p).jitter(0.02 * s).spread(3.14).speed(0, 0.3).life(0.18, 0.3).size(0.09 * s, 0.14 * s, 0.15).tex(TEX.GLOW).color(sat, sat).hdr(1.4 * near, 1.0 * near).alpha(0.7 * near).fade(0, 0.25).burst(1);
-    b.reset(v.add, p).axis(o.dir ?? UP).spread(0.35).speed(0.5, 2.2).life(0.2, 0.4).size(0.02 * s, 0.04 * s, 0.2).tex(TEX.SPARK).color(0xffffff, sat).hdr(1.6 * near, 1.2 * near).stretch(0.03).gravity(3).drag(1).fade(0, 0.5).burst(1 + k);
+    b.reset(v.add, p).jitter(0.02 * s).spread(3.14).speed(0, 0.3).life(0.18, 0.3).size(0.09 * s, 0.14 * s, 0.15).tex(TEX.GLOW).color(sat, sat).hdr(1.4 * near, 1.0 * near).alpha(0.5 * near).fade(0, 0.25).burst(1);   // alpha 0.7->0.5: the mist over the bolt's own core sphere is what bleached it to a pale egg (gate r3, vale)
+    b.reset(v.add, p).axis(o.dir ?? UP).spread(0.35).speed(0.5, 2.2).life(0.2, 0.4).size(0.02 * s, 0.04 * s, 0.2).tex(TEX.SPARK).color(sat, sat).hdr(1.6 * near, 1.2 * near).stretch(0.03).gravity(3).drag(1).fade(0, 0.5).burst(1 + k);
   },
   trail(v, p, o, k, s, c) {
     if (o.size) s *= o.size / 0.15;
@@ -676,9 +676,14 @@ const PRESETS = {
     // few dozen pixels and adds up cream whatever the hue — thin the additive layers with distance.
     const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
     const fr = (1 - 0.6 * Math.min(1, Math.max(0, (dd - 20) / 40))) * (o.dampen ?? 1);   // range fade × volley-overlap energy share
+    // Energy conservation for BIG detonations (icegiant throw r=3.0, skyserpent 1.5): the halo/ring quads
+    // scale with r, so per-pixel additive intensity must fall as the area grows or a 5-m soft disc lands on
+    // pale ground (snow, marble, sand) and lifts an already-bright surface into the detector's cream band —
+    // combat gate r4's tundra/celestial residuals were exactly this, not a clipped element.
+    const er = Math.min(1, 2.2 / Math.max(1e-3, r));
     b.reset(A, p).tex(TEX.GLOW).size(0.38 * r, 0.5 * r, 1.9).life(0.16).color(fire, fire).hdr(3 * fr, 1.5 * fr).fade(0, 0.25).burst(1);                // hot core in the FIRE hue itself: even HOT_TINTed white lands at channel-spread ~30 once capped, which is exactly the detector's cream band
-    b.reset(A, p).tex(TEX.GLOW).size(1.1 * r, 1.3 * r, 1.5).life(0.28).color(fire, 0x7a1800).hdr(1.2 * fr, 0.3).alpha(0.85).fade(0, 0.25).burst(1);        // warm halo
-    b.reset(A, p).tex(TEX.FLARE).size(1.4 * r, 1.7 * r, 1.5).life(0.11).color(fire, 0x8a2000).hdr(2.2 * fr, 1).rot().fade(0, 0.2).burst(1);           // flare petals in the element hue, not cream-white
+    b.reset(A, p).tex(TEX.GLOW).size(1.1 * r, 1.3 * r, 1.5).life(0.28).color(fire, 0x7a1800).hdr(1.2 * fr * er, 0.3).alpha(0.85).fade(0, 0.25).burst(1);        // warm halo (er: per-pixel energy falls as the disc grows)
+    b.reset(A, p).tex(TEX.FLARE).size(1.4 * r, 1.7 * r, 1.5).life(0.11).color(fire, 0x8a2000).hdr(2.2 * fr * er, 1).rot().fade(0, 0.2).burst(1);           // flare petals in the element hue, not cream-white
     b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.5, 1.0).size(0.18 * r, 0.36 * r, 2.6).tex(TEX.SMOKE).color(fire, 0x8a1a00).hdr(1.2 * fr, 0.25).vary(0.5).alpha(0.85).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.3).burst(Math.max(4, Math.round(12 * k * fr))); // fire tongues (12 not 22 at hdr 1.2: a stack of tongues clips its BLUE channel first and the whole pile goes cream — fewer, dimmer, still fire)
     // smoke ball: Destiny grenade gradient — fire-lit orange-brown -> mid grey-brown -> dark. Starts SMALL and semi-transparent
     // and grows (endMul 3.4), so 0.2-1.0 s reads as a churning fireball, not an instant ink blob.
@@ -686,7 +691,7 @@ const PRESETS = {
     v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(6, 11 * v.mult), scale: r / 3 });                                              // smoke column keeps pumping from the site
     _v3.set(p.x, p.y + (n ? 0.95 : 0), p.z);                                                                                                          // grounded ring lifts clear of 1 m meadow grass
     if (n) b.reset(A, _v3).axis(n).flat(); else b.reset(A, _v3).rot();
-    b.tex(TEX.RING).size(0.42 * r, 0.42 * r, 9).life(0.55).color(fire, c).hdr(3 * fr, 1.5 * fr).alpha(0.95).fade(0, 0.18).burst(1);                              // shockwave — SATURATED start: this ring grows to ~4r and a detonation at the lens fills the frame bottom with it; a white start (even min-channel-capped) is a large near-white sheet
+    b.tex(TEX.RING).size(0.42 * r, 0.42 * r, 9).life(0.55).color(fire, c).hdr(3 * fr * er, 1.5 * fr * er).alpha(0.95).fade(0, 0.18).burst(1);                              // shockwave — SATURATED start: this ring grows to ~4r and a detonation at the lens fills the frame bottom with it; a white start (even min-channel-capped) is a large near-white sheet
     if (n) { _v3.set(p.x, p.y + 1.05, p.z);                                                                                                            // dust ring rides above the grass tops
       b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.4, 3.8).size(0.3 * r, 0.5 * r, 2.4).tex(TEX.SMOKE).color(0x9c8760, 0x7a6a4e).lit(L(v)).vary(0.3).alpha(0.55).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(14 * k);   // lingering TAN dust ring: light against green grass, dark against sky
       _v3.set(p.x, p.y + 0.9, p.z);                                                                                                                    // scorch "haze" discs: the decal itself is buried under 1 m grass, this is the visible char
@@ -717,16 +722,19 @@ const PRESETS = {
     const b = v.brush, A = v.add, day = v.day;
     b.reset(v.alpha, p).jitter(0.35 * s).spread(3.14).speed(0.4, 1.2).life(1.5, 2.4).size(0.35 * s, 0.6 * s, 2.4).tex(TEX.SMOKE).color(0x0e0817, 0x1a1026).vary(0.3).alpha(0.72).rot().spin(1).drag(2).gravity(-0.6).fade(0.04, 0.45).burst(10 * k);
     const dsat0 = _c3.copy(c).offsetHSL(0, 0.4, -0.06);   // rings grow LARGE (2.7 m): a white/pale start reads as a near-white sheet at melee — saturate; the small star/glow pops keep the white-hot identity
-    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(0xffffff, c).hdr(5, 2).fade(0, 0.3).burst(1);
-    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(0xffffff, c).hdr(7, 3).rot().fade(0, 0.3).burst(1);
+    // pop in the creature's own hue, not white: at hdr 5-7 the HOT_TINTed white still landed as a pale
+    // ball post-cap (combat gate r3: tundra 22k-px cluster at rgb 232,234,233 was exactly this pop over
+    // a dead wisp). The punch is the SIZE + double ring + flash; the colour is the element.
+    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(dsat0, c).hdr(3, 1.5).fade(0, 0.3).burst(1);
+    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(dsat0, c).hdr(3.5, 1.8).rot().fade(0, 0.3).burst(1);
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(dsat0, c).hdr(3.5, 1.5).alpha(0.9).fade(0, 0.2).burst(1);
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(dsat0).hdr(3, 1.2).alpha(0.7).fade(0.1, 0.3).burst(1);
     // afterglow motes: at 8 m the old 0.11 m stars were sub-pixel and the kill tail vanished by 0.75 s. 2x size, longer life,
     // saturated at moderate HDR so the element colour holds through noon exposure — the payoff now reads for ~2.5 s.
     const dsat = _c2.copy(c).offsetHSL(0, 0.35, 0);
-    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * s, 0.36 * s, 0.4).tex(TEX.STAR).color(0xffffff, dsat).hdr(3.6 + 1.6 * day, 1.8).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(36 * k);
+    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * s, 0.36 * s, 0.4).tex(TEX.STAR).color(dsat, dsat).hdr(3.6 + 1.6 * day, 1.8).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(36 * k);
     b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * s, 0.75 * s, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr(1.7 + 0.5 * day).alpha(0.7).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(14 * k);
-    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(0xffffff, c).hdr(5, 3).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
+    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, c).hdr(4, 2).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
     v.flash(p, { color: c, intensity: 2 * s, distance: 10, duration: 0.4 });
   },
   // ---- rings / sigils / FF14 magic ----------------------------------------------------------------------------------

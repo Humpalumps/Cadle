@@ -568,7 +568,9 @@ export class Combat {
     // discipline instead (same rule as Brush's BRUSH_MINCH_CAP): the dominant channel keeps the ×1.9
     // heat, the smallest stays under clip so the hue survives ACES.
     p.color.getHSL(_hsl);
-    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.3), Math.min(0.58, _hsl.l)).multiplyScalar(1.9);
+    // Full saturation, lightness clamped LOW, modest multiplier: at ×1.9/l 0.58 the sphere still read as a
+    // pale faceted egg lying in the grass once its own trail mist stacked on top (combat gate r3, vale).
+    p.coreColor.setHSL(_hsl.h, 1.0, Math.min(0.48, _hsl.l)).multiplyScalar(1.5);
     { const m = Math.min(p.coreColor.r, p.coreColor.g, p.coreColor.b); if (m > 0.98) p.coreColor.multiplyScalar(0.98 / m); }
     if (visual?.mesh) { p.mesh = visual.mesh; p.node.add(visual.mesh); }
     this.game.scene.add(p.node);
