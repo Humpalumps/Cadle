@@ -17,6 +17,26 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
 >
 > **REGRESSION GATE (mandatory): `node tools/gate.mjs` must exit 0 before any builder reports done; critics run it and ANY failure = automatic LOSE.** It mechanically enforces three decrees that have each regressed multiple times: (1) no washed-white blobs in the meadow, (2) no screen jitter (static camera must produce near-identical consecutive frames), (3) pointer lock engages on click and RE-acquires after exit (the mouse must never escape the window mid-play). If your change can affect any of these (grass/vfx/postfx/enemies materials; TAA/camera; input/HUD start-pause), run the gate FIRST, not last. Do not weaken gate thresholds — thresholds are orchestrator-owned.
 >
+> **THE VISUAL SIGN-OFF (user decree, 2026-08-28): ANYTHING THAT CAN BE SEEN MUST BE LOOKED AT, BY YOU,
+> IN THE RUNNING GAME, BEFORE YOU SAY IT IS DONE — and before the gate is run, not after.**
+> A gate is a regression alarm, not a quality judgement: `combatcheck` cannot see an opaque orange film
+> that keeps its hue, `blobcheck` cannot see a nameplate floating 350 px above a creature's head, and no
+> gate in this repo can see that a "seraph" is wearing the forgeknight's body. Every one of those shipped
+> green and was caught by a person looking at the screen.
+> The rule, mechanically:
+>   1. **Capture it** — `tools/inspect.mjs` at the distances the thing is actually seen from (a landmark:
+>      200 m / 40 m / 8 m; a creature: a burst while it MOVES; a HUD element: the state that draws it;
+>      a material: noon AND night). A single still cannot show you an animation, and one distance cannot
+>      show you a landmark.
+>   2. **READ THE PNG** — actually open the image. "The code is correct" is not a visual check, and
+>      neither is a passing metric.
+>   3. **Say what you saw** in your report, name the file, and say what you would still dock points for.
+>      A report that only quotes gate output has not been visually signed off.
+> Two traps this decree exists for: a metric that is green while the screen is wrong (see the wave-6
+> verdicts), and a probe that measures the wrong place — `goto(id)` drops you at a region's HEART, which
+> is inside the landmark clearance where ground detail is deliberately suppressed, so "I looked down and
+> saw nothing" may be your camera, not the build. Shoot off-centre too.
+>
 > **THE THREE-GATE SIGN-OFF (user decree, 2026-08-23): nothing is "done" until it passes GRAPHICS, PERFORMANCE and GAME MECHANICS.**
 > Reporting a feature complete without all three is the same failure as reporting a shader done without a screenshot.
 > 1. **Graphics** — `node tools/gate.mjs` exits 0 (invariants + blobcheck + jitter + pointer lock at q=high AND q=low), plus `tools/inspect.mjs` screenshots of every new visual element. A visual you did not look at is not done.
