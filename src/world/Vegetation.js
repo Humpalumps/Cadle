@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, fbm, noise2, smoothstep, clamp, lerp } from '../core/Noise.js';
-import { BIOMES, RL_EDGE } from './Biomes.js';
+import { BIOMES, RL_EDGE, ORDER, weightAt } from './Biomes.js';
+import { GroundScatter } from './GroundScatter.js';
 
 /**
  * Vegetation: procedural trees (3 species, instanced, near mesh + baked billboard impostor LOD, wind sway,
@@ -18,6 +19,8 @@ import { BIOMES, RL_EDGE } from './Biomes.js';
  *   vegetation.crystals  [{x,y,z,scale}]
  *   vegetation.understory  InstLOD of Whisperwood fern/bracken clumps, or null when card_fern is missing
  *   vegetation.canopy    [InstLOD x3] Whisperwood mid-canopy leaf bundles, or null when leaf_card is missing
+ *   vegetation.groundScatter  GroundScatter — the 5-40 cm ground layer (pebbles/grit/tufts/crust/clinker/
+ *                        shards) in all ten regions. Player-following, 3 draw calls; see GroundScatter.js.
  *   vegetation.lods      InstLOD sets refreshed round-robin (Props pushes its own)
  *   vegetation.uniforms  { uTime, uWind, uSunDirV, uSunColor, uSunI } shared by Props materials
  *   vegetation.setWind(w)
@@ -97,7 +100,14 @@ const BSPIRE = {
 // doorway recess of the Kharaz-Dun Gate ... plus three more on the gate's own apron" (crit3-dragon-c/z_door.png)
 // is the shipped symptom; the cause is that scatter never knew the landmarks existed outside the home bowl.
 // Values are the built footprint plus a crown's worth of margin (a 13 m pine is ~7 m across at the top).
-const LM_CLEAR = { forest: 26, tundra: 30, celestial: 46, dragon: 56, infernal: 34, lost: 48, shadowfen: 28, sunken: 40, void: 34 };
+// dragon 56 -> 78 (wave-6: "a grey rubble blob punches through the gate's door leaves"): the Kharaz-Dun
+// door leaves stand 66 m from the region centre and the apron runs to ~70, so a 56 m clearance dropped
+// 5-11 m granite boulders inside the doorway. Props now also records landmarks.dragon AT the gate, so the
+// other three clearance callers move with it.
+const LM_CLEAR = { forest: 26, tundra: 30, celestial: 46, dragon: 78, infernal: 34, lost: 48, shadowfen: 28, sunken: 40, void: 34 };
+// Regions whose ground is snow. Read by the snow gate in _place: a broadleaf may not stand in a snowfield,
+// and the snowfield's edge is a WEIGHT, not the angular wedge the species table is keyed off.
+const SNOW_K = ORDER.map((id, k) => (BIOMES[id].ground === 'snow' ? k : -1)).filter((k) => k >= 0);
 
 // CROWN ENVELOPE of the two Whisperwood species, metres before instance scale — where _buildCanopyFoliage
 // hangs its mid-canopy bundles. `h` mirrors EZTrees' TARGET_H (27 m old-growth, 13 m broadleaf); y0..y1 is
@@ -607,6 +617,9 @@ export class Vegetation {
       import('./EZTrees.js').then(({ buildEZTrees }) => buildEZTrees(this.game, this.trees, this));
     }
     for (const l of this.lods) l.finalize();
+    // The 5-40 cm ground layer. Built here (not in _place) because it is generated around the player at
+    // runtime, not baked over the map — see GroundScatter.js's header for why a whole-map bake cannot hold it.
+    this.groundScatter = new GroundScatter(game); this.groundScatter.init();
     console.log(`[vegetation] trees ${this.trees.length} rocks ${this.rocks.length} crystals ${this.crystals.length} in ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
@@ -1042,7 +1055,17 @@ export class Vegetation {
       if (r0 > 300) p *= smoothstep(430, 320, r0);                      // home-bowl groves stop at the mountain feet
       const road = terrain.roadAt?.(x, z) ?? 0;                         // nothing grows in the pass roads
       if (road > 0.35) continue;
-      const bt = B(x, z), bTree = bt.w > 0.02 ? BTREE[bt.id] : null;    // outer biome takes over its own canopy
+      const bt = B(x, z);
+      // BORDER INTERLEAVE (wave-6 tundra blocker: "summer oaks shoulder to shoulder with snow-laden pines
+      // across a straight line"). Terrain._seam already bent that line into the same meander the ground
+      // splat draws; this is the CONTENT gradient on top of it. Inside the seam band `bt.m` ramps 0 -> 0.5,
+      // so each candidate independently draws its pool from the NEIGHBOUR with that probability: the two
+      // canopies interdigitate over ~34 m — pines thinning into oaks — instead of meeting on an edge.
+      // `bt.m > 0.001` short-circuits, so the rng stream (and the whole scatter) is untouched everywhere
+      // except the nine seams.
+      const nb = bt.m > 0.001 && rng() < bt.m;
+      const bId = nb ? bt.id2 : bt.id, bW = nb ? bt.w2 : bt.w;
+      const bTree = bW > 0.02 ? BTREE[bId] : null;                      // outer biome takes over its own canopy
       if (inLandmark(bt, x, z)) continue;                               // hero landmarks keep their own ground
       // SIGHTLINE SPECIES. `bt.w` is a DISTANCE-from-centre weight, so between RING_IN and the region's look
       // radius it is 0 and the Vale's own broadleaf pool used to take over — from inside Frostveil at full
@@ -1051,14 +1074,14 @@ export class Vegetation {
       // `bt.id` is the nearest wedge whatever the weight is, so out here species and tint come from the region
       // whose sightline this ground is in, while DENSITY stays the home grove noise. Inside RING_IN nothing
       // changes — the Vale keeps its own trees.
-      const bLook = !bTree && bt.k >= 0 ? BTREE[bt.id] : null;
+      const bLook = !bTree && bt.k >= 0 ? BTREE[bId] : null;
       // `gv` is the FLOOR under the grove noise. Without one, grove2 returns 0 across whole stretches and the
       // region's heart is an open lawn with a treeline around it — which is a meadow, not a forest. A closed
       // canopy needs trees between the groves too; the noise should vary density, not switch it off.
       // The floor fades DOWN toward the region edge: full-strength gv at the heart keeps the closed canopy,
       // but at the edge band a uniform floor over a 7 m lattice read as orchard rows on open ground
       // (crit2-forest-c/shot-lowsun-west) — there the grove noise takes over and trees CLUMP instead.
-      if (bTree) { const gv = (bTree.gv ?? 0) * smoothstep(0.30, 0.85, bt.w); p = p * (1 - bt.w) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bt.w; }
+      if (bTree) { const gv = (bTree.gv ?? 0) * smoothstep(0.30, 0.85, bW); p = p * (1 - bW) + bTree.p * (gv + (1 - gv) * grove2(x, z)) * bW; }
       const u0 = rng(); if (u0 > Math.max(p, 0.22)) continue; // cheap reject before the (costlier) height/slope queries
       const y = terrain.heightAt(x, z); if (y > 190 || y < wl + 0.4) continue;
       const shore = y < wl + 2.6 && lakeD(x, z) < 120; if (shore) p = 0.22;
@@ -1081,9 +1104,27 @@ export class Vegetation {
         // read (the lattice above is the first half). 0.58 + 0.42w is heart-identical (w=1 -> 1.0) and
         // hands the west band 0.75: giants clump, and a giant costs FEWER triangles than the saplings it
         // replaces (see SPECIES_TUNE[5] in EZTrees.js), so extending old-growth west is a tri WIN.
-        if (bTree.og && rng() < bTree.og * (0.58 + 0.42 * bt.w)) species = 5;
+        if (bTree.og && rng() < bTree.og * (0.58 + 0.42 * bW)) species = 5;
       }
       else if (shore) species = 2; else if (forest > 0.5) species = u < 0.72 ? 0 : 1; else species = u < 0.45 ? 0 : 1;
+      // SNOW GATE (wave-6 coherence: "a fat green deciduous tree with green grass under it stands in the
+      // middle of the snowfield"). Two different snowfields, one rule, and neither was known to BTREE:
+      //  (a) Terrain's snow layer is a GLOBAL ALTITUDE splat — `ss(104, 138, h + macro*24)` in colorAt and in
+      //      FRAG_SPLAT — so every shoulder of the mountain ring above ~92 m is white ground no matter which
+      //      wedge it is in. Only tundra and dragon carried a `yMax`, so the home grove's own broadleafs (and
+      //      every sightline species) climbed straight into it.
+      //  (b) Frostveil's snow FLOOR is a distance weight (weightAt), but `wedgeAt` flips SPECIES on the
+      //      angular bisector — two different boundaries. On the forest/celestial side of a tundra seam the
+      //      ground is still half snowfield while the canopy has already handed over to summer broadleaf.
+      // Conifers (3, 6) and the leafless species (4, 7) belong on snow and are untouched. A broadleaf is not,
+      // and no tint fixes it: an oak in unbroken snow reads as an oak in unbroken snow. Species gate, not a
+      // colour gate — same reasoning as the blob decree's "cap the value, do not tint the symptom".
+      if (species === 0 || species === 1 || species === 2 || species === 5 || species === 8) {
+        if (y > 92) continue;
+        let snowed = false;
+        for (const sk of SNOW_K) if (sk !== bt.k && weightAt(x, z, sk) > 0.26) { snowed = true; break; }
+        if (snowed) continue;
+      }
       const sp = treeSpec[species] ?? treeSpec[species === 3 || species === 6 ? 0 : 1];
       // FOREST SCALE SPREAD, not one size. Half of the wave-4 "a handful of giant flat cards" blocker is
       // that every old-growth giant was 27 m x (0.9..1.25), so every crown card in frame was the same ~9 m
@@ -1106,8 +1147,8 @@ export class Vegetation {
       const tj = 0.76 + rng() * 0.44;
       let cr = tj * (0.86 + rng() * 0.3), cg = tj, cb = tj * (0.8 + rng() * 0.32);
       const kCol = bTree?.col ?? bLook?.col;
-      if (kCol) { const w = bTree ? bt.w : 1; cr *= 1 + (kCol[0] - 1) * w; cg *= 1 + (kCol[1] - 1) * w; cb *= 1 + (kCol[2] - 1) * w; }
-      if (bTree && bt.id === 'forest' && rng() < 0.18) { cr *= 0.78; cb *= 1.24; }   // the enchanted accent: a scatter of blue-teal crowns in the deep green
+      if (kCol) { const w = bTree ? bW : 1; cr *= 1 + (kCol[0] - 1) * w; cg *= 1 + (kCol[1] - 1) * w; cb *= 1 + (kCol[2] - 1) * w; }
+      if (bTree && bId === 'forest' && rng() < 0.18) { cr *= 0.78; cb *= 1.24; }   // the enchanted accent: a scatter of blue-teal crowns in the deep green
       // ALBEDO IS A REFLECTANCE — it cannot exceed 1, and `tr.c` goes straight into EZTrees' leaf and
       // impostor instanceColor (EZTrees.js:419). tj alone reaches 1.20 and the per-channel jitter takes
       // red to ~1.39, so the brightest crowns were multiplying their leaf card ABOVE the painted value:
@@ -1135,7 +1176,7 @@ export class Vegetation {
       // (InstLOD.add copies both, and trees.push above still needed C as the tree's own leaf tint).
       // Region-owned Whisperwood trees only: the layer exists to break the old-growth crown's flat sheets,
       // and those only grow inside the forest region (bLook sightline trees never get species 5).
-      const cw = this.canopy && bTree && bt.id === 'forest' ? CROWN[species] : null;
+      const cw = this.canopy && bTree && bId === 'forest' ? CROWN[species] : null;
       if (cw) {
         const Hc = cw.h * scale, nB = Math.round(cw.n * (0.65 + drng() * 0.75));
         for (let i = 0; i < nB; i++) {
@@ -1235,14 +1276,16 @@ export class Vegetation {
       const rd = ruinD(x, z); let p = 0.04 + smoothstep(20, 60, y) * 0.03 + smoothstep(0.15, 0.45, slope) * 0.05; if (y > 50) p *= 0.4;
       if (rd < 45) p = rd < 12 ? 0 : 0.35; if (x > 220 && r0 < 400) p += 0.1; if (r0 < 60) p *= 0.5; if (lakeD(x, z) < 110 && y < wl + 3) p += 0.12;
       if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
-      const br = B(x, z), bRock = br.w > 0.02 ? BROCK[br.id] : null;
-      if (bRock) p = p * (1 - br.w) + bRock.p * br.w;
+      const br = B(x, z);
+      const rnb = br.m > 0.001 && rng() < br.m, rId = rnb ? br.id2 : br.id, rW = rnb ? br.w2 : br.w;   // border interleave, see the tree loop
+      const bRock = rW > 0.02 ? BROCK[rId] : null;
+      if (bRock) p = p * (1 - rW) + bRock.p * rW;
       if (inLandmark(br, x, z)) continue;                               // hero landmarks keep their own ground
       // The frozen lake at the Frostveil heart is a raised flat ICE SHEET (bed at 4.22 m, walkable) — it is
       // ICE, not a rock yard. 0.12 still left a litter of boulders across it in every hero frame
       // (crit3-tundra-b/shot-throne-58.png), so the sheet itself is now bare and the band just off it is
       // thinned; the shore keeps its rocks. Bowl SLOPE floaters are a seating bug, fixed by seat() below.
-      if (bRock && br.id === 'tundra' && slope < 0.10) { if (y < wl + 1.6) continue; if (y < wl + 4.0) p *= 0.15; }
+      if (bRock && rId === 'tundra' && slope < 0.10) { if (y < wl + 1.6) continue; if (y < wl + 4.0) p *= 0.15; }
       if (rng() > p) continue;
       const big = rng() < (slope > 0.2 || y > 30 ? 0.35 : 0.15) && rd > 45;
       const kind = big ? 0 : 1 + Math.floor(rng() * 3); const scale = big ? 2.2 + rng() * 3 : (rd < 45 ? 0.35 + rng() * 0.7 : 0.5 + rng() * 1.3);
@@ -1258,8 +1301,8 @@ export class Vegetation {
       if (seatHi - yb > 1.25 * scale) continue;                        // no resting place: this is a cliff, not ground
       P.set(x, yb - 0.34 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
       const g = 0.75 + rng() * 0.35; C.setRGB(g * (1 + (rng() - 0.5) * 0.1), g, g * (1 - rng() * 0.08));
-      if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], br.w), C.g * lerp(1, t[1], br.w), C.b * lerp(1, t[2], br.w)); }
-      const grp = (bRock?.grp && this._rockGrp[bRock.grp] && br.w > 0.35) ? bRock.grp : 'default';
+      if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], rW), C.g * lerp(1, t[1], rW), C.b * lerp(1, t[2], rW)); }
+      const grp = (bRock?.grp && this._rockGrp[bRock.grp] && rW > 0.35) ? bRock.grp : 'default';
       this._rockGrp[grp][kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, yb - 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
@@ -1293,16 +1336,18 @@ export class Vegetation {
       const forest = smoothstep(-180, -220, z) * smoothstep(270, 240, Math.abs(x)) * home;
       let p = field * 0.38 * smoothstep(80, 45, y) + forest * 0.025;   // fields stay off the snowy slopes
       if ((terrain.roadAt?.(x, z) ?? 0) > 0.35) continue;
-      const bc = B(x, z), bSpire = bc.w > 0.02 ? BSPIRE[bc.id] : null;
-      if (bSpire) p = p * (1 - bc.w) + bSpire.p * bc.w * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.016, z * 0.016, { octaves: 3, seed: 23 }));
+      const bc = B(x, z);
+      const snb = bc.m > 0.001 && rng() < bc.m, sId = snb ? bc.id2 : bc.id, sW = snb ? bc.w2 : bc.w;   // border interleave, see the tree loop
+      const bSpire = sW > 0.02 ? BSPIRE[sId] : null;
+      if (bSpire) p = p * (1 - sW) + bSpire.p * sW * smoothstep(0.05, 0.4, 0.5 + 0.5 * fbm(x * 0.016, z * 0.016, { octaves: 3, seed: 23 }));
       if (inLandmark(bc, x, z)) continue;                               // hero landmarks keep their own ground
-      if (bc.id === 'tundra' && bc.w > 0.02 && y < wl + 1.6 && terrain.slopeAt(x, z) < 0.10) continue;   // the frozen lake is an ice SHEET, not a shard field
+      if (sId === 'tundra' && sW > 0.02 && y < wl + 1.6 && terrain.slopeAt(x, z) < 0.10) continue;   // the frozen lake is an ice SHEET, not a shard field
       if (rng() > p) continue;
       // `own` at w > 0.4 was the second half of the forest magenta bug: between 0.02 and 0.4 the spire was
       // placed by the REGION's probability but handed the home meadow's cyan..magenta jitter, so the
       // Whisperwood's outer band grew fuchsia aether spires (crit3-forest-c/shot-west-band-in.png). If the
       // region put it there, the region colours it.
-      const own = bSpire && bc.w > 0.12;
+      const own = bSpire && sW > 0.12;
       const scale = own ? bSpire.s[0] + rng() * (bSpire.s[1] - bSpire.s[0])
         : field > 0.3 ? 2.6 + rng() * 2.6 : 0.9 + rng() * 1.1;
       addCrystal(x, z, scale, Math.floor(rng() * 3), own ? bSpire.col : null, own ? bSpire.a : null);
@@ -1420,6 +1465,7 @@ export class Vegetation {
     if (!this._dressed) { this._dressed = true; try { this._dressElderheart(); } catch (e) { console.warn('[vegetation] elderheart canopy', e); } }
     U.uTime.value = t;
     if (sky) { U.uSunDirV.value.copy(sky.sunDir).transformDirection(camera.matrixWorldInverse); U.uSunColor.value.copy(sky.sunColor); U.uSunI.value = sky.sunIntensity ?? 1; }
+    this.groundScatter?.update();   // no-op unless the camera crossed a 6 m cell
     // staggered LOD refresh: 3 sets per frame, each set when the camera moved > 1 m from ITS last refresh
     // (2 sets @ 1.5 m lagged enough at sprint speed that trees/rocks visibly popped in at the near edge)
     const p = camera.position, n = this.lods.length; if (!n) return;
