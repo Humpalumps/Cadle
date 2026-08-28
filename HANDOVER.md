@@ -284,6 +284,20 @@ before.**
    intermediates into the shared worktree (one syntax error left the game unbootable for minutes).
    **Next campaign should give each lane its own worktree (Workflow isolation: 'worktree') or run
    fewer at once — verification trust is now the bottleneck, not build throughput.**
+2i. **USER DIRECTIVE 2026-08-28 — THE MERGE CONDITION (standing authorization).** When BOTH of these
+   pass, MERGE `claude/session-e5730b` TO `main` on github.com/Humpalumps/Cadle and push:
+     (a) the VISUAL PASS — the new CLAUDE.md decree: every visible thing this wave touched is captured
+         at the distances it is actually seen from, the PNGs are READ, and the report says what was
+         seen and what would still be docked. Not a metric, a look.
+     (b) `node tools/gate.mjs` on a QUIET tree (invariants + meadow blobs + jitter at both qualities +
+         combat white-out + animcheck + collidecheck + pointer lock), plus curvecheck and questgate.
+   If either fails: FIX the issues and RE-RUN until both pass, THEN merge. The user does not want a
+   merge on a red gate and does not want the wave sitting unmerged once it is green. This is a
+   durable authorization for the merge itself — no need to re-ask once the two conditions are met.
+   Mechanics note: `main` has been deliberately untouched all campaign and the main checkout
+   (C:/Users/ianca/Desktop/fps4) sits on a DIFFERENT branch, so merge from here by pushing the branch
+   and opening/merging a PR with `gh` (the repo already uses PRs), or fast-forward push if main is an
+   ancestor — check `git merge-base --is-ancestor origin/main claude/session-e5730b` first.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
