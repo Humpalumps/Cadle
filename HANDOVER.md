@@ -255,6 +255,35 @@ before.**
    with lava classified as swimmable water; vale grass LOD bubble at 25-28 m that slides with the
    camera; villager facing not firing live; border content collapse). Then: re-run the extended gate,
    re-judge.
+2h. **WAVE 7 STATUS (2026-08-28, the "every cheap high-impact defect" round the user asked for).**
+   LANDED + PUSHED: **world** (13 defects — Aetheryte collider was smaller than the pedestal it
+   fenced; the Cinder Maw "hole" was the underside of the water mesh, not missing colliders; the
+   grass bubble was blade SCREEN WIDTH (0.7 px at 30 m), not radius or density; border collapse was
+   `wedgeAt` being a bare Math.round against a jittered 34 m splat band, fixed at Terrain._seam;
+   the Lost "dome you stand inside" was a default-capped CylinderGeometry; plus dais, dragon-door
+   rubble, apron placeholders, stray monolith, void sliver, finials, abyss parapet).
+   **systems** (respawn was deaf to synthetic input only — a real player could always respawn but no
+   gate could ever end a death; music was ~80% a reporting artefact plus one real latent bug —
+   unlocking audio inside a region left music.region at its default; nameplates were CSS-pinned 350 px
+   above centre which also caused the mislabel; the opening quest existed but its auto-offer was gated
+   on "no stele in region" and the Vale has one; the green t-shirt was the world DROP not the icon;
+   new damage-direction wedges; region label lifted out of _minimap's early-returns).
+   **ground scatter** (GroundScatter.js — the coherence judge's ONE THING, 3 draw calls for all ten
+   regions, hue from terrain.colorAt but BIMODAL value per piece because one multiplier is invisible
+   on black basalt and white marble alike; also killed the snowfield-oak bleed).
+   **Wayfinder rest yaw** (his look-at used the rig's +X convention, his rest pose the plane
+   convention — 90 deg apart; that was the user's "the cloaked guy doesn't look at me").
+   IN FLIGHT: combat-visual lane (void-amber hardcoded hue at VFX.js ~672/683/684/690, opaque-film
+   class, magenta lens, kill bloom, grenade core, beam, edge streak, sight-post bloom, shield bubbles,
+   super hands, wrong-creature reskins) and a placeholder-cleanup lane (marshmallow border rocks,
+   greybox celestial isles, reed billboards, greybox hamlet).
+   **STILL OWED WHEN THE TREE IS QUIET: `node tools/gate.mjs` full battery.** q=high has been
+   unmeasurable all evening — the browser dies mid-capture under 8-16 concurrent headless shells from
+   parallel lanes (4 attempts). This is the gate's own "aborted measurement, not an earned failure"
+   case. ALSO: three lanes independently reported captures ruined by other lanes saving broken
+   intermediates into the shared worktree (one syntax error left the game unbootable for minutes).
+   **Next campaign should give each lane its own worktree (Workflow isolation: 'worktree') or run
+   fewer at once — verification trust is now the bottleneck, not build throughput.**
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
