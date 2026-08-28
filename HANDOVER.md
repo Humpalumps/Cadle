@@ -223,6 +223,17 @@ before.**
    quality trim candidates); 12 villager mixers (distance-banded already); collision added ~1000
    static AABBs (broadphase, cheap). Sequence: pirates lane -> perf pass -> full gate battery
    (invariants, combat, anim, collide, meadow, pointer, curvecheck, questgate) -> Opus judges.
+2f. **STATE 2026-08-28: COMBAT GATE GREEN (COMBATCHECK OK, 260 frames, 0.0% peak washFrac — the
+   halo quad was the last author, pinned by a corrected bisect: toggle material.visible, not
+   glowMesh.visible which Combat.update overwrites). PIRATE CAMPS SHIPPED (3 named Gloamtide Corsair
+   camps: sitting/drinking crews, aether flintlocks, paying strongboxes — props:chest never paid for
+   ANY world chest before, fixed — named captains, 3 quests). VILLAGERS: pruned to unique bodies,
+   static only, facing root-caused (+X-authored rigs, shipped yaw was 90 deg off backwards); 7 unique
+   villager bodies + raider/captain staged; re-fill lane in flight (harl/tessa/cole/pell on
+   fisherman/farmwoman/guard/scholar). Full gate.mjs on this build: blob high/low clean, anim 25/25,
+   combat no fails, pointer lock OK; sole red = in-gate collidecheck eval race (dedicated run all OK).
+   REMAINING BEFORE THE OPUS FLEET: re-fill lands -> PERF PASS (2e) -> one quiet-GPU capstone
+   gate.mjs + curvecheck + questgate all green -> judges (Opus high, script per 3 below).**
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
