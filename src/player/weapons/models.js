@@ -203,7 +203,11 @@ export function makeMaterials(assets = null) {
     mats.flash[el] = { petal: new THREE.MeshBasicMaterial({ color: hex, map: T.petal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
                        star: new THREE.MeshBasicMaterial({ color: hex, map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }) };
   }
-  mats.flashCore = new THREE.MeshBasicMaterial({ color: 0xffffff, map: T.star, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  // The muzzle core is the ONE element the player sees on every single shot, so it is also the one most
+  // likely to be caught clipping: pure white at 0.34 additive, stacked with the world muzzle burst and
+  // an impact star, is what the combat gate kept flagging as a white core in the pfire bursts. A warm
+  // gold core reads as hotter than white after ACES anyway (a hue survives, a clip just goes grey).
+  mats.flashCore = new THREE.MeshBasicMaterial({ color: 0xffd79a, map: T.star, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   // Opacity cut hard (petal 0.95 -> 0.4, star 0.75 -> 0.32, core 0.85 -> 0.34). These are ADDITIVE and they overlap,
   // so the three petals plus star plus core were summing well past white in the middle of the reticle before bloom
   // even got to them. The element hue is what should read on a flash; the value is what blinds you.

@@ -791,7 +791,7 @@ const PRESETS = {
     b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k0);
     b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr((1.5 + 0.5 * day) * hk, 0.5 * hk).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
     b.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.55 * s, 1.6).life(0.2).color(sat, sat).hdr((2.6 + 1.0 * day) * hk, 1.1 * hk).alpha(0.9).fade(0, 0.3).burst(1);
-    b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(sat, c).hdr((3.5 + 1.5 * day) * hk, 2 * hk).rot().fade(0, 0.3).burst(1);           // small hot core only, in the saturated hue (was white at hdr 9: the lost-region "near-white egg over the golem chest")
+    b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(deepen(_c3.copy(sat)), c).hdr((2.6 + 1.0 * day) * hk, 1.6 * hk).rot().fade(0, 0.3).burst(1);           // small hot core only, in the saturated hue (was white at hdr 9: the lost-region "near-white egg over the golem chest")
     b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.04, 0.075, 0.3).tex(TEX.SPARK).color(sat, sat).hdr((4.5 + 1.5 * day) * hk, 2 * hk).stretch(0.06).gravity(7).drag(2.5).fade(0, 0.5).burst(16 * k);
     // ember flecks: brief saturated chunks that arc out and die fast — the physical "something broke off" presence the
     // wave-1 feel audit asked for. Saturated colour at moderate HDR (blob law: hue survives ACES, value never clips).
