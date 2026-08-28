@@ -395,7 +395,7 @@ export class VFX {
    */
   _paleK(p) {
     const b = this.game.terrain?.biomeAt?.(p.x, p.z);
-    return b === 'tundra' || b === 'celestial' ? 0.5 : b === 'dragon' || b === 'sunken' ? 0.75 : 1;
+    return b === 'tundra' || b === 'celestial' ? 0.5 : b === 'sunken' ? 0.6 : b === 'dragon' ? 0.75 : 1;   // sunken 0.6 (was 0.75): the Drowned Court's pink-pale marble washed a deep-pink bolt halo at 0.75 (gate mix5)
   }
   _anchor(p) { const a = this._anchors[this._ai = (this._ai + 1) % this._anchors.length]; a.copy(p); return a; }
   tracer(from, to, o = NOPTS) {
@@ -420,7 +420,10 @@ export class VFX {
     let f = null; for (const x of this.lights) if (x.t >= x.dur) { f = x; break; }
     if (!f) { f = this.lights[0]; for (const x of this.lights) if (x.t / x.dur > f.t / f.dur) f = x; }
     if (!f) return;
-    const c = this._col(o, 0xffe2b0);
+    // deepen the light's hue too: half the callers pass a pastel (death: raw glowColor, enemy muzzle
+    // flashes) and a pale-cyan light pool on snow IS the wash — same law as the sprites, the ground a
+    // light touches should read as coloured light, not as lifted white. Intensity is untouched.
+    const c = deepen(this._col(o, 0xffe2b0));
     // NEAR-CAMERA FADE — the blob decree, and it belongs HERE rather than in each preset because every
     // caller has the same failure. An enemy explosive bolt detonates ON the player, so `explosion` put a
     // PointLight 0.5-1.2 m from the eye with a ~10 m falloff and an effective intensity of ~52 after the
@@ -447,13 +450,26 @@ export class VFX {
   }
   shockwave(p, o = NOPTS) {
     const r = o.radius ?? 3, c = this._col(o, 0xffffff), b = this.brush;
-    if (o.normal) { _v3.set(p.x + o.normal.x * 0.95, p.y + o.normal.y * 0.95, p.z + o.normal.z * 0.95); b.reset(this.add, _v3).axis(o.normal).flat(); } // lift clear of 1 m meadow grass
+    // Normal-less callers (enemy slam/phase, super pop) are GROUND slams: ground the ring on the terrain
+    // normal instead of falling back to a camera-facing quad. A view-facing RING at slam range sweeps the
+    // whole frame as a huge pale dome over snow/marble — the combat gate's tundra 4.7k-px "half-dome with
+    // a straight bottom edge" was exactly this (Abilities.js knew: "at chest height it renders as a big
+    // camera-facing white donut"). rot() remains only for genuinely airborne detonations.
+    let n = o.normal;
+    if (!n) { const T = this.game.terrain, gy = T?.heightAt?.(p.x, p.z); if (gy != null && p.y - gy < 3) n = T.normalAt?.(p.x, p.z, _v2) ?? UP; }
+    if (n) { _v3.set(p.x + n.x * 0.95, p.y + n.y * 0.95, p.z + n.z * 0.95); b.reset(this.add, _v3).axis(n).flat(); } // lift clear of 1 m meadow grass
     else b.reset(this.add, p).rot();
     // deepened start, not white: an icegiant slam's 6 m expanding ring at hdr ~5 was a thick WHITE
     // annulus across the whole ground (combat gate r8, tundra 7.3k px). The ring reads by its sweep
     // and size; the colour is the element's.
     const dc = deepen(_c.copy(c));
-    b.tex(TEX.RING).size(r * 0.16, r * 0.16, 2 / 0.16).life(o.duration ?? 0.5).color(dc, dc).hdr(2.4 + 0.8 * this.day, 1.2).alpha(0.95).fade(0, 0.15).burst(1);
+    // hdr 1.5+0.5*day, not 2.4+0.8: a deep CYAN at x3.2 still clips its two high channels (min-channel cap
+    // only engages on near-white), and the grounded slam annulus bloomed into a fat white ellipse at the
+    // giant's feet (combat gate probe t2). At x2 the ring blooms in its own hue — cyan ring, not white.
+    // x paleK: over sunlit snow/marble the base is already near clip, so the annulus sum washes at any hue
+    // (probe t3) — on pale ground the ring reads by contrast against the bright floor, not by value.
+    const swk = this._paleK(p);
+    b.tex(TEX.RING).size(r * 0.16, r * 0.16, 2 / 0.16).life(o.duration ?? 0.5).color(dc, dc).hdr((1.5 + 0.5 * this.day) * swk, 0.8 * swk).alpha(0.95).fade(0, 0.15).burst(1);
   }
   sigil(p, o = NOPTS) { return this.sigils.add(p, o.normal, { color: this._col(o, GOLD), size: o.size ?? 3, duration: o.duration ?? 1.5, spin: o.spin ?? 1.2, hdr: o.hdr ?? 2.2 }); }
   stats() { return { additive: this.add.n, alpha: this.alpha.n, tracers: this.tracers.n, decals: this.decals.n, sigils: this.sigils.items.filter((s) => s.live).length, emitters: this.emitters.filter((e) => e.live).length, day: this.day }; }
@@ -605,10 +621,18 @@ const PRESETS = {
     // motes stop shrinking while 70/s of them stack along the same few pixels — additive + overlapping +
     // not shrinking = a pale near-white streak, whatever hue we start from. Riftling + voidhorror sustained
     // ~375 live additive particles this way. Thin with range; saturated hue + low hdr carries the read.
-    const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
-    const near = 1 - 0.72 * Math.min(1, Math.max(0, (dd - 22) / 40));
+    const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z) || 1;
+    // near-LENS damp on top of the range fade: an enemy bolt ends its flight AT the camera, and the last
+    // ~45 mist quads of its trail overlap over most of the frame there — the white fill behind the dart in
+    // the mix4 vale/shadowfen crops. The bolt's own core + halo carry the point-blank read.
+    let near = (1 - 0.72 * Math.min(1, Math.max(0, (dd - 22) / 40))) * v._paleK(p) * Math.min(1, Math.max(0, (dd - 1.2) / 3));
+    // HEAD-ON damp: a bolt flying at (or away from) the camera projects its whole trail onto a few dozen
+    // pixels, so the mist quads stack into a white band whatever their per-quad value (probe vale1 c-4;
+    // the r9 sunken smalls were the same geometry). o.dir is unit, opposite travel; ho ~ 1 when head-on.
+    if (o.dir) { const ho = Math.abs(((cp.x - p.x) * o.dir.x + (cp.y - p.y) * o.dir.y + (cp.z - p.z) * o.dir.z) / dd);
+      near *= 1 - 0.75 * Math.min(1, Math.max(0, (ho - 0.35) / 0.45)); }
     const sat = _c2.copy(c).offsetHSL(0, 0.35, -0.05);
-    b.reset(v.add, p).jitter(0.02 * s).spread(3.14).speed(0, 0.3).life(0.18, 0.3).size(0.09 * s, 0.14 * s, 0.15).tex(TEX.GLOW).color(sat, sat).hdr(1.4 * near, 1.0 * near).alpha(0.5 * near).fade(0, 0.25).burst(1);   // alpha 0.7->0.5: the mist over the bolt's own core sphere is what bleached it to a pale egg (gate r3, vale)
+    b.reset(v.add, p).jitter(0.02 * s).spread(3.14).speed(0, 0.3).life(0.18, 0.3).size(0.09 * s, 0.14 * s, 0.15).tex(TEX.GLOW).color(sat, sat).hdr(1.1 * near, 0.8 * near).alpha(0.38 * near).fade(0, 0.25).burst(1);   // alpha 0.5->0.38, hdr 1.4->1.1: the mist over the bolt's own core sphere is what bleached it to a pale egg (gate r3 vale, and again as the white trail streak in probe mix2) — the spark line + halo carry the trail read
     b.reset(v.add, p).axis(o.dir ?? UP).spread(0.35).speed(0.5, 2.2).life(0.2, 0.4).size(0.02 * s, 0.04 * s, 0.2).tex(TEX.SPARK).color(sat, sat).hdr(1.6 * near, 1.2 * near).stretch(0.03).gravity(3).drag(1).fade(0, 0.5).burst(1 + k);
   },
   trail(v, p, o, k, s, c) {
@@ -652,7 +676,11 @@ const PRESETS = {
     const b = v.brush, n = axisOf(o, UP), fl = n.y > 0.5 ? p.y - 0.01 : -1e9;
     // at 9 m a 2 cm spark is sub-pixel: chips and dust carry the read, the sparks are the sizzle on top
     b.reset(v.alpha, p).jitter(0.05 * s).spread(3.14).speed(0.3, 0.8).life(0.3, 0.5).size(0.22 * s, 0.34 * s, 1.8).tex(TEX.SMOKE).color(0x1a1512).vary(0.3).alpha(0.5 * v.day).rot().fade(0.02, 0.3).burst(2 * k);   // dark backing so the flash pops off a bright cliff
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.34 * s, 0.46 * s, 1.5).life(0.11).color(0xfff0c0, 0xff9040).hdr(4.5, 1.8).fade(0, 0.3).burst(1);
+    // deep gold at x2.4, not cream 0xfff0c0 at x4.5: a low-saturation cream at 4.5x clips all three channels
+    // and the 0.11 s pop lands as a small cream-white ball beside its own gold sparks (combat gate final9,
+    // vale a-8: a bolt hitting a lamppost, 47 px at rgb 243,231,210). The sparks + chips + dark backing puff
+    // ARE the rock-hit punch; the glow's job is warm colour, and a deep gold survives ACES as gold.
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.34 * s, 0.46 * s, 1.5).life(0.11).color(0xe89a20, 0xff9040).hdr(2.4, 1.4).fade(0, 0.3).burst(1);   // 0xe89a20: S 0.76 / L 0.52 — inside the deepen() discipline
     b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.35, 0.8).size(0.03, 0.058, 0.5).tex(TEX.SPARK).color(0xffcf5a, 0xff8030).hdr(5, 2.4).stretch(0.05).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
     b.reset(v.alpha, p).axis(n).spread(0.9).speed(2 * s, 6 * s).life(0.5, 0.9).size(0.035 * s, 0.07 * s, 0.8).tex(TEX.DIRT).color(0x8a8684).lit(L(v)).vary(0.5).rot().spin(14).gravity(18).drag(0.4).floor(fl, 0.4).fade(0, 0.7).burst(8 * k);
     b.reset(v.alpha, p).axis(n).spread(0.8).speed(1 * s, 2.4 * s).life(0.5, 0.95).size(0.18 * s, 0.32 * s, 2.6).tex(TEX.SMOKE).color(0x9a9490).lit(L(v)).vary(0.3).alpha(0.45).rot().spin(2).drag(3).gravity(-0.3).fade(0.08, 0.35).burst(4 * k);
@@ -710,7 +738,11 @@ const PRESETS = {
     // near-lens damping: a detonation 2-4 m out puts ~6 additive layers each covering 20-60% of the frame —
     // under the per-quad coverage fade, but their SUM is the celestial 36k-px cream sheet (cvfx-vfx4 a-4,
     // 9.1% wash). Point-blank punch is carried by shake/flash/kick, not by stacked value.
-    const nf = 0.55 + 0.45 * Math.min(1, dd / 8);
+    // Floor 0.25, not 0.55: a stasis r=3 giant-throw detonating 1-3 m from the eye still washed the whole
+    // frame at 0.55 on snow (combat gate r9 tundra; reproduced frozen at 0.13 s in the live tab) — ~6
+    // additive layers each cover most of the frame there, so their SUM needs to fall much further. The
+    // point-blank read is unchanged in kind: dark flash-front, smoke, ring sweep, PointLight, shake.
+    const nf = 0.25 + 0.75 * Math.min(1, dd / 8);
     const fr = (1 - 0.6 * Math.min(1, Math.max(0, (dd - 20) / 40))) * (o.dampen ?? 1) * nf * v._paleK(p);   // range fade × volley-overlap share × near-lens damp × pale-ground damp
     // Energy conservation for BIG detonations (icegiant throw r=3.0, skyserpent 1.5): the halo/ring quads
     // scale with r, so per-pixel additive intensity must fall as the area grows or a 5-m soft disc lands on
@@ -773,7 +805,7 @@ const PRESETS = {
     // at the hazard site). A tick gets veil + a modest mote plume only; the one-shot burst keeps its pop.
     if (!o.tick) {
       b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr((1.6 + 0.6 * day2) * pk, 0.5 * pk).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
-      b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(sat, sat).hdr((4 + 2 * day2) * pk, 1.8 * pk).alpha(0.9).fade(0, 0.3).burst(1);
+      b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(sat, sat).hdr((1.8 + 0.6 * day2) * pk, 1.1 * pk).alpha(0.9).fade(0, 0.3).burst(1);   // x1.8+0.6 (was 4+2): a deep green at x5 clips ALL channels, and even deep gold at x3.6 clipped its top two into a warm-white muzzle core (probe vale1 a-8) — the big halo + ring + motes carry the pop
     }
     const mk = o.tick ? 0.3 : 1;
     b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.7 + 1.0 * day2) * pk * mk, 1.8 * pk * mk).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(Math.max(3, Math.round(90 * k * mk)));   // 2x mote size, saturated; hdr 2.7 not 3.2 — swirling stars over snow were the tundra 21-cluster sparkle field
@@ -806,7 +838,8 @@ const PRESETS = {
     _v2.set(p.x + n.x * 1.0, p.y + n.y * 1.0, p.z + n.z * 1.0);   // lift clear of grass blades (~1 m meadow)
     const b = v.brush.reset(v.add, _v2).axis(n).flat();
     const rc = deepen(_c.copy(c));   // shield-break/telegraph rings grow large — a white start is a white annulus (same law as shockwave)
-    b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(rc, rc).hdr(2.6, 1.4).alpha(0.9).fade(0, 0.2).burst(1);
+    const rk = v._paleK(p);          // and over snow/marble even a deep hue sums pale — same damp as shockwave
+    b.tex(TEX.RING).size(0.2 * s, 0.2 * s, (o.radius ?? 2) * s / 0.1).life(o.duration ?? 0.5).color(rc, rc).hdr(1.7 * rk, 0.9 * rk).alpha(0.9).fade(0, 0.2).burst(1);   // x1.7 not x2.6: a deep cyan/teal at x2.6 clips two channels and blooms white (same lesson as shockwave)
   },
   sigil(v, p, o, k, s, c) {
     const size = o.size ?? (o.radius ? o.radius * 2 : 2.4 * s);

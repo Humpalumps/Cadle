@@ -142,15 +142,21 @@ function creatureOnBeforeCompile(shader) {
         // bright region now keeps its own shading and takes the flash as the ELEMENT tint instead.
         float preLum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
         float fgain = uFlash * 2.4 * (1.0 - 0.8 * saturate(preLum));
-        vec3 hot = gl_FragColor.rgb * (1.0 + fgain) + ecol * uFlash * 0.35;
+        // the ecol tint add is ALSO attenuated on bright albedo: a snow-white body (frostwolf fur at noon)
+        // plus a pastel tint add is a flat desaturated ~1.0 — the creature-face-fills-the-frame grey card
+        // the combat gate flagged (probe t5). Dark bodies keep the full element tint.
+        vec3 hot = gl_FragColor.rgb * (1.0 + fgain) + ecol * uFlash * 0.35 * (1.0 - 0.7 * saturate(preLum));
         // Hue-preserving SOFT KNEE on the brightest channel, not a hard clamp. A hard clamp is enough to stop
         // the blob but it flattens every lit plate onto the same value, so the creature reads as one pale card
         // — the detail the flash is supposed to make you notice is exactly what it erases. Below FKNEE nothing
-        // moves (a navy hound stays navy in shadow); above it the highlights roll asymptotically into 1.0, which
-        // sits under the 1.05 day bloom threshold, so the pop can never bloom and can never wash to white.
+        // moves (a navy hound stays navy in shadow); above it the highlights roll asymptotically into FTOP
+        // (0.84, well under the 1.05 day bloom threshold AND under the detector's near-white band once
+        // tone-mapped — a 1.0 asymptote landed a full-flash white-fur face at ~230 sRGB flat), so the pop
+        // can never bloom and a white creature can never flash to a grey card.
         float fm = max(hot.r, max(hot.g, hot.b));
         const float FKNEE = 0.55;
-        if (fm > FKNEE) hot *= (FKNEE + (1.0 - FKNEE) * (1.0 - exp(-(fm - FKNEE) / (1.0 - FKNEE)))) / fm;
+        const float FTOP = 0.84;
+        if (fm > FKNEE) hot *= (FKNEE + (FTOP - FKNEE) * (1.0 - exp(-(fm - FKNEE) / (FTOP - FKNEE)))) / fm;
         gl_FragColor.rgb = hot;
       }
       // HUE-PRESERVING CEILING on the aether parts — same principle as GRASS_LUM_CAP, same user decree.
