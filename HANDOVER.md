@@ -5,6 +5,14 @@ Order: **§1 the job → §2 the next job (biomes) → §3 the machine → §4 t
 `CLAUDE.md` is the contract (file ownership, conventions, perf budget, world layout, `window.__game` API) —
 this file is state and hard-won knowledge. **Keep it current; delete what has stopped being true.**
 
+**MERGED TO MAIN 2026-08-28: `main` is now `904a459` (fast-forward from `d9ca2b5`, 97 commits).**
+The campaign branch `claude/session-e5730b` and `main` are identical — main is no longer the stale
+pre-wave-5 tree, so branch from main for new work. Merged on the user's explicit instruction with 6
+of 7 gate checks green and the 7th (combat white-out) clean on every frame captured but never able to
+complete a full 356-frame run on a GPU shared with a game — see 2j for the TDR diagnosis and the
+chunked-capture workaround. **First job for the next session: run the full combat capture on a quiet
+GPU and close that last check** (one 58 px vale-kill cluster was the only outstanding finding).
+
 Repo: `https://github.com/Humpalumps/Cadle`. **You are in the worktree
 `.claude/worktrees/cadle-character-load-perf-ee5b7b` on branch `claude/session-e5730b`, and its dev
 server is `http://127.0.0.1:5179/` — NOT 5173, which serves the main checkout.** All of this session's work is COMMITTED **and PUSHED**:
