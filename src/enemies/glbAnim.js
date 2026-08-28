@@ -31,6 +31,11 @@ const _q = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _v = new THREE.
 // ~0.45 m log seat from a ~0.9 m standing hip height.
 const SIT = { drop: 0.42, lean: 0.14, hip: -1.45, knee: 1.40, foot: 0.15, splay: 0.18,
   restSh: 0.45, restEl: 0.35, raiseSh0: 0.30, raiseSh1: -1.15, raiseEl0: 0.45, raiseEl1: 1.55, shIn: 0.35 };
+// DEATH COLLAPSE targets, same world axes and sign convention as SIT (about axis 0, positive pitches
+// forward). The knees buckle and the torso folds over them — a crumple, which is the pose family SIT
+// already describes, taken past the seat. One table so the integrate pass tunes a number, not code.
+const DIE = { curl: 0.80, twist: 0.22, loll: 0.55, hip: -0.95, knee: 1.55, foot: 0.35, splay: 0.16,
+  sh: -0.30, shOut: 0.55, el: 0.55, wing: 0.55, rate: 0.60 };
 const seg = (x, a, b) => { const k = (x - a) / (b - a); return k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k); };
 const SW = (e) => (e.state === 'attack' ? e.attackT : 0);   // attack progress 0..1, strike lands at 0.35
 
@@ -199,6 +204,47 @@ export function glbAnimator(profile, tuning) {
         // keep advancing while dead too: the radd layers below compose onto a pose the mixer refreshes
         // every animate frame — on a frozen pose they would accumulate without bound.
         M.update(dt);
+      }
+
+      // ---- DEATH: an actual collapse. Everything below this block is a LIVING pose, and a corpse that
+      // keeps breathing and swinging its arms while the root tips over is the mannequin-being-pushed
+      // read the whole bestiary shipped with. `dk` is the crumple, closing over the first 60% of
+      // def.deathTime so the body is on the ground well before the dissolve eats it. Knees buckle,
+      // torso folds over them, head lolls, arms fall through — and a fading settle jitter keeps it from
+      // arriving as one clean keyframe.
+      if (dead) {
+        // a weight-0 clip is skipped entirely, so this also stops the mixer fighting the pose below
+        if (M) { e.actIdle?.setEffectiveWeight(0); e.actWalk?.setEffectiveWeight(0); e.actRun?.setEffectiveWeight(0); }
+        const dk = seg(e.deathT / Math.max(0.25, (e.def?.deathTime ?? 1.4) * DIE.rate), 0, 1);
+        const settle = Math.sin(tt * 2.6) * 0.035 * (1 - dk);
+        const rb0 = G.bones[G.root];
+        if (rb0) { if (T.bob) rb0.position.y = G.rootY; rot(G, G.root, 2, 0, 1, 0); }
+        const ns = Math.max(1, G.spine.length);
+        for (let k = 0; k < G.spine.length; k++) rot(G, G.spine[k], 0, (DIE.curl * dk) / ns + settle * (k ? 0.4 : 1), 2, (DIE.twist * dk) / ns);
+        for (let k = 0; k < G.neck.length; k++) rot(G, G.neck[k], 0, (DIE.loll * dk) / G.neck.length + settle * 0.5);
+        for (const Lg of G.legs) {
+          const ids = Lg.ids, sg = Lg.left ? 1 : -1;
+          rot(G, ids[0], 0, DIE.hip * dk + settle, 2, sg * DIE.splay * dk);
+          if (ids[1] != null) rot(G, ids[1], 0, DIE.knee * dk);
+          for (let k = 2; k < ids.length; k++) rot(G, ids[k], 0, DIE.foot * dk);
+        }
+        for (const R of G.arms) {
+          if (G.wingIds?.has(R.ids)) continue;
+          const ids = R.ids, sg = R.left ? 1 : -1;
+          rot(G, ids[0], 0, DIE.sh * dk + settle, 2, sg * DIE.shOut * dk);
+          if (ids[1] != null) rot(G, ids[1], 0, DIE.el * dk);
+          for (let k = 2; k < ids.length; k++) rot(G, ids[k], 0, DIE.el * 0.4 * dk);
+        }
+        // wings fold in rather than freezing mid-beat; tail and loose chains keep streaming as it falls
+        if (G.wings) for (const Wg of G.wings) { const sg = Wg.left ? 1 : -1;
+          Wg.ids.forEach((i, k) => rot(G, i, 2, sg * (DIE.wing * dk + Math.sin(tt * 2.2 - k * 0.5) * 0.14 * (1 - dk)))); }
+        if (G.tail.length) wave(G, G.tail, tt, T.tailAmp * 0.55 * (1 - dk * 0.6), T.tailHz * 0.5, profile === 'serpent' ? 'x' : 'y', 0.8, 0.30 * dk);
+        const auxD = G.aux;
+        if (auxD) for (let c = 0; c < auxD.length; c++) { const ch = auxD[c];
+          if (ch.ids.length < 2 || G.wingIds?.has(ch.ids)) continue;
+          wave(G, ch.ids, tt * 0.55 + c, 0.07 + 0.12 * dk, 1.1 + (c % 3) * 0.3, 'y', 0.6, 0);
+        }
+        return;
       }
 
       // ---- root: hover bob (the one position write, always recomputed from the bind pose) + turn bank

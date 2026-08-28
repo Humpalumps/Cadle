@@ -1006,8 +1006,25 @@ export class Enemy {
       r.rotation.z = damp(r.rotation.z, (this.id % 2 ? 1 : -1) * (def.role === 'slam' ? 0.55 : 1.25), 3.5, dt);
       r.rotation.x = damp(r.rotation.x, 0.35, 3, dt);
       r.position.y = damp(r.position.y, this.position.y - def.center * 0.55, 3, dt);
-      if (this.legs) for (const l of this.legs) { l.hipBone.rotation.x = damp(l.hipBone.rotation.x, 1.2, 4, dt); l.kneeBone.rotation.x = damp(l.kneeBone.rotation.x, -1.5, 4, dt); l.hipBone.updateMatrix(); l.kneeBone.updateMatrix(); }
-      const lp = this.legParent; if (lp) { lp.rotation.x = damp(lp.rotation.x, 0.2, 3, dt); lp.updateMatrix(); }
+      // A BODY WITHOUT IK LEGS HAD NO DEATH ANIMATION AT ALL — which is every rigged GLB creature in
+      // the bestiary (glbAnim sets e.legs = null), i.e. almost the whole roster. The root tipped over
+      // and sank while the SKELETON stayed frozen in whatever pose the last live frame left it in, so
+      // a dying hound rolled onto its side with four rigid straight legs and a golem span on the spot
+      // like a boulder. Measured on the animcheck gate as a death-window bone motion of 0.0009-0.006
+      // rad/frame — that is the one legParent.rotation.x damp below and literally nothing else —
+      // against an idle of 0.002-0.024 (tools/out/w5-anim/anim-report.json, and the burst
+      // tools/out/w5anim2/sheet-d-hound-die.png). Drive the animator instead: its `dead` branch buckles
+      // the knees and folds the torso over them. The legParent hack is IK-body-only on purpose — it
+      // damps a raw Euler x onto a bone whose bind rotation is not identity, which on a Tripo rig
+      // re-poses the whole spine root away from its bind and shears the mesh.
+      if (this.legs) {
+        for (const l of this.legs) { l.hipBone.rotation.x = damp(l.hipBone.rotation.x, 1.2, 4, dt); l.kneeBone.rotation.x = damp(l.kneeBone.rotation.x, -1.5, 4, dt); l.hipBone.updateMatrix(); l.kneeBone.updateMatrix(); }
+        const lp = this.legParent; if (lp) { lp.rotation.x = damp(lp.rotation.x, 0.2, 3, dt); lp.updateMatrix(); }
+      // `_lod < 2` = inside ~110 m. update() returns early once dead so _lod is the last live value,
+      // which is the right one: a corpse does not move toward the camera. Beyond that band nobody can
+      // read a collapse, and a wiped 40-strong camp would otherwise pose every skeleton every frame
+      // for its whole death window — death used to be nearly free and should stay that way at range.
+      } else if ((this._lod ?? 0) < 2) this._animate(dt, t);
     }
     this.dissolve = THREE.MathUtils.clamp((k - 0.3) / 0.7, 0, 1); this.u.uDissolve.value = this.dissolve; this.u.uFlash.value = Math.max(0, 0.6 - k * 2);
     this.u.uTime.value = t + this.seedT;

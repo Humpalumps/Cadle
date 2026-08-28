@@ -1,0 +1,1255 @@
+{
+ "wave": 6,
+ "date": "2026-08-28",
+ "worktree": "cadle-character-load-perf-ee5b7b",
+ "devServer": "http://127.0.0.1:5179/",
+ "average": 4.73,
+ "previousAverages": { "wave5": 4.9, "wave4": 5.75 },
+ "blobViolations": ["forest", "shadowfen"],
+ "regionsAtBar": [],
+ "scoreboard": [
+  { "region": "tundra",    "w4": 6,   "w5": 5.5, "w6": 5.8, "vsW4": -0.2, "vsW5": 0.3 },
+  { "region": "vale",      "w4": 6,   "w5": 4.0, "w6": 5.0, "vsW4": -1.0, "vsW5": 1.0 },
+  { "region": "celestial", "w4": 6.5, "w5": 5.5, "w6": 5.0, "vsW4": -1.5, "vsW5": -0.5 },
+  { "region": "infernal",  "w4": 6.5, "w5": 4.5, "w6": 5.0, "vsW4": -1.5, "vsW5": 0.5 },
+  { "region": "forest",    "w4": 5,   "w5": 4.5, "w6": 4.5, "vsW4": -0.5, "vsW5": 0.0 },
+  { "region": "lost",      "w4": 6.5, "w5": 5.5, "w6": 4.5, "vsW4": -2.0, "vsW5": -1.0 },
+  { "region": "shadowfen", "w4": 6,   "w5": 5.5, "w6": 4.5, "vsW4": -1.5, "vsW5": -1.0 },
+  { "region": "sunken",    "w4": 4.5, "w5": 5.0, "w6": 4.5, "vsW4": 0.0,  "vsW5": -0.5 },
+  { "region": "void",      "w4": 5.5, "w5": 4.5, "w6": 4.5, "vsW4": -1.0, "vsW5": 0.0 },
+  { "region": "dragon",    "w4": 5,   "w5": 4.5, "w6": 4.0, "vsW4": -1.0, "vsW5": -0.5 }
+ ],
+ "regions": [
+  {
+   "region": "forest",
+   "score": 4.5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": true,
+   "biggestGap": "The near canopy — the thing filling the top 30-50% of nearly every frame in this region — is a stack of GIANT FLAT LEAF-PRINT QUADS. At 25-60 m from the region heart, looking up, you see individual cards several metres across with dead-straight cut edges and visible fold seams, each carrying one stretched leaf-print texture, intersecting each other at random angles (tools/out/F6-heart/shot-n60-up.png, shot-s25-up.png, tools/out/F6-tod/shot-eh60-level.png). This is verbatim the wave-4 AND wave-5 finding and it is now in its third unfixed wave. FF14's Black Shroud and D2's EDZ build a canopy out of many small, self-shadowing, depth-layered leaf clusters that read as volume; here you can literally count the rectangles. Nothing else in Whisperwood costs as much impression per frame: the floor genuinely improved this wave (measured mean RGB 27,70,34 at noon 60 m out vs wave-5's 8,19,18), the god rays are good, the border into Frostveil is convincing — and all of it is under a paper ceiling.",
+   "shots": [
+    "tools/out/F6-fight/burst-treantfight-0.png",
+    "tools/out/F6-heart/shot-n60-up.png",
+    "tools/out/F6-heart/shot-s25-up.png",
+    "tools/out/F6-probe/shot-probe60.png",
+    "tools/out/F6-probe2/shot-p2-30.png",
+    "tools/out/F6-probe2/shot-p2-15.png",
+    "tools/out/F6-heart/shot-air200-level.png",
+    "tools/out/F6-app/shot-a200.png",
+    "tools/out/F6-app/shot-a40-level.png",
+    "tools/out/F6-app/shot-a8-level.png",
+    "tools/out/F6-app/shot-ground-near.png",
+    "tools/out/F6-tod/shot-noon-open.png",
+    "tools/out/F6-tod/shot-gold-open.png",
+    "tools/out/F6-tod/shot-night-open.png",
+    "tools/out/F6-tod/shot-eh30-up.png",
+    "tools/out/F6-border/shot-b2.png",
+    "tools/out/F6-border/shot-b3.png",
+    "tools/out/F6-fight/shot-lineup.png",
+    "tools/out/F6-fight/burst-treant-2.png",
+    "tools/out/F6-fight/burst-melee-3.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "BLOB VIOLATION — the combat white-out is NOT dead in Whisperwood. Killing an Elder Treant at ~16 m (I fired a hand cannon; no super, no grenade) produces a near-white pale-cyan bloom mass with hard 8-point star flares sitting directly on the forest floor, plus a violet column that washes the left 40% of the frame. This is the same class wave 6 claimed to have closed at every author, and tools/gate.mjs will not see it because blobcheck only scopes the red ground-cover mask in a scripted meadow burst.",
+     "evidence": "tools/out/F6-fight/burst-treantfight-0.png — measured 8978 px with luminance>235 AND saturation<18 in the non-HUD region (peak luminance 248); core samples RGB(220,240,241) at (1050,820) and RGB(193,233,231) at (1100,760). It clips to white instead of holding its hue, exactly the pattern the standing decree names. burst-treantfight-1.png still carries 2821 such px; burst-fight-0.png carries 549. Contact crop of the mass in the scratchpad as blob.png.",
+     "category": "vfx-whiteout",
+     "short_summary": "Treant-kill VFX blows the frame to near-white"
+    },
+    {
+     "severity": "blocker",
+     "text": "The Elderheart still has NO readable silhouette from the ground at ANY range beyond ~25 m. This is the wave-4 blocker, re-flagged by wave-5, and it is open for a third wave. The mesh is present and correct (probed live: elderheart-bark world centre -67,74.8,-757.2, bbox y 19.3..130.3, crown y 87.5..148.8, visible=true, in scene) — it simply does not read. Standing 61 m from it on its own axis, looking straight at it, I cannot pick it out of the ordinary trunks around it; there is no pale silver bole, no value separation, nothing. At 200 m and 120 m on the approach it is absent from the frame entirely. It only becomes a landmark from 130-150 m ALTITUDE, a vantage no player has, and from there it reads as a lollipop: a smooth bare cylinder with three small broccoli clumps on top, no branch structure, no root flare, narrower than the crown of a normal tree.",
+     "evidence": "tools/out/F6-probe/shot-probe60.png (61 m, dead on axis, nothing); tools/out/F6-probe2/shot-p2-30.png (30 m, it is a ~250 px trunk behind grey slabs — a 16.8 m bole at 30 m should subtend ~925 px); tools/out/F6-app/shot-a200.png and shot-a120.png (nothing); tools/out/F6-heart/shot-air200-level.png and shot-air300-level.png (the lollipop, only from the air).",
+     "category": "landmark-silhouette",
+     "short_summary": "Elderheart invisible from the ground past 25 m"
+    },
+    {
+     "severity": "blocker",
+     "text": "The near canopy is giant flat leaf-print cards — wave-4's and wave-5's exact finding, unfixed, and now the dominant read of the region. Individual quads several metres across with dead-straight cut edges, visible fold/seam lines through the middle of a card, and one stretched leaf texture per card, intersecting at arbitrary angles. It reads as paper, not foliage, and it is overhead in most of the region's frames.",
+     "evidence": "tools/out/F6-heart/shot-n60-up.png (a single card spans roughly a third of the screen with a fold seam across it), shot-s25-up.png (a pile of them, edges everywhere), tools/out/F6-tod/shot-eh60-level.png, tools/out/F6-fight/shot-lineup.png (top third of a combat frame).",
+     "category": "vegetation-cards",
+     "short_summary": "Near canopy is giant flat leaf-print quads"
+    },
+    {
+     "severity": "major",
+     "text": "The 40 m ornament tier of the landmark does not exist. Props.js sells the shrine collar as 'a ring of moulded, rune-carved stones'; on screen at 30-40 m they are featureless flat grey slabs — no carving, no runes, no moulding, no chamfer, no dirt — with a floating white pixel-noise overlay speckled across the stone that reads as a broken texture rather than weathering. The acceptance rule's middle distance fails outright: there is no ornament hierarchy to see.",
+     "evidence": "tools/out/F6-probe2/shot-p2-30.png and tools/out/F6-tod/shot-eh30-up.png (white speckle clearly visible on the slab faces); tools/out/F6-app/shot-a40-level.png (the ring at 40 m, plain grey monoliths).",
+     "category": "landmark-ornament",
+     "short_summary": "Shrine collar stones are blank grey slabs at 40 m"
+    },
+    {
+     "severity": "major",
+     "text": "The 2-8 m floor at the region HEART is still a featureless near-black smear — wave-5's number-one gap, unchanged where it matters most. Looking down at the ground in front of you at the Elderheart's foot: one low-frequency dark blue-green wash with two flat, low-poly, unlit cyan mushroom caps on it. No litter layer, no exposed roots, no stones, no wet patches, no decals, no value range. It IS meaningfully better 60-130 m out (dense fern instancing, mushroom clusters, dappled light), but at the heart — where the player is pointed when the region introduces itself — it is the wave-5 frame.",
+     "evidence": "tools/out/F6-app/shot-ground-near.png at (-26,-760): measured mean RGB(11.4, 21.2, 20.2), p95 (20,33,29) over the lower-left 2-25 m of the frame. Contrast tools/out/F6-tod/shot-noon-floor.png 60 m out: mean (27,70,34), p95 (82,180,69).",
+     "category": "ground-nearfield",
+     "short_summary": "Floor at the heart is still a near-black smear"
+    },
+    {
+     "severity": "major",
+     "text": "Whisperwood has no time-of-day. Noon, golden hour (17.7) and night (22.5) from the same open stand are the same green frame at three exposures: no warm key on the trunks at golden hour, no orange rim, no colour temperature shift; at night no blue-violet cast, no moon modelling, and the upper leaf cards stay lit bright daylight-green while everything under them goes black. FF14's Black Shroud repaints itself at every hour; this repaints nothing.",
+     "evidence": "tools/out/F6-tod/shot-noon-open.png vs shot-gold-open.png vs shot-night-open.png (same position, same yaw). Measured floor means: noon (27,70,34), gold (27,36,10) — a duller, yellower version of the same hue, blue channel p95 only 16 — night (6,20,23).",
+     "category": "lighting-tod",
+     "short_summary": "Noon/golden/night are one frame at three exposures"
+    },
+    {
+     "severity": "major",
+     "text": "The local bestiary is not local. The 'Whisperwood' fight is the Vale's Aether Hound (translucent blue crystal wolf, same asset, same palette) plus an Elder Treant that renders as a near-black silhouette at 16 m in daylight — you cannot resolve its bark, its heartwood, its hands (the right arm ends in a stub) or its head (a broccoli clump) against the trunks behind it. The lineup row is worse: flat single-colour purple and blue bodies with a fresnel rim and no material variation at all, reading as debug shaders rather than creatures. Animation itself is fine — legs cycle, the treant turns and steps, no T-pose, no moonwalk, no sinking — the problem is design and readability, not rigging.",
+     "evidence": "tools/out/F6-fight/burst-melee-1.png and burst-melee-3.png (hound leg phases differ, so locomotion is real); tools/out/F6-fight/burst-treant-2.png (treant as a black mass); tools/out/F6-fight/shot-lineup.png (flat purple/blue fresnel bodies); contact sheets treantseq.png / houndseq.png in the scratchpad.",
+     "category": "bestiary",
+     "short_summary": "Bestiary is generic and near-unreadable in situ"
+    },
+    {
+     "severity": "major",
+     "text": "Vegetation repetition kills the mid-ground. The wood is two or three tree models copy-pasted at near-identical scale with identical crown blobs, over one fern billboard tiled edge to edge as a uniform carpet. There is no scale hierarchy — no saplings, no shrub tier, barely a fallen log, no rocks or root systems breaking the floor plane — so at 30-80 m the region reads as an asset field rather than a forest. From above, the canopy is a grid of identical dark-green balls.",
+     "evidence": "tools/out/F6-tod/shot-noon-open.png, tools/out/F6-heart/shot-n60-level.png, tools/out/F6-heart/shot-air200-level.png (the repeating ball-tree canopy from above).",
+     "category": "vegetation-variety",
+     "short_summary": "Two tree models and one fern, tiled"
+    },
+    {
+     "severity": "minor",
+     "text": "At 8 m the Elderheart's root fins are flat slabs sliced by a horizontal plane — dead-straight top edges on organic buttress roots, and low planes crossing the frame at odd angles. The bark MATERIAL at this range is genuinely good (real relief, lichen, moss tint, believable fissures) which makes the sliced silhouette read worse, not better.",
+     "evidence": "tools/out/F6-app/shot-a8-level.png and shot-a8-up.png (razor-straight tops on both fins, sky visible over them); tools/out/F6-probe2/shot-p2-15.png (good bark, flat slab roots bottom-left and bottom-right).",
+     "category": "landmark-geometry",
+     "short_summary": "Root fins are plane-sliced flat slabs"
+    },
+    {
+     "severity": "minor",
+     "text": "The mountain ring framing the region shows a repeating fine vertical-stripe / moiré texture and horizontal terrace banding at distance — the wave-5 coherence blocker, still visible from inside Whisperwood and from the Frostveil border.",
+     "evidence": "tools/out/F6-heart/shot-air200-level.png (terraced steps on the right-hand ridge), tools/out/F6-border/shot-b2.png and shot-b3.png (striped grey wall, upper left).",
+     "category": "terrain-banding",
+     "short_summary": "Mountain ring still bands and tiles visibly"
+    },
+    {
+     "severity": "minor",
+     "text": "The forest/tundra border crossing is the strongest thing in this region and it works: ice shards intruding into the wood, pines going frost-blue, then full snow, with the region card firing on the right step (biomeAt flips forest to tundra between x=180 and x=240 on the crossing line). The one flaw is a hard splat seam — a crisp dark blue-green band with a razor edge curving across the ground on the forest side — that reads as a painted stripe rather than a transition.",
+     "evidence": "tools/out/F6-border/shot-b2.png (the seam across the mid-ground), shot-b3.png (tundra side, good).",
+     "category": "biome-border",
+     "short_summary": "Good crossing, but a razor-edged splat seam"
+    }
+   ]
+  },
+  {
+   "region": "tundra",
+   "score": 5.8,
+   "verdict": "Frostveil is a pretty postcard that falls apart the moment you walk toward anything. Night with the aurora and golden hour on snow are genuinely close to FF14 — that part landed. But the region's heart is still invisible from every 200 m approach (wave-4 finding (b), wave-5's blocker, unchanged), the ice still has no material truth at 8 m or 2 m (wave-5 finding (b), unchanged), and both borders are still knife-edge texture swaps into a zero-detail kelly-green plane (wave-5 finding #3, unchanged). Wave 6's one real win here is the combat white-out class: I fired, threw a grenade and popped a super into four wolves, two giants and two wisps and measured 0.07-0.08% neutral-white pixels across ~60 combat frames — no whiteout, hue preserved. That is a genuine fix and it is why this is not a 4. Everything the wave-5 critic named as the gap is still there.",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "The Glacier Throne still fails two of the three acceptance distances, and they are the same two it failed in wave 4 and wave 5. At 200 m+ I walked in from four bearings: on the home bearing (the one the stair, the terrace and three waves of staging exist for) it is a ~35 px pale-cyan needle whose value is indistinguishable from the hazed mountain directly behind it, half-occluded by a snow rise; from the outer side it is a 3 px tick; from both perpendiculars it is completely absent. There is no reveal, so the region has no destination. At 8 m and 2 m the ice is a flat matte mid-blue with no specular, no fresnel, no internal depth, no bubbles, no chipping and not one bevelled edge — every corner is a razor 90° box corner — and the terrace skirt carries an unmistakable repeating diamond/chevron tile you can literally count around the arc. No horizontal face carries snow in a blizzard biome, and no snow is banked at the base. It works only in the 30-60 m band on one bearing, and even there it reads as a five-tier wedding cake with a clock tower on it: no seat, no armrests, no back, and exactly one ornament motif (a thin ring) repeated five times.",
+   "shots": [
+    "tools/out/crit6-tundra-a/shot-a250-home.png",
+    "tools/out/crit6-tundra-a/shot-a250-perpSW.png",
+    "tools/out/crit6-tundra-a/shot-a250-far.png",
+    "tools/out/crit6-tundra-a/shot-c40.png",
+    "tools/out/crit6-tundra-a/shot-d28-ground.png",
+    "tools/out/crit6-tundra-a/shot-e8-ice-underfoot.png",
+    "tools/out/crit6-tundra-a/shot-f-ground-2to10.png",
+    "tools/out/crit6-tundra-a/shot-f-interior-vista.png",
+    "tools/out/crit6-tundra-b/shot-bord-cel-2-onbisector.png",
+    "tools/out/crit6-tundra-b/shot-bord-cel-3-celside-lookback.png",
+    "tools/out/crit6-tundra-b/shot-bord-for-1-tundraside.png",
+    "tools/out/crit6-tundra-b/shot-tod-13-sky.png",
+    "tools/out/crit6-tundra-b/shot-tod-17-golden.png",
+    "tools/out/crit6-tundra-b/shot-tod-22-sky-aurora.png",
+    "tools/out/crit6-tundra-c/shot-wolf-close.png",
+    "tools/out/crit6-tundra-c/shot-icegiant-close.png",
+    "tools/out/crit6-tundra-d/shot-wisp-close.png",
+    "tools/out/crit6-tundra-d/shot-after.png",
+    "tools/out/crit6-tundra-d/z-sheet-giant.png",
+    "tools/out/crit6-tundra-c/z-wolf.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "The Glacier Throne has no 200 m read on any bearing. Wave-4 finding (b) and wave-5's blocker are NOT closed.",
+     "evidence": "crit6-tundra-a/shot-a250-home.png — the HOME bearing at 250 m, the approach the terrace and stair were built for: the throne is a ~35 px pale-cyan needle at pixel (955,490), half-occluded by a snow rise, and its value is within a few percent of the hazed mountain behind it. crit6-tundra-a/shot-a250-perpSW.png (250 m, perpendicular to the bearing so not on the pass road): the throne is ENTIRELY absent from the frame. crit6-tundra-a/shot-a250-far.png (250 m from the outer side): a 3 px cyan tick at (968,490). crit6-tundra-a/shot-b120.png: still only a finial and a thin pale column, mass hidden. The wave-4 'drop the tints into deep cyan for value separation' fix did not land — the mass reads the same luminance as the polar haze."
+    },
+    {
+     "severity": "blocker",
+     "text": "Both of Frostveil's borders are razor-line texture swaps into a flat, literally zero-detail kelly-green plane. Wave-5 finding #3 (tundra/celestial identity break) is NOT closed, and the same bug exists on the tundra/forest side.",
+     "evidence": "crit6-tundra-b/shot-bord-cel-3-celside-lookback.png — standing 45 m into Celestial looking back at Frostveil: the bottom half of the frame is a solid saturated green fill with no grass geometry, no texture variation, no props, no shadow, running to a dead-straight snowline at y≈575 with the frosted pine wall directly behind it. crit6-tundra-b/shot-bord-cel-2-ground.png: at 2-20 m the green plane is one flat colour; white untextured domes sit on it like marshmallows. crit6-tundra-b/shot-bord-for-1-tundraside.png: full-leaf summer oaks with no snow stand shoulder-to-shoulder with snow-laden pines across a straight line. crit6-tundra-a/shot-f-interior-vista.png: from INSIDE the tundra, 180 m out, a bright green summer forest is the most saturated thing in the frame."
+    },
+    {
+     "severity": "blocker",
+     "text": "No material truth on the landmark at 2-25 m: flat matte blue, zero specular, no crystal structure, no chipping or bevels, no snow on any horizontal face, and an obvious repeating diamond/chevron tile. Wave-5 finding (b) is NOT closed.",
+     "evidence": "crit6-tundra-a/shot-d28-ground.png — at ~20 m you can count eight identical diamond/chevron tiles around the terrace skirt, each with the same crack rotated the same way; it reads as embossed wallpaper. crit6-tundra-a/shot-e8-ice-underfoot.png at ~2 m: the whole face sits within a few percent luminance, every edge is a perfect 90° box corner with no fracture or rounding, the horizontal treads are the same blue as the risers (no snow, in a blizzard biome), and one 'crack' arc spans 3 m. No fresnel, no sub-surface, no internal bubbles, no sparkle. Compare Coerthas ice or Europa ice: both carry a specular sheet, packed snow in every concave, and crystal normal detail."
+    },
+    {
+     "severity": "major",
+     "text": "The throne does not read as a throne at 40 m — it is five stacked cylinders and a stepped tower with a cyan strip, exactly the 'stepped wedding cake with a clock tower' wave 5 described. Ornament hierarchy is one motif (a thin ring) repeated five times.",
+     "evidence": "crit6-tundra-a/shot-c40.png — no seat, no armrests and no back are visible from the approach; the mouldings are plain extruded rings with a flat top and no profile; no carving or relief is readable at 40 m; no snow is banked against the base; the framing obelisks (x≈360-480 and 1500-1580) are featureless flat blue slabs."
+    },
+    {
+     "severity": "major",
+     "text": "The ground at 2-25 m is a smooth plane with a low-frequency streak painted on it — the coherence agent's blocker, unfixed. No sastrugi, no drift relief, no wind ripples with real shadow, no crust, no ice patches, no footprints, no sparkle band.",
+     "evidence": "crit6-tundra-a/shot-f-ground-2to10.png — the entire lower two thirds is one blurred anisotropic smear; the only relief in the frame is thin dark pencil-line tree shadows. crit6-tundra-a/shot-a250-far.png is the worst case: ~60% of a 1080p frame is a single featureless snow gradient."
+    },
+    {
+     "severity": "major",
+     "text": "The super's hands are still two flat, solid, completely unshaded orange clip-art mittens occupying ~15% of screen height. Wave 5's coherence pass called this out; it is unchanged.",
+     "evidence": "crit6-tundra-d/shot-wisp-close.png and crit6-tundra-d/shot-after.png — sampled rgb(194,119,26) and rgb(163,91,18), a flat fill with no gradient, no knuckles, no glove, no lighting response, sitting in front of a fully-lit PBR scene."
+    },
+    {
+     "severity": "major",
+     "text": "A hard-edged, opaque, near-white polygonal decal is pasted flat on the landmark's ice — the same family as wave-5's Lost Realm 'near-white egg'. Not calling it a blob violation (it does not bloom and it keeps a cream cast), but it is ugly and it is on the hero asset.",
+     "evidence": "crit6-tundra-d/shot-wisp-close.png at (690-790, 545-635): a ~2.5 m cream disc, sampled rgb(233,228,231) at its centre and rgb(229,211,200) elsewhere, with a crisp rim, no falloff, no texture, no crater — and you can count the twelve straight edges of the low-poly circle. It draws over the moulding line and over the surface's own shadow."
+    },
+    {
+     "severity": "major",
+     "text": "Ability/impact VFX is ~40 identical stock 6-point star sprites with neutral-white cores that completely obliterate the creature being hit.",
+     "evidence": "crit6-tundra-d/shot-after.png right third — a frostveil giant is unreadable behind the cluster; star cores sample rgb(231,233,233) and rgb(230,243,243), i.e. neutral, 0.70% of that crop. The cyan halo saves it from the blob decree, but it is stock sparkle art, not FF14 aether."
+    },
+    {
+     "severity": "major",
+     "text": "Frostveil has no weather. The biome is specced 'bright, snow-bounced, hazy with falling ice' with 'an aurora that never fully leaves the sky', and at noon there is not one falling snow particle, no god rays and no cloud structure anywhere.",
+     "evidence": "crit6-tundra-b/shot-tod-13-sky.png — a flat pale-blue gradient with two tiny wisps. Across ~40 daytime frames in three runs I saw zero precipitation particles. The night aurora only appears after dark (crit6-tundra-b/shot-tod-22-sky-aurora.png), contradicting 'never fully leaves'."
+    },
+    {
+     "severity": "major",
+     "text": "The region's signature ice shards are flat-shaded low-poly crystals with large untextured facets, and they intersect the snow on a hard line with no drift or base.",
+     "evidence": "crit6-tundra-b/shot-bord-for-1-tundraside.png at 40 m and crit6-tundra-a/shot-a250-perpSW.png — you can count the facets; there is no internal glow, no refraction, no surface detail, no frost accumulation, and no snow banked at the intersection."
+    },
+    {
+     "severity": "minor",
+     "text": "The Frostveil Wolf's hind leg reads as detached: the lower leg and paw are a different, darker grey material separated from the body by a visible seam.",
+     "evidence": "crit6-tundra-c/z-wolf.png (crop of shot-wolf-close.png) — the rear leg at crop (600-700, 590-740) and the front-left foot are dark grey stumps that do not share the body's ice-blue fur shading. Locomotion itself is fine (crit6-tundra-c/z-sheet-wolf.png shows a real cycling gait, no moonwalk)."
+    },
+    {
+     "severity": "minor",
+     "text": "Enemy readability: the Frostveil Wolf is the same value as the snow it stands on and nearly vanishes at 12 m; the Frostveil Giant collapses to a near-black silhouette with no readable armour when backlit at 11 m.",
+     "evidence": "crit6-tundra-c/shot-wolf-close.png (wolf at 12 m, pale blue on pale blue) and crit6-tundra-d/z-sheet-giant.png (12 frames, giant is a black cut-out against the terrace with no fill light). Destiny and FF14 both guarantee value separation between combatant and ground."
+    },
+    {
+     "severity": "minor",
+     "text": "A saturated opaque yellow ellipsoid is glued to the Frostveil Giant's abdomen with no falloff, no rim and no design language.",
+     "evidence": "crit6-tundra-c/shot-icegiant-close.png at (900-970, 480-545), sampled rgb(196,156,3) — a raw flat-shaded sphere on the hero creature at 12 m."
+    },
+    {
+     "severity": "minor",
+     "text": "Pine branches are flat near-black tapered sticks with no bark texture and no snow load, crossing the sky in the foreground.",
+     "evidence": "crit6-tundra-a/z-streak-tl.png (crop of shot-a250-perpNE.png) — the near tree's main limbs are untextured black wedges with no needles along them and no snow on their upper faces, in a biome where every horizontal surface should carry snow."
+    },
+    {
+     "severity": "minor",
+     "text": "Damage flash is a full-screen orange tint strong enough to turn the snowfield brown, destroying the region's cool identity for the duration of the hit.",
+     "evidence": "crit6-tundra-c/burst-melee-0.png and -1.png — the entire frame goes sepia; frame mean rises and the snow reads as desert sand."
+    },
+    {
+     "severity": "minor",
+     "text": "A dynamic-import failure silently deleted every tree in the world for a whole session, and the game continued without surfacing it.",
+     "evidence": "crit6-tundra-c/report.json errors: '[pageerror] Failed to fetch dynamically imported module: http://127.0.0.1:5179/src/world/EZTrees.js' — that run rendered Frostveil with zero vegetation. Also worth noting for startup: console.log records '[eztrees] 5367 trees, 19 variants, impostors baked in 42100 ms', and my first run hit 'TIMEOUT waiting for game to start' at the harness's 150 s ceiling. Contention inflates this, but the budget in CLAUDE.md is under 4 s."
+    }
+   ]
+  },
+  {
+   "region": "celestial",
+   "score": 5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "Wave 6 built the Empyrean Gate a better facade and killed the combat white-out here (measured: 0.00% near-white pixels across 24 combat frames while being attacked and firing). It did not build the Celestial Isles. Every wave-5 blocker except the white-out is still on screen unchanged: at 100 m, 120 m and 155 m from the biome heart — biomeAt() returns \"celestial\", the minimap reads CELESTIAL — the ground under your feet is flat saturated Vale meadow green (sampled RGB 122/170/77, std ~12 over an 800x350 patch) or bare grey rock, with not one instanced prop, blade, flower, marble fragment or gold accent in frame. The region's signature feature, the floating isles, is still a stack of cardboard discs with a flat kelly-green sod cap and two untextured white pegs on it. And the region's signature enemy, a seraph \"of the Second Choir\", is a rusty bronze plate-armoured brute with a greatsword — no wings, no halo, no white, no gold, visually indistinguishable from the Infernal/Dragon forgeknight. The zone is a very good arch standing in a field that belongs to a different game.",
+   "shots": [
+    "tools/out/cc-cel-1/shot-approach-200.png",
+    "tools/out/cc-cel-1/shot-gate-40.png",
+    "tools/out/cc-cel-1/shot-gate-8.png",
+    "tools/out/cc-cel-1/shot-gate-8-podium.png",
+    "tools/out/cc-cel-1/shot-gate-back-30.png",
+    "tools/out/cc-cel-1/shot-perp-c.png",
+    "tools/out/cc-cel-1/shot-perp-ground.png",
+    "tools/out/cc-cel-1/shot-isle-ground.png",
+    "tools/out/cc-cel-1/shot-isle-look.png",
+    "tools/out/cc-cel-2/shot-tod-18-golden.png",
+    "tools/out/cc-cel-2/shot-tod-22-night.png",
+    "tools/out/cc-cel-2/shot-border-mid.png",
+    "tools/out/cc-cel-2/shot-border-tundra-a.png",
+    "tools/out/cc-cel-3/shot-lineup.png",
+    "tools/out/cc-cel-3/shot-spawned.png",
+    "tools/out/cc-cel-3/burst-charge-2.png",
+    "tools/out/cc-cel-3/burst-charge-4.png",
+    "tools/out/cc-cel-3/burst-melee-3.png",
+    "tools/out/cc-cel-4/shot-seraph-7m.png",
+    "tools/out/cc-cel-4/sheet-walk.png",
+    "tools/out/cc-cel-4/shot-offplaza-eye.png",
+    "tools/out/cc-cel-4/shot-deep-eye.png",
+    "tools/out/cc-cel-4/shot-deep-ground.png",
+    "tools/out/cc-cel-4/shot-night-gate-14m.png",
+    "tools/out/cc-cel-5/shot-gh-approach-200.png",
+    "tools/out/cc-cel-5/shot-east-eye.png",
+    "tools/out/cc-cel-5/shot-south-eye.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "THE REGION STILL HAS NO IDENTITY OUTSIDE THE PLAZA — wave-5's top blocker, unchanged. Three separate probes deep inside the core, each confirmed by window.__game.biomeAt() returning \"celestial\" and the minimap reading CELESTIAL, land the player on flat Vale kelly-green meadow or bare grey rock with ZERO region content: no marble, no gold, no columns, no isles, no crystals, no motes, not one instanced vegetation or prop object anywhere in the frame. The green is a painted plane, not grass — no blade geometry at 2 m, no flowers, no rocks. The splat transition to rock is a hard aliased staircase seam, not a blend. Two-thirds of the Celestial Isles is the Vale wearing a name tag.",
+     "evidence": "tools/out/cc-cel-4/shot-deep-ground.png and shot-deep-eye.png at (820,-260), 106 m from centre (734,-197), biomeAt=\"celestial\": solid green, sampled mean RGB 25/67/24 in shadow with std 6/8/4 — a flat fill. tools/out/cc-cel-5/shot-east-eye.png and shot-east-ground.png at (880,-160), 155 m out: mean RGB 122/170/77, std 16/12/11 over an 800x350 patch — lurid flat green in a bare rock ravine. tools/out/cc-cel-2/shot-border-mid.png at (560,-330), 219 m out (inside RL_CORE 270): identical green, mean 124/174/75. tools/out/cc-cel-1/shot-perp-ground.png, 150 m tangent off centre: bald grey speckle slope, hard-edged fluorescent green wedge beside it, two smooth featureless cream egg boulders on it."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE FLOATING ISLES — the region's advertised signature ('high marble plateau + floating isles') — ARE STILL GREYBOX, exactly as wave 5 said. From below they are stacked concentric cardboard discs with tan-olive undersides and a chunky stair-stepped gold rim fringe. Standing on one, the top is a solid kelly-green disc with a faint swirl overlay, a cream kerb, and two plain untextured white cylinders sticking out of it. The connecting walkway is a flat cream ribbon with no railing, no thickness detail, no ornament. The wave-6 'sod cap' change swapped a bald dome for a golf green; it did not make an island.",
+     "evidence": "tools/out/cc-cel-1/shot-isle-ground.png (standing above an isle: flat green disc, two white pegs, plain ribbon walkway); tools/out/cc-cel-1/shot-gate-8.png and tools/out/cc-cel-4/shot-offplaza-eye.png (isles overhead read as concrete lampshades; visible hard pixel jaggies on the gold rim of the top-left isle)."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE SIGNATURE CREATURE IS THE WRONG CREATURE. The Celestial roster's headline enemy is 'seraph' (the named rare is 'Auriel of the Second Choir'). What spawns is a hulking rust-bronze plate-armoured brute with a greatsword, orc proportions, a faceless helm and a small purple orb at the chest — no wings, no halo, no white, no gold, nothing divine. It is the same body and palette as the Infernal/Dragon forgeknight. A player cannot tell from the creature which region they are in, which is the opposite of what both Destiny 2 and FF14 do with faction/zone bestiaries.",
+     "evidence": "tools/out/cc-cel-4/shot-seraph-7m.png (single seraph at 7 m on the plaza); tools/out/cc-cel-3/shot-lineup.png and shot-spawned.png (seraphs beside the gate)."
+    },
+    {
+     "severity": "major",
+     "text": "8 m MATERIAL TRUTH ON THE HERO IS STILL A FAIL. Standing inside the archway and at the podium, the piers are enormous flat cream panels carrying nothing but soft low-frequency smoke ribbons: no block courses or joint lines, no chipping, no dirt or weathering in the recesses, no carved mouldings, no fluting on the pier faces, and the podium base is a single unbevelled step. At night the podium wall is a featureless black-brown void with the same smoke ribbons — the emissive gold above spills no light onto it. This is verbatim the wave-5 finding ('a flat olive-cream void with a few soft smoke ribbons'), now on a slightly better veining texture.",
+     "evidence": "tools/out/cc-cel-1/shot-gate-8-podium.png, tools/out/cc-cel-1/shot-gate-back-30.png, tools/out/cc-cel-4/shot-night-gate-14m.png"
+    },
+    {
+     "severity": "major",
+     "text": "THE GOLD ORNAMENT ALIASES INTO LEGO AT 30-40 m. The rayed sun on the attic panel, the archivolt band and the frieze render as visibly quantised, hard stair-stepped gold texels — the sun's rays are chunky rectangles, the arch band is a jagged pixel ribbon. The isle rim bands show the same fringe. The one thing carrying the zone's 'white marble and gold' identity is the thing that falls apart first at the 40 m ornament-hierarchy distance.",
+     "evidence": "tools/out/cc-cel-1/shot-gate-back-30.png (rayed sun at ~12 m is blocky; archivolt band jagged), tools/out/cc-cel-1/shot-approach-200.png and tools/out/cc-cel-4/shot-offplaza-eye.png (isle gold rims)."
+    },
+    {
+     "severity": "major",
+     "text": "THE COMBAT WASH IS NOT DEAD, IT ONLY CHANGED HUE. A seraph attack dumps an opaque, flat, structureless ORANGE sheet over ~half the viewport with no internal detail and no falloff — the gate, the mountains and the far half of the plaza are swallowed. Whole-frame mean goes from RGB 159/165/162 to 183/143/108 and then 181/134/95 in three frames. It does not clip to white so it is not a blob violation, but it is the same class of failure the wave-6 brief claims to have killed: a VFX that eats the frame instead of reading as an effect. There is also a flat opaque mustard-yellow ellipse at the attacker's feet with no gradient at all.",
+     "evidence": "tools/out/cc-cel-3/burst-charge-3.png, burst-charge-4.png, burst-charge-5.png (measured whole-frame means above; 0.00% near-white pixels in all 24 combat frames, so the white-out itself is genuinely fixed)."
+    },
+    {
+     "severity": "major",
+     "text": "THE BIGGEST OBJECTS IN THE HERO SHOT ARE UNTEXTURED SLABS. The two crest pylons flanking the gate are plain rectangular monoliths, floor to sky, with no ornament, no capital, no base moulding, no inscription, no gold, on any face — and they occupy more screen area than the arch itself from the plaza approach. At golden hour and at night they are two grey blanks framing the one finished object.",
+     "evidence": "tools/out/cc-cel-2/shot-tod-18-golden.png, tools/out/cc-cel-2/shot-tod-22-night.png, tools/out/cc-cel-3/shot-lineup.png"
+    },
+    {
+     "severity": "major",
+     "text": "THE BANNERS ARE CONSTRUCTION PAPER. The satellite ceremonial site south of the gate is dressed with standards whose banners are flat, solid, single-colour purple rectangles: no heraldic device, no weave, no fringe, no hem, no cloth sag or wave, hard 90-degree corners. At 12-15 m they are the most obviously unfinished asset in the region, and there are eight of them in one frame.",
+     "evidence": "tools/out/cc-cel-5/shot-south-eye.png"
+    },
+    {
+     "severity": "minor",
+     "text": "THE PLAZA IS A 200 m EMPTY CAR PARK. The marble apron reads as one uninterrupted flat plane out to the horizon carrying only faint gold vein lines — no tiering, no steps, no kerbs, no rubble, no chains or braziers or drapery, and the clutter that does exist (column stubs, banner standards) is distributed on an evenly-spaced grid that reads as a placement loop rather than a place. There are also small flat grey moth/butterfly silhouettes lying on the deck like dead flies.",
+     "evidence": "tools/out/cc-cel-4/shot-offplaza-eye.png (flat apron to horizon), tools/out/cc-cel-3/burst-charge-2.png (moth silhouettes on the marble)."
+    },
+    {
+     "severity": "minor",
+     "text": "WHAT DOES WORK, so it is not rebuilt by mistake: the Empyrean Gate's silhouette and ornament hierarchy at 40-75 m is genuinely good — podium, four free-standing columns on pedestals, an entablature breaking forward over each, attic frieze, pediment, colonnade wings, real steps. Night is the best frame in the set: gold emissive holds its hue against aurora and stars with clean value separation. The 200 m approach silhouettes correctly against sky at noon and golden hour. Long-range haze and layered mountains read well. Creature animation is clean — the seraph cycles limbs, plants its feet, does not slide, sink, moonwalk or T-pose.",
+     "evidence": "tools/out/cc-cel-1/shot-gate-40.png, tools/out/cc-cel-2/shot-tod-22-night.png, tools/out/cc-cel-5/shot-gh-approach-200.png, tools/out/cc-cel-1/shot-isle-look.png, tools/out/cc-cel-4/sheet-walk.png"
+    }
+   ]
+  },
+  {
+   "region": "dragon",
+   "score": 4,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "Wave 5's biggest gap — \"Kharaz-Dun Gate is a wall with no gate\" — is genuinely CLOSED. There is now a real 8 m-deep recessed portal: three stepped jamb orders, a voussoir arch head, a dark tympanum and studded dwarven door leaves with gold bands (CD-gate/shot-gate-20.png, shot-gate-8.png). Credit where due. The new biggest gap is that wave 5's OTHER blocker was not fixed, only repainted: fighting the local bestiary still blows the entire screen out. One wyvern, spawned 22 m away, with the player never firing a shot (ammo still 6/60), turns 61% of the frame into a flat opaque ORANGE curtain within ~1.5 s and holds it for the rest of the burst (CD-anim2/burst-fly-5..9). Reproduced independently three times: a golem+forgeknight pair does the same thing 10 s after aggro with the player idle (CD-diag/shot-dust-after10s.png), and a 30 s scripted fight is fought entirely inside the wash (CD-fight/burst-approach-3, burst-wyvern-6, burst-combat2-8). Because the wash keeps its hue instead of clipping to cream-white, it slips past the decree's letter AND past every automated check — measured washed-white coverage across all 40 combat frames is 0.01-0.02% — but mechanically it is the identical failure the wave-5 critic wrote up: a combat VFX that swallows the frame. You cannot see the gate at 40 m, the cliffs, the sky, or the material of the golem standing 6 m in front of you. Second to that: the hero landmark's apron is furnished with placeholder-grade props — bare grey cylinders with flat ends as bones, flat mustard boxes as gold ingots, an untextured tan/lavender greybox crate, cream low-poly cones as brazier flames — all within 8 m of where the player stands to look at the thing they travelled to see.",
+   "shots": [
+    "tools/out/CD-anim2/burst-fly-7.png",
+    "tools/out/CD-anim2/burst-fly-9.png",
+    "tools/out/CD-diag/shot-dust-after10s.png",
+    "tools/out/CD-diag/shot-dust-on.png",
+    "tools/out/CD-fight/burst-approach-3.png",
+    "tools/out/CD-fight/burst-combat2-8.png",
+    "tools/out/CD-fight/shot-fight-spawn.png",
+    "tools/out/CD-gate/shot-gate-40.png",
+    "tools/out/CD-gate/shot-gate-20.png",
+    "tools/out/CD-gate/shot-gate-8.png",
+    "tools/out/CD-gate/shot-gate-8-low.png",
+    "tools/out/CD-gate/shot-gate-5-portal.png",
+    "tools/out/CD-gate/shot-gate-orbit-L.png",
+    "tools/out/CD-gate/shot-gate-orbit-R.png",
+    "tools/out/CD-diag/shot-far-160.png",
+    "tools/out/CD-diag/shot-far-240.png",
+    "tools/out/CD-diag/shot-apron-ground.png",
+    "tools/out/CD-tod/shot-noon-in.png",
+    "tools/out/CD-tod/shot-noon-perp.png",
+    "tools/out/CD-tod/shot-noon-perp-ground.png",
+    "tools/out/CD-tod/shot-gold-perp.png",
+    "tools/out/CD-tod/shot-night-in.png",
+    "tools/out/CD-fight/shot-border-cel-10.png",
+    "tools/out/CD-fight/shot-border-45.png",
+    "tools/out/CD-fight/shot-border-40.png",
+    "tools/out/CD-fight/shot-border-30.png",
+    "tools/out/CD-anim2/shot-lineup.png",
+    "tools/out/CD-anim2/crop-wyvern.png",
+    "tools/out/CD-anim2/crop-forgeknight.png",
+    "tools/out/CD-anim2/crop-walk-3.png",
+    "tools/out/CD-anim2/crop-walk-7.png",
+    "tools/out/CD-anim2/burst-fly-3.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "COMBAT IS FOUGHT INSIDE AN OPAQUE ORANGE SHEET. The wave-5 full-frame white-out was recoloured, not removed. A single wyvern spawned at 22 m fills 61% of the frame with a flat, hard-edged orange curtain within ~1.5 s and holds it — the gate, the cliffs, the sky and the ground all vanish. The player fires zero shots. This is not the player's gunfire and it is not my abilities; it is the region's own bestiary. It also proves the gate has a second coverage hole: because the wash keeps its hue instead of clipping to white, blobcheck sees 0.01% washed-white and reports clean while the screen is unreadable. Fix the SIZE and OPACITY of the breath/dust sprite, not its colour — recolouring is what got you here.",
+     "evidence": "tools/out/CD-anim2/burst-fly-7.png (measured: 57.7% of pixels are saturated orange, r-b>60; frames fly-5/6/8/9 = 28.5/61.1/60.9/60.0%, ammo unchanged at 6/60 throughout). Independently reproduced with no wyvern present: tools/out/CD-diag/shot-dust-after10s.png (one golem + one forgeknight, 10 s after aggro, player idle, whole frame orange, gate at 40 m invisible) and tools/out/CD-fight/burst-approach-3.png + burst-wyvern-6.png + burst-combat2-8.png (30 s fight, every frame washed). Sampled wash colour (151,127,87) / (218,140,68) / (145,84,44) — saturated orange, so NOT a washed-white blob violation by the letter of the decree.",
+     "category": "combat-vfx-wash",
+     "short_summary": "One wyvern turns 61% of the screen opaque orange"
+    },
+    {
+     "severity": "blocker",
+     "text": "THE HERO LANDMARK'S APRON IS FURNISHED WITH PLACEHOLDER GEOMETRY, AT 5-8 m. Scattered across the steps and paving of Kharaz-Dun Gate: (a) 'bones' that are plain grey cylinders — uniform diameter, no taper, flat circular ends, no texture, jammed into the stairs at random angles like dropped scaffolding poles; (b) 'gold ingots' that are flat mustard-yellow boxes with sharp corners and one uniform colour, lying on the scree like cheese blocks; (c) an untextured tan-over-lavender greybox slab crate sitting in the open 10 m from the door; (d) brazier flames that are cream-coloured low-poly triangular pyramids sitting in smooth gold bowls. The 8 m material-truth test is not close to passed — none of these objects has a material at all.",
+     "evidence": "tools/out/CD-gate/shot-gate-8-low.png (the cylinder 'bones' across the steps, ~6 m from camera, and the flat-ended tubes at left); tools/out/CD-diag/shot-apron-ground.png (mustard-box ingots at 4 m and 12 m, cylinder starburst pile at the step); tools/out/CD-gate/shot-gate-orbit-R.png (the tan/lavender greybox crate, foreground centre-left); tools/out/CD-gate/shot-gate-5-portal.png (brazier: gold bowl + cream pyramid flame, filling a quarter of the frame at 5 m).",
+     "category": "placeholder-props",
+     "short_summary": "Bones are grey pipes, ingots are yellow boxes, flames are cones"
+    },
+    {
+     "severity": "major",
+     "text": "THE GOLD IS STILL PAINT, NOT METAL — wave-5's finding is unchanged. Every gold element on the facade is a flat mustard-yellow surface carrying only a speckled noise map: the 20 m cornice band, the two unequal tabs under it, the floating diamond, and the band across the door leaves. No bevel, no anisotropic streak, no reflected environment, no ornament silhouette, no darkening in the recesses. It reads as yellow emulsion rolled onto stone at 40 m and at 8 m alike. Meanwhile the SAME facade's paving 10 m away has real granite grain and chamfered joints — the capability exists and still has not been applied to the hero surface.",
+     "evidence": "tools/out/CD-gate/shot-gate-40.png (cornice band and tabs), tools/out/CD-gate/shot-gate-8.png (the door band and stud diamonds at 8 m — the band is a solid rectangle of one hue), tools/out/CD-gate/shot-gate-orbit-R.png (raking light across the cornice produces no highlight travel at all).",
+     "category": "material-truth",
+     "short_summary": "Gold cornice and door bands are flat mustard with a noise map"
+    },
+    {
+     "severity": "major",
+     "text": "A GREY RUBBLE BLOB PUNCHES THROUGH THE GATE'S DOOR LEAVES. A lumpy, smooth, near-untextured dark mass spills out of the portal and intersects the bottom third of both door leaves and the threshold step with no contact treatment — the door geometry simply disappears into it. At 8 m it reads as terrain that was never carved away for the building, not as rubble; it has no rubble silhouette, no individual blocks, no edges.",
+     "evidence": "tools/out/CD-gate/shot-gate-8-low.png (the mass covers the lower door and cuts the step edge), tools/out/CD-gate/shot-gate-8.png (same mass seen from head height, clearly intersecting the left leaf).",
+     "category": "geometry-intersection",
+     "short_summary": "Rubble mass clips through the gate's door leaves"
+    },
+    {
+     "severity": "major",
+     "text": "GOLDEN HOUR IS NOT GOLDEN — THE LANDFORM GOES BLACK. At hour 19.3 the sky is a decent violet-magenta gradient, but the entire terrain crushes to a flat near-black brown with no warm key, no rim on the ridge lines and no sun-kissed peak. The two foreground gorge walls merge into a single unreadable black shape, and the far range floats as a pale blue-grey cardboard cutout with a hard edge in front of the gradient. This is exactly the 'the field goes black at golden hour' failure — value separation, the thing that makes an FF14 evening beautiful, is gone.",
+     "evidence": "tools/out/CD-tod/shot-gold-perp.png (hour 19.3, perpendicular to the bearing; compare tools/out/CD-tod/shot-noon-perp.png at the same camera, where the same walls read in three values).",
+     "category": "lighting",
+     "short_summary": "At 19:20 the whole landform crushes to one black value"
+    },
+    {
+     "severity": "major",
+     "text": "THE BORDER INTO CELESTIAL IS A HARD CHROMA LINE, NOT A CROSSING. Standing on the dragon/celestial bisector, a flat lurid billiard-cloth GREEN plane butts against grey scree along a razor-sharp curved edge with zero blending — it reads as a mowing line on a lawn. Littering that green: untextured white hemisphere blobs (marshmallows), flat lavender monolith slabs with no cap, base or ornament, and white stick piles. Above the ridge, a cluster of grey mushroom-shaped discs hovers in the sky connected by thin lines. Nothing here reads as a journey between two places; it reads as two unfinished materials meeting.",
+     "evidence": "tools/out/CD-fight/shot-border-cel-10.png (r=760, bearing 10 deg; game reports region 'dragon'). The same flat lavender slab prop reappears in tools/out/CD-fight/shot-border-45.png at 15 m in the Infernal transition and in shot-border-40.png scattered across the plain — an untextured purple wedge that belongs to no biome's palette.",
+     "category": "biome-transition",
+     "short_summary": "Lurid green plane meets grey scree on a razor edge"
+    },
+    {
+     "severity": "major",
+     "text": "THE GROUND AT 2-25 m IS ONE STRETCHED GREY LICHEN NOISE, EVERYWHERE. There is no scree geometry, no pebbles, no loose rock, no gravel breakup — a single blotchy grey-white texture is smeared across every surface, and on slopes it stretches and blurs badly enough to read as motion blur. The only rocks are smooth grey ellipsoids with no facets, chips or bedding. Set against Destiny 2's Cosmodrome floor or FF14's Coerthas, the player's immediate 25 m — the part they look at constantly — has essentially no art in it.",
+     "evidence": "tools/out/CD-diag/shot-apron-ground.png (2-15 m, note the streaking lower-right), tools/out/CD-tod/shot-noon-perp-ground.png (the smooth grey ellipsoid boulder and the heavily smeared left slope), tools/out/CD-fight/shot-border-30.png and tools/out/CD-diag/shot-far-240.png (full-frame UV stretch on a slope).",
+     "category": "ground-material",
+     "short_summary": "Near-field ground is one smeared grey noise, no scree"
+    },
+    {
+     "severity": "major",
+     "text": "THE REGION'S SIGNATURE CREATURE HAS NO MATERIAL AND NO READABLE SILHOUETTE. The wyvern is a uniformly saturated vermillion mass with darker crease lines and nothing else — no scale texture, no value range, no specular, no wing membrane translucency. Its outline is a knot of spikes and thin webs from which you cannot pick out a head, a neck or a wing; at 25 m it reads as a red crab or a paper Balrog decal, and against the sky at 60 m it reads as a red-black insect. A stray thin red line hangs from it to the ground. It fails all three distances. By contrast the forgeknight next to it is genuinely good — real bevelled plate, gold filigree, a carved greatsword — which shows the bar the wyvern is missing.",
+     "evidence": "tools/out/CD-anim2/crop-wyvern.png (25 m crop from shot-lineup.png), tools/out/CD-tod/shot-gold-perp.png (silhouetted against the sky), tools/out/CD-tod/shot-noon-perp.png (three of them on the cliff at 60-120 m). Compare tools/out/CD-anim2/crop-forgeknight.png.",
+     "category": "creature-art",
+     "short_summary": "Wyvern is a flat red cutout with an unreadable silhouette"
+    },
+    {
+     "severity": "minor",
+     "text": "ENEMIES STAND ON VERTICAL CLIFF FACES. A stone golem is planted on a ~60-degree rock wall, upright, feet on the slope, with a violet aggro outline — it is not sinking or T-posing, but nothing that heavy should be standing there, and it is the first thing the eye finds in the frame.",
+     "evidence": "tools/out/CD-tod/shot-noon-perp.png (upper-left, golem on the gorge wall), also visible in shot-gold-perp.png at the same spot.",
+     "category": "placement",
+     "short_summary": "Golem stands upright on a 60-degree cliff face"
+    },
+    {
+     "severity": "minor",
+     "text": "FAR RANGES CARRY HORIZONTAL CONTOUR BANDING. The mid- and far-distance ridges show candy-striped horizontal bands of olive/tan across the rock — the splat quantising by altitude. At 150-500 m it reads as a topographic map rather than strata, and it is the one thing that spoils what is otherwise the region's best view.",
+     "evidence": "tools/out/CD-diag/shot-far-160.png (mid-left ridges), tools/out/CD-fight/shot-border-40.png (right-hand ranges).",
+     "category": "terrain-splat",
+     "short_summary": "Distant ridges show topographic contour banding"
+    },
+    {
+     "severity": "minor",
+     "text": "HERO-LANDMARK DRESSING READS AS DEBUG UI. The forgeknight is enclosed in a hard-edged translucent blue sphere that reads as a plastic dome rather than a ward, and its greatsword clips straight through the terrain. Aggroed golems get a full-body violet emissive outline plus a soft violet ellipse behind them, which reads as an editor selection highlight. The dwarven camps and nests are built from the same plain white cylinders as the 'bones', arranged into sawhorse lattices, with cream ovoid eggs lying on the paving.",
+     "evidence": "tools/out/CD-anim2/crop-forgeknight.png (bubble + sword through ground), tools/out/CD-anim2/shot-lineup.png (violet outline on the right-hand golem), tools/out/CD-anim2/burst-fly-3.png and crop-walk-3.png (cylinder lattices, egg, purple podium with a red flag).",
+     "category": "vfx-readability",
+     "short_summary": "Shield bubble and aggro outline read as editor UI"
+    },
+    {
+     "severity": "minor",
+     "text": "THE LANDMARK DOES NOT COMMAND ITS APPROACH. At 160 m Kharaz-Dun Gate is a small grey box with a yellow stripe tucked at the bottom of a large empty gorge — no road leading to it, no scale cue, no lit windows or banners, nothing that says 'travel here'. The alpine panorama around it is genuinely good (real depth, snow, haze, a far range that holds its blue-grey value), which makes the gate's failure to anchor the vista more obvious, not less.",
+     "evidence": "tools/out/CD-diag/shot-far-160.png, tools/out/CD-tod/shot-noon-in.png (~150 m on the arrival axis).",
+     "category": "composition",
+     "short_summary": "Gate reads as a small box in the 160 m vista"
+    }
+   ]
+  },
+  {
+   "region": "infernal",
+   "score": 5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "The Infernal Wastes is a beautifully lit photograph of an empty parking lot. Golden hour and night produce genuinely evocative silhouettes — and then you look at anything. The ground you actually walk on, which fills 45-60% of every frame from 2 m to 60 m, is a geometrically flat plane with a crack pattern printed on it: measured std 8.7/255 over a 600x300 px noon patch, and looking straight down at 2 m there is not one pebble, not one clinker, not one ash drift, not one piece of debris in roughly 8 x 5 metres of a volcanic waste. The region's signature material, the lava seam, is a flat uniform hard-edged orange quad at 200 m, at 40 m and at 8 m — no crust, no cooling gradient, no emissive spill onto the rock beside it, and at midnight it casts zero light on the ground under it. Destiny 2's Nessus and FFXIV's Bozja both put readable, lit, three-dimensional material under your feet every three metres; here the whole region is one uninterrupted brown surface with two dozen untextured black boxes standing on it. It fails all three acceptance distances at once.",
+   "shots": [
+    "tools/out/c6inf-1/shot-approach210.png",
+    "tools/out/c6inf-1/shot-landmark40.png",
+    "tools/out/c6inf-1/z-cone40.png",
+    "tools/out/c6inf-1/shot-landmark8.png",
+    "tools/out/c6inf-1/shot-ground-near.png",
+    "tools/out/c6inf-1/shot-sky-noon.png",
+    "tools/out/c6inf-1/shot-golden-vista.png",
+    "tools/out/c6inf-1/shot-night-vista.png",
+    "tools/out/c6inf-1/z-skyblob.png",
+    "tools/out/c6inf-2/shot-fight-lineup.png",
+    "tools/out/c6inf-2/burst-fight-4.png",
+    "tools/out/c6inf-2/burst-fight-6.png",
+    "tools/out/c6inf-2/z-imp.png",
+    "tools/out/c6inf-2/z-golem-sheet.png",
+    "tools/out/c6inf-2/shot-border-toward-infernal.png",
+    "tools/out/c6inf-2/shot-border-toward-dragon.png",
+    "tools/out/c6inf-2/shot-drake-closeup.png",
+    "tools/out/c6inf-2/burst-firing-0.png",
+    "tools/out/c6inf-3/shot-straight-down.png",
+    "tools/out/c6inf-3/shot-walk-into-landmark.png",
+    "tools/out/c6inf-3/shot-drake2.png",
+    "tools/out/c6inf-3/z-imp-sheet.png",
+    "tools/out/c6inf-4/shot-lava-t3.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "SEE-THROUGH GEOMETRY AND LAVA IS TREATED AS SWIMMABLE WATER. Teleport to (357,672) facing the Cinder Maw at 40 m and hold W for 3 s. The player drops 18 m (y 20.82 -> 2.63), enters movement state \"swim\", grounded=false, and the camera ends up INSIDE the world: you are looking at back-faces of rock with a rectangular window of grey sky punched clean through solid geometry at the top of the frame, and a flat orange plane (the underside of the lava surface) across the bottom. This is the auto-lose 'geometry you can see through' plus a design contradiction — the biome's own passive line reads 'The lava burns — the channels are not water', and the movement system classifies it as water. A separate no-god-mode run confirms lava only costs 32 hp and fully regenerates in ~10 s, so a lava lake is a speed bump, not a hazard.",
+     "evidence": "tools/out/c6inf-3/shot-walk-into-landmark.png; report.json step 15: {\"pos\":[337.59,2.63,679.95],\"state\":\"swim\",\"grounded\":false}. Damage trace in tools/out/c6inf-4/report.json: hp 104 -> 72 -> 75 -> 87 -> 104 over 15 s."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE 'FLAT ORANGE SHEET' HALF OF WAVE 5's HEADLINE FINDING IS COMPLETELY UNFIXED. Spawn imp/imp/magmagolem/drake at 10-18 m and drop passive. Within 1.3 s a fireball VFX — a single flat 2D concentric-ring polygon with a visible spiral swirl texture and no depth — expands from the bottom of the screen and covers ~70% of the viewport as an opaque orange wash. The magma golem you are fighting is invisible. The ground is invisible. The crosshair at (960,540) is barely distinguishable from the wash. Frame-mean luminance goes 44 -> 100 -> 47 and stays elevated across 5 consecutive burst frames = ~1.1 s of an unreadable arena. The right third of the screen stays unaffected, so there is a visible vertical boundary between washed and unwashed screen. It dodges the washed-white decree only on a technicality (the hue survives: bright-pixel saturation stays 72), but it costs exactly the read the decree exists to protect, from three trash mobs at 10 m, with the player not yet firing.",
+     "evidence": "tools/out/c6inf-2/burst-fight-4.png (the flat ring polygon at onset), burst-fight-6.png (70% coverage). Measured across 38 combat frames: meanLum 44.2 (fight-0) -> 100.3 (fight-6) -> 47.2 (fight-13)."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE GROUND — 45-60% OF EVERY FRAME — IS A FLAT PLANE WITH A PATTERN PRINTED ON IT, AND IT IS EMPTY. Looking straight down at 2 m there is a competent basalt-plate crust texture, but it is geometrically flat: no crack casts a shadow, no plate edge catches a highlight, there is no normal-mapped relief and no AO anywhere. Nothing is scattered on it — zero pebbles, zero clinker, zero ash mounds, zero scorched debris, zero bone, zero decals, in ~8 x 5 m of volcanic waste. Uniform plate scale across the whole frame, so nothing reads as newer or hotter than anything else. At 2-25 m the same surface has measured std 8.7/255 (3.5% contrast) at noon. This is the coherence pass's 'every surface within 8 m of your face is a flat plane with low-frequency noise on it' blocker, still true after wave 6.",
+     "evidence": "tools/out/c6inf-3/shot-straight-down.png; tools/out/c6inf-1/shot-ground-near.png region (300,700)-(900,1000) mean [24.9,12.8,14.1] std [8.7,5.7,5.1]."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE LAVA SEAM — THE REGION'S SIGNATURE MATERIAL — IS MASKING TAPE AT ALL THREE DISTANCES. On the Cinder Maw the seams are uniform-fill orange strips with hard geometric edges and zero internal variation: no hot white-yellow core, no cooling red crust at the edge, no bubbling, no falloff. One band at 40 m is visibly a detached ribbon that hangs off the cone's silhouette as a floating tab rather than following the rock. They emit nothing: no bloom halo, no warm bounce on the basalt above and below, and at 23:00 the rock under a glowing seam is pitch black. The same treatment repeats on every ash block — a flat solid-orange rectangle laid on top of a black box like a slice of cheese. Ornament hierarchy at 40 m is therefore nil: the landmark is a tiered wedding-cake cone with stripes, no fissures, no spires, no collapse, no scale marker.",
+     "evidence": "tools/out/c6inf-1/z-cone40.png (detached band at left edge, uniform fill); tools/out/c6inf-3/z-imp-sheet.png (flat orange plates on black boxes at 8 m); tools/out/c6inf-1/shot-night-vista.png (seams glowing, ground beneath black)."
+    },
+    {
+     "severity": "major",
+     "text": "THE LOCAL BESTIARY IS PLACEHOLDER GEOMETRY. The Cinder Imp at 8 m is a low-poly, untextured, unlit, uniformly saturated orange mass with a few faceted shards for spikes — no face, no eyes, no limbs, no material, three tonal steps from flat facet normals. The Drake at 16 m is an unreadable dark-red scribble of shards with no separable head, body or wings. The Magma Golem has no magma: a mud-green/black rock body whose only heat is a flat 2D vector-art flame BILLBOARD stuck in front of its chest, which pops in and out between frames, and in one frame a blue-violet gem sits in its chest instead. These are level 18-25 enemies in a fire region and none of them reads as made of fire. (Credit where due: the golem's walk cycle is real — legs alternate, feet plant, no T-pose, no slide, no moonwalk.)",
+     "evidence": "tools/out/c6inf-2/z-imp.png (4x zoom, solid orange, no features); tools/out/c6inf-3/shot-drake2.png; tools/out/c6inf-2/shot-fight-lineup.png (flame sticker) vs burst-fight-4.png (sticker gone) vs burst-firing-0.png (blue gem)."
+    },
+    {
+     "severity": "major",
+     "text": "A GIANT FLAT PURPLE POLYGON ON THE INFERNAL/DRAGON BORDER — wave 5's 'giant flat blue polygon in the sky', relocated to the ground. A ~15 m monolith at the k3/k4 bisector is a solid indigo slab: measured mean rgb [34.5,29.2,62.5] with std [4.0,3.6,5.2] over a 500x190 px region at ~10 m, i.e. a literally uniform colour. No carving, no runes, no chamfer, no base, no dirt, no chipping, and its cast shadow is a razor-hard unfeathered black polygon. The hue belongs to neither the rust-red infernal palette nor the dragon palette. Nearby, the mid-ground is dotted with a grid of identical black cylinders scattered like chess pieces with no scale or rotation variation and no bedding into the ground.",
+     "evidence": "tools/out/c6inf-2/shot-border-toward-infernal.png (slab at x 470-660); tools/out/c6inf-2/shot-border-toward-dragon.png (same class of slab against pines)."
+    },
+    {
+     "severity": "major",
+     "text": "THE SKY HAS NO STRUCTURE AT ANY HOUR, AND NIGHT HAS ZERO STARS. At 13:00 the dome is a flat beige-grey wall with one soft grey smudge — no sun disc, no shafts, no cloud with an edge or a shape, no volumetrics. At 23:00 it is a red-to-black vertical gradient with literally no stars, no moon and no aurora. Between noon, golden hour and night the sky changes hue and nothing else; there is no structural weather. The stated bar is FFXIV's dramatic skies with volumetric-looking clouds and god rays. The eruption plume and the fire are both stacks of soft circular gaussian dots you can count individually — at 200 m the region's one signature silhouette element reads as a column of grey soft-brush stamps with no turbulence, no wind shear and no density variation.",
+     "evidence": "tools/out/c6inf-1/shot-sky-noon.png; tools/out/c6inf-1/shot-night-vista.png; tools/out/c6inf-1/z-skyblob.png (individual circles clearly countable in the plume)."
+    },
+    {
+     "severity": "major",
+     "text": "GOLDEN HOUR IS A TWO-VALUE IMAGE: BLACK FOREGROUND, ORANGE BACKGROUND. Near ground at 2-4 m measures mean [25.9,13.8,9.7] (luma ~17) while the mountain at 300 m measures [143.1,93.3,52.6] (luma ~106) and the sky [167.6,108.5,60.3] (luma ~123). A 100-point luma cliff with essentially nothing in between: the bottom half of the frame is a detail-free void and everything past 200 m is one flat orange sheet in a single hue. FF14's golden hour keeps cool bounce in the shadows so the near field still reads. Here shadows measure blue-crushed near-black ([4.1,5.7,11.6]) with no bounce light at all, which also makes every cast shadow a hard unfeathered polygon — at 8 m a single monolith's shadow is a razor-edged diagonal covering the lower-left half of the screen.",
+     "evidence": "tools/out/c6inf-1/shot-golden-vista.png; tools/out/c6inf-1/shot-landmark8.png (hard diagonal shadow edge from (300,380) to (900,1080)); region means listed above."
+    },
+    {
+     "severity": "major",
+     "text": "THE REGION DOES NOT CONTAIN WHAT ITS OWN SPEC PROMISES. Biomes.js says 'A volcano bleeding lava rivers across black ash. Demons work the flows.' There are no lava rivers anywhere on the 200 m, 120 m or 40 m approach — one small pool under a torii and a few pond-sized dips. There is no black ash; the floor is Martian rust-brown, not the black basalt the source comments claim was achieved. There are no demon camps working the flows, no vents, no obsidian fields, no ash dunes. Between the player and the landmark at 100 m there is one black wedge and four leaning slabs. There is nothing to walk toward.",
+     "evidence": "tools/out/c6inf-1/shot-approach210.png, shot-approach120.png; tools/out/c6inf-3/shot-drake2.png (55% of frame is empty ground with two loot flecks)."
+    },
+    {
+     "severity": "minor",
+     "text": "DISTANT TERRAIN AND LOD ARTEFACTS. The mountain ring inside infernal weight still shows horizontal contour-line banding that reads as a texture bug at 250-500 m, and the ridge silhouettes are visibly faceted straight polygon edges against the sky with no haze softening at the profile. A hard straight terrain-tile seam runs across the whole frame at y~570 in the 40 m landmark view. Loot pickups render as flat solid-yellow ellipses and crescents with hard edges and no shading, pasted over the sky. A bright red painterly splatter decal sits on the Cinder Maw's wall at 40 m and reads as a bloodstain out of place on volcanic rock.",
+     "evidence": "tools/out/c6inf-1/z-skyblob.png (banded ridge bottom-left); tools/out/c6inf-3/shot-drake2.png (seam at y~570); tools/out/c6inf-2/burst-firing-0.png (yellow ellipse at 1345,345); tools/out/c6inf-1/z-cone40.png (red splat)."
+    },
+    {
+     "severity": "minor",
+     "text": "CREDIT WHERE IT IS DUE, so the next wave does not undo it: the wave-5 washed-white combat blowout is genuinely GONE. Across 38 combat burst frames plus 13 stills, near-white pixel counts never rise above the HUD/viewmodel baseline (~400-700 px, and every one of those pixels is HUD text or a gun highlight — no world pixel), and bright-pixel mean saturation holds at 67-73. No blob violation anywhere in this region. Creature animation is clean (real leg cycle, foot plant, no T-pose/slide/moonwalk). The 'hard-edged diagonal wedge while firing' from wave 5 did not reproduce. Performance in an isolated window is inside budget: 4.83 ms mean, 11.3 ms p99, 265 calls, 3.46 M tris, 414.8 MB stable.",
+     "evidence": "tools/out/c6inf-2/burst-*.png white-pixel scan; tools/out/c6inf-2/z-golem-sheet.png; tools/out/c6inf-4/report.json stats label 'f'."
+    }
+   ]
+  },
+  {
+   "region": "lost",
+   "score": 4.5,
+   "result": "LOSE",
+   "verdict": "The Lost Realm is still one hue at one value — and it now has a screen-filling render bug at the exact spot the region is named for. Stand on the ground at the heart of The Convergence and the entire sky is replaced by a hard-rimmed brown-orange stippled dome; the 60 m spire you walked 200 m to see is completely occluded by it. I reproduced it four ways (fall-in from above, teleport, two separate sessions), at noon, with post-processing bypassed, and with `water`, all six `terrain-l*` LODs, `landmark-lost`, `landmark-lost-slabs` and `glyph-lost` individually hidden — it survives all of them, so it is another named prop mesh the player is standing inside. That alone is a blocker at an endgame landmark. Underneath it, wave-5's headline finding is unclosed: at noon the flagstone, the 16 monoliths, the drum, the rampart, the mountain ring and the sky are all the same violet inside a compressed value band, and the landmark itself has no mass — from 130 m it is a picket fence of ~40 identical thin columns around a needle, with nothing FF14's Crystal Tower or a Vex citadel would recognise as silhouette. At 8 m the stone is a flat plane carrying blurred low-frequency noise with randomly extruded rectangular boxes standing in for carving; the gold \"filigree\" is thin wire scrollwork perched on little legs that reads as a bent coat-hanger; the aether conduits are still flat matte pastel bars with no glow, no gradient and no light spill — wave-5's third finding verbatim. What DID land is real and worth saying: the 16 gold monolith caps are now snug closed collars instead of cantilevered plates (wave-5's #1 is closed), I found no washed-white blob in ~40 combat burst frames with the local bestiary at 8–20 m, the mountain-ring rock reads as rock with strata and snow, collision held on a 110 m sprint-in, and golden hour and 23:00 are genuinely handsome frames — aurora, lit conduits, warm gold on violet, real atmospheric depth. But a player coming off Destiny 2 and FF14 would spend the first thirty seconds looking at an orange TV-static ceiling over a purple parking lot, and no amount of a good sunset fixes that.",
+   "blobViolation": false,
+   "biggestGap": "The sky over The Convergence is replaced by an opaque brown-orange stippled dome that occludes the hero spire from the landmark's own centre — and behind that, the region is still the single-hue, single-value violet field wave 5 failed it for, with the monolith stone reading as a flat noise-mapped plane and the aether reading as flat pastel bars at 8 m.",
+   "shots": [
+    "tools/out/lostcrit-A/shot-c-8m-up.png",
+    "tools/out/lostcrit-A/shot-c-8m.png",
+    "tools/out/lostcrit-B/shot-diag-nopostfx.png",
+    "tools/out/lostcrit-C/shot-dais-8m.png",
+    "tools/out/lostcrit-C/shot-dais-8m-up.png",
+    "tools/out/lostcrit-F/shot-f2-noterrain.png",
+    "tools/out/lostcrit-E/shot-e3-nolandmark.png",
+    "tools/out/lostcrit-B/shot-tod-13.png",
+    "tools/out/lostcrit-B/shot-tod-13-sky.png",
+    "tools/out/lostcrit-B/shot-tod-1730-golden.png",
+    "tools/out/lostcrit-B/shot-tod-23-night.png",
+    "tools/out/lostcrit-A/shot-a-230m.png",
+    "tools/out/lostcrit-A/shot-a-230m-left.png",
+    "tools/out/lostcrit-A/shot-a-230m-sky.png",
+    "tools/out/lostcrit-A/shot-b-40m.png",
+    "tools/out/lostcrit-A/shot-b-40m-ground.png",
+    "tools/out/lostcrit-A/shot-c-ground-2m.png",
+    "tools/out/lostcrit-A/shot-c-ground-25m.png",
+    "tools/out/lostcrit-C/shot-walk-stop.png",
+    "tools/out/lostcrit-C/shot-dais-ground.png",
+    "tools/out/lostcrit-C/shot-bd-1.png",
+    "tools/out/lostcrit-C/shot-bd-2.png",
+    "tools/out/lostcrit-C/shot-bd-4.png",
+    "tools/out/lostcrit-D/burst-approach-2.png",
+    "tools/out/lostcrit-D/sheet-approach.png",
+    "tools/out/lostcrit-D/sheet-golemlegs.png",
+    "tools/out/lostcrit-D/burst-combat-4.png",
+    "tools/out/lostcrit-D/shot-lineup.png",
+    "tools/out/lostcrit-H/shot-archon.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "THE SKY AT THE CONVERGENCE IS AN OPAQUE ORANGE STIPPLED DOME. Standing on the ground at the landmark's centre, a hard-rimmed brown-orange dithered dome fills the entire upper half of the frame and completely occludes the 60 m spire — the one thing the whole region is built around. It is not the skyDome, not post-processing, not the terrain, not the water, and not the lost landmark meshes; it is another named prop the player is standing inside. Fix the prop, and add a 'stand at the landmark's centre and look up' shot to the region gate — every screenshot in this project is taken looking outward, which is exactly why this survived a wave.",
+     "evidence": "tools/out/lostcrit-A/shot-c-8m-up.png and shot-c-8m.png (arrived by teleport to terrain height, hour 13). Reproduced independently in tools/out/lostcrit-C/shot-dais-8m.png and shot-dais-8m-up.png after DROPPING in from y=48 and landing grounded (state() reports pos [-189, 27.36, 736.2], grounded:true). Survives bypassPostfx(true): tools/out/lostcrit-B/shot-diag-nopostfx.png. Survives hiding `water` and all six `terrain-l*` meshes: tools/out/lostcrit-F/shot-f2-noterrain.png. Survives hiding `glyph-lost`, `landmark-lost-slabs` and `landmark-lost` — with the stone gone the dome is still there and the gold/aether float in mid air: tools/out/lostcrit-E/shot-e3-nolandmark.png. Disappears only when EVERY named mesh except skyDome is hidden: tools/out/lostcrit-F/shot-f3-onlysky.png. Sampled dome colour rgb(126,70,12) to (198,132,83).",
+     "category": "render-bug"
+    },
+    {
+     "severity": "blocker",
+     "text": "THE REGION IS STILL ONE HUE AT ONE VALUE — wave 5's biggest gap is not closed. At noon the flagstone plaza, the 16 monoliths, the drum, the spire, the rampart, the near mountain ring, the hazed far ring and the sky are all the same violet inside a compressed value band. The only thing that breaks the monochrome is the gold cap rings, which are ~1% of screen area. Value separation is what makes a landscape read; without it there is no foreground, no midground and no background, only a purple wash. Golden hour and night prove the geometry CAN separate — they have three clear value tiers — so this is a daytime key/albedo problem, not a modelling one.",
+     "evidence": "tools/out/lostcrit-B/shot-tod-13.png (110 m, hour 13) and tools/out/lostcrit-H/shot-archon.png (130 m). Compare tools/out/lostcrit-B/shot-tod-1730-golden.png and shot-tod-23-night.png, which do separate.",
+     "category": "art-direction"
+    },
+    {
+     "severity": "blocker",
+     "text": "THE HERO LANDMARK HAS NO MASS AT 200 m. From every distance outside 60 m The Convergence is a needle standing in a picket fence of ~40 identical thin columns of the same height, spacing and value. There is no negative space, no layered silhouette, no readable structure — nothing a player would navigate toward or remember. FF14's Crystal Tower and Destiny's Vex citadels both read as one big shape with subordinate shapes hanging off it; this reads as fenceposts. The rampart behind it is a low crenellated berm with perfectly regular merlons and no towers or gate readable from the plain, which makes it look like stamped toy battlements rather than a curtain wall.",
+     "evidence": "tools/out/lostcrit-H/shot-archon.png (130 m), tools/out/lostcrit-B/shot-tod-13.png (110 m), tools/out/lostcrit-A/shot-a-230m-sky.png (230 m — the berm is one flat mottled hemisphere with LEGO crenellation on the crest).",
+     "category": "landmark-massing"
+    },
+    {
+     "severity": "major",
+     "text": "8 m MATERIAL TRUTH FAILS ON EVERY STONE SURFACE. The monolith and rampart faces are flat planes carrying a soft blurred low-frequency noise, with the 'carving' rendered as scattered extruded rectangular boxes that read as accidental geometry rather than glyphs. No veining, no dirt in the joints, no chipped arris, no edge damage — the exact thing the coherence pass flagged in seven of ten regions. Stone at conversational distance in FF14 has visible tool marks, grime lines and broken corners; this has a Photoshop noise layer.",
+     "evidence": "tools/out/lostcrit-A/shot-b-40m.png (left foreground monolith), tools/out/lostcrit-C/shot-dais-8m.png (the ring wall faces), tools/out/lostcrit-A/shot-b-40m-ground.png.",
+     "category": "material-detail"
+    },
+    {
+     "severity": "major",
+     "text": "THE AETHER IS STILL FLAT PASTEL DECALS — wave 4's and wave 5's finding is unclosed for the third wave running. The conduits up the shaft, the diamond ridges on the monoliths and the chips on the drum are flat matte lavender bars: no gradient, no falloff, no glow, no light spill onto the stone they sit on, no motion. At night they are pale pink lozenges hovering in a row with zero contribution to the scene's lighting. And the gold 'filigree' is thin wire scrollwork standing on little legs clear of the stone — at 8 m it reads as a bent coat-hanger propped against a wall, not as ornament worked into the surface.",
+     "evidence": "tools/out/lostcrit-C/shot-dais-8m.png and tools/out/lostcrit-C/shot-dais-8m-up.png (the two gold wire scrolls at mid-frame). tools/out/lostcrit-E/shot-e3-nolandmark.png with the stone hidden shows the aether bars and gold wires floating free — flat, matte, unlit. tools/out/lostcrit-B/shot-tod-23-night.png shows the aether pips as flat pink kites with no bloom pool and no spill.",
+     "category": "vfx-fidelity"
+    },
+    {
+     "severity": "major",
+     "text": "THE DAIS GEOMETRY EXPLODES ON THE WALK-IN. Sprinting in from 110 m and stopping ~16 m from centre, the frame is filled by a fan of thin flat slabs cantilevered into open air at random angles where the dais steps should be, plus a bright lavender aether bar floating clear of any surface. You cannot see through it but it is unmistakably broken massing, and it is what a player sees on the last five seconds of the approach.",
+     "evidence": "tools/out/lostcrit-C/shot-walk-stop.png (sprinted from (-90.4, 762.6) on yaw 1.309, ended at pos [-181.79, 25.26, 722.98]). Also visible in tools/out/lostcrit-A/shot-c-ground-25m.png as a dark navy slab cutting through the plaza with pillar bases proud of it.",
+     "category": "geometry"
+    },
+    {
+     "severity": "major",
+     "text": "THE BORDER INTO SHADOWFEN IS A 150 m CORRIDOR OF MISMATCHED IDENTITY, which is exactly what the world spec forbids. Sprinting lost -> shadowfen, biomeAt() flips to 'shadowfen' while the ground is still the Lost Realm's cracked violet flagstone, the air is still the Lost Realm's clear pale-violet haze with 2 km sightlines, and the HUD zone card still reads 'LOST REALM' — but Shadowfen's dead trees and yellow reeds are already standing in it. Vegetation scatter, ground splat, fog grade and the HUD label are all switching at different radii. Credit where due: once the fen fully arrives it is excellent (god rays, murk, glowing mushrooms, a real haze grade) — which makes the smeared handover more conspicuous, not less.",
+     "evidence": "tools/out/lostcrit-C/shot-bd-2.png — fen trees and reeds on lost flagstone, HUD reads 'Lost Realm', biomeAt() already returned 'shadowfen'. Compare tools/out/lostcrit-C/shot-bd-4.png where the fen finally asserts itself and the label flips.",
+     "category": "biome-transition"
+    },
+    {
+     "severity": "major",
+     "text": "THE GROUND AT 2-25 m IS A GOOD TEXTURE ON A MATHEMATICALLY FLAT PLANE. The flagstone map itself is decent — crack network, mortar seams, pale mineral veining — but there is zero relief, zero rubble, no pebbles, no debris, no wear at the joints, no props of any kind between the player and the monolith ring. There is also an unmotivated ~3x value swing: the plaza directly under the player is near-black navy while the identical plaza 20 m out is bright magenta, with no shadow caster to explain it. Beyond the ring the plain runs flat and empty to the mountain wall with visible low-frequency contour banding.",
+     "evidence": "tools/out/lostcrit-C/shot-dais-ground.png (2 m), tools/out/lostcrit-A/shot-c-ground-2m.png vs tools/out/lostcrit-A/shot-b-40m-ground.png (the value swing), tools/out/lostcrit-C/shot-bd-1.png (the empty plain), tools/out/lostcrit-H/shot-archon.png (contour bands in the near field).",
+     "category": "ground-detail"
+    },
+    {
+     "severity": "major",
+     "text": "THE BESTIARY IS GENERIC AND OUT OF PALETTE. The Stone Golem is a near-black rock ogre with a saturated cyan chest crystal — at 20 m on a violet plaza it reads as a black cutout with a blue chip, and it is the same asset used elsewhere in the world. The Archon of the Convergence — the level-50 endgame boss of the endgame region — is visibly the same body reskinned darker. The Spire Sentinel is a grey-bronze knight wrapped in a translucent cyan bubble. Nothing in the roster says 'where every magic in the world meets and argues'. Locomotion does not T-pose and the sentinel's swing has a real windup and a slash arc, but the golem's walk is weightless: the arms swing while the legs barely cycle, with no foot plant, no ground-contact reaction and no IK.",
+     "evidence": "tools/out/lostcrit-D/shot-lineup.png, tools/out/lostcrit-D/sheet-golemlegs.png (frames 4-7 of burst-approach: arms swing, feet stay planted while the body translates), tools/out/lostcrit-D/sheet-approach.png, tools/out/lostcrit-H/shot-archon.png.",
+     "category": "creatures"
+    },
+    {
+     "severity": "major",
+     "text": "NOON SKY IS STOCK. A plain pale blue-lavender gradient with four small white cumulus — indistinguishable from a default daytime dome and completely at odds with 'the end of the road' brief. Golden hour and night both have real character (pink-cream cloud banks; aurora, stars, a deep blue-violet dome), so the per-region sky work landed at those hours and not at the one a player spends most of their time in.",
+     "evidence": "tools/out/lostcrit-B/shot-tod-13-sky.png and shot-tod-13.png vs shot-tod-1730-golden.png and shot-tod-23-night.png.",
+     "category": "sky"
+    },
+    {
+     "severity": "minor",
+     "text": "OUT-OF-PALETTE ACCENTS SCATTERED THROUGH THE REGION. Saturated teal-green glowing mushroom clusters (mesh `mushroom-glow`, MeshBasicMaterial colour 0x18d69a — unlit, so it ignores the region's light and fog entirely) sit on the violet plain and are the brightest chromatic note in several frames. Cream/beige 'book' props lie on the flagstone reading as untextured placeholders. Both fight the one thing this region does have, which is a committed hue.",
+     "evidence": "tools/out/lostcrit-B/shot-tod-23-night.png (green glow bottom-left), tools/out/lostcrit-B/shot-tod-13.png (green blob at ~x130), tools/out/lostcrit-A/shot-b-40m.png and shot-b-40m-ground.png (the cream book prop).",
+     "category": "palette-coherence"
+    },
+    {
+     "severity": "minor",
+     "text": "THE ENEMY PROJECTILE IS STILL A FLAT OPAQUE EGG. Wave 5 flagged a 'hard-edged, flat, opaque near-white egg, uniform fill, crisp rim, no falloff'. It has been recoloured cyan but it is structurally the same object: a solid oval with a crisp rim, uniform interior and no falloff, no core/halo separation and no trail. A hostile projectile in Destiny 2 has a hot core, a soft corona and a wake; this is a sticker. There is also a flat opaque yellow ellipse that appears pasted onto the spire face mid-fight.",
+     "evidence": "tools/out/lostcrit-D/burst-approach-2.png (the cyan egg at mid-left), tools/out/lostcrit-D/burst-approach-6.png (the flat gold ellipse on the spire face).",
+     "category": "vfx-fidelity"
+    },
+    {
+     "severity": "minor",
+     "text": "THE NIGHT LANDMARK HAS NO LIGHT POOL. `convergence-lamp` exists as a PointLight but at 23:00 the plaza is uniformly dim — no pooled falloff on the flagstone, no warm spill onto the monolith feet, no reason for the eye to travel to the spire base. The aether pips that should be the focal light contribute nothing because they are unlit basic material. The night frame is the region's best-looking one and it is being carried entirely by the sky.",
+     "evidence": "tools/out/lostcrit-B/shot-tod-23-night.png.",
+     "category": "lighting"
+    }
+   ]
+  },
+  {
+   "region": "shadowfen",
+   "score": 4.5,
+   "verdict": "LOSE — the region's named feature, its water, is still a flat opaque sheet with zero reflection, and wave 6 added new combat-frame defects on top. Shadowfen has real atmosphere at exactly one distance (30-60 m at midday: reeds, god rays, a stone circle that reads) and fails the acceptance rule at both of the others. The 200 m silhouette test fails outright — the 22 m Hagstone is completely invisible from 220 m perpendicular to the bearing, swallowed by the region's own fogMul 4.4. At 8 m the megaliths are one tiling green-mottle noise with no carving, no coursing, no chipped arrises and a smeared purple ellipse decal on the shaft face. Golden hour has no golden hour (flat olive-brown, no sun disc, no warm gradient, reeds go pure black with no rim); night has no night (black void, zero stars, and the water becomes a uniform light-grey plate that is the brightest thing in frame). A single trigger pull covers 80% of the screen in an opaque orange bloom for a full second — the combat white-out class the wave-6 brief claims was killed, only tinted orange so a pure-white gate misses it. A bogwitch projectile draws a screen-wide horizontal green beam from x=0 to x=1920. Every frame carries a bright streak artifact 4-6 px into the left and right screen edges. The bestiary animates correctly (limb cycles, no T-pose, no moonwalk) and collision holds, and the region partition is logically correct — those are the wins. A player off Destiny 2's Dreaming City pools or FF14's Black Shroud bogs would look at the water, which is 50-60% of every screenshot taken inside the fen, and stop looking.",
+   "result": "LOSE",
+   "blobViolation": true,
+   "biggestGap": "The water is STILL the wave-5 blocker, verbatim, with only its hue changed from mint to olive. Standing in the fen at tools/out/sf-coll2/shot-post.png a menhir is 2 m to the player's left, reeds are 8 m ahead, a wraith is 15 m ahead — and not one of them casts a reflection. There is no transparency (you cannot see the bottom anywhere at any depth), no depth gradient (the surface is the same value at 2 m and at 60 m), no foam, no wet-darkened band at the shore, and the land/water boundary is a hard crisp polyline with a razor edge (visible at 1030-1120,545-565). What wave 6 actually added is a low-frequency blurry swirl texture that reads as a smeared noise layer painted onto an opaque plate, plus a grey ghost smudge under the reeds in shot-b120.png that has no sky, no shape and no colour in it. The raw screen-door dither band along the waterline IS gone — that half is fixed. Everything else the wave-5 critic wrote is still true, and the water is still the worst-looking surface in the frame while occupying most of it.",
+   "shots": [
+    "tools/out/sf-noon/shot-a220.png",
+    "tools/out/sf-noon/shot-a220-opp.png",
+    "tools/out/sf-noon/shot-a120.png",
+    "tools/out/sf-noon/shot-a40.png",
+    "tools/out/sf-noon/shot-a18.png",
+    "tools/out/sf-noon/shot-a8.png",
+    "tools/out/sf-noon/shot-ground-near.png",
+    "tools/out/sf-noon/shot-ground-mid.png",
+    "tools/out/sf-noon/shot-perp-view.png",
+    "tools/out/sf-tod/shot-g120.png",
+    "tools/out/sf-tod/shot-g-sun.png",
+    "tools/out/sf-tod/shot-n120.png",
+    "tools/out/sf-tod/shot-n-sky.png",
+    "tools/out/sf-tod/shot-n8.png",
+    "tools/out/sf-fight/burst-fight2-0.png",
+    "tools/out/sf-fight/burst-fight2-1.png",
+    "tools/out/sf-fight/burst-nade-1.png",
+    "tools/out/sf-fight/burst-approach-3.png",
+    "tools/out/sf-fight/_crop_line.png",
+    "tools/out/sf-fight/_sheet_hound.png",
+    "tools/out/sf-border/shot-b120.png",
+    "tools/out/sf-border/shot-b200.png",
+    "tools/out/sf-border/shot-b265-border.png",
+    "tools/out/sf-border/shot-b330.png",
+    "tools/out/sf-coll2/shot-post.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "The fen water has no reflection, no transparency, no depth gradient, no foam and no shore treatment — wave 5's named blocker survives with only a hue change. It is 50-60% of every frame shot inside the region.",
+     "evidence": "tools/out/sf-coll2/shot-post.png: the player stands in the bog, a menhir 2 m to the left, reeds 8 m out, a Fen Wraith 15 m out — none of them reflect. tools/out/sf-noon/shot-ground-near.png and shot-ground-mid.png: the surface at 2-25 m is a single opaque olive plate (sampled rgb 85,94,67 at 2 m and 77,84,59 at 8 m — no falloff) carrying a low-frequency blurry swirl that reads as smeared noise, not water. tools/out/sf-noon/shot-perp-view.png and shot-ground-mid.png: the land/water boundary is a hard polyline with no wet band (right side, y≈430-490 and 480-620). tools/out/sf-border/shot-b120.png is the ONLY frame with any reflection at all and it is a grey formless smudge under the reeds (480-700,600-720) with no sky, no shape, no colour. The wave-5 screen-door dither band is gone — that is the one part of this finding that was fixed."
+    },
+    {
+     "severity": "blocker",
+     "text": "The 200 m silhouette test fails outright: the Hagstone, a 22 m megalith circle, is completely invisible from 220 m. The region's own fog spec (fogMul 4.4, tuned to ~300 m) erases the landmark the acceptance rule is built around.",
+     "evidence": "tools/out/sf-noon/shot-a220.png and shot-a220-opp.png — both taken 220 m from the landmark centre, perpendicular to the pass bearing (per the fin-script rule), both looking directly at it. Neither contains a single pixel of the Hagstone. What you get instead is a flat green field of identical bare tree sticks against a mountain wall. tools/out/sf-noon/shot-a260.png at 260 m: same, no landmark. FF14 reads Doma Castle or the Guardian Tree from a kilometre; this hero prop does not exist at 220 m."
+    },
+    {
+     "severity": "blocker",
+     "text": "Firing the weapon covers ~80% of the screen in an opaque orange bloom for a full second — the combat white-out class, tinted orange so a pure-white gate does not catch it. The wave-6 brief claims this was killed at every author.",
+     "evidence": "tools/out/sf-fight/burst-fight2-0.png and burst-fight2-1.png: the entire fen is wiped to flat rust-orange; only a wedge at x>1700 still shows the real green world. Sampled mean rgb over the left-centre of frame goes 52,66,42 (baseline, burst-fight-0) -> 122,73,36 (fight2-0) -> 110,68,36 -> 99,64,36 -> 88,60,36, decaying over 8 frames ≈ 1 s. The viewmodel's gold trim simultaneously blows to 229,228,224 over a 182x340 px region (bbox 1128,568-1310,908)."
+    },
+    {
+     "severity": "blocker",
+     "text": "WASHED-WHITE BLOB: the grenade VFX sphere clips to pure white at its core instead of holding its lavender hue, and the sphere itself is a visibly faceted low-poly ball.",
+     "evidence": "tools/out/sf-fight/burst-nade-1.png — 428 px measured at r>232,g>232,b>225 with saturation <22, bbox (1192,316)-(1238,334), peak sample rgb 255,254,247 at (1216,328), sitting in the top-left of an otherwise lavender additive sphere. Cropped and enlarged at tools/out/sf-fight/_crop_nade.png, where the sphere's flat hexagonal facets and the torus ring's faceting are also plainly visible. This is the decree's exact failure mode: a value that clips through ACES instead of keeping its hue."
+    },
+    {
+     "severity": "blocker",
+     "text": "The Hagstone fails material truth at 8 m: one tiling green-mottle noise repeated at identical UV scale on every stone, no carving, no coursing, no chipped arrises, and a smeared purple ellipse decal splodged on a shaft face.",
+     "evidence": "tools/out/sf-noon/shot-a8.png: the centre menhir carries a soft purple ellipse (700-840,590-790) with a hard elliptical outline that reads as a bad projected decal; the two right-hand stones show byte-identical mottle patterns. tools/out/sf-noon/shot-a18.png: the top-left lintel (340-720,320-400) is a thin flat slab meeting its shaft at a naked 90° intersection with no bearing surface; the trilithon's 'moulded imposts' are still flat applied ribbons, not carved mouldings; the arch-void stone at (1400-1620,500-700) has a completely flat untextured black interior. Every stone plunges into the ground with no plinth, no soil ring, no debris. tools/out/sf-tod/shot-n8.png: at night the same stones revert to the wave-5 description exactly — near-black cutouts with no carving and no rim."
+    },
+    {
+     "severity": "major",
+     "text": "Golden hour does not happen in Shadowfen. No sun disc, no warm gradient, no sunset band, no rim light on anything — the whole world is a flat olive-brown mud with no value separation between sky and mountain silhouette.",
+     "evidence": "tools/out/sf-tod/shot-g-sun.png (hour 18.6, looking toward the sun): the sun is not in the frame at all and the sky is uniform dark olive with faint cloud blotches; the reeds are pure black silhouettes with zero translucency or rim. tools/out/sf-tod/shot-g120.png: water samples at 4,4,4 (pitch black), sky 75,80,49, mountain 50,52,34 — a 25-value separation across the whole horizon, and the sky carries visible posterized dither blotches around (900-1100,180-300)."
+    },
+    {
+     "severity": "major",
+     "text": "Night is a black void with zero stars and no moon, and the water inverts to a flat light-grey plate that is the brightest surface in frame — the opposite of what water does at night.",
+     "evidence": "tools/out/sf-tod/shot-n-sky.png: scanning the entire sky region for the brightest non-HUD pixel returns nothing above the health bar — the dome is featureless near-black (8-20 per channel). CLAUDE.md's own bar calls for 'magical blue-violet night with stars and aurora'; there is neither. tools/out/sf-tod/shot-n120.png: the water samples 34,43,46 flat across the whole surface with no reflection, no specular, no moon path, while the surrounding world is 0-17."
+    },
+    {
+     "severity": "major",
+     "text": "A bogwitch projectile renders as a perfectly straight, screen-wide horizontal green beam spanning the full 1920 px — a degenerate stretched tracer, and it is depth-tested world geometry, not an overlay.",
+     "evidence": "tools/out/sf-fight/burst-approach-3.png at y≈478; cropped and enlarged at tools/out/sf-fight/_crop_line.png where you can watch it pass behind the reed clumps. Row samples at y=478: (50,x)=72,78,52 -> (300,x)=63,127,71 -> (600,x)=135,124,79, with the band 4 px tall (y=476-480 saturated, y=486 back to 21,32,21)."
+    },
+    {
+     "severity": "major",
+     "text": "A bright streak artifact runs 4-6 px into the left and right screen edges of EVERY frame — a bloom/god-ray wrap or composite edge clamp, brightest where the rays are strongest.",
+     "evidence": "Measured at y=700: sf-tod/shot-g120.png x=0 is (87,41,38) while x=6 is (3,1,2) — a red-orange strip 25x brighter than its neighbour. sf-noon/shot-a40.png x=0-3 is (132,146,123)/(151,164,140) against (55,68,46) at x=24. Same on sf-noon/shot-ground-near.png. Visible as white smears down both frame borders in sf-coll2/shot-post.png and along the top edge in sf-noon/shot-ground-mid.png."
+    },
+    {
+     "severity": "major",
+     "text": "Shadowfen is not a fen once you are 120 m from the Hagstone — it becomes a bright kelly-green mown lawn with dead sticks on it, brighter and more saturated than its own sky. The bog is a puddle around the landmark, not a region.",
+     "evidence": "tools/out/sf-border/shot-b200.png and shot-b265-border.png, both confirmed by biomeAt() to be inside 'shadowfen': the ground is a flat saturated green plane with no muck, no peat, no standing water and no texture at any scale, with thin hard-edged aliased black tree shadows drawn on it. tools/out/sf-noon/shot-a220-opp.png and shot-a260.png: the same lawn, no water anywhere in frame. The biome spec says ground 'muck' and the passive is 'Peat to the knee'; what renders is a golf course."
+    },
+    {
+     "severity": "major",
+     "text": "Reed clumps are cross-billboards that show their polygons at 3 m — a pale, differently-lit flat quad wedge sticks out of the water at the base of every clump.",
+     "evidence": "tools/out/sf-noon/shot-ground-near.png: the light triangular wedge at (660-900,480-620) is one of the two crossed quads seen near edge-on and lit near-sand-white against the dark reeds. Same failure at (760-900,640-800) in shot-ground-mid.png. The quads also meet the water with a hard line and no wet-darkening or ripple."
+    },
+    {
+     "severity": "minor",
+     "text": "The border into the Lost Realm reads as a global hue filter switching on, not as a journey: the fen's own dead trees continue across unchanged in silhouette, just repainted lavender, and the last thing you see on the fen side is a flat untextured purple slab.",
+     "evidence": "tools/out/sf-border/shot-b265-border.png (the exact bisector): a monolith with a uniform matte lavender albedo, zero veining, zero dirt, zero normal detail and a crudely extruded silhouette, standing 25 m away in Shadowfen's green lawn. tools/out/sf-border/shot-b330.png 65 m later: every surface — ground, mountains, sky, the same tree models — is one saturated purple. Logic is correct (biomeAt hands over exactly at the bisector, and the zone card fires) but the read is a texture swap."
+    },
+    {
+     "severity": "minor",
+     "text": "The bestiary animates acceptably but has no material: creatures are uniform indigo masses with a fresnel outline and a hard-edged translucent placeholder bubble, and they cast no contact shadow.",
+     "evidence": "tools/out/sf-fight/_sheet_hound.png (6 consecutive frames of the Aether Hound): front legs repose, tail whips, body bobs — a real cycle, no T-pose, no moonwalk, no sinking. But across all six frames the body is a single flat violet value with no fur, no plates, no value range, ringed by a visibly circular translucent sphere, and there is no darkening on the ground beneath it."
+    },
+    {
+     "severity": "minor",
+     "text": "The god rays are 6-8 near-identical parallel shafts of uniform width with hard edges, repeated across the frame at a fixed screen-space angle — they read as a screen-space artifact rather than light through a canopy.",
+     "evidence": "tools/out/sf-noon/shot-a40.png and shot-ground-mid.png: count the shafts, they are all the same width and the same angle regardless of what geometry is in front of them. tools/out/sf-fight/burst-fight2-0.png shows them surviving unchanged through the full-screen orange wash, which confirms they are composited after the scene."
+    },
+    {
+     "severity": "minor",
+     "text": "Frame cost is well outside the stated budget, though the harness warned of 20 orphan chrome processes so treat the absolute numbers as inflated.",
+     "evidence": "tools/out/sf-noon/report.json label 'noon': mean 13.0 ms, p95 46.9, p99 108.6, calls 162, tris 2.1 M. tools/out/sf-fight/report.json label 'combat': mean 18.25 ms, p99 208.6 ms. Budget is mean <= 7 ms and p99 <= 14 ms. Contention explains some of it but not a 15x p99 overshoot; worth a clean hitchhunt run on this region."
+    }
+   ]
+  },
+  {
+   "region": "sunken",
+   "score": 4.5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "The Sunken Kingdom still has no cataracts. Its whole named identity — \"a staircase of silver water falling toward a ruined palace\", the acceptance shot in docs/SUNKEN-REDESIGN-BRIEF.md — does not exist on screen for the fifth wave running. `[water] cascades: 4 falls, 2230 tris, wet 5.5%` and I photographed the biggest of them: tools/out/crit6-sunken-e/shot-fall-close-1.png is a translucent grey smudge painted on a bare rock gully at r~525, with no water above it, no pool below it, no foam, no volume and no white in it at all — the wave-3 verdict (\"white sheets fed by nothing\") word for word. Not one of my ~20 wide frames covering the gorge from 5 vantage points at three times of day contains visible white water. What the player actually gets is one flat lagoon over one flat sand pan ringed by bare grey rock, which is what the wave-4 and wave-5 critics also got. Everything else on this list is fixable dressing; this one is the region.",
+   "shots": [
+    "tools/out/crit6-sunken-e/shot-fall-close-1.png",
+    "tools/out/crit6-sunken-e/shot-fall-south.png",
+    "tools/out/crit6-sunken-a/shot-a140-in.png",
+    "tools/out/crit6-sunken-a/shot-lm40-in.png",
+    "tools/out/crit6-sunken-a/shot-lm08-in.png",
+    "tools/out/crit6-sunken-a/shot-lm08-mat.png",
+    "tools/out/crit6-sunken-a/shot-ground-2to25.png",
+    "tools/out/crit6-sunken-a/shot-a240-side.png",
+    "tools/out/crit6-sunken-a/burst-water13-0.png",
+    "tools/out/_z_throne.png",
+    "tools/out/_z_arcade.png",
+    "tools/out/crit6-sunken-c/shot-ringwall-in.png",
+    "tools/out/crit6-sunken-c/shot-riser-a.png",
+    "tools/out/crit6-sunken-c/shot-riser-b.png",
+    "tools/out/crit6-sunken-c/burst-wade-3.png",
+    "tools/out/crit6-sunken-e/shot-aerial-e.png",
+    "tools/out/crit6-sunken-b/shot-gold-in.png",
+    "tools/out/crit6-sunken-b/shot-night-in.png",
+    "tools/out/crit6-sunken-b/shot-border-b.png",
+    "tools/out/crit6-sunken-b/burst-fight-3.png",
+    "tools/out/crit6-sunken-b/shot-leviathan.png",
+    "tools/out/_z_courtier.png",
+    "tools/out/_z_levi.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "The cascade gorge does not exist. The region's one-line identity — a tiered staircase of falling water leading down to a ruined palace — is absent at every distance, fifth wave running. The cascade mesh is real but invisible: at its single biggest site it renders as a faint translucent grey veil on bare rock, fed by nothing and draining into nothing.",
+     "evidence": "tools/out/crit6-sunken-e/shot-fall-close-1.png (standing 30 m from the tallest fall cluster, x -492 z -99, 21 m of drop per the falls geometry — the 'cataract' is a grey smear, zero white water, zero foam, no plunge pool). tools/out/crit6-sunken-e/shot-fall-south.png: a wisp of mist on a grey hill. Console: '[water] cascades: 4 falls, 2230 tris, wet 5.5%'. Terrain probe along the region bearing (185 deg, r 520->920) returns 20,9,12,14,9,3,4,3,10,27,15 — undulating noise between 3 and 14 m, no terraces, no risers. shot-a140-in.png, shot-lm40-w.png, shot-riser-a/b/c.png, shot-gold-in.png, shot-night-in.png all cover the gorge and contain no falling water."
+    },
+    {
+     "severity": "blocker",
+     "text": "The Drowned Court fails material truth at 8 m and has no ornament at all — it is still the placeholder wave-4 and wave-5 both rejected. Column, lintel, back-slab, plinth wedges and floor slab all carry the SAME smeared pale-mint marble cloud at the SAME scale on vertical and horizontal faces; the throne is a flat rectangular panel with a blurry texture on it; the hoard is flat-shaded faceted yellow polyhedra with no specular; the treasure chests are untextured brown cubes with no lid, band or hinge; the ring mouldings show 12-gon facets at 8 m.",
+     "evidence": "tools/out/_z_throne.png (2x crop of burst-water13-0.png at ~8 m). tools/out/crit6-sunken-a/shot-lm08-in.png and shot-lm08-mat.png. tools/out/crit6-sunken-e/shot-aerial-e.png shows the same marble panel at ~3 m plus a plain brown cube and a hairline z-seam across the floor slab."
+    },
+    {
+     "severity": "blocker",
+     "text": "The ground directly in front of the player is a flat featureless plane across most of the region. Inside the gorge and on the ring approach it is one tiling grey-green rock noise filling the whole frame with nothing on it; on the Court plaza the near 2-25 m is a single flat sage-green surface with faint smeared streaks and an untextured pale-green box corner rising out of it. No pebbles, no shells, no wet-sand ripple, no debris, no decals, no ground cover.",
+     "evidence": "tools/out/crit6-sunken-c/shot-ringwall-in.png (whole frame, one rock texture, no props). shot-riser-a.png and shot-riser-b.png (same). tools/out/crit6-sunken-a/shot-ground-2to25.png (flat sage plane + untextured box). shot-a240-side.png: the 'old kingdom' street kit at 20 m is a scatter of untextured pale-mint prisms."
+    },
+    {
+     "severity": "major",
+     "text": "The arcade — the one thing that genuinely improved — still has no ornament hierarchy at 40 m. Piers, arch rings, abutments, parapets and plinths all wear one identical coursed-block tile at one scale; there are no capitals, no archivolt moulding, no keystone, no frieze, no relief, no carving. The arch ring's coursing runs ALONG the arc as running bond rather than as radial voussoirs, so the arches read as extruded tori with a brick texture rather than as built masonry. This is the wave-5 'the carved-ornament library did not reach this landmark' finding, unresolved.",
+     "evidence": "tools/out/_z_arcade.png (2x crop of crit6-sunken-a/shot-lm40-in.png at 40 m)."
+    },
+    {
+     "severity": "major",
+     "text": "The local bestiary has no water identity. The 'Drowned Courtier' is the generic 'sentinel' GLB re-tinted, and it reads hot infernal-red with a strong red rim standing in a mint lagoon — no algae, no barnacles, no kelp, no waterlogged silhouette, nothing that says drowned. The 'Court Leviathan' is a dog-sized flying wyvern head that clips straight through the arcade lintel it perches on, and its projectiles render as hard-edged flat cyan discs with no falloff.",
+     "evidence": "tools/out/_z_courtier.png (crop of crit6-sunken-b/burst-fight-3.png). tools/out/_z_levi.png (crop of shot-leviathan.png — head geometry intersecting the stone beam, plus two flat cyan discs). src/enemies/defs.js: drowned uses body:'sentinel'."
+    },
+    {
+     "severity": "major",
+     "text": "200 m+ silhouette fails on value separation and on subject. From 240 m out the region is a flat grey-green gravel pan against a pale cyan sky with almost no value range; the strongest silhouette anywhere in a sunken frame is the neighbouring Void's floating isles. There is no landmark read and no staircase read from the approach — the Court only becomes visible at ~140 m, and then only as a small ruin island.",
+     "evidence": "tools/out/crit6-sunken-a/shot-a240-in.png and shot-a240-side.png (the named acceptance vista from the approach). shot-a140-in.png (the first frame where anything reads)."
+    },
+    {
+     "severity": "minor",
+     "text": "The border crossing into the Void is a label change, not a journey: the ground, rock texture and haze read identically on both sides of the bisector, and retired sea kit (kelp fronds) is still scattered on dry stone slopes 300+ m from any water — the brief said the kelp/coral kit was retired from scatter.",
+     "evidence": "tools/out/crit6-sunken-b/shot-border-b.png (biomeAt still returns 'sunken' at x -689 z -321; Void crystals visible left; identical grey rock ground, green kelp combs on dry slope). Same kelp combs on dry ground in crit6-sunken-c/shot-riser-b.png and crit6-sunken-a/shot-a240-in.png."
+    },
+    {
+     "severity": "minor",
+     "text": "Night has no light source in the region at all. A 'drowned court' at 23:00 is completely unlit — no lanterns, no aether glow, no reflected light on the water from the ruin. The sky and aurora carry the frame alone. (The night sky grade itself is the best-looking thing in the region.)",
+     "evidence": "tools/out/crit6-sunken-b/shot-night-in.png"
+    },
+    {
+     "severity": "minor",
+     "text": "Regression gate NOT RUN and therefore not passed: 'node tools/gate.mjs' refused to start ('8 chrome-headless-shell process(es) are already running') because of GPU contention from the parallel critic fleet. I did not force it and did not kill other agents' processes. What I can report from direct observation instead: no washed-white blob appeared in any of ~60 frames including a full fight with drowned + wisp + leviathan (impacts render as saturated purple/magenta with hue intact), collision held while walking, and the wading drag works (walk speed dropped 6.6 -> 3.63 m/s in the flooded plaza).",
+     "evidence": "gate stdout: '[gate] ==== NOT STARTING ==== 8 chrome-headless-shell process(es) are already running.'; crit6-sunken-b/burst-fight-*.png and burst-levi-fight-*.png (no white-out); crit6-sunken-c report.json state() after 5 s of held W: speed 3.63, grounded true."
+    }
+   ]
+  },
+  {
+   "region": "void",
+   "score": 4.5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "The Void has one good photograph in it — the 120-240 m walk-in, where the broken ring, the isles and the violet dissolve compose into something no other region has — and then it fails every acceptance distance around that photograph: combat still repaints the region amber (up to 53% of the frame, driven by the Void's OWN void-element bestiary while the player never fires, because the impact presets in src/vfx/VFX.js hard-code gold/orange regardless of element), the 130 m abyss that is the region's premise is still invisible from its own rim for the third wave running, and at 8 m the hero landmark is untextured flat facets with neon-tape conduits. A player off Destiny 2 and FF14 would like the skyline for ten seconds and then find nothing underneath it.",
+   "shots": [
+    "tools/out/VC-C/burst-approach-5.png",
+    "tools/out/VC-D/burst-a-8.png",
+    "tools/out/VC-E/shot-rim-out.png",
+    "tools/out/VC-E/shot-rim-down.png",
+    "tools/out/VC-B/shot-tod13-out.png",
+    "tools/out/VC-A/shot-lm-8-side.png",
+    "tools/out/VC-B/shot-bx-2-back.png",
+    "tools/out/VC-A/shot-lm-8.png",
+    "tools/out/VC-A/_sliver.png",
+    "tools/out/VC-C/_z2.png",
+    "tools/out/VC-B/shot-tod13-sky.png",
+    "tools/out/VC-B/shot-tod17-lm.png",
+    "tools/out/VC-B/shot-tod23-lm.png",
+    "tools/out/VC-E/shot-walkin-240.png",
+    "tools/out/VC-A/shot-app-120.png",
+    "tools/out/VC-A/shot-lm-40.png",
+    "tools/out/VC-A/shot-ground-2-25.png",
+    "tools/out/VC-E/_strip.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "COMBAT STILL REPAINTS THE VOID AMBER — wave 5's finding, un-fixed in kind. Not white any more, but the region's identity is still erased by its own bestiary. Root cause is element-blind warm presets in src/vfx/VFX.js: lines ~672 (color(0xffd070, 0xffa040)), ~683 (0xe89a20, 0xff9040), ~684 (0xffcf5a, 0xff8030) and ~690 (c0 always 0xffcf5a) hard-code gold/orange for impacts regardless of def.projectile.element, so a void bolt landing throws solar sparks.",
+     "evidence": "VC-C/burst-approach-5.png: player never fired (HUD reads 6/60 all run, god+passive off only for the enemies), 52.8% of the frame measured warm (r > b+18, r > 70), mean warm rgb (173,103,95); the ring, the isles and the crystals are bleached behind an orange gradient. Reproduced clean in VC-D with ONLY void-element enemies alive (eval returned Void Horror / Riftling / Fen Wraith, all element 'void', no player fire step in the script): burst-a-7/8/9 measure 18.2%/21.6%/18.2% warm and the sky's whole upper-left quadrant goes tan (VC-D/burst-a-8.png).",
+     "category": "vfx-region-identity",
+     "file": "src/vfx/VFX.js",
+     "line": 684,
+     "failure_scenario": "Walk into the Void at noon, let a riftling and a voidhorror open on you without firing back; within 3 s the violet sky and the landmark are behind an orange-tan wash covering a fifth to a half of the screen."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE 130 M ABYSS IS STILL INVISIBLE FROM ITS OWN RIM — wave-4's blocker verbatim, now unfixed for three waves. The drop that the whole region is built on (heightAt goes 49.4 at r=115 to -82.7 at r=135, measured in-engine) has no lip, no cliff face, no strata, no rim light, no depth grading. Standing on it you read a gentle dark slope and walk off.",
+     "evidence": "VC-E/shot-rim-out.png (player at [-453.6, 49.3, -453.6], i.e. 3 m from the edge, pitch -0.12): the ground simply continues to frame bottom, no edge is visible anywhere. VC-E/shot-rim-down.png at pitch -0.42: the lower half is an unlit near-black smear in which floor and wall are indistinguishable. Confirmed by the harness itself — in VC-C the player went from y≈45 to y=-11.59 mid-fight with no traversal input, and in VC-E spawnNear dropped a Riftling to y=-2.3 and a Void Horror to y=4.63 while the ground was at 49.",
+     "category": "landform-readability",
+     "failure_scenario": "Sprint toward the Unmaking from the Vale side; you fall 130 m without ever seeing an edge, and the fall itself shows nothing but flat black."
+    },
+    {
+     "severity": "blocker",
+     "text": "THE MOUNTAIN RING IS STILL CRISP AND FULLY READABLE INSIDE THE VOID AT NOON — also verbatim from waves 4 and 5. The region's stated premise (fogMul 5.0, skyVeil 0.84, 'the horizon LINE stops existing') does not survive contact: from the heart the ring fills the frame at high contrast with its tan scree and snow streaks legible, merely tinted purple. The Void reads as a purple valley with big purple mountains, which is generic fantasy, not 'reality gave up here'.",
+     "evidence": "VC-B/shot-tod13-out.png (standing at (-622,-622), noon, looking outward): the ring occupies the top two thirds at full detail with pale streaks resolved. Same failure at 8 m from the landmark, VC-A/shot-lm-8-side.png top-left. Same again from the rim, VC-E/shot-rim-out.png, where both flanking ranges and the pass saddle are sharp.",
+     "category": "atmosphere",
+     "file": "src/world/Biomes.js",
+     "line": 318,
+     "failure_scenario": "Stand anywhere in the Void at hour 13 and look away from the landmark; the world you were told dissolved is fully present and sharply lit."
+    },
+    {
+     "severity": "major",
+     "text": "THE BORDER IS AN ATMOSPHERE SWITCH, NOT A JOURNEY. Cross into the Sunken Kingdom and the Void's fog does not fall off — it stops. Looking back from ~120 m outside, the Void has bright pale-blue daylight sky, its isles hang in perfectly clear air, and its ground reads ordinary grey-green rock. From the other side, at 240 m on the walk-in, green Vale trees sit inside the violet grade with no transition at all.",
+     "evidence": "VC-B/shot-bx-2-back.png (biomeAt returned 'sunken' at (-647,-301), camera turned back toward the Void): daylight sky, zero haze on the isles, purple crystals reading as pasted-on props. VC-B evals: 'void' at (-592,-419), 'sunken' at (-647,-301) — the swap happens over one step. VC-E/shot-walkin-240.png: green canopy at the right edge inside the violet grade.",
+     "category": "biome-transition",
+     "failure_scenario": "Walk out of the Void toward the Sunken Kingdom and turn around: the region you just left is lit like a normal afternoon and its skyline is a set of props in clear air."
+    },
+    {
+     "severity": "major",
+     "text": "THE LANDMARK FAILS THE 8 M TEST. The Unmaking's drum, courses and dentils are huge flat facets carrying one stretched low-frequency noise — no veining, no dirt, no chipping, no bevels, no secondary carving. The 'conduit still burning inside the wound' and the fragment lights are flat uniform magenta strips that read as glow-tape stuck on rock. There is also a dashed hairline black polygon sliver rendering across empty sky right beside it.",
+     "evidence": "VC-A/shot-lm-8.png and the 2x crop VC-A/_sliver.png: the drifting fragments are plain untextured boxes with hard flat faces; the magenta bar bottom-right is a solid rounded strip with no falloff into the stone; the dashed black line at top-left is a zero-thickness polygon in open sky. VC-A/shot-lm-40.png shows the same at 40 m — the ornament hierarchy is one dentil band and nothing else.",
+     "category": "material-truth",
+     "file": "src/world/Props.js",
+     "line": 3530,
+     "failure_scenario": "Walk up to the hero landmark and look at the stone; there is nothing there to look at, and a rendering sliver is visible beside it."
+    },
+    {
+     "severity": "major",
+     "text": "SHIELD BUBBLES WASH OUT EVERY VOID CREATURE. Riftling and Void Horror both spawn inside a hard-edged, low-poly translucent egg roughly twice the body's width, with no fresnel rim, no hex/scale pattern and no animation. Against the violet sky it becomes the palest element in the frame and greys the creature inside into an unreadable tangle; the ellipse's faceted silhouette is visible on its outline.",
+     "evidence": "VC-C/_z2.png (crop of shot-fight-t3.png, voidhorror at ~18 m): a milky lavender egg with polygon-edged outline, the robed body desaturated to grey behind it. VC-E/shot-creat-near.png: at 20 m the creature is an indistinct dark blob inside a pale oval. Compare Destiny 2, where a shield is tighter than the body, saturated, patterned and animated.",
+     "category": "enemy-readability",
+     "file": "src/enemies/Enemy.js",
+     "line": 157,
+     "failure_scenario": "Any shielded Void encounter: you cannot tell what you are shooting at, and the brightest thing on screen is the shield, not the creature."
+    },
+    {
+     "severity": "major",
+     "text": "THE VOID HAS NO SKY EVENT AT ANY HOUR. Noon is a flat violet gradient with one blurred cloud band and no sun. Golden hour is the same frame hue-rotated pink — no raking light, no long shadows, no warm rim on the isles' undersides. Night is near-black with essentially no stars, no aurora, and crystals that emit no light onto the ground. Against FF14's dramatic skies with god rays this is an empty backdrop at all three times.",
+     "evidence": "VC-B/shot-tod13-sky.png (noon), shot-tod17-lm.png (17.5), shot-tod23-lm.png (23) from the same camera at (-622,-622). Night has the region's only genuinely good look but zero readability — a player fighting there would see nothing.",
+     "category": "sky-lighting",
+     "failure_scenario": "Set the clock to any hour and look up in the Void; the sky contributes nothing you would stop to look at."
+    },
+    {
+     "severity": "minor",
+     "text": "The mid-field ground is a bald smooth dome carrying an anisotropically smeared streak texture, with a hard straight LOD/tile seam cutting across it. It has no rock forms, no scree, no scatter between the widely spaced crystal clumps.",
+     "evidence": "VC-A/shot-app-200.png (the whole mid-ground is one untextured purple dome); VC-A/shot-lm-8-side.png bottom-left shows the straight diagonal value break; VC-A/shot-ground-2-25.png shows the streak smear stretching toward the horizon.",
+     "category": "terrain-material",
+     "failure_scenario": "Look at the ground at 20-60 m anywhere in the Void; it is a smooth painted hill with a visible seam."
+    },
+    {
+     "severity": "minor",
+     "text": "The floating isles — the region's headline silhouette — are visibly lathed stepped cones, and the bridges between them are two parallel pencil-thin tubes with no deck, no supports and no thickness. At 200 m+ they read as wires; at 120 m the lathe steps are obvious.",
+     "evidence": "VC-E/shot-walkin-240.png and VC-A/shot-app-120.png.",
+     "category": "prop-fidelity",
+     "file": "src/world/Props.js",
+     "line": 4438,
+     "failure_scenario": "The best composition in the region is undermined by its own hero props when you look at them for more than a second."
+    },
+    {
+     "severity": "minor",
+     "text": "Crystals are flat-shaded low-poly cones with no refraction, no internal structure and no light emission onto surrounding ground — they read as plastic, and at night they are the only light source yet cast no pools of violet light.",
+     "evidence": "VC-B/shot-bx-2-back.png foreground (large clumps, visible interior facets, uniform fill); VC-B/shot-tod23-lm.png (crystals glow but the ground under them stays black).",
+     "category": "prop-fidelity",
+     "failure_scenario": "Walk past a crystal cluster at night: it glows but lights nothing."
+    },
+    {
+     "severity": "minor",
+     "text": "Encounter placement is broken over the chasm: spawnNear drops flying void enemies into the abyss where they patrol 50 m below the player and never engage. The fight I scripted at the rim never happened.",
+     "evidence": "VC-E eval returned [{\"n\":\"Riftling\",\"s\":\"patrol\",\"y\":-2.3},{\"n\":\"Void Horror\",\"s\":\"patrol\",\"y\":4.63},{\"n\":\"Riftling\",\"s\":\"idle\",\"y\":47.09}] with the player standing at y=49.3.",
+     "category": "encounter-placement",
+     "failure_scenario": "Aggro anything near the chasm and half the pack falls in and mills around out of reach."
+    },
+    {
+     "severity": "minor",
+     "text": "Performance is NOT verifiable this session and must be re-measured clean before anyone signs off: the harness itself warned that 16 chrome-headless-shell processes were already running, so every timing below is inflated. Draw calls and triangles are within budget; the frame timings are not, and I will not claim which is real.",
+     "evidence": "VC-C stats label 'combat': fps 41.2, frameMs mean 24.3 / p99 38.4, gpuMs p99 83.11, calls 214, tris 3,056,418, memMB 414.8 — against the CLAUDE.md budget of mean <= 7 ms, p99 <= 14 ms, <= 350 calls, <= 4 M tris. Harness line: '[inspect] WARNING: 16 chrome-headless-shell process(es) already running'.",
+     "category": "performance",
+     "failure_scenario": "n/a — measurement contaminated; re-run hitchhunt on an idle machine."
+    }
+   ]
+  },
+  {
+   "region": "vale",
+   "score": 5,
+   "verdict": "LOSE",
+   "result": "LOSE",
+   "blobViolation": false,
+   "biggestGap": "The Vale is a grassland whose grass only exists in a ~25 m bubble that follows the camera. Past a hard, dead-straight LOD line the \"meadow\" is a bald flat green plane with no ground cover at all, and every tree, rock, enemy, cottage and the Aetheryte plaza itself stands on that bald plane — it is in literally every settled screenshot I took (8 s of settle time, so this is not pop-in). Layered on top: the 200 m and 8 m acceptance distances both fail. At 200 m the mountain ring dissolves into a flat white sawtooth with zero value separation from the haze and the Aetheryte is invisible; at 2-8 m the hero landmark's gold is a smooth untextured plastic tube, boulders are faceted lumps, the mountain-ring cliff is one stretched rock photo on a flat plane, cottages are boxes with painted-on timbers, and the Sundered Spire — a RUIN — still stands on an immaculate polished cream marble plaza with clean joints and gold vein lines, which is the wave-4 blocker verbatim, third wave running. Wave 6 did land real things here (no combat white-out, a sculpted-faced villager, an ornamented Aetheryte at 40 m, a working hamlet and border read), but a player off FF14 would clock this as an in-progress hobby project within ten seconds of looking at the ground or at any surface within arm's reach.",
+   "shots": [
+    "tools/out/V6-F/shot-hamlet-wide.png",
+    "tools/out/V6-G/burst-atk-3.png",
+    "tools/out/V6-D/burst-sprintgrass-3.png",
+    "tools/out/V6-A/shot-spire-45.png",
+    "tools/out/V6-D/shot-noon-sky.png",
+    "tools/out/V6-A/shot-hamlet-8.png",
+    "tools/out/V6-F/shot-lake-settled.png",
+    "tools/out/V6-D/shot-border-r400.png",
+    "tools/out/V6-E/shot-villager.png",
+    "tools/out/V6-D/shot-gold-vista.png",
+    "tools/out/V6-D/shot-night-vista.png",
+    "tools/out/V6-C/burst-fight2-0.png",
+    "tools/out/V6-A/shot-aeth-200.png",
+    "tools/out/V6-D/shot-hamlet-settled.png",
+    "tools/out/V6-D/shot-gold-ground.png"
+   ],
+   "findings": [
+    {
+     "severity": "blocker",
+     "text": "THE GRASS ONLY EXISTS IN A ~25 m BUBBLE AROUND THE CAMERA, AND THE EDGE IS A HARD LINE. The Vale is the grass biome and its grass stops dead at roughly 25-28 m in a straight arc across the frame; beyond it the entire meadow out to the treeline is a flat, bald, untextured green plane. This is not pop-in — I teleported, waited 8 full seconds, and shot it. Every tree, boulder, cottage, market stall, enemy and the Aetheryte plaza itself stands on bald ground. FF14's Central Shroud and Destiny's EDZ hold ground cover to 60-100 m with a soft fade; here the boundary is visible, geometric and it slides along with you as you walk. This single fact undoes the one thing wave 5's critic praised (the grass shader inside 25 m).",
+     "evidence": "tools/out/V6-F/shot-hamlet-wide.png (dense blades stop in a hard line at ~y=580, bald green plane above it to the horizon); tools/out/V6-G/burst-atk-3.png (the Aether Hound stands on the bald plane, grass edge running the full width at ~y=560); tools/out/V6-A/shot-spire-200.png; tools/out/V6-C/shot-grass-forward-settled.png"
+    },
+    {
+     "severity": "blocker",
+     "text": "THE SUNDERED SPIRE IS STILL A RUIN ON A PRISTINE POLISHED MARBLE PLAZA — the wave-4 blocker, unchanged, third wave running. Clean 2-3 m cream tiles with sharp joints and gold filigree vein lines, zero cracks, zero missing tiles, zero rubble, zero weeds, zero dirt, zero wear. The ruin above it is one running-bond brick photo at one scale on the arch voussoirs (which should be radial wedges), the column drums, the tower and the floor slabs alike, with plain box capitals and square window holes. Interior slabs float with no support and wear the same brick on their undersides.",
+     "evidence": "tools/out/V6-A/shot-spire-45.png, tools/out/V6-A/shot-spire-12.png"
+    },
+    {
+     "severity": "blocker",
+     "text": "MATERIAL TRUTH FAILS AT 2-8 m ON EVERY HERO SURFACE. The Aetheryte's gold — the game's front door, at 1 m — is a perfectly smooth extruded tube with a soft plastic-yellow gradient and a blown-out white highlight: no chasing, no engraving, no bevel, no darkened recesses, no anisotropy, no grime, and the tube ends are cut flat and float. The mountain-ring cliff at 8 m is one grey rock photo stretched and vertically smeared across a flat plane with no ledges, strata or boulders. The Mirrormere boulder at 2 m is a smooth faceted purple lump with a speckle texture and no cracks, lichen or chipped edges. Cottage plaster is a flat plane with low-frequency mottling and the half-timbering is a flat black stripe with zero thickness. None of this survives a blind cut against FF14, where the same objects carry carving, bevels and dirt at that range.",
+     "evidence": "tools/out/V6-D/burst-sprintgrass-3.png (Aetheryte gold spiral at ~1 m); tools/out/V6-D/shot-border-r400.png (cliff face); tools/out/V6-F/shot-lake-settled.png (boulder, right of frame); tools/out/V6-A/shot-hamlet-8.png (plaster + timbers)"
+    },
+    {
+     "severity": "blocker",
+     "text": "AT 200 m THERE IS NO SILHOUETTE AND NO VALUE SEPARATION. The mountain ring reads as a flat near-white cut-out with a jaggy triangular sawtooth edge sitting on a pale blue sky — the ring and the sky are the same value, so the world's horizon simply disappears. Worse, the region's own landmark is INVISIBLE from 208 m: no beacon, no light shaft, no crystal read. FF14 aetherytes anchor a whole zone from any ridge; Destiny landmarks read as silhouettes from a kilometre. This is one third of the acceptance rule failing outright.",
+     "evidence": "tools/out/V6-D/shot-noon-sky.png (white-on-white sawtooth ring at y≈520-620); tools/out/V6-A/shot-aeth-200.png (Aetheryte not findable in frame from z=180)"
+    },
+    {
+     "severity": "major",
+     "text": "THE GATE'S OWN BLOB TEST FAILS IN THE SPAWN MEADOW DURING ORDINARY COMBAT. `python tools/blobcheck.py tools/out/V6-C` returns BLOBCHECK FAIL with five flashing ground-cover clusters. The source is the Dawnbreak Verdict viewmodel's front sight posts: they are white-clipped flat tips that bloom a halo onto the grass behind them, and the halo flickers frame to frame. The clusters keep a green hue (mean rgb 117,144,63 / 120,153,62 / 84,148,60) so this is NOT the washed-white decree violation — but the sight posts themselves are a small element that tone-maps to white instead of a hue, and per CLAUDE.md any gate failure is an automatic LOSE.",
+     "evidence": "blobcheck output: FLASHING BLOB burst-fight-1 vs -0 (10 px at [740,381]); -3 vs -2 (21 px at [737,377]); -6 vs -5; -8 vs -7 (4 clusters); burst-fight2-1 vs -0. Zoomed source: tools/out/V6-C/burst-fight-3.png at 1920-space (1474,754) is the gun's white sight blades with a glow halo."
+    },
+    {
+     "severity": "major",
+     "text": "ENEMY NAMEPLATES ARE ANCHORED ~300 px ABOVE THE CREATURE, floating in open sky with a full health bar and no connection to the body. At 30 m the Aether Hound sits at y≈500 and its plate sits at y≈180. In one frame the plate labelled the wrong entity entirely (a stationary wisp crystal carried an 'Aether Hound' plate). Destiny and FF14 both pin the plate to the head; this reads as a broken HUD projection.",
+     "evidence": "tools/out/V6-G/burst-atk-1.png and burst-atk-3.png; mislabelled plate in tools/out/V6-E/burst-charge-4.png"
+    },
+    {
+     "severity": "major",
+     "text": "THE HAMLET IS STILL A GREYBOX VILLAGE. Every cottage is the same rectangular prism with a pyramid roof at the same scale: flat plaster planes, half-timbering painted on as flat black stripes with no relief, a brick plinth strip, one square window hole with a brick surround set into plaster (wrong material logic), and on several faces no door at all. The well is a black cube with a grey blob in it. The market stall's canopy is a single tilted plank quad hovering with a long unsupported overhang that clips into the cottage roof behind it. Benches and posts are untextured black planks. Grass grows straight through the plank decking, the market counter and the raised garden beds. FF14's Bentbranch or Destiny's Cosmodrome outbuildings are not in the same category.",
+     "evidence": "tools/out/V6-A/shot-hamlet-8.png, tools/out/V6-D/shot-hamlet-settled.png (grass through decking bottom-right; floating red canopy left of centre)"
+    },
+    {
+     "severity": "major",
+     "text": "ONE BRICK PHOTO IS DOING ALL THE MASONRY IN THE REGION, at one scale, on things that are not the same material: the Sundered Spire's arches and floor slabs, the hamlet field walls, the cottage plinths, the vegetable-bed edging and the loose paving strips. On the field wall each brick reads about 30 cm tall. Wave 5 called this out verbatim and it is untouched.",
+     "evidence": "tools/out/V6-C/burst-villager-2.png (field wall brick scale), tools/out/V6-E/shot-villager.png (identical brick on the garden beds), tools/out/V6-A/shot-spire-12.png"
+    },
+    {
+     "severity": "major",
+     "text": "THE VILLAGER IS A MANNEQUIN. Tessa's body and face are a genuine step up — sculpted head with a nose in profile, real dress and sleeve, red hair — and that closes the wave-4 'flat beige slab face' blocker for her. But over 3 s of burst she is essentially frozen: no breathing loop, no weight shift, no head turn, no blink, no hand animation. She does NOT face the player (strict profile the whole time, from 6 m dead in front of her), which is exactly what wave 6 claimed to have added. Her bare feet are buried in the brick garden bed and no hand is modelled where the basket hangs — the arm just ends.",
+     "evidence": "tools/out/V6-F/burst-vidle-0/3/6/9.png (contact sheet: identical pose), tools/out/V6-E/shot-villager.png"
+    },
+    {
+     "severity": "major",
+     "text": "THE NOON SKY IS TWO COTTON SMUDGES ON A GRADIENT. No cumulus volume, no cloud shading, no layered deck, no god rays, no crepuscular light — the bar in CLAUDE.md is explicitly 'dramatic skies with volumetric-looking clouds and god rays'. The sky is the single most-screenshotted thing in FF14 and at midday this one is emptier than a mobile game's. (Golden hour and night are the region's two genuine wins and should not be touched — the amber haze with backlit grass, and the aurora-plus-stars night, both hold up.)",
+     "evidence": "tools/out/V6-D/shot-noon-sky.png; contrast with tools/out/V6-D/shot-gold-vista.png and shot-night-vista.png which do work"
+    },
+    {
+     "severity": "minor",
+     "text": "THE FOLIAGE IS A PICKET OF CLONES AND IT CASTS ALMOST NO SHADOW. The trees are near-identical perfectly-straight thin trunks with 3-6 sparse flat leaf clumps, spaced evenly, with zero undergrowth, bushes or ferns beneath any of them, and one comic pole-tree with a tiny crown 20 m up. At noon a full canopy throws only a few thin scribbly branch lines on the field instead of a canopy shadow, so the meadow is flat-lit with no shadow structure at all.",
+     "evidence": "tools/out/V6-A/shot-aeth-200.png, tools/out/V6-A/shot-hamlet-56.png, tools/out/V6-G/burst-atk-1.png"
+    },
+    {
+     "severity": "minor",
+     "text": "MIRRORMERE'S SHORELINE IS THREE FLAT BANDS. A dead-straight tan sand strip, a hard cut to a solid flat green shelf, a hard cut to the treeline — no reeds, no shallows rocks, no wet-sand gradient, no waterline foam, no depth colour ramp in the water. A flat black untextured plank floats half in the water. The reflection itself is good and the ripple ring is nice; everything around it reads as a golf-course pond.",
+     "evidence": "tools/out/V6-F/shot-lake-settled.png, tools/out/V6-D/shot-lake.png"
+    },
+    {
+     "severity": "minor",
+     "text": "GROUND COVER IGNORES BUILT SURFACES. Grass blades punch up through the Aetheryte plaza's stone deck, through the hamlet's plank decking and market counter, and through the raised brick garden beds. Nothing in FF14 or Destiny lets the terrain scatter render on top of a constructed floor.",
+     "evidence": "tools/out/V6-A/shot-aeth-base-8.png (blades over the plaza stone, bottom-left and bottom-right), tools/out/V6-D/shot-hamlet-settled.png, tools/out/V6-E/shot-villager.png"
+    },
+    {
+     "severity": "minor",
+     "text": "CREATURES OVERLAP AND IDLE STIFFLY, AND AGGRO RANGE IS SHORT. Two Aether Hounds stood inside each other's bodies with no separation steering, in an identical rigid four-legged splay across 1.5 s (only tail and head move; the legs are locked, no weight shift, no breathing). They also never closed from 30 m in open ground over ~10 s with the player standing still and firing. They DO have a real locomotion cycle when they move and the hound GLB itself is the best asset in the region — sculpted head, crystal teeth, fur shading, saturated purple that never clips — so this is animation state and steering, not the model.",
+     "evidence": "tools/out/V6-C/burst-fight2-0.png through burst-fight2-4.png (identical pose, bodies interpenetrating); tools/out/V6-F/burst-run-0/4/8/12.png; tools/out/V6-E report state shows enemies:33 with only impact-rock audio after firing"
+    },
+    {
+     "severity": "minor",
+     "text": "THE MOUNTAIN RING STILL SHOWS HORIZONTAL CONTOUR BANDING that reads as a texture bug rather than rock strata, on the mid-distance peaks. The coherence pass flagged this and it is still visible from the meadow at noon.",
+     "evidence": "tools/out/V6-D/shot-hamlet-settled.png (peaks upper-left), tools/out/V6-C/shot-grass-forward-settled.png"
+    },
+    {
+     "severity": "minor",
+     "text": "THE GOOD NEWS, stated plainly so it does not get regressed: I fought the Vale's own bestiary (2 wisps + 2 hounds at 0-2 m, plus a second fight with spawned hounds and wisps) across 40+ burst frames and NOT ONE FRAME WASHED OUT. The wisp reads as a saturated purple crystal with orbiting rune rings, the hound keeps its blue-violet, the muzzle flash does not bloom the screen. Wave 5's headline vale blob violation is genuinely closed. The Aetheryte at 40 m now has a plinth, gold rings, rune-lit inset panels, banner plates, obelisks, lantern posts and a plaza rune circle — 'greybox' is no longer a fair description at that distance. Golden hour, the night sky, the lake reflection and the region-name/minimap/haze change on the border crossing into Whisperwood all work.",
+     "evidence": "tools/out/V6-C/burst-fight-0..9.png and burst-fight2-*.png (no white-out); tools/out/V6-A/shot-aeth-40.png; tools/out/V6-D/shot-gold-vista.png; tools/out/V6-D/shot-border-r400.png"
+    }
+   ]
+  }
+ ],
+ "animation": {
+  "lane": "animation",
+  "gateBefore": "24/25 clean (tools/out/w5-anim/anim-report.json) — FAIL golem glb STEPPED POSE while idle",
+  "gateAfter": "25/25 once, 24/25 twice (tools/out/w5-anim-after, tools/out/w5-anim-final); the remaining golem line is a threshold bug in tools/animcheck.mjs, not a regression",
+  "invariants": "node tools/invariants.mjs -> all OK",
+  "automaticLoseFoundAndFixed": {
+   "summary": "Death was a mannequin being pushed over in every grounded creature in the game. Enemy.js:394 _updateDeath returned into a grounded branch that only damped root.rotation and folded legs `if (this.legs)`, and glbAnim.setup sets e.legs = null for every rigged GLB — so the animator was never called during the death window.",
+   "evidence": [
+    "tools/out/w5anim2/sheet-d-hound-die.png (hound tips 90 deg onto its side with four rigid straight legs still in the walk pose, then sinks)",
+    "tools/out/w5anim2/sheet-d-golem-die.png and tools/out/w5anim/zseq-golem-death.png (the Stone Golem never falls: it rotates about its own axis standing upright and dissolves)"
+   ],
+   "after": [
+    "tools/out/w5anim3/sheet-f-golem-die.png (knees buckle, torso folds, down onto one knee and holds it)",
+    "tools/out/w5anim3/sheet-f-hound-die.png (haunches drop, legs fold under, goes down on its side folded)",
+    "tools/out/w5anim3/sheet-f-raider-die.png",
+    "tools/out/w5anim3/sheet-f-treant-die.png"
+   ],
+   "deathWindowBoneMotionRadPerFrame": {
+    "hound": { "before": 0.0018, "after": 0.1152, "ownIdle": 0.0137 },
+    "sentinel": { "before": 0.001, "after": 0.0586, "ownIdle": 0.0029 },
+    "golem": { "before": 0.0051, "after": 0.0583, "ownIdle": 0.0181 },
+    "frostwolf": { "before": 0.001, "after": 0.0793, "ownIdle": 0.0109 },
+    "treant": { "before": 0.0048, "after": 0.0747, "ownIdle": 0.006 },
+    "warden": { "before": 0.005, "after": 0.0462, "ownIdle": 0.002 },
+    "raider": { "before": 0.0065, "after": 0.0881, "ownIdle": 0.0626 },
+    "raider-captain": { "before": 0.0018, "after": 0.0868, "ownIdle": 0.0101 },
+    "seraph/forgeknight/bogwitch/drowned": { "before": 0.001, "after": "0.055-0.059", "ownIdle": 0.003 },
+    "icegiant/magmagolem/archon": { "before": "0.0050-0.0057", "after": "0.043-0.065", "ownIdle": "0.002-0.043" },
+    "wraith": { "before": 0.0069, "after": 0.0413 },
+    "voidhorror": { "before": 0.0093, "after": 0.0427 },
+    "riftling": { "before": 0.0243, "after": 0.0899 }
+   },
+   "filesChanged": [
+    "src/enemies/Enemy.js — _updateDeath drives the animator when there are no IK legs, gated at lod < 2",
+    "src/enemies/glbAnim.js — a real `dead` branch before every living-pose section, tuned through a DIE table, zeroing mixer weights so a clip cannot fight the collapse"
+   ]
+  },
+  "clipsNotWired": "public/assets/creatures/*.glb are already byte-identical to the staged tools/out/anims/*.glb, a per-instance AnimationMixer is already wired (Enemy.js:205-211, cross-faded in glbAnim), and USE_CLIPS in glbBody.js:81 is all-false after a recorded user eye-verdict ('floppy, limbs flail everywhere — much worse'). Overturning a user verdict is not a critic's call; &clips=all|none|<body> is live for the A/B.",
+  "gateThresholdBugs": [
+   "tools/animcheck.mjs perFrame deltas are not dt-normalised and the harness launches vsync-off: measured dt alternates 5.6 <-> 9.3 ms, manufacturing a 1.6:1 alternation from frame pacing alone — exactly the signal the `alternation` test looks for. Divide each delta by that frame's dt.",
+   "tools/animcheck.mjs LIMITS.idleMotionMin = 0.0008 is not a test: it certified a completely frozen skeleton for 15 creatures under a check named 'DEATH DOES NOT PLAY'. Compare death against that creature's own idle, the way the FLAT ATTACK check already compares attack against idle.",
+   "tools/gate.mjs defaults to 127.0.0.1:5173 — in a worktree it must be run as CADLE_URL=http://127.0.0.1:5179/ node tools/gate.mjs or every sub-check fails ERR_CONNECTION_REFUSED."
+  ],
+  "perCreatureScores": [
+   { "creatures": ["hound", "frostwolf"], "score": 7, "note": "best gait in the game — real leg cycle (limbPerMetre 13.2 / 11.8), head tracks, bite telegraphs, collapse now folds. Loses points only for the camera-fill." },
+   { "creatures": ["riftling"], "score": 7, "note": "airGait quadruped, cycles its legs in flight as authored; lively idle (0.23)." },
+   { "creatures": ["raider", "raider-captain"], "score": 7, "note": "the sit/ale cycle makes them the most alive humanoids; walk and crumple both read." },
+   { "creatures": ["drake", "wyvern"], "score": 7, "note": "wings beat and bank, tumble out of the sky on death. The breath is a VFX problem, not an animation one." },
+   { "creatures": ["wisp", "imp"], "score": 7, "note": "procedural orbs — no skeleton to judge; telegraph 0.98 carries the wind-up correctly." },
+   { "creatures": ["golem", "magmagolem", "treant", "icegiant", "warden", "archon"], "score": 6, "note": "heavy walk reads, legs alternate, collapse works. Arms hang almost dead (armSwing scales by speedN and slam roles crawl), and golem/warden/archon have no Head_ chain at all so they never look at you." },
+   { "creatures": ["sentinel", "seraph", "forgeknight", "bogwitch", "drowned"], "score": 6, "note": "idle motion 0.003 — at their standoff band they are statues that breathe. Ranged attack is a brace, not a swing (correct), so the read leans on telegraph. Strafe locomotion is fine." },
+   { "creatures": ["sprite"], "score": 6, "note": "flyer wings found and beat, but limbPerMetre 1.29 — it drifts more than it flies." },
+   { "creatures": ["skyserpent", "leviathan"], "score": 6, "note": "vertical undulation is right and the glide posture reads; death is now a slow tail wave rather than a fall, which is thin for a 2.3x leviathan." },
+   { "creatures": ["wraith", "voidhorror"], "score": 5, "note": "the weakest in the game. Moving-state motion 0.080 / 0.085 — 6x lower than any other creature. The conversion prune left 37 joints and all that remains is robe drift; they cross their band like a decal on rails. Wants geometry or a hem sim." }
+  ],
+  "outOfLaneFindings": [
+   {
+    "severity": "blocker",
+    "text": "An attacking hound fills 100% of the viewport — decree violation, measured. standoff clamps the ROOT to 2.2 m but the ring was tuned against procedural bodies centred on their root; the Tripo hound reaches far forward of its root. hound: standoff 2.2, minRootHoriz 2.20, minHeadBoneToCam 0.86 m. frostwolf: minAnyBoneToCam 1.06 m. The clean fix is a bodyReach measured at spawn like the existing bodyDrop, but it forces attackRange up (3.2 < 3.5) and cascades into pack pressure and bite cadence — a combat-spacing retune, left for the combat lane.",
+    "evidence": "tools/out/w5close/report.json; tools/out/w5anim/burst-hound-attack-0.png through -3.png (four consecutive frames of nothing but wolf face).",
+    "files": ["src/enemies/defs.js", "src/enemies/Enemy.js (_standoff)"]
+   },
+   {
+    "severity": "major",
+    "text": "Every loot drop renders as a flat untextured cyan box with no shading and no material; at pickup range it covers a third to a half of the screen and contaminates every post-kill frame in this wave's captures.",
+    "evidence": "tools/out/w5anim/burst-golem-death-4.png ('Kept Greaves' as a 500x400 px cyan slab), tools/out/w5anim2/burst-d-sentinel-die-2.png ('Rare Hand Cannon' as a blue plank).",
+    "files": ["src/rpg/dropmesh.js"]
+   },
+   {
+    "severity": "major",
+    "text": "Wyvern breath still swallows the frame — the wave-5 dragon finding, still live, and reproducible in the Vale. One wyvern at 26 m, player never fired, whole viewport opaque orange fog for ~1 s. Sampled (219,149,69) / (213,149,112) — the hue survives ACES so it is not the blob bug by the letter of the decree, but it is an opaque full-screen curtain that hides the whole world.",
+    "evidence": "tools/out/w5anim/sheet-wyvern-fly.png frames 3-11."
+   },
+   {
+    "severity": "note",
+    "text": "tools/gate.mjs's new combat-VFX check caught a real one on its own: COMBATCHECK FAIL — WHITE CORE: burst-cvfx-tundra-c-5.png, 64 px clipped cluster, mean rgb (215, 229, 234). Tundra, so frostwolf stasis breath or its impact. That coverage hole is now closed."
+   },
+   {
+    "severity": "note",
+    "text": "q=high jitter is a harness flake, not a regression: the high pass wrote only burst-jit-0/1 of 6 and reported 'gate steps did not run'; q=low ran the identical steps and passed with jitter [0.038, 0.005, 0.001, 0.0, 0.0]. Re-run on an idle machine."
+   }
+  ]
+ },
+ "coherence": {
+  "score": 5.5,
+  "previousScore": 5,
+  "date": "2026-08-28",
+  "conditions": "9 harness runs, ~120 screenshots, q=high, dev server 5179. Runs shared the GPU with 13-28 other headless Chromiums from the parallel judge fleet, so no timing number is trustworthy — pixels and game state were judged, not frame times.",
+  "verdict": "Cadle is a real game with a real world in it, and it is being sabotaged by three or four specific objects. The bones are better than the wave-5 verdicts suggest: ten regions with genuinely distinct light, palette and silhouette that you can walk between on foot; a parchment map and quest log that would not embarrass a shipping MMO; 55 quests whose prose is good writing, not filler; a movement core that measures Destiny-correct to the millisecond (sprint FOV kick 67.7->73.7 in 150 ms, slide boosting to 11.41 m/s, ADS 0.99 at 250 ms); a loot stream with Legendaries and power-delta arrows; and a bestiary — the gold Sentinel especially — that belongs in the same painting as the world around it. The washed-white blob decree is genuinely held: zero pixels with min-channel > 235 across every combat frame including the super. But the first thirty seconds of a fresh game wedge the player's head inside the Aetheryte's gold ring and leave them there; every region's ground within 8 m is the same flat plane with a different colour of noise on it; enemy attack VFX drown the frame in flat opaque films and one enemy bolt renders as a hard-edged solid magenta lens four metres across; and an armour drop is represented by a green t-shirt. The parts are wave-6 quality. The assembly is not.",
+  "pillars": { "feel": 7, "systemsUI": 7, "worldStructure": 6.5, "materialCraft": 3, "firstHourFunnel": 3 },
+  "measuredFeel": {
+   "fov": "67.7 vert ~= 103 horiz (bar 90-105) OK",
+   "walkSprint": "6.61 / 10.18 m/s OK",
+   "sprintFovKick": "67.7 -> 73.7 in 150 ms, settles 75.5 OK",
+   "slide": "11.41 m/s, +2 deg FOV OK",
+   "doubleJump": "y 8.74 -> 10.22 with air control OK",
+   "ads": "0.92 @100 ms, 0.99 @250 ms, FOV -> 54.6 (~220 ms snap) OK"
+  },
+  "findings": [
+   {
+    "severity": "blocker",
+    "text": "~20 seconds in, holding W from spawn, your head goes inside the Aetheryte and stays there. The gold ring is a decorative torus at eye height with no collider; the collider is a cylinder around the pillar, so you are stopped by the pillar with your view buried in a featureless gold surface. This is the first thing that happens to a new player and it is an automatic-lose 'geometry you can walk into'.",
+    "evidence": "tools/out/COH-journey/ shot-j01 (9 s), j02 (18 s), j03 (27 s) — centre-frame RGB 179,135,36 in all three while HP fell 104->95 to a wisp the player could not see. Deliberately reproduced in tools/out/COH-aeth/shot-a-walkin.png and shot-a-walkin2.png; hit accidentally in tools/out/COH-vale/shot-fightend.png and shot-enemyidle.png."
+   },
+   {
+    "severity": "blocker",
+    "text": "A hard-edged solid magenta lens, ~4 m across, floats over the Sentinel — zero falloff, zero texture, 100% saturation, reading as a placeholder material. Magenta pixels appear in 11 of the combat frames and move between them, so these are projectile cores/halos.",
+    "evidence": "tools/out/COH-fight/zoom-magenta.png. src/combat/Combat.js around the coreMat / glowMat path — the file's own comment at line 302 names 'a flat magenta ball at the lens' as the symptom the view-normal falloff was meant to cure."
+   },
+   {
+    "severity": "major",
+    "text": "Look down anywhere and you are looking at a wall: tundra, infernal, void and sunken ground at 8 m side by side are four flat planes with low-frequency noise — no pebbles, no tufts, no debris, no relief, no parallax. The sunken tile has a visible hard vertical seam.",
+    "evidence": "tools/out/COH-r1/ground-sheet.png"
+   },
+   {
+    "severity": "major",
+    "text": "Contact-range combat is visually incoherent: a hound's head fills 40% of the screen, a translucent orange duplicate of that same head is drawn offset beside it, a flat orange film covers 60% of the frame and kills the grass and the mountains, and black scribble decals hang unattached in mid-air at x~1000-1400. You cannot tell what is hitting you.",
+    "evidence": "tools/out/COH-fight/burst-approach-5.png"
+   },
+   {
+    "severity": "major",
+    "text": "Death may not exit. __game.damagePlayer(9999) renders the DEFEATED card correctly, but a synthetic Space 2.5 s later left alive:false, hp:0, pos unchanged. Either the 'press any key' listener ignores synthetic keys or respawn is broken; a builder must confirm by hand.",
+    "evidence": "tools/out/COH-final/shot-death.png"
+   },
+   {
+    "severity": "major",
+    "text": "Music/ambient may not be switching. Across meadow -> infernal -> sunken, musicRegion correctly went field -> forge -> deep while musicTrack stayed 'field' in all three, and ambientZone was null everywhere. ctx: null, unlocked: false under ?auto=1 — the AudioContext is never created without a gesture, so this is a harness limit, not proof of silence. A human with speakers must check.",
+    "evidence": "tools/out/COH-aud/report.json"
+   },
+   {
+    "severity": "major",
+    "text": "The onboarding funnel is broken end to end. A fresh player has zero quests; the quest log correctly says 'No quests accepted yet. Find a Wayfinder Stele and press E' but nothing on the HUD says to press J, and the one glowing landmark in sight offers 'E Attune to the Aetheryte', not a quest. The stele is a different object.",
+    "evidence": "tools/out/COH-ui/shot-questlog.png"
+   },
+   {
+    "severity": "major",
+    "text": "Damage numbers are too small and too low-contrast to read at combat speed — dark-outlined, ~28 px, against a busy meadow. The impact decal is still a black smear (now a black spiked circle on gold).",
+    "evidence": "tools/out/COH-vale/shot-fightend.png"
+   },
+   {
+    "severity": "minor",
+    "text": "Biome bleed and off-spec regions: a fat green deciduous tree with green grass under it stands in the middle of the snowfield; Infernal has no lava rivers, no black ash and no emissive heat in four yaws; the Void has no abyss and its ground and sky are the same lilac value so there is no depth read.",
+    "evidence": "tools/out/COH-r1/shot-tundra-e.png, shot-infernal-{n,e,s,w}.png, shot-void-{e,s}.png"
+   },
+   {
+    "severity": "minor",
+    "text": "Pasted-on assets that break style unity: the armour drop icon is a flat green short-sleeved t-shirt silhouette floating in the meadow grass; the super's hands are two featureless orange mitts with tube fingers and no wrists; the first-person hand is a blocky pale-yellow fist on an otherwise excellent viewmodel; the Aetheryte pylon finials render as flat near-black diamonds that read as holes punched in the image; the intro character is a mannequin with helmet hair and tube arms whose head occludes the loading label.",
+    "evidence": "tools/out/COH-final/shot-death.png (x~730 y~425), tools/out/COH-fight/shot-super1.png, tools/out/COH-vale/shot-fightend.png, tools/out/COH-aeth/shot-attune.png, tools/out/COH-intro2/shot-i03.png"
+   },
+   {
+    "severity": "minor",
+    "text": "Sprinting into a cliff puts the camera inside the rock — full-screen brown smear, HP 15/104, red damage arc, no way to see anything. The meadow also stops being a meadow at ~25 m: lush grass in a ring around you, a hard boundary, then solid flat billiard-table green to the horizon.",
+    "evidence": "tools/out/COH-journey/shot-j18.png; tools/out/COH-aeth/shot-a-back62.png and shot-attune.png"
+   },
+   {
+    "severity": "note",
+    "text": "What works and must not be regressed: the unbroken 160 s walk from spawn into the Whisperwood with the minimap zone card, ground splat and haze all changing on the same step (shot-j06, shot-j12 — the best-looking frame in the game); the intro bedroom with AI posters and the gold-serif CADLE title on the monitor; the parchment map and quest log; the Aetheryte's violet stone, gold filigree and glowing rune floor; and the rigged-GLB creatures, which are better than the world they stand in."
+   }
+  ],
+  "theOneThing": "Give the ground a third dimension within 15 m — in all ten regions, from one shared scatter system. Not a new texture: meshes — pebbles, grit, tufts, cracked slabs, snow crust and drift lips, ash clinker, void shards, shore wrack — instanced, ~20-30 per region, keyed off the biome id the same way BTREE/BROCK already are, and faded in over the same radius the grass uses so the grass boundary stops being a visible ring at 25 m. The Aetheryte trap is worse but it is a twenty-minute fix one builder should do today; the ground is every frame of the game, it is the fix that lifts the weakest regions most without re-authoring them, and it closes the complaint the previous coherence pass raised and that has not moved since."
+ }
+}
