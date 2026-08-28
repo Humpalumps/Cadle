@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { compileForComposer } from '../render/Renderer.js';   // compile with a target bound — see its doc comment
+import { compileForComposer, renderForComposer } from '../render/Renderer.js';   // compile/render with a target bound — see their doc comments
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/Noise.js';
 
@@ -263,7 +263,16 @@ export class Abilities {
     for (const o of orb.children) o.frustumCulled = false;
     mg.add(mglow, orb); mg.visible = false; w.scene.add(mg);
     this._mv = { group: mg, glow: mglow, orb, hand, t: -1, k: GK.throw };
-    this._vm.group.visible = true; mg.visible = true; compileForComposer(this.game.renderer, w.scene, w.cam); this._vm.group.visible = false; mg.visible = false; // pre-warm
+    // pre-warm — compile AND one real 4x4-target render. MEASURED (perf pass 2026-08-28, tools/out/perf-vmtest):
+    // compile(w.scene, w.cam) with a target bound builds programs whose keys do NOT match what the composer's
+    // overlay RenderPass asks for when these first draw — re-running the exact compile added 0 programs, yet
+    // the first super cast still linked 5 (hand ShaderMaterial, palm/wisp sprites, vignette basic) for a
+    // 78-303 ms frozen frame (hitchhunt perf-combat, c-super). Same lesson as HANDOVER 4l: warm what you
+    // will actually DRAW — one real render while visible builds the render-path programs exactly.
+    this._vm.group.visible = true; mg.visible = true;
+    compileForComposer(this.game.renderer, w.scene, w.cam);
+    renderForComposer(this.game.renderer, w.scene, w.cam);
+    this._vm.group.visible = false; mg.visible = false;
     return true;
   }
   _updateVM(dt, t) {

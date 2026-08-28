@@ -1496,7 +1496,16 @@ export class Water {
     // render
     this.mesh.visible = false;
     const hidden = this._hidden ??= [];
-    hidden.length = 0; for (const o of this._noReflect) if (o.visible) { o.visible = false; hidden.push(o); }
+    // NEVER hide a LIGHT from the mirror (perf pass 2026-08-28, MEASURED): NO_REFLECT's `vfx-` prefix was
+    // catching the four pooled `vfx-flash` PointLights, so this pass rendered with numPointLights 3 while
+    // the main pass (and every boot-warmed program) is keyed 7 — and three keys programs by light count, so
+    // every material the mirror saw for the first time LINKED A FRESH VARIANT mid-play: 1339 ms frozen on
+    // first infernal approach (lava mirrors the whole region), 173 ms at the tundra lake, and the steady
+    // drip of 50-150 ms 'render' spikes at Mirrormere/pirate coves (tools/out/perf-tp-after, proglink
+    // probe: linked keys differ from warmed ones ONLY in numPointLights 3 vs 7). Keeping the lights
+    // visible costs nothing new to link — the mirror then uses the exact programs the main pass already
+    // built — and a muzzle flash reflecting in water is more correct, not less. Meshes stay excluded.
+    hidden.length = 0; for (const o of this._noReflect) if (o.visible && !o.isLight) { o.visible = false; hidden.push(o); }
     const curRT = renderer.getRenderTarget(), curXr = renderer.xr.enabled, curShadow = renderer.shadowMap.autoUpdate;
     renderer.xr.enabled = false; renderer.shadowMap.autoUpdate = false;   // reuse this frame's shadow maps
     renderer.setRenderTarget(this._reflRT);
