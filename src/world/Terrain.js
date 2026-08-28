@@ -117,7 +117,20 @@ export class Terrain {
       return b.m > 0.001 ? mix(dHere, mix(wild, BIOMES[b.id2].grass.d, b.w2), b.m) : dHere;
     }
     const b = this.biomeAt(x, z);
-    return b === 'meadow' ? 1 : b === 'crystal' ? 0.7 : b === 'forest' ? 0.6 : b === 'ruins' ? 0.2 : 0;
+    const d = b === 'meadow' ? 1 : b === 'crystal' ? 0.7 : b === 'forest' ? 0.6 : b === 'ruins' ? 0.2 : 0;
+    return d * this.trampleAt(x, z);
+  }
+
+  /** 1 out in the open, falling to ~0.12 where people actually live and walk.
+   *  Tall grass was growing THROUGH the hamlet's paving and stoops (wave-6 vale critic: "grass through
+   *  the decking"), because grass density knew nothing about the village standing on it. Props solved its
+   *  half by raising the paving; this is the other half — a settlement clears the ground it occupies, which
+   *  is also just true of villages. Kept here rather than in Props because grassAt is the ONE authority
+   *  Grass.js reads, and a clearing that only some consumers know about is the bug this file keeps hitting.
+   *  Hearthfall sits at (118, -96) — see Props._buildVillage; the fade is generous so there is no ring. */
+  trampleAt(x, z) {
+    const dx = x - 118, dz = z + 96;
+    return 0.12 + 0.88 * ss(15, 30, Math.sqrt(dx * dx + dz * dz));
   }
 
   /**
