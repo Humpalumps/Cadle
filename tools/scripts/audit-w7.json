@@ -1,0 +1,50 @@
+[
+ { "wait": 8 },
+ { "log": "AUDIT 1: the first 25 seconds a new player lives — hold W from spawn, the Aetheryte must not eat the head" },
+ { "eval": "(()=>{__game.god(true);return 'god'})()" },
+ { "key": "KeyW", "down": true },
+ { "wait": 9 }, { "shot": "a1-walk-09s" },
+ { "wait": 9 }, { "shot": "a2-walk-18s" },
+ { "wait": 8 }, { "shot": "a3-walk-26s" },
+ { "key": "KeyW", "down": false },
+ { "eval": "(()=>{const p=__game.game.player;return JSON.stringify({x:+p.position.x.toFixed(1),y:+p.position.y.toFixed(1),z:+p.position.z.toFixed(1),hp:Math.round(p.health)})})()" },
+
+ { "log": "AUDIT 2: the hamlet — paving without grass through it, the well, varied roofs, villagers facing" },
+ { "tp": [118, null, -96] }, { "look": [2.2, -0.12] }, { "wait": 2 }, { "shot": "b1-village-centre" },
+ { "tp": [104, null, -84] }, { "look": [1.0, -0.06] }, { "wait": 2 }, { "shot": "b2-village-lane" },
+ { "tp": [130, null, -104] }, { "look": [4.0, -0.05] }, { "wait": 2 }, { "shot": "b3-village-wide" },
+
+ { "log": "AUDIT 3: ground scatter — look down at 2 m in four regions that were 'a painted plane'" },
+ { "eval": "__game.goto('infernal')" }, { "wait": 3 }, { "look": [0.4, -0.85] }, { "wait": 1.5 }, { "shot": "c1-infernal-down" },
+ { "eval": "__game.goto('tundra')" }, { "wait": 3 }, { "look": [0.4, -0.85] }, { "wait": 1.5 }, { "shot": "c2-tundra-down" },
+ { "eval": "__game.goto('void')" }, { "wait": 3 }, { "look": [0.4, -0.85] }, { "wait": 1.5 }, { "shot": "c3-void-down" },
+ { "eval": "__game.goto('lost')" }, { "wait": 3 }, { "look": [0.4, -0.85] }, { "wait": 1.5 }, { "shot": "c4-lost-down" },
+ { "look": [0.4, 0.06] }, { "wait": 1 }, { "shot": "c5-lost-eye" },
+
+ { "log": "AUDIT 4: celestial isles at 8 m standing on one, and the border stones" },
+ { "eval": "__game.goto('celestial')" }, { "wait": 3 }, { "look": [0.8, 0.05] }, { "wait": 1.5 }, { "shot": "d1-celestial-eye" },
+ { "eval": "(()=>{const i=__game.game.world.props.isles;if(!i||!i.length)return 'no isles';const t=i[0];__game.teleport(t.x,t.y+1.2,t.z);return JSON.stringify({x:+t.x.toFixed(0),y:+t.y.toFixed(0),z:+t.z.toFixed(0),n:i.length})})()" },
+ { "wait": 2 }, { "look": [0.9, -0.35] }, { "wait": 1.5 }, { "shot": "d2-isle-standing" },
+ { "look": [0.9, 0.02] }, { "wait": 1 }, { "shot": "d3-isle-out" },
+
+ { "log": "AUDIT 5: shadowfen reeds at 3 m and the fen water" },
+ { "eval": "__game.goto('shadowfen')" }, { "wait": 3 }, { "look": [0.6, -0.18] }, { "wait": 1.5 }, { "shot": "e1-fen" },
+
+ { "log": "AUDIT 6: nameplate anchored to the head, at 5 m and 25 m" },
+ { "tp": [2, null, -2] }, { "look": [0, -0.04] }, { "wait": 2 },
+ { "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;g.spawn('hound',p.x,p.z-5);g.spawn('sentinel',p.x+3,p.z-25);g.passive(true);return 'spawned'})()" },
+ { "wait": 2.5 }, { "shot": "f1-nameplate-5m" },
+ { "look": [0.12, -0.02] }, { "wait": 2 }, { "shot": "f2-nameplate-25m" },
+
+ { "log": "AUDIT 7: armour drop reads as a cuirass, not a green shirt" },
+ { "eval": "(()=>{const g=__game.game;const p=g.player.position;try{g.rpg.dropLoot?.({x:p.x+1.5,y:p.y+0.4,z:p.z-3},{tier:'rare',forceArmor:true});return 'dropped'}catch(e){return 'no dropLoot: '+e.message}})()" },
+ { "wait": 2 }, { "look": [0, -0.35] }, { "wait": 1.5 }, { "shot": "g1-drop" },
+
+ { "log": "AUDIT 8: death card and respawn actually complete" },
+ { "eval": "(()=>{__game.god(false);__game.damagePlayer(9999);return 'killed'})()" },
+ { "wait": 1.5 }, { "shot": "h1-death-card" },
+ { "key": "Space", "down": true }, { "wait": 0.2 }, { "key": "Space", "down": false },
+ { "wait": 2.5 }, { "shot": "h2-after-respawn" },
+ { "eval": "(()=>{const p=__game.game.player;return JSON.stringify({alive:p.alive,hp:Math.round(p.health),x:+p.position.x.toFixed(1),z:+p.position.z.toFixed(1)})})()" },
+ { "stats": "audit-final" }
+]

@@ -69,17 +69,22 @@ const R_FULL = 15, R_FADE = 26;   // full size out to R_FULL, gone by R_FADE (q=
 // darker or lighter than the dirt it sits on, and a wind-cut crust ridge is half a metre wide, not four
 // centimetres. So `s` is up ~1.5-2x (sastrugi 2-3x, because that is what sastrugi are) and `col` is pushed
 // further from 1. The ground albedo still supplies the HUE — that is what keeps it belonging.
+// DENSITY RAISED (orchestrator visual check, 2026-08-28): the first pass shipped 0.30-0.55/m2 and an
+// off-centre down-look still read as a handful of chips on a painted plane — the critics' complaint is
+// about COVERAGE, and coverage is what a person sees. ~1.5-1.8x across the board, biggest lifts where
+// the verdicts said "zero pebbles in 8x5 m" (infernal, dragon, void, sunken). Cost is linear in a layer
+// that measured +0.9% tris and 0.379 ms warm, so this stays comfortably inside the vegetation slice.
 const SCAT = {
-  meadow:    { d: 0.30, mix: [0.42, 0.16, 0.42], s: [0.09, 0.30], col: [0.92, 0.94, 0.84], c: [0.34, 1.25], t: [1.00, 1.55] },   // field stones + dry stalk tufts between the blades
-  forest:    { d: 0.44, mix: [0.30, 0.30, 0.40], s: [0.10, 0.34], col: [0.86, 0.92, 0.72], c: [0.26, 1.45], t: [1.10, 1.35] },   // fallen twigs, leaf-litter mats, moss-dark stones on the duff
-  tundra:    { d: 0.40, mix: [0.24, 0.64, 0.12], s: [0.22, 0.75], col: [0.97, 1.00, 1.07], c: [0.16, 2.40], t: [1.25, 0.95] },   // SASTRUGI: wide wind-cut crust ridges (0.5-1.8 m across, a few cm proud) + ice chips
-  celestial: { d: 0.32, mix: [0.30, 0.62, 0.08], s: [0.14, 0.50], col: [1.00, 0.99, 0.94], c: [0.20, 1.60], t: [1.20, 1.00] },   // marble spall and broken floor tile
-  dragon:    { d: 0.55, mix: [0.58, 0.38, 0.04], s: [0.12, 0.48], col: [0.99, 0.98, 0.96], c: [0.34, 1.20], t: [1.15, 1.05] },   // scree: the peaks shed gravel, and it collects everywhere
-  infernal:  { d: 0.55, mix: [0.46, 0.38, 0.16], s: [0.11, 0.42], col: [1.06, 0.94, 0.86], c: [0.26, 1.45], t: [1.30, 0.90] },   // ash clinker + pale crust plates — "zero pebbles in 8x5 m of volcanic waste"
-  lost:      { d: 0.36, mix: [0.34, 0.56, 0.10], s: [0.15, 0.55], col: [0.96, 0.92, 1.08], c: [0.20, 1.70], t: [1.20, 1.05] },   // shattered violet flagstone
-  shadowfen: { d: 0.46, mix: [0.24, 0.24, 0.52], s: [0.12, 0.40], col: [0.86, 0.92, 0.70], c: [0.30, 1.35], t: [1.05, 1.45], wade: true },   // peat hummocks, dead wood, reed stubble standing out of the muck
-  sunken:    { d: 0.48, mix: [0.46, 0.28, 0.26], s: [0.11, 0.38], col: [0.90, 1.00, 1.00], c: [0.28, 1.35], t: [1.30, 0.95], wade: true },   // shore wrack and wet cobbles below the cataracts
-  void:      { d: 0.44, mix: [0.28, 0.46, 0.26], s: [0.14, 0.50], col: [0.86, 0.78, 1.06], c: [0.50, 1.05], t: [1.35, 1.10], stab: true },   // voidstone splinters, standing where they broke
+  meadow:    { d: 0.42, mix: [0.42, 0.16, 0.42], s: [0.09, 0.30], col: [0.92, 0.94, 0.84], c: [0.34, 1.25], t: [1.00, 1.55] },   // field stones + dry stalk tufts between the blades
+  forest:    { d: 0.62, mix: [0.30, 0.30, 0.40], s: [0.10, 0.34], col: [0.86, 0.92, 0.72], c: [0.26, 1.45], t: [1.10, 1.35] },   // fallen twigs, leaf-litter mats, moss-dark stones on the duff
+  tundra:    { d: 0.68, mix: [0.24, 0.64, 0.12], s: [0.22, 0.75], col: [0.97, 1.00, 1.07], c: [0.16, 2.40], t: [1.25, 0.95] },   // SASTRUGI: wide wind-cut crust ridges (0.5-1.8 m across, a few cm proud) + ice chips
+  celestial: { d: 0.55, mix: [0.30, 0.62, 0.08], s: [0.14, 0.50], col: [1.00, 0.99, 0.94], c: [0.20, 1.60], t: [1.20, 1.00] },   // marble spall and broken floor tile
+  dragon:    { d: 0.8, mix: [0.58, 0.38, 0.04], s: [0.12, 0.48], col: [0.99, 0.98, 0.96], c: [0.34, 1.20], t: [1.15, 1.05] },   // scree: the peaks shed gravel, and it collects everywhere
+  infernal:  { d: 0.85, mix: [0.46, 0.38, 0.16], s: [0.11, 0.42], col: [1.06, 0.94, 0.86], c: [0.26, 1.45], t: [1.30, 0.90] },   // ash clinker + pale crust plates — "zero pebbles in 8x5 m of volcanic waste"
+  lost:      { d: 0.62, mix: [0.34, 0.56, 0.10], s: [0.15, 0.55], col: [0.96, 0.92, 1.08], c: [0.20, 1.70], t: [1.20, 1.05] },   // shattered violet flagstone
+  shadowfen: { d: 0.66, mix: [0.24, 0.24, 0.52], s: [0.12, 0.40], col: [0.86, 0.92, 0.70], c: [0.30, 1.35], t: [1.05, 1.45], wade: true },   // peat hummocks, dead wood, reed stubble standing out of the muck
+  sunken:    { d: 0.72, mix: [0.46, 0.28, 0.26], s: [0.11, 0.38], col: [0.90, 1.00, 1.00], c: [0.28, 1.35], t: [1.30, 0.95], wade: true },   // shore wrack and wet cobbles below the cataracts
+  void:      { d: 0.72, mix: [0.28, 0.46, 0.26], s: [0.14, 0.50], col: [0.86, 0.78, 1.06], c: [0.50, 1.05], t: [1.35, 1.10], stab: true },   // voidstone splinters, standing where they broke
 };
 // Landmark clearance, metres from the region centre. MUCH smaller than Vegetation's LM_CLEAR (26-56 m),
 // and it has to be: those values are sized for a 13 m pine's crown, while this layer needs the built FLOOR
