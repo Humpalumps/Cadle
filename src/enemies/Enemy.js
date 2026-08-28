@@ -92,7 +92,11 @@ const IDENTITY = new THREE.Matrix4();
 // fresnel shell built on it renders as 320 flat facets — the "hard terminator banding on its surface" in the
 // wave-3 shadowfen Fen Wraith finding. A UV sphere has smooth vertex normals, which is the entire point of a
 // fresnel, and 480 tris of ONE shared geometry is not a budget line.
-const SHIELD_GEO = new THREE.SphereGeometry(1, 20, 14);
+// 44x28, not 20x14: the bubble is a translucent SILHOUETTE — its outline is the whole read, and at 20
+// segments the limb is a visible polygon chain ('hard-edged low-poly translucent eggs', wave-6 void
+// critic; still obvious on the corsair captain at 3 m). One shared geometry across every shielded
+// creature, so the cost is ~1k extra triangles TOTAL, not per enemy.
+const SHIELD_GEO = new THREE.SphereGeometry(1, 44, 28);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _n = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 const _res = { hit: false, normal: new THREE.Vector3() };
 const seg = (x, a, b) => THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -215,7 +219,19 @@ export class Enemy {
     // so they follow every pose for free). Tankard while seated, flintlock otherwise — see _sync.
     this.sitK = 0; this.props = null;
     if (def.handProps && this.rigged) {
-      const hand = byName.handR ?? byName.hdR ?? null;
+      // PICK THE HAND BY ANATOMY, NOT BY NAME. Tripo's limb classifier mirrors on some rigs — measured on
+      // the corsair: handR/hdR resolve to L0L_2 at 0.31 m above the feet (BELOW the knee at 0.43, i.e. an
+      // ankle), while the real arm runs shoulderL 1.05 -> elbowL 0.85 -> handL 0.60. Taking handR first
+      // hung the flintlock and the tankard off a FOOT — that is the "floating mug near the ground" in the
+      // camp shots, and why no corsair appeared to be holding anything. A hand is always higher than an
+      // ankle, so take the highest candidate; this self-corrects any future rig that comes back mirrored.
+      let hand = null, handY = -1e9;
+      for (const k of ['handR', 'hdR', 'handL', 'hdL']) {
+        const b = byName[k]; if (!b) continue;
+        b.updateWorldMatrix(true, false);
+        const y = b.matrixWorld.elements[13];
+        if (y > handY) { handY = y; hand = b; }
+      }
       if (hand) {
         propGeos();
         const fit = PROP_FIT[this.def.body ?? type] ?? PROP_FIT.raider;

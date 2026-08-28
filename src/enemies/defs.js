@@ -99,7 +99,11 @@ export const DEFS = {
     projectile: { speed: 22, radius: 0.24, element: 'solar', life: 4 },
     strafe: 0.8, stagger: 0.22, staggerTime: 0.5,
     radius: 0.5, height: 1.85, center: 1.0, weakPoints: [{ bone: 'head', radius: 0.24, mult: 2.0, off: [0, 0.1, 0] }],
-    palette: [[0xffa03a, 0x6a5a4a], [0xff8a3d, 0x5a5460], [0xffb95e, 0x4c5566]], glow: 1.5, rim: 0.45, bump: 0.05,
+    // A CORSAIR IS A PERSON, NOT AN ELEMENTAL. glow 1.5 on an orange emissive buried the model's own
+    // painted navy-and-gold coat under lava seams — at 20 m they read as shadow-things with glowing
+    // veins and their heads as black voids (user report). Tints near-white so the albedo IS the look,
+    // glow down to a lantern-warm hint on the metalwork, rim low: the read comes from the coat.
+    palette: [[0xffb060, 0xe8e2d6], [0xff9a4a, 0xdcd8e2], [0xffc078, 0xd8dde6]], glow: 0.28, rim: 0.16, bump: 0.05,
     deathTime: 1.5, xp: 34,
   },
   'raider-captain': {
@@ -115,7 +119,9 @@ export const DEFS = {
     strafe: 0.7, stagger: 0.26, staggerTime: 0.5, shieldRadius: 1.06,
     radius: 0.56, height: 2.2, center: 1.18, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.0, off: [0, 0.1, 0] }],
     // violet emissive: the captain's glowing aether amulet is the tell that this one is the mini-boss
-    palette: [[0xb070ff, 0x6a5a72]], glow: 1.7, rim: 0.5, bump: 0.05,
+    // The captain keeps MORE glow than his crew — he wears the aether amulet — but his gold-on-black
+    // coat still has to read as cloth and metal, not as a purple lamp.
+    palette: [[0xb070ff, 0xdcd4e6]], glow: 0.5, rim: 0.22, bump: 0.05,
     deathTime: 1.8, xp: 150,
   },
 };
