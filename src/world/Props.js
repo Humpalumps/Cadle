@@ -2119,14 +2119,17 @@ export class Props {
   }
 
   /**
-   * THE VILLAGERS. Pruned to ONE villager per unique body (user decree 2026-08-28: "only use the NPC's
+   * THE VILLAGERS. ONE villager per unique body (user decree 2026-08-28: "only use the NPC's
    * skins once in each village — no multiples of the same npc"): Serel (herbwife), Wick (merchant),
-   * Bram (mason), plus the unique Wayfinder at the Aetheryte. All three are STATIC idlers at a fixed
-   * post — the walk routes were removed outright on the same decree ("the movement on the npc's is
-   * terrible, lets not have any of them moving"); the walk clips stay unused in the assets, and a later
-   * pass re-fills the hamlet as more unique bodies are generated. The six town quests were re-authored
-   * onto these three givers (src/rpg/quests/meadow.js), so props.npcs carries exactly the ids quest
-   * data still names. Each idles with its clip + a tiny spine breath, and TURNS to face the player
+   * Bram (mason), plus — since the four new unique bodies landed — Harl (fisherman) at the well,
+   * Tessa (farmwoman) at the vegetable strips, Cole (guard) at the lane entrance and Pell (scholar)
+   * at the noticeboard. Seven villagers, seven bodies, plus the unique Wayfinder at the Aetheryte.
+   * ALL are STATIC idlers at a fixed post — the walk routes were removed outright on the same decree
+   * ("the movement on the npc's is terrible, lets not have any of them moving"); the walk clips stay
+   * unused in the assets. The six town quests were re-authored onto the original three givers
+   * (src/rpg/quests/meadow.js), so props.npcs carries exactly the ids quest data still names — plus
+   * 'harl'/'tessa'/'cole'/'pell' for later quests. Each idles with its clip + a tiny spine breath
+   * (skipped when the clip animates the spine itself), and TURNS to face the player
    * inside 8 m (a quest giver who ignores you reads dead) — damped full-body yaw, back to its rest
    * facing when you leave.
    *
@@ -2137,7 +2140,7 @@ export class Props {
     const { scene } = this.game;
     this.villagers = []; this.npcs = [];
     const bodies = {};
-    for (const n of ['herbwife', 'merchant', 'mason']) {
+    for (const n of ['herbwife', 'merchant', 'mason', 'fisherman', 'farmwoman', 'guard', 'scholar']) {
       const s = this.game.assets?.model?.(n) ?? null, c = this.game.assets?.clips?.(n) ?? [];
       if (!s || !c.length) continue;
       const bb = new THREE.Box3().setFromObject(s);
@@ -2170,9 +2173,11 @@ export class Props {
       mixer.clipAction(B.idle).play();
       mixer.update(rng() * 4);                                                // desync the loop phases
       col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });   // you cannot walk through anyone
-      // herbwife/mason idle has no spine channels — a tiny breath keeps the torso alive.
-      // merchant's clip DOES animate the spine, so overwriting there would kill the clip: skip it.
-      const sway = (spine && o.body !== 'merchant') ? { b: spine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
+      // An idle with no spine channels gets a tiny breath to keep the torso alive. An idle that DOES
+      // animate the spine (merchant, some of the new bodies) must be left alone — writing rotation.x
+      // after the mixer would stomp the clip's spine quaternion. Detect it from the clip, per body.
+      const clipOwnsSpine = B.idle.tracks.some((tk) => /spine/i.test(tk.name));
+      const sway = (spine && !clipOwnsSpine) ? { b: spine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
       const v = { mesh: inst, skin, mixer, yaw, restYaw: yaw, acc: 0, baseY, sway };
       this.villagers.push(v);
       if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
@@ -2186,6 +2191,14 @@ export class Props {
     spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94, body: 'herbwife' });
     spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO, body: 'merchant' });      // tending the market lantern
     spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03, body: 'mason' });       // eyeing somebody's stonework
+    // THE FOUR NEW BODIES (2026-08-28 re-fill): each at the hamlet furniture it belongs to (built in
+    // _buildVillage around CX,CZ = 118,-96 — the well at the centre, vegetable strips NE, the noticeboard
+    // and lane running SW toward the plaza). Same rules: static, one body each, rest-facing chosen at the post.
+    const SEA = [0.90, 0.96, 1.03], EAR = [1.03, 0.99, 0.92], STL = [0.93, 0.94, 1.01];
+    spawn(120.6, -93.6, Math.atan2(-2.6, -2.4), { id: 'harl', name: 'Old Nets Harl', tint: SEA, scale: 0.97, body: 'fisherman' });   // on the well kerb, Mirrormere-side lane at his back
+    spawn(133.5, -79.5, Math.atan2(-3.5, 0.5), { id: 'tessa', name: 'Tessa of the Rows', tint: EAR, scale: 0.96, body: 'farmwoman' });   // field edge east of the hamlet, facing back over the strips (clear of the seed-1337 cottage ring — verified against _cottages)
+    spawn(93.5, -82.3, Math.atan2(-0.866, 0.499), { id: 'cole', name: 'Watchman Cole', tint: STL, scale: 1.05, body: 'guard' });     // the lane entrance, watching the approach from the plaza
+    spawn(100.4, -85.8, Math.atan2(-1.4, 0.8), { id: 'pell', name: 'Archivist Pell', tint: VIO, scale: 0.93, body: 'scholar' });     // reading the noticeboard
     console.log(`[props] villagers: ${this.villagers.length} (one per unique body, all static)`);
   }
 
