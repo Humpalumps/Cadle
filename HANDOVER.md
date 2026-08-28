@@ -327,6 +327,50 @@ before.**
    `node tools/inspect.mjs --nolock --name cb-final --q high --script tools/scripts/combat-blob-steps.json
    --url http://127.0.0.1:5179/` then `python tools/combatcheck.py tools/out/cb-final`. If OK, the
    user's merge condition (2i) is met: fast-forward main and push.**
+### ★ OUTSTANDING WORK AFTER THE 2026-08-28 MERGE — START HERE ★
+
+**A. CLOSE THE LAST GATE CHECK (mechanical, ~10 min on a quiet GPU).**
+Run the full combat capture with nothing else using the card (see 2j for why it kept dying):
+`node tools/inspect.mjs --nolock --name cb-final --q high --script tools/scripts/combat-blob-steps.json --url http://127.0.0.1:5179/`
+then `python tools/combatcheck.py tools/out/cb-final`. Only outstanding finding at merge time was a
+58 px cluster in a vale KILL burst. If it fails, the author is a death/kill VFX layer, not an attack.
+
+**B. THE ART BAR — the expensive category the cheap-fix wave deliberately did not touch.** These are
+multi-wave craft jobs, all named by the wave-6 Opus critics (`tools/out/wave6-summary.txt`):
+  1. **Forest canopy leaf cards** — giant flat quads with visible cut edges and fold seams, THREE waves
+     unfixed, and they fill the top 30-50% of most forest frames. Needs real layered clusters.
+  2. **Landmark craft at 40 m and material truth at 8 m** — still failing on most heroes (Elderheart has
+     no silhouette at any ground range; Glacier Throne invisible at 200 m; Drowned Court has no
+     ornament; celestial isles are dressed now but the Gate's marble is flat at 8 m).
+  3. **The sunken cataracts** — the region's named acceptance shot ("a staircase of silver water") has
+     not existed for FIVE waves. Water lane built falls; they do not read.
+  4. **Region sky character** — shadowfen has no golden hour, void has no sky event at any hour,
+     infernal night has zero stars, lost is one hue at one value.
+  5. **Void abyss rim** — the 130 m drop is still invisible from its own edge (the fall-in safety is
+     fixed, the VISUAL rim is not).
+**C. CREATURE IDENTITY (needs the Tripo forge, ~500 credits).** Three creatures wear another creature's
+body: the celestial "seraph" is the forgeknight (no wings, no halo), the sunken Drowned Courtier is a
+red-tinted sentinel, the lost Archon is a dark Stone Golem. Palettes were separated this wave; the
+MODELS still need forging. `docs/CREATURE-PIPELINE.md` has the route and the boss-tier rule.
+**D. ANIMATION — the open product question.** Every Tripo locomotion retarget LOST its eye A/B against
+the procedural gait, so `USE_CLIPS` ships all-false. Either regenerate better clips (different retarget
+settings) or take the deferred Blender/Mixamo evaluation. The mixer wiring is done and waiting.
+**E. CROSS-LANE ASKS LEFT BY BUILDERS (small, named, unowned).**
+  - `src/rpg/dropmesh.js`: scatter multi-drops ~2 m apart — a camp wipe stacks 5+ loot beams into one
+    column (that stack was the infernal "giant blue polygon"), and the drop payout is implicated in the
+    forest kill frames.
+  - `Enemy.js` `GLB_TINT_WASH = 0.55` makes rigged-creature palettes largely inert — the corsairs were
+    fixed by going near-white on their own tints, but the global knob is still the reason other rigged
+    creatures resist re-colouring.
+  - Aetheryte glow reads as a 161 px pale disc against pale mountains (Props).
+**F. PERFORMANCE (deferred by user decree, but the numbers are known).** Uncapped q=high mean 8.1-8.5 ms
+vs a 7 ms budget and q=low 6.6 vs 4 (both PRE-EXISTING and GPU-bound — `gpuMs ~= frameMs`); one hamlet
+angle reads 4.1 M tris vs the 4 M line (1.8 M of it CSM shadows, 1.1 M grass); `public/assets` is
+66.95 MB against a 40 MB target. Every one of these costs visible quality to fix — user's call.
+**G. RE-JUDGE.** The wave-7 build has never been judged. `tools/out/wave6-judge-workflow.js` is ready
+(critics already on `model: 'opus', effort: 'high'` per the standing directive); update its per-region
+"what wave N said" blocks from `wave6-verdicts.json` first, as was done for wave 6.
+
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
