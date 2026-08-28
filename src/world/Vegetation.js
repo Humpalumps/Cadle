@@ -63,15 +63,25 @@ const BTREE = {
 // albedo material (see _buildRocks GROUPS) — one shared cracked-vein texture read as "dried mud balls" in
 // dragon/celestial/infernal and "marble eggs" in lost, and its moss term went olive on tundra domes
 // (wave-2 verdicts). No grp (or a missing asset) = the default mossy granite.
+// WAVE-6 BORDER-SCATTER FINDING ("untextured white hemisphere blobs — marshmallows",
+// tools/out/CD-fight/shot-border-cel-10.png). Three causes, and the tint was only the first:
+//   (1) VALUE. `celestial` was [1.12, 1.06, 0.94] over `marble_strata`, which is already a near-white map,
+//       times a per-instance g that runs to 1.10 — an ALBEDO of 1.23. Nothing above ~0.9 has a shaded side
+//       left, so a boulder tone-maps to one flat cream and its map disappears with it. Every tint whose max
+//       channel cleared 1.0 is pulled down here; the HUE ratios are untouched, because the hue is the
+//       region's identity and the value is what was broken. The placement loop caps the product at 1.0.
+//   (2) TILE SIZE — see the GROUPS table in _buildRocks: a 5 m triplanar tile on a 1.5 m rock is 30% of one
+//       texel field, i.e. no texture at all.
+//   (3) SILHOUETTE — see the rock placement loop: `S.setScalar(scale)` made every instance the same shape.
 const BROCK = {
   forest:    { p: 0.05, col: [0.80, 0.95, 0.78] },                        // mossy granite (procedural)
-  tundra:    { p: 0.12, col: [1.05, 1.08, 1.15], grp: 'tundra' },         // frost-bleached granite, snow-dusted tops
-  celestial: { p: 0.09, col: [1.12, 1.06, 0.94], grp: 'celestial' },      // white marble strata
-  dragon:    { p: 0.22, col: [0.92, 0.90, 0.92], grp: 'dragon' },         // granular granite
+  tundra:    { p: 0.12, col: [0.86, 0.89, 0.96], grp: 'tundra' },         // frost-bleached granite, snow-dusted tops
+  celestial: { p: 0.09, col: [0.82, 0.78, 0.69], grp: 'celestial' },      // white marble strata — a real marble boulder is a mid grey-cream, never paper
+  dragon:    { p: 0.22, col: [0.86, 0.84, 0.86], grp: 'dragon' },         // granular granite
   infernal:  { p: 0.17, col: [0.52, 0.48, 0.46], grp: 'infernal' },       // columnar basalt (tint raised from 0.26: over an already-dark albedo the boulders went featureless black)
-  lost:      { p: 0.08, col: [0.92, 0.86, 1.10], grp: 'lost' },           // violet megalith stone
+  lost:      { p: 0.08, col: [0.78, 0.72, 0.94], grp: 'lost' },           // violet megalith stone
   shadowfen: { p: 0.06, col: [0.62, 0.70, 0.55] },
-  sunken:    { p: 0.14, col: [0.72, 0.92, 0.92] },
+  sunken:    { p: 0.14, col: [0.70, 0.88, 0.88] },
   void:      { p: 0.18, col: [0.34, 0.28, 0.46], grp: 'void' },           // voidstone
 };
 // biome spires reuse the crystal geometry: [p, linear instance tint, [minScale, maxScale]].
@@ -468,6 +478,10 @@ function buildWillow(rng) {
 export function makeRockGeometry(kind, seed = 1) {
   const g = mergeVertices(new THREE.IcosahedronGeometry(1, kind === 0 ? 3 : 2)); const p = g.attributes.position, n = p.count, col = new Float32Array(n * 3), v = new THREE.Vector3();
   const sc = [[1, 0.85, 1.15], [1.25, 0.75, 1], [1.5, 0.45, 1.1], [0.7, 1.7, 0.6]][kind];
+  const sa = ((seed * 2.399) % 6.2832), spx = Math.cos(sa), spz = Math.sin(sa);      // spall-face bearing
+  // ...at ~76% of the piece's own reach along that bearing, so the fracture takes a real face off one side
+  // without turning the stone into a half-rock (sc is anisotropic, so the reach has to be measured, not assumed)
+  const spl = 0.76 * Math.hypot(sc[0] * spx, sc[2] * spz);
   for (let i = 0; i < n; i++) {
     v.fromBufferAttribute(p, i); const f = 1.4;
     // Third octave, and it is not decoration: the boulder was a smooth ellipsoid, which is the wave-3
@@ -476,9 +490,18 @@ export function makeRockGeometry(kind, seed = 1) {
     // ~0.5 m, so the dome reads as weathered stone from its outline alone. Zero extra triangles.
     let d = 0.16 * fbm(v.x * f + v.y * 0.7 * f + seed, v.z * f - v.y * 0.5 * f, { octaves: 4, seed: 77 + seed }) + 0.05 * noise2(v.x * 5 + seed, v.z * 5 + v.y * 3, 78)
       + 0.075 * (1 - Math.abs(noise2(v.x * 2.6 + seed * 1.7, v.z * 2.6 - v.y * 2.1, 79)));
+    // STRATA. The three noise terms above are all SMOOTH, and a smooth displacement of a sphere integrates
+    // back to a dome — which is the wave-6 "marshmallow" read from the shape side. A STEPPED band does not:
+    // pow(|sin|, 0.3) is a square-ish wave, so the surface gains ~4 bedding ledges with real arrises. The
+    // band is warped by its own noise so the ledges wander round the stone instead of drawing latitude lines.
+    const bnd = Math.sin((v.y * 3.6 + noise2(v.x * 1.3 + seed, v.z * 1.3, 81) * 1.5) * Math.PI);
+    d += 0.055 * Math.sign(bnd) * Math.pow(Math.abs(bnd), 0.30);
     if (kind === 3 && v.y > 0) d -= v.y * 0.18 * (Math.abs(v.x) + Math.abs(v.z)); // pointed tip
     v.multiplyScalar(1 + d); v.x *= sc[0]; v.y *= sc[1]; v.z *= sc[2];
     if (kind === 2 && v.y > 0.25) v.y = 0.25 + (v.y - 0.25) * 0.3; // flat top
+    // SPALL FACE: one plane-clip on a seed-chosen bearing. A stone that broke off a mountain has a flat
+    // fracture face; four curved geometries never do, however you scale them.
+    { const dp = v.x * spx + v.z * spz; if (dp > spl) { v.x -= (dp - spl) * spx; v.z -= (dp - spl) * spz; } }
     p.setXYZ(i, v.x, v.y, v.z); const c = clamp(0.85 + d * 2.0, 0.6, 1.15); col[i * 3] = c; col[i * 3 + 1] = c; col[i * 3 + 2] = c;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
@@ -731,17 +754,22 @@ export class Vegetation {
     const A = (k) => this.game.assets?.tex?.(k) ?? null;
     // One material per region GROUP (BROCK.grp), same 4 geometries. `moss` reuses the triplanar up-face
     // term; for tundra its colour is snow, so domes get a white dusting instead of olive moss.
+    // TILE SIZE, and it is half of the "untextured hemisphere" read. `tri` is a multiplier on world position,
+    // so the tile is 1/tri metres: 0.20 is a FIVE-METRE tile, and these rocks are 0.35-5.2 m across. A 1.5 m
+    // boulder was showing 30% of one texel field — a single smooth gradient, i.e. no texture. The tile is now
+    // ~1.1-1.4 m everywhere, which puts real grain on a hand-sized rock and 3-4 whole bands on a 5 m boulder.
+    // (These materials are rock-only; Props' landmark stone rides its own `regionMat` bucket and is untouched.)
     const GROUPS = {
-      default:   { map: rockTex,                                                          tri: 0.28, moss: 0.55 },
+      default:   { map: rockTex,                                                          tri: 0.72, moss: 0.55 },
       // snow, not "moss that happens to be grey": a real albedo swap on the up-faces (see triplanarPatch).
       // The multiply-tint version shipped in wave 2 and read as nothing at all — every Frostveil boulder
       // was still a bare grey dome in unbroken snow (crit3-tundra-c/shot-boulders-a.png).
-      tundra:    { map: rockTexture(aniso, [0.55, 0.57, 0.61], [0.66, 0.68, 0.73], 0.3),  tri: 0.28, moss: 0, snow: 0.92 },
-      celestial: { map: A('marble_strata'),   tri: 0.20, moss: 0 },
-      dragon:    { map: A('granite_detail'),  tri: 0.30, moss: 0 },
-      infernal:  { map: A('basalt_columnar'), tri: 0.22, moss: 0 },
-      lost:      { map: A('megalith_violet'), tri: 0.20, moss: 0 },
-      void:      { map: A('voidstone'),       tri: 0.22, moss: 0 },
+      tundra:    { map: rockTexture(aniso, [0.55, 0.57, 0.61], [0.66, 0.68, 0.73], 0.3),  tri: 0.70, moss: 0, snow: 0.92 },
+      celestial: { map: A('marble_strata'),   tri: 0.90, moss: 0 },   // banded map: a ~1.1 m tile IS the strata read the region wants
+      dragon:    { map: A('granite_detail'),  tri: 0.80, moss: 0 },
+      infernal:  { map: A('basalt_columnar'), tri: 0.75, moss: 0 },
+      lost:      { map: A('megalith_violet'), tri: 0.85, moss: 0 },
+      void:      { map: A('voidstone'),       tri: 0.75, moss: 0 },
     };
     this.rockGeos = [0, 1, 2, 3].map((k) => makeRockGeometry(k, k * 3 + 1));
     // InstLOD.finalize writes an aFade attribute onto the mesh's geometry, so groups cannot share geometry
@@ -1294,17 +1322,35 @@ export class Vegetation {
         for (const t of this.trees) if (Math.abs(t.x - x) < rr && Math.abs(t.z - z) < rr) { hit = true; break; } // ponytail: linear scan, ~500 big rocks x ~5k trees once at boot; grid-hash if it ever shows in the boot profile
         if (hit) continue;
       }
-      E.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5); Qt.setFromEuler(E);
+      // SILHOUETTE VARIATION (wave-6 "twenty of them are one shape"). The instance transform used to be a
+      // uniform `setScalar` plus a +-0.25 rad wobble, so a whole region's boulders were four geometries
+      // repeated at four sizes — and a uniformly-scaled subdivided icosphere is a DOME, which is precisely
+      // what "marshmallow" names. Non-uniform axes squash each instance into its own slab/wedge/loaf and a
+      // real tilt lays it over; both live in the instance matrix, so this costs zero triangles and zero draws.
+      const ax0 = 0.68 + rng() * 0.66, az0 = 0.68 + rng() * 0.66, ay0 = 0.50 + rng() * 0.64;
+      const tiltA = big ? 0.85 : 0.62;
+      E.set((rng() - 0.5) * tiltA, rng() * Math.PI * 2, (rng() - 0.5) * tiltA); Qt.setFromEuler(E);
       // seat on the LOWEST ground under the WHOLE footprint (see seat()), then sink deeper: a boulder that
       // only kisses the ground shows daylight under its downhill lip on any slope worth the name.
-      const yb = seat(x, z, scale * 0.82);
+      const rXZ = scale * Math.max(ax0, az0);
+      const yb = seat(x, z, rXZ * 0.82);
       if (seatHi - yb > 1.25 * scale) continue;                        // no resting place: this is a cliff, not ground
-      P.set(x, yb - 0.34 * scale, z); S.setScalar(scale); M.compose(P, Qt, S);
-      const g = 0.75 + rng() * 0.35; C.setRGB(g * (1 + (rng() - 0.5) * 0.1), g, g * (1 - rng() * 0.08));
+      // burial varies per instance: some rest ON the ground, some are half swallowed by it. A field where
+      // every stone is buried by exactly the same fraction reads as one prop stamped out.
+      P.set(x, yb - (0.20 + rng() * 0.36) * scale * ay0, z); S.set(scale * ax0, scale * ay0, scale * az0); M.compose(P, Qt, S);
+      // VALUE IS BIMODAL AND CAPPED — GroundScatter's technique one size up, and for the same reason: a
+      // fresh spall face is pale, a weathered lichened body is dark, and no single multiplier can be right
+      // on a black basalt waste and a white marble plaza at once. HUE still comes from BROCK.col x the map
+      // (so the rock still belongs to its region); only the VALUE separates. The product is then
+      // hue-preservingly capped at 1 — an albedo over 1 has no shaded side left and is the shape of every
+      // washed-out recurrence this project has had.
+      const g = rng() < 0.40 ? 0.86 + rng() * 0.22 : 0.52 + rng() * 0.28;
+      C.setRGB(g * (1 + (rng() - 0.5) * 0.12), g, g * (1 - rng() * 0.10));
       if (bRock) { const t = bRock.col; C.setRGB(C.r * lerp(1, t[0], rW), C.g * lerp(1, t[1], rW), C.b * lerp(1, t[2], rW)); }
+      { const mx = Math.max(C.r, C.g, C.b); if (mx > 1) C.setRGB(C.r / mx, C.g / mx, C.b / mx); }
       const grp = (bRock?.grp && this._rockGrp[bRock.grp] && rW > 0.35) ? bRock.grp : 'default';
       this._rockGrp[grp][kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
-      col.add({ type: 'sphere', pos: new THREE.Vector3(x, yb - 0.15 * scale, z), r: scale * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
+      col.add({ type: 'sphere', pos: new THREE.Vector3(x, yb - 0.15 * scale, z), r: rXZ * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
     // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
     const addCrystal = (x, z, scale, variant, tint, aspect) => {

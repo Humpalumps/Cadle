@@ -154,12 +154,17 @@ const mergeAll = (list, tints = null) => mergeGeometries(list.map((g, gi) => {
   n.setAttribute('color', new THREE.BufferAttribute(a, 3));
   return n;
 }));
-/** Like mergeAll but KEEPS UVs — for textured alpha cards (reeds, moss drapes) that need their map. */
+/** Like mergeAll but KEEPS UVs — for textured alpha cards (reeds, moss drapes) that need their map.
+ *  A card that already carries a colour attribute (the reeds' wet contact band) has the tint MULTIPLIED
+ *  into it, exactly as mergeAll does — that is what lets a per-VERTEX gradient survive the merge. */
 const mergeKeepUV = (list, tints) => mergeGeometries(list.map((g, gi) => {
   const n = g.index ? g.toNonIndexed() : g;
   const t = tints ? (Array.isArray(tints[0]) ? tints[gi] : tints) : [1, 1, 1];
-  const cnt = n.attributes.position.count, a = new Float32Array(cnt * 3);
-  for (let k = 0; k < cnt; k++) { a[k * 3] = t[0]; a[k * 3 + 1] = t[1]; a[k * 3 + 2] = t[2]; }
+  const cnt = n.attributes.position.count, prev = n.attributes.color, a = new Float32Array(cnt * 3);
+  for (let k = 0; k < cnt; k++) {
+    const m0 = prev ? prev.getX(k) : 1, m1 = prev ? prev.getY(k) : 1, m2 = prev ? prev.getZ(k) : 1;
+    a[k * 3] = t[0] * m0; a[k * 3 + 1] = t[1] * m1; a[k * 3 + 2] = t[2] * m2;
+  }
   n.setAttribute('color', new THREE.BufferAttribute(a, 3));
   return n;
 }));
@@ -1086,6 +1091,8 @@ export class Props {
     // and those are placed by _buildBiomeClutter. Running the fungus first is why the fen's fungus only
     // ever landed on the handful of hummocks that clear the water line (wave-2: "witchlight still absent").
     this._buildMushrooms(rng, h, veg, Q);
+    // LAST: merge the three shared accent buckets. Must run after EVERY producer — see _buildOrnamentBuckets.
+    this._buildOrnamentBuckets();
     this._pruneCelestialRocks(col);
   }
 
@@ -1147,11 +1154,31 @@ export class Props {
     const fenReed = [], fenReedT = [], fenMoss = [], fenMossT = [];
     // `k` scales the clump with the water depth it stands in: a 2.5 m card planted on a bed 2 m under the
     // surface is invisible, which is why the deeper middle of the fen stayed bare while the shoreline read.
-    const reedClump = (x, y, z, k = 1) => { const t = 0.82 + rng() * 0.3, ry0 = rng() * Math.PI;
-      for (let q = 0; q < 4; q++) { const s = (0.9 + rng() * 0.5) * k;
-        fenReed.push(new THREE.PlaneGeometry(2.1 * s, 2.5 * s).rotateY(ry0 + q * 0.785 + (rng() - 0.5) * 0.3)
-          .translate(x + (rng() - 0.5) * 0.9 * k, y + 1.2 * s, z + (rng() - 0.5) * 0.9 * k));
-        fenReedT.push([0.86 * t, 0.92 * t, 0.72 * t]); } };
+    // WAVE-6 SHADOWFEN MAJOR: "reed clumps show their polygons at 3 m, meeting the water on a hard line
+    // with no wet-darkening." Two separate defects, both fixed here and both free:
+    //  (1) FOUR cards on one shared height and one shared centre is a readable X from any close angle —
+    //      every plane's top edge lands on the same line, which is what makes the cross visible. Six cards
+    //      at 30 deg, each with its OWN height, lean and offset, has no shared silhouette left to spot.
+    //  (2) THE WATERLINE. A card ending on a flat tint cuts the surface like scissors. The band is a
+    //      per-VERTEX darkening (mergeKeepUV multiplies it through the merge) that runs from the water
+    //      plane down: darker, and cooler, exactly the trick GroundScatter already uses on its own litter
+    //      within 0.7 m of the same plane — so the fen's litter and its reeds now share one shoreline.
+    const reedClump = (x, y, z, k = 1) => { const t = 0.82 + rng() * 0.3, ry0 = rng() * Math.PI, N = 6;
+      for (let q = 0; q < N; q++) {
+        const s = (0.9 + rng() * 0.5) * k, hs = s * (0.70 + rng() * 0.58);
+        const g = new THREE.PlaneGeometry(2.1 * s, 2.5 * hs)
+          .rotateZ((rng() - 0.5) * 0.18)
+          .rotateY(ry0 + q * (Math.PI / N) + (rng() - 0.5) * 0.22)
+          .translate(x + (rng() - 0.5) * 1.15 * k, y + 1.2 * hs, z + (rng() - 0.5) * 1.15 * k);
+        const p = g.attributes.position, cc = new Float32Array(p.count * 3);
+        for (let vi = 0; vi < p.count; vi++) {
+          const wet = clamp((WL + 0.30 - p.getY(vi)) / 0.85, 0, 1);
+          const f = 1 - 0.52 * wet;                                        // stems go dark where they stand in the peat water
+          cc[vi * 3] = 0.86 * t * f * (1 - 0.12 * wet); cc[vi * 3 + 1] = 0.92 * t * f; cc[vi * 3 + 2] = 0.72 * t * f * (1 + 0.18 * wet);
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+        fenReed.push(g); fenReedT.push([1, 1, 1]);
+      } };
     // one recipe per region: { mat, n, tint, place(x, y, z, out) }. `out(geometry, tintOverride)` collects.
     // `n` is how many ATTEMPTS are made across the region disc; terrain rejects thin that out.
     const KIT = {
@@ -1825,16 +1852,43 @@ export class Props {
           const x = ox * r + tx * side * 9.5, z = oz * r + tz * side * 9.5, y = h(x, z);
           if (y < 6) continue;                                   // never a stone standing in water
           const hh = (7.4 + rng() * 2.6) * s;
+          // Every piece rides the SAME frame the shaft does (yaw, then lift in the shaft's own local Y,
+          // then the lean, then world) — a collar built in world space drifts ~0.26 m off a leaning stone.
+          const put = (g, H) => g.rotateY(-a).translate(0, H - 0.6, 0).rotateZ(side * -0.045).translate(x, y - 0.5, z);
           // WAVE-6 INFERNAL major: "a 15 m monolith of literally uniform colour (std 4/255), no carving, no
           // chamfer". This is the ONE monolithGeometry call site in the file that never went through
           // `weather()` - every other one does. weather() bakes per-vertex grime/AO into the colour attribute
           // and mergeAll multiplies the tint into it, so without it all 54 stones carry one flat constant and
           // measure exactly the std the judge reported. And this function's own comment promises "dark violet
           // + gold world-order accents" while emitting no gold at all: the collar is the chamfer AND the accent.
-          parts.push(weather(monolithGeometry(hh, rng).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5, z), 1.0, 870 + k * 6 + (side + 1)));
-          tints.push([1.05, 1.0, 1.15]);   // near-neutral over megalith_violet — the map is the value
-          this._gold.parts.push(new THREE.BoxGeometry(3.46, 0.30, 2.06).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5 + hh * 0.70, z));
+          const sd0 = 870 + k * 6 + (side + 1);
+          parts.push(weather(put(monolithGeometry(hh, rng), 0.6), 1.25, sd0));
+          // WAVE-6 ("flat lavender monolith slabs with no cap, base or ornament", tools/out/CD-fight/
+          // shot-border-cel-10.png and pp-repro/shot-A2-borderstone-11m.png at 11 m). The near-neutral 1.05
+          // tint over a base material that ALREADY carries an HDR 1.40 colour landed the shaft at one flat
+          // high-value violet with no shaded face left to read — the same value-crush the lost/void kits
+          // fixed from the other end. Value down ~32%, hue kept (and pushed a shade more violet, which is
+          // what the waystone vocabulary is), so the map's veining and weather()'s grime both come back.
+          tints.push([0.74, 0.68, 0.86]);
+          // BASE: two stepped plinth courses. A monolith that meets the grass on a single tapered edge is a
+          // slab someone stood up; a plinth is a thing that was BUILT. NOTE the datum: monolithGeometry
+          // pre-translates by h/2 - 0.6, so `put(g, H)` measures H from the shaft's BOTTOM, which is buried
+          // 1.1 m under the terrain — a plinth at H 0.26 is entirely underground (it was, first pass).
+          parts.push(weather(put(new THREE.BoxGeometry(4.5 * s, 0.55, 3.0 * s), 1.02), 1.15, sd0 + 3)); tints.push([0.62, 0.57, 0.72]);
+          parts.push(weather(put(new THREE.BoxGeometry(3.9 * s, 0.42, 2.5 * s), 1.48), 1.05, sd0 + 4)); tints.push([0.68, 0.63, 0.78]);
+          // CAP: a chamfered capstone over the angled crown, so the stone ends on a course instead of a taper
+          parts.push(weather(put(new THREE.BoxGeometry(2.05 * s, 0.30, 1.62 * s), hh - 0.10), 0.9, sd0 + 5)); tints.push([0.80, 0.74, 0.92]);
+          parts.push(weather(put(new THREE.BoxGeometry(1.66 * s, 0.26, 1.30 * s), hh + 0.16), 0.9, sd0 + 6)); tints.push([0.72, 0.66, 0.84]);
+          // ORNAMENT: a dark course under the collar, so the gold reads as seated in cut stone, not stuck on
+          parts.push(put(new THREE.BoxGeometry(2.16 * s, 0.46, 1.72 * s), hh * 0.70 - 0.30)); tints.push([0.30, 0.27, 0.36]);
+          // ...and the gold collar the function's own doc-comment always promised. It never rendered: the
+          // gold bucket was merged in step 6 and this pushes in step 11 (see _buildOrnamentBuckets). Now
+          // that it lands, the old 3.46 x 2.06 box overhung the 1.98 m-wide shaft by 0.74 m a side and read
+          // as a table — sized to a real collar instead.
+          this._gold.parts.push(put(new THREE.BoxGeometry(2.52 * s, 0.30, 1.98 * s), hh * 0.70));
           this._gold.tints.push([1.0, 0.96, 0.86]);
+          this._gold.parts.push(put(new THREE.BoxGeometry(2.18 * s, 0.16, 1.70 * s), hh * 0.70 + 0.22));
+          this._gold.tints.push([1.0, 0.94, 0.82]);
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 });
         }
       }
@@ -1875,8 +1929,16 @@ export class Props {
     // reveal, sill, lintel, jambs, shutters, a framed door, and an eaves board under the thatch.
     const OAK = [0.72, 0.62, 0.46], OAK2 = [0.52, 0.44, 0.32], TRIM = [0.80, 0.70, 0.54], STN = [0.86, 0.84, 0.80],
       PLA = [1.00, 0.98, 0.94], THA = [1.00, 0.96, 0.88], THA2 = [0.80, 0.76, 0.66], DARK = [0.06, 0.05, 0.045];
-    const cottage = (x, z, ry, w, d, wh) => {
+    const cottage = (x, z, ry, w, d, wh, form) => {
       const y = h(x, z) - 0.15;
+      // WAVE-6 VALE MAJOR, and it is the STARTING ZONE: "one prism plus pyramid roof repeated". The
+      // FOOTPRINT was already random; the ROOF was not — every cottage in the hamlet wore the same four
+      // hipped thatch courses at the same 3.0 m rise, and a roof is 40% of a cottage's silhouette. `form`
+      // now picks between a hipped roof and a GABLED one (two pitches on a ridge, with filled gable ends and
+      // barge boards), the rise varies 2.4-3.9 m, and the chimney is measured off the actual ridge instead
+      // of a constant that a taller roof would have swallowed.
+      const RH = 2.4 + rng() * 1.5, gable = form > 0.42;
+      const LR = (g) => g.rotateY(ry).translate(x, y, z);   // build the roof in the cottage's own frame
       const ex = [Math.cos(ry), -Math.sin(ry)], ez = [Math.sin(ry), Math.cos(ry)];   // width axis / depth axis, in world
       const wins = [];
       this._cottages.push({ x, y, z, ry, d, wh, wins });
@@ -1889,21 +1951,54 @@ export class Props {
         K(new THREE.BoxGeometry(0.20, wh - 0.5, 0.20).rotateY(ry).translate(x + ex[0] * sd * (w / 2 - 0.02) + ez[0] * sd2 * (d / 2 - 0.02), y + 0.55 + (wh - 0.5) / 2, z + ex[1] * sd * (w / 2 - 0.02) + ez[1] * sd2 * (d / 2 - 0.02)), OAK2);
       for (const [ax, sx2, hw, off] of [[ez, ex, w, d / 2], [ex, ez, d, w / 2]]) for (const sd of [-1, 1]) {
         const bx = x + ax[0] * sd * off, bz = z + ax[1] * sd * off, ry2 = ry + (ax === ez ? 0 : Math.PI / 2);
-        K(new THREE.BoxGeometry(hw, 0.17, 0.13).rotateY(ry2).translate(bx + ax[0] * sd * 0.06, y + wh * 0.72, bz + ax[1] * sd * 0.06), OAK2);   // mid rail
-        for (const sd3 of [-1, 1]) K(new THREE.BoxGeometry(hw * 0.42, 0.15, 0.12).rotateZ(sd3 * 0.62).rotateY(ry2)
-          .translate(bx + sx2[0] * sd3 * hw * 0.28 + ax[0] * sd * 0.06, y + wh * 0.40, bz + sx2[1] * sd3 * hw * 0.28 + ax[1] * sd * 0.06), OAK2);  // braces
+        // PROUD, not flush. The frame was 0.13 m deep sitting 0.06 m off the wall face, i.e. 0.125 m of
+        // relief on a 6 m wall — at 25 m that is a painted stripe, which is exactly what wave-6 called it.
+        // Doubling the standing-off (0.19 deep at 0.10 out = 0.195 proud) is what casts the shadow line that
+        // makes a timber frame read as timber, and a sill/head rail gives the panel a real box section.
+        K(new THREE.BoxGeometry(hw, 0.21, 0.19).rotateY(ry2).translate(bx + ax[0] * sd * 0.10, y + wh * 0.72, bz + ax[1] * sd * 0.10), OAK2);   // mid rail
+        K(new THREE.BoxGeometry(hw, 0.19, 0.17).rotateY(ry2).translate(bx + ax[0] * sd * 0.09, y + wh * 0.30, bz + ax[1] * sd * 0.09), OAK2);   // sill rail
+        for (const sd3 of [-1, 1]) K(new THREE.BoxGeometry(hw * 0.42, 0.19, 0.17).rotateZ(sd3 * 0.62).rotateY(ry2)
+          .translate(bx + sx2[0] * sd3 * hw * 0.28 + ax[0] * sd * 0.10, y + wh * 0.50, bz + sx2[1] * sd3 * hw * 0.28 + ax[1] * sd * 0.10), OAK2);  // braces
       }
       // THATCHED HIP ROOF, four laid COURSES (was two cones — the upper one hung 6x wider than the lower one
       // was at that height, which is the wave-3 "the upper roof cone floats clear with sky visible in the
       // gap, reading as a flying saucer"). Each course's bottom radius is 4% wider than the course below it
       // is at its own top, so every joint is an overhanging straw lip and no face can ever bound air.
-      { const rr = Math.hypot(w, d) * 0.60, RH = 3.0, NC = 4;
+      if (gable) {
+        // GABLE: two pitched thatch slopes on a ridge. The overhang is real (0.45 m of eaves all round),
+        // the gable wall is filled in stepped plaster courses so no sky shows through under the ridge, and
+        // a barge board caps the verge — which is the joinery that stops a pitched roof reading as two
+        // leaning cards.
+        const e = 0.45, hw = w / 2 + e, pit = Math.atan2(RH, hw), sl = Math.hypot(hw, RH);
+        for (const sd of [-1, 1])
+          R(LR(new THREE.BoxGeometry(sl + 0.18, 0.34, d + 2 * e).rotateZ(-sd * pit).translate(sd * hw / 2, wh - 0.05 + RH / 2, 0)), sd < 0 ? THA : THA2);
+        R(LR(new THREE.BoxGeometry(0.55, 0.30, d + 2 * e + 0.22).translate(0, wh - 0.02 + RH, 0)), THA2);   // ridge course
+        for (const sd of [-1, 1]) {
+          for (let t2 = 0; t2 < 4; t2++) {                                   // stepped plaster gable fill
+            const f0 = t2 / 4, f1 = (t2 + 1) / 4;
+            W(LR(new THREE.BoxGeometry(w * (1 - f1) + 0.06, RH / 4 + 0.02, 0.34).translate(0, wh - 0.05 + RH * (f0 + f1) / 2, sd * (d / 2 - 0.16))), PLA);
+          }
+          for (const sd2 of [-1, 1])                                          // barge boards down the verge
+            K(LR(new THREE.BoxGeometry(sl + 0.20, 0.22, 0.14).rotateZ(-sd2 * pit).translate(sd2 * hw / 2, wh - 0.05 + RH / 2 - 0.22, sd * (d / 2 + e + 0.06))), TRIM);
+        }
+      } else {
+        const rr = Math.hypot(w, d) * 0.60, NC = 4;
         for (let c = 0; c < NC; c++) {
           const r0 = rr * (1 - (c / NC) * 0.90), r1 = rr * (1 - ((c + 1) / NC) * 0.90);
           R(new THREE.CylinderGeometry(r1, r0 * 1.04, RH / NC + 0.06, 4).rotateY(Math.PI / 4 + ry)
             .translate(x, y + wh - 0.05 + (c / NC) * RH + RH / (NC * 2), z), c % 2 ? THA2 : THA);
         }
         R(new THREE.ConeGeometry(rr * 0.13, 0.55, 4).rotateY(Math.PI / 4 + ry).translate(x, y + wh + RH + 0.16, z), THA2);   // ridge cap
+      }
+      // a lean-to shed against one gable end on some cottages: a second, LOWER roof line is what stops nine
+      // cottages reading as nine copies from the mid-field, and it costs one box and one pitched slab
+      if (form > 0.72) {
+        const sd = form > 0.86 ? 1 : -1, sw = 1.9 + rng() * 0.9, sh = wh * 0.52;
+        W(LR(new THREE.BoxGeometry(sw, sh, d * 0.62).translate(sd * (w / 2 + sw / 2), sh / 2, 0)), PLA);
+        R(LR(new THREE.BoxGeometry(sw + 0.75, 0.28, d * 0.62 + 0.5).rotateZ(-sd * 0.42).translate(sd * (w / 2 + sw / 2), sh + 0.22 + sw * 0.21, 0)), THA);
+        K(LR(new THREE.BoxGeometry(0.16, sh, 0.16).translate(sd * (w / 2 + sw - 0.08), sh / 2, d * 0.31 - 0.08)), OAK2);
+        K(LR(new THREE.BoxGeometry(0.16, sh, 0.16).translate(sd * (w / 2 + sw - 0.08), sh / 2, -d * 0.31 + 0.08)), OAK2);
+        obbCol(col, x + ex[0] * sd * (w / 2 + sw / 2), z + ex[1] * sd * (w / 2 + sw / 2), ry, sw / 2 + 0.1, d * 0.31 + 0.1, y - 0.5, y + sh + 0.4, { tile: 1.0 });
       }
       // eaves board: the line where thatch meets wall. Without it the roof looks dropped on the box.
       for (const [ax, hw, off] of [[ex, w, d / 2], [ez, d, w / 2]]) for (const sd of [-1, 1]) {
@@ -1912,8 +2007,9 @@ export class Props {
         K(g.rotateY(ry).translate(bx, y + wh - 0.12, bz), TRIM);
       }
       // chimney + the front door, both on real faces
-      S(new THREE.BoxGeometry(0.7, wh + 3.2, 0.7).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + (wh + 3.2) / 2, z + ez[1] * (d * 0.30)), [0.78, 0.75, 0.72]);
-      S(new THREE.BoxGeometry(0.92, 0.26, 0.92).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + wh + 3.3, z + ez[1] * (d * 0.30)), [0.72, 0.70, 0.68]);
+      { const chH = wh + RH + 1.0;   // measured off the REAL ridge: a fixed 3.2 m stack vanished under a 3.9 m pitch
+        S(new THREE.BoxGeometry(0.7, chH, 0.7).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + chH / 2, z + ez[1] * (d * 0.30)), [0.78, 0.75, 0.72]);
+        S(new THREE.BoxGeometry(0.92, 0.26, 0.92).rotateY(ry).translate(x + ez[0] * (d * 0.30), y + chH + 0.10, z + ez[1] * (d * 0.30)), [0.72, 0.70, 0.68]); }
       { const fo = d / 2, dx = x + ez[0] * fo, dz = z + ez[1] * fo;
         W(new THREE.BoxGeometry(1.15, 2.05, 0.34).rotateY(ry).translate(dx - ez[0] * 0.10, y + 1.02, dz - ez[1] * 0.10), DARK);  // the opening, recessed INTO the wall
         K(new THREE.BoxGeometry(0.98, 1.92, 0.10).rotateY(ry).translate(dx + ez[0] * 0.04, y + 0.98, dz + ez[1] * 0.04), OAK);   // the leaf, planked oak
@@ -1960,14 +2056,39 @@ export class Props {
     for (let i = 0; i < 9; i++) {
       const a = i / 9 * Math.PI * 2 + rng() * 0.4, r = 13 + rng() * 11;
       cottage(CX + Math.cos(a) * r, CZ + Math.sin(a) * r, a + Math.PI / 2 + (rng() - 0.5) * 0.5,
-        4.6 + rng() * 2.2, 5.6 + rng() * 2.4, 3.0 + rng() * 0.9);
+        4.4 + rng() * 3.0, 5.4 + rng() * 3.2, 2.8 + rng() * 1.5, rng());   // footprint + storey height spread widened with the roof forms
     }
-    // the well the whole place is built around: dressed stone kerb, oak frame, thatched cap
-    const wy = h(CX, CZ);
-    S(new THREE.CylinderGeometry(1.5, 1.65, 1.1, 12).translate(CX, wy + 0.5, CZ), [0.82, 0.80, 0.76]);
-    S(new THREE.CylinderGeometry(1.15, 1.15, 0.9, 12).translate(CX, wy + 0.7, CZ), [0.09, 0.09, 0.11]);
-    for (const s of [1, -1]) K(new THREE.BoxGeometry(0.22, 2.6, 0.22).translate(CX + s * 1.3, wy + 2.0, CZ), OAK2);
-    K(new THREE.CylinderGeometry(0.13, 0.13, 2.5, 8).rotateZ(Math.PI / 2).translate(CX, wy + 3.05, CZ), OAK);   // the windlass
+    // THE WELL. Wave-6 called it "a black cube well", and the geometry says why: the dark shaft cylinder
+    // ran to wy+1.15 while the kerb it sits in only reaches wy+1.05, so the VOID was the highest thing on
+    // the well — a black drum capping a stone drum, with no coping to read as a rim and nothing on the
+    // windlass to read as a winch. Now: a coursed kerb with individually laid coping stones, the shaft
+    // recessed well below the rim, and a working head — drum, wound rope, crank with a grip, a rope
+    // dropping into the dark and a bucket hanging on it.
+    const wy = h(CX, CZ) + 0.50;   // the well stands ON its dais (built with the yard dressing below), not in the grass beside it
+    S(new THREE.CylinderGeometry(1.5, 1.65, 1.05, 20).translate(CX, wy + 0.48, CZ), [0.82, 0.80, 0.76]);
+    S(new THREE.CylinderGeometry(1.12, 1.12, 0.86, 16).translate(CX, wy + 0.42, CZ), [0.055, 0.052, 0.065]);   // the shaft: recessed 0.15 m UNDER the rim, never proud of it
+    for (let i = 0; i < 11; i++) {                                            // coping: laid stones, not a lathe ring
+      const ca2 = (i / 11) * 6.2832 + 0.2, cr = 1.42;
+      S(new THREE.BoxGeometry(0.86, 0.24, 0.52).rotateY(-ca2).rotateZ((rng() - 0.5) * 0.05)
+        .translate(CX + Math.cos(ca2) * cr, wy + 1.06 + (rng() - 0.5) * 0.03, CZ + Math.sin(ca2) * cr), [0.88 - rng() * 0.12, 0.86 - rng() * 0.12, 0.80 - rng() * 0.10]);
+    }
+    for (const s of [1, -1]) {
+      K(new THREE.BoxGeometry(0.24, 2.6, 0.24).translate(CX + s * 1.3, wy + 2.0, CZ), OAK2);
+      K(new THREE.BoxGeometry(0.16, 0.9, 0.16).rotateZ(s * 0.72).translate(CX + s * 1.62, wy + 1.55, CZ), OAK2);   // knee brace
+    }
+    K(new THREE.CylinderGeometry(0.13, 0.13, 2.5, 10).rotateZ(Math.PI / 2).translate(CX, wy + 3.05, CZ), OAK);   // the windlass axle
+    K(new THREE.CylinderGeometry(0.26, 0.26, 0.72, 12).rotateZ(Math.PI / 2).translate(CX, wy + 3.05, CZ), OAK2); // the drum
+    for (let i = 0; i < 7; i++)                                               // rope wound on the drum
+      K(new THREE.TorusGeometry(0.285, 0.035, 4, 14).rotateY(Math.PI / 2).translate(CX - 0.30 + i * 0.10, wy + 3.05, CZ), [0.62, 0.55, 0.40]);
+    K(new THREE.BoxGeometry(0.09, 0.09, 0.60).translate(CX + 1.42, wy + 3.05, CZ - 0.30), OAK2);                 // crank arm
+    K(new THREE.CylinderGeometry(0.055, 0.055, 0.34, 8).rotateZ(Math.PI / 2).translate(CX + 1.60, wy + 3.05, CZ - 0.58), OAK); // ...and its grip
+    K(new THREE.CylinderGeometry(0.028, 0.028, 1.55, 6).translate(CX + 0.12, wy + 2.28, CZ), [0.62, 0.55, 0.40]); // the rope, dropping into the dark
+    K(new THREE.CylinderGeometry(0.24, 0.20, 0.42, 12).translate(CX + 0.12, wy + 1.32, CZ), OAK);                // the bucket on it
+    K(new THREE.TorusGeometry(0.245, 0.028, 4, 12).rotateX(Math.PI / 2).translate(CX + 0.12, wy + 1.48, CZ), [0.42, 0.40, 0.38]);
+    // the cap: a ridge beam with rafters under the thatch, so it is a roof and not two leaning planks
+    K(new THREE.BoxGeometry(3.1, 0.14, 0.14).translate(CX, wy + 3.72, CZ), OAK2);
+    for (const s of [1, -1]) for (let i = 0; i < 3; i++)
+      K(new THREE.BoxGeometry(0.10, 0.10, 1.28).rotateX(s * 0.35).translate(CX + (i - 1) * 1.15, wy + 3.52, CZ + s * 0.58), OAK2);
     R(new THREE.BoxGeometry(3.6, 0.30, 2.4).rotateX(0.35).translate(CX, wy + 3.5, CZ + 0.35), THA);
     R(new THREE.BoxGeometry(3.6, 0.30, 2.4).rotateX(-0.35).translate(CX, wy + 3.5, CZ - 0.35), THA2);
     col.add({ type: 'sphere', pos: V3(CX, wy + 0.6, CZ), r: 1.8 });
@@ -1995,12 +2116,23 @@ export class Props {
     for (const c of this._cottages ?? []) {
       const ex = [Math.cos(c.ry), -Math.sin(c.ry)], ez = [Math.sin(c.ry), Math.cos(c.ry)];
       const yardR = mulberry32((c.x * 131 + c.z * 977) | 0);
-      // the trodden apron at the door + a path stub toward the well
-      for (let i = 0; i < 9; i++) {
-        const t2 = (yardR() - 0.5) * 3.4, dd = 1.4 + yardR() * 3.6;
+      // THE DOOR STOOP. Wave-6: "grass through the decking". The wave-4 yard pass laid 0.12 m plates FLAT
+      // ON the grade, and Grass.js takes its mask from `terrain.grassAt`, which has no idea a village is
+      // here — so blades grow straight up through what is supposed to be a floor. A continuous floor
+      // pierced by grass is a bug; a stepping stone standing in grass is not. So the continuous part is now
+      // a real raised stoop (0.58 m of coursed stone under an oversailing flagged top, plus a step down —
+      // still inside the 0.6 m step-up, so it needs no collider and never blocks a doorway), which stands
+      // clear of the great majority of the blade population, and only LOOSE stones are left at grade.
+      { const dd0 = c.d / 2 + 1.35, sx0 = c.x + ez[0] * dd0, sz0 = c.z + ez[1] * dd0, sy0 = h(sx0, sz0) - 0.06;
+        S(new THREE.BoxGeometry(3.1, 0.42, 2.5).rotateY(c.ry).translate(sx0, sy0 + 0.21, sz0), [0.64, 0.60, 0.54]);
+        S(new THREE.BoxGeometry(3.34, 0.16, 2.74).rotateY(c.ry).translate(sx0, sy0 + 0.50, sz0), [0.73, 0.69, 0.62]);
+        S(new THREE.BoxGeometry(3.34, 0.22, 0.62).rotateY(c.ry).translate(sx0 + ez[0] * 1.52, sy0 + 0.11, sz0 + ez[1] * 1.52), [0.60, 0.56, 0.50]); }
+      // ...and the trodden stones going out from it, small and separated: these READ as stepping stones
+      for (let i = 0; i < 6; i++) {
+        const t2 = (yardR() - 0.5) * 3.0, dd = 3.4 + yardR() * 3.4;
         const px = c.x + ez[0] * (c.d / 2 + dd) + ex[0] * t2, pz = c.z + ez[1] * (c.d / 2 + dd) + ex[1] * t2;
-        S(new THREE.BoxGeometry(0.9 + yardR() * 0.9, 0.12, 0.9 + yardR() * 0.9).rotateY(yardR() * 3).rotateX((yardR() - 0.5) * 0.06)
-          .translate(px, h(px, pz) + 0.02, pz), [0.60, 0.56, 0.50]);
+        S(new THREE.BoxGeometry(0.56 + yardR() * 0.44, 0.20, 0.56 + yardR() * 0.44).rotateY(yardR() * 3).rotateX((yardR() - 0.5) * 0.06)
+          .translate(px, h(px, pz) + 0.06, pz), [0.60, 0.56, 0.50]);
       }
       // the log pile, stacked against the gable end where it stays dry under the eaves
       { const sd = yardR() < 0.5 ? 1 : -1, bx = c.x + ex[0] * sd * (c.d * 0.30) + ez[0] * (c.d / 2 - 0.4), bz = c.z + ex[1] * sd * (c.d * 0.30) + ez[1] * (c.d / 2 - 0.4);
@@ -2030,12 +2162,20 @@ export class Props {
     }
     // the well's apron, worn hollow by a thousand buckets, and the tools left leaning on the kerb
     { const wy0 = h(CX, CZ);
-      for (let i = 0; i < 22; i++) { const a2 = (i / 22) * 6.2832 + 0.3, rr = 2.1 + rng() * 2.4;
+      // same fix as the door stoops: the well's apron is a raised DAIS (an octagonal platform with a step
+      // ring) rather than 22 plates lying in the grass for the grass to grow through.
+      // r 2.7 / 3.2 keeps the whole platform inside the ring the villagers stand on (Serel 3.60 m, Harl
+      // 3.54 m from the well — _buildVillagers seats them on terrain height), and every riser is under the
+      // 0.6 m step-up so it is walkable with no collider.
+      S(new THREE.CylinderGeometry(3.2, 3.25, 0.20, 8).rotateY(0.78).translate(CX, wy0 + 0.08, CZ), [0.60, 0.57, 0.51]);   // the step up onto it
+      S(new THREE.CylinderGeometry(2.7, 2.75, 0.40, 8).rotateY(0.39).translate(CX, wy0 + 0.20, CZ), [0.64, 0.61, 0.55]);
+      S(new THREE.CylinderGeometry(2.55, 2.55, 0.12, 8).rotateY(0.39).translate(CX, wy0 + 0.44, CZ), [0.74, 0.70, 0.63]);
+      for (let i = 0; i < 10; i++) { const a2 = (i / 10) * 6.2832 + 0.3, rr = 4.4 + rng() * 2.2;
         const px = CX + Math.cos(a2) * rr, pz = CZ + Math.sin(a2) * rr;
-        S(new THREE.BoxGeometry(0.85 + rng() * 0.8, 0.12, 0.85 + rng() * 0.8).rotateY(rng() * 3).translate(px, h(px, pz) + 0.02, pz), [0.58, 0.55, 0.50]); }
-      K(new THREE.CylinderGeometry(0.28, 0.25, 0.62, 10).rotateZ(0.32).translate(CX + 1.9, wy0 + 0.30, CZ + 0.6), OAK);          // a bucket, set down
-      K(new THREE.CylinderGeometry(0.045, 0.045, 1.9, 6).rotateZ(0.44).translate(CX - 1.5, wy0 + 0.9, CZ - 1.1), OAK2);          // a hayfork leaning on the kerb
-      for (const sd of [-1, 1]) K(new THREE.BoxGeometry(0.06, 0.42, 0.06).rotateZ(0.44).translate(CX - 1.5 - 0.38 + sd * 0.09, wy0 + 1.75, CZ - 1.1), OAK2); }
+        S(new THREE.BoxGeometry(0.55 + rng() * 0.5, 0.20, 0.55 + rng() * 0.5).rotateY(rng() * 3).translate(px, h(px, pz) + 0.06, pz), [0.58, 0.55, 0.50]); }
+      K(new THREE.CylinderGeometry(0.28, 0.25, 0.62, 10).rotateZ(0.32).translate(CX + 1.9, wy0 + 0.80, CZ + 0.6), OAK);          // a bucket, set down on the dais
+      K(new THREE.CylinderGeometry(0.045, 0.045, 1.9, 6).rotateZ(0.44).translate(CX - 1.5, wy0 + 1.40, CZ - 1.1), OAK2);         // a hayfork leaning on the kerb
+      for (const sd of [-1, 1]) K(new THREE.BoxGeometry(0.06, 0.42, 0.06).rotateZ(0.44).translate(CX - 1.5 - 0.38 + sd * 0.09, wy0 + 2.25, CZ - 1.1), OAK2); }
     // three vegetable strips between the field walls: ridge-and-furrow, which is what says "farmed" at 40 m
     for (let i = 0; i < 3; i++) {
       const a2 = 0.9 + i * 2.1, rr = 20 + rng() * 5, bx = CX + Math.cos(a2) * rr, bz = CZ + Math.sin(a2) * rr;
@@ -2064,14 +2204,24 @@ export class Props {
     };
     const stall = (sx, sz, a2, canvas) => {
       const sy = h(sx, sz), L = (g) => g.rotateY(a2).translate(sx, sy, sz);   // local frame: +z faces the customers
-      for (const q of [-1, 1]) for (const q2 of [-1, 1]) { const ph = q2 < 0 ? 2.75 : 2.25;
-        K(L(new THREE.BoxGeometry(0.15, ph, 0.15).translate(q * 1.55, ph / 2, q2 * 1.05)), OAK2); }
+      // WAVE-6 VALE, "a floating canopy plank": the four posts were 2.75/2.25 m tall constants while the
+      // canted canvas's UNDERSIDE at those posts is at 2.88/2.14 — so the back pair stopped 0.13 m short of
+      // the thing they are supposed to hold up and the front pair speared through it. Both heights are now
+      // solved from the canopy plane itself, and a purlin runs post-to-post under the cloth, which is what
+      // makes a canopy read as carried instead of hovering.
+      const CPITCH = 0.34, CYC = 2.55, CZC = 0.10, CTH = 0.14;
+      const roofY = (zl) => CYC - (zl - CZC) * Math.tan(CPITCH) - (CTH / 2) / Math.cos(CPITCH);
+      for (const q2 of [-1, 1]) {
+        const ph = roofY(q2 * 1.05);
+        for (const q of [-1, 1]) K(L(new THREE.BoxGeometry(0.15, ph, 0.15).translate(q * 1.55, ph / 2, q2 * 1.05)), OAK2);
+        K(L(new THREE.BoxGeometry(3.4, 0.11, 0.11).translate(0, ph - 0.06, q2 * 1.05)), OAK2);   // purlin under the cloth
+      }
       K(L(new THREE.BoxGeometry(3.4, 0.12, 1.2).translate(0, 0.98, 0.45)), OAK);                    // counter
       K(L(new THREE.BoxGeometry(3.4, 0.55, 0.07).translate(0, 0.66, 1.02)), OAK2);                  // apron board
       K(L(new THREE.BoxGeometry(3.2, 0.10, 0.9).translate(0, 0.48, -0.70)), OAK);                   // back shelf
       // canted canvas — REAL thickness and a 20° pitch: a 5 cm plate a metre above eye height reads as
       // a floating razor line from 15 m (it did — the wave's "white beam across the lane")
-      W(L(new THREE.BoxGeometry(3.8, 0.14, 2.85).rotateX(0.34).translate(0, 2.55, 0.10)), canvas);
+      W(L(new THREE.BoxGeometry(3.8, CTH, 2.85).rotateX(CPITCH).translate(0, CYC, CZC)), canvas);
       W(L(new THREE.SphereGeometry(0.30, 7, 6).scale(1, 0.72, 1).translate(-0.9, 1.20, 0.42)), [0.80, 0.72, 0.58]);  // sacks of goods
       W(L(new THREE.SphereGeometry(0.26, 7, 6).scale(1, 0.75, 1).translate(-0.35, 1.16, 0.55)), [0.72, 0.62, 0.48]);
       K(L(new THREE.BoxGeometry(0.50, 0.50, 0.50).translate(0.95, 1.29, 0.45)), OAK);               // a crate on the counter
@@ -3634,6 +3784,21 @@ export class Props {
     }
 
     if (isles.length) this._buildIsles(isles, rng, h, col);
+  }
+
+  /**
+   * THE THREE SHARED ACCENT BUCKETS (gold / divine gilt / region aether), merged into one mesh each.
+   *
+   * WAVE-6 BUG, measured: this used to run at the END of `_buildBiomeLandmarks`, which is step 6 of 14 —
+   * so every `this._gold.parts.push(...)` made by a LATER step was collected into an array nobody ever
+   * merged and silently vanished. Two shipped symptoms, one cause: the border stones' gold collars
+   * (`_buildBorderStones`, step 11 — "flat lavender monolith slabs with no cap, base or ornament", and a
+   * scene probe found the nearest gold vertex 267 m from a stone that is supposed to wear one) and the
+   * Dragon Peaks ore-seam ingots (`_buildBiomeClutter`, step 12). Assembling AFTER every producer has run
+   * is the whole fix; nothing else changes and the draw-call count is identical.
+   */
+  _buildOrnamentBuckets() {
+    const { scene } = this.game;
     // one mesh for every divine-gold accent (gate frieze/archivolt/sunburst + isle rims + hero altar drum):
     // dormant gilt by day, the region's night light — see divineMat in init()
     if (this._divine.parts.length) {
@@ -4420,13 +4585,21 @@ export class Props {
     this.updrafts = this.updrafts ?? [];
     // an irregular-rimmed stratum: cheap cylinder, rim pushed in/out by an angular noise stack.
     // Same (ph, amp) reproduces the same rim — the celestial gold band hugs its disc with that.
+    // WAVE-6 CELESTIAL BLOCKER, from 150 m below: "stacked cardboard discs with a stair-stepped gold rim".
+    // The stair-step was literal — every disc was an 18-gon, so on a 26 m isle each facet is a NINE-METRE
+    // straight edge and the gold band that hugs it inherits the same sawtooth. Segments now follow the
+    // radius (20..64), and a high-frequency radial flute is added on top: with 18 segments the sin(13a)
+    // harmonic that was already in this function could not be resolved at all, which is why the rims read
+    // as smooth extrusions however much `amp` was raised.
     const strata = (r, hh, ph, amp) => {
-      const g = new THREE.CylinderGeometry(r, r * 0.88, hh, 18, 2), p = g.attributes.position;
+      const seg = Math.max(20, Math.min(64, Math.round(r * 2.4)));
+      const g = new THREE.CylinderGeometry(r, r * 0.88, hh, seg, 2), p = g.attributes.position;
       for (let i = 0; i < p.count; i++) {
         const vx = p.getX(i), vz = p.getZ(i), rr = Math.hypot(vx, vz);
         if (rr < r * 0.3) continue;
         const va = Math.atan2(vz, vx);
-        const f = 1 + amp * (0.55 * Math.sin(va * 3 + ph) + 0.30 * Math.sin(va * 7 + ph * 1.7) + 0.15 * Math.sin(va * 13 - ph));
+        const f = 1 + amp * (0.55 * Math.sin(va * 3 + ph) + 0.30 * Math.sin(va * 7 + ph * 1.7) + 0.15 * Math.sin(va * 13 - ph))
+          + amp * 0.30 * Math.sin(va * 27 + ph * 2.3);                      // erosion flutes: the vertical grain of a torn cliff
         p.setXYZ(i, vx * f, p.getY(i), vz * f);
       }
       return g;
@@ -4453,31 +4626,76 @@ export class Props {
         if (s.kind === 'celestial') {                          // gold rim band under the cap edge — same rim noise, so it hugs the marble.
           this._divine.parts.push(strata(R * 1.015, 0.32, ph0, 0.10).translate(x, y + R * 0.2 - 0.22, z));
           this._divine.tints.push([1, 1, 1]);                  // divine bucket: the rims are the isles' night light (wave-2 "no divine light")
-          // WAVE-5 ("bald cream-tan domes when stood on"): every celestial isle now carries a sod cap — a
-          // thin green stratum whose rim follows the marble's own noise — plus scattered paving fragments
-          // on top, and hanging aether crystals under the keel line. Matte tints only; the crystals ride
-          // the divine bucket, whose caps already govern them.
-          parts.push(strata(R * 0.90, 0.34, ph0 + 0.7, 0.09).translate(x, y + R * 0.2 + 0.11, z));
-          tints.push([0.155, 0.295, 0.135]);   // deep enough that the marble map's swirl disappears into it: sod, not green marble
-          const npv = 3 + ((rng() * 4) | 0);
-          for (let c = 0; c < npv; c++) { const pa = rng() * 6.2832, pd = R * (0.12 + rng() * 0.42);
-            parts.push(new THREE.BoxGeometry(1.1 + rng() * 1.3, 0.16, 1.0 + rng() * 1.2).rotateY(rng() * 3).translate(x + Math.cos(pa) * pd, y + R * 0.2 + 0.30, z + Math.sin(pa) * pd));
-            tints.push([1.02, 0.99, 0.92]); }
+          // THE TOP YOU STAND ON. Wave-5 answered "bald cream-tan domes" with a single flat green stratum,
+          // and wave-6 called that exactly what it is: "a solid kelly-green sod cap" — one 23 m disc of one
+          // colour, which at 8 m is a putting green with a marble kerb. The Isles are a MARBLE CIVILISATION,
+          // so the cap is now a laid FLOOR: a pale marble bed, a kerb course round the rim, and a jittered
+          // grid of paving slabs with a few of them tilted, sunk or missing. Turf survives only as small
+          // patches colonising the gaps, which is what a paved terrace a thousand years abandoned looks
+          // like — and, unlike one big disc, it gives the eye relief and a repeating scale to read.
+          // Cost is ~n=R*R*0.16 boxes an isle (121 on the hero, ~350 across the archipelago) inside the SAME
+          // merged mesh: zero extra draw calls.
+          // DATUM: the walkable box collider's top is exactly `y + R*0.2` (see col.add below), so the SLAB
+          // TOPS land on it — the old cap floated its surface 0.38 m above the floor you actually stand on.
+          const TY0 = y + R * 0.2;
+          // The BED is DARK and sits 0.19 m below the flag faces, so what you see between the flags is a
+          // joint. Measured on frame (tools/out/pp-fix/shot-P1.png): with the bed 0.03 m under the slabs in
+          // the same cream, the whole 23 m cap still rendered as ONE smooth plane — the sod dome repainted.
+          // Relief and a dark joint are the entire difference between a floor and a disc.
+          parts.push(strata(R * 0.90, 0.34, ph0 + 0.7, 0.09).translate(x, TY0 - 0.32, z));
+          tints.push([0.30, 0.28, 0.26]);      // packed earth and old mortar, seen down every joint
+          // KERB: individually laid blocks round the rim, NOT another `strata` disc. `strata` returns a
+          // solid cylinder, so a "kerb" built from one covered the entire 23 m floor at a height above the
+          // flags and rendered as — exactly — the smooth cream plane the sod cap used to be
+          // (tools/out/pp-after2/shot-B1-isle-floor-8m.png, first attempt).
+          { const nk = Math.max(16, Math.round(R * 1.15)), kr = R * 0.885, arc = (6.2832 * kr) / nk;
+            for (let ki = 0; ki < nk; ki++) { const ka = (ki / nk) * 6.2832 + ph0 * 0.3;
+              const kv = 0.92 + rng() * 0.20;
+              parts.push(new THREE.BoxGeometry(R * 0.075, 0.34, arc * 1.02).rotateY(-ka).rotateZ((rng() - 0.5) * 0.04)
+                .translate(x + Math.cos(ka) * kr, TY0 - 0.10, z + Math.sin(ka) * kr));
+              tints.push([kv, kv * 0.99, kv * 0.93]); } }
+          { const GRID = R * 0.82, cell = 2.4, n = Math.max(2, Math.round(GRID / cell));
+            for (let gx = -n; gx <= n; gx++) for (let gz = -n; gz <= n; gz++) {
+              const px = gx * cell + (rng() - 0.5) * 0.22, pz = gz * cell + (rng() - 0.5) * 0.22;
+              if (Math.hypot(px, pz) > GRID) continue;
+              const kk = rng();
+              if (kk < 0.14) {                                              // a flag gone: turf has taken the gap
+                parts.push(new THREE.BoxGeometry(cell * 0.80, 0.22, cell * 0.80).rotateY(rng() * 3).translate(x + px, TY0 - 0.21, z + pz));
+                tints.push([0.19, 0.31, 0.15]); continue;                   // deep, matte, and only ever a 2 m patch
+              }
+              const tilt = kk < 0.30 ? (rng() - 0.5) * 0.11 : 0;            // a third of them have settled off true
+              const drop = kk < 0.30 ? rng() * 0.08 : 0;
+              // VALUE SPREAD, wide on purpose (0.62..1.08 over the region marble). A laid floor of one tone
+              // is the same defect as a sod dome of one tone: the eye reads a floor by its joints and its
+              // per-flag weathering, never by its hue.
+              const v = 0.62 + rng() * 0.46;
+              parts.push(new THREE.BoxGeometry(cell * 0.94, 0.30, cell * 0.94).rotateZ(tilt).rotateX(tilt * 0.7).rotateY((rng() - 0.5) * 0.05)
+                .translate(x + px, TY0 - 0.15 - drop, z + pz));
+              tints.push([v, v * 0.985, v * 0.92]);
+            } }
           for (let c = 0; c < 4; c++) { const ca = ph0 + c * 1.7 + rng() * 0.5, cd = R * (0.35 + rng() * 0.35);
             this._divine.parts.push(new THREE.OctahedronGeometry(R * (0.045 + rng() * 0.04)).scale(1, 2.6, 1)
               .translate(x + Math.cos(ca) * cd, y - R * (0.25 + rng() * 0.35), z + Math.sin(ca) * cd));
             this._divine.tints.push([1, 1, 1]); }
         }
-        // keel: a jagged point the whole mass tapers into
+        // keel: a jagged point the whole mass tapers into. WAVE-6, judged from 150 m below: a 9-gon cone
+        // with one sin(5a) warp is a faceted party hat — the underside is the half of a floating isle you
+        // see MOST and it had no strata at all. 24 sides + a second harmonic give it a broken cliff grain,
+        // and three erosion collars step the mass down instead of letting it taper in one clean line.
         const kh = R * (0.55 + rng() * 0.25);
-        const kg = new THREE.ConeGeometry(lr * 1.15, kh, 9), kp = kg.attributes.position;
+        const kg = new THREE.ConeGeometry(lr * 1.15, kh, 24), kp = kg.attributes.position;
         for (let vi = 0; vi < kp.count; vi++) {
           const vx = kp.getX(vi), vz = kp.getZ(vi); if (Math.hypot(vx, vz) < 0.05) continue;
-          const va = Math.atan2(vz, vx), vf = 1 + 0.28 * Math.sin(va * 5 + ph0);
+          const va = Math.atan2(vz, vx), vf = 1 + 0.28 * Math.sin(va * 5 + ph0) + 0.10 * Math.sin(va * 17 - ph0 * 1.4);
           kp.setXYZ(vi, vx * vf, kp.getY(vi), vz * vf);
         }
         kg.rotateX(Math.PI); kg.translate(x, ly - kh / 2 + R * 0.03, z);
         parts.push(kg); tints.push([s.tint[0] * 0.72, s.tint[1] * 0.72, s.tint[2] * 0.78]);
+        for (let c = 0; c < 3; c++) {                                       // strata collars down the keel
+          const t2 = 0.16 + c * 0.24, cr = lr * 1.15 * (1 - t2) * (1.06 + rng() * 0.10), csh = 0.78 - c * 0.07;
+          parts.push(strata(cr, R * 0.045, ph0 + c * 2.1, 0.16).translate(x + (rng() - 0.5) * R * 0.05, ly - kh * t2, z + (rng() - 0.5) * R * 0.05));
+          tints.push([s.tint[0] * csh, s.tint[1] * csh, s.tint[2] * (csh + 0.05)]);
+        }
         // hanging rubble: shards that tore off and never landed
         const nr = 2 + ((rng() * 3) | 0);
         for (let c = 0; c < nr; c++) {
@@ -4495,13 +4713,29 @@ export class Props {
         // ruin, and the biggest one carries a focal piece you can see from the ground below.
         const ty = y + R * 0.2, hero = R > 18;
         if (s.kind === 'celestial') {
+          // THE PERISTYLE. Wave-6: "two untextured white pegs". They were literally
+          // `CylinderGeometry(0.46, 0.56, h, 10)` — a 10-gon dowel with no base, no capital and no flutes,
+          // on a triplanar material whose tile is bigger than the dowel is wide, so nothing on it could
+          // read. This file already OWNS a real column (`columnGeometry`: entasis, fluting, torus-and-scotia
+          // base, Doric annulets, echinus, abacus, weathered) and it feeds the Empyrean Gate 400 m away —
+          // the isles just never called it. Scaled 0.55 in girth only, so the datums the old dowel set
+          // (0.46-0.56 radius, `ph` tall) are preserved and the collider is unchanged.
           const ring = hero ? 8 : 4, rr = R * 0.52;
           for (let c = 0; c < ring; c++) {                                  // a peristyle, half of it fallen
             const ca2 = (c / ring) * Math.PI * 2, px = x + Math.cos(ca2) * rr, pz = z + Math.sin(ca2) * rr;
-            if (c % 3 === 2) { parts.push(new THREE.CylinderGeometry(0.52, 0.55, 3.4, 10).rotateZ(Math.PI / 2).rotateY(ca2).translate(px, ty + 0.3, pz)); tints.push([0.92, 0.90, 0.80]); continue; }
+            if (c % 3 === 2) {                                              // a fallen shaft: fluted too, and it lies where it broke
+              parts.push(flute(0.42, 0.46, 3.4, 14, 3, 0.055).rotateZ(Math.PI / 2 + (rng() - 0.5) * 0.10).rotateY(ca2 + (rng() - 0.5) * 0.5).translate(px, ty + 0.44, pz));
+              tints.push([0.88, 0.86, 0.77]);
+              parts.push(new THREE.CylinderGeometry(0.52, 0.52, 0.26, 14).rotateZ(Math.PI / 2).rotateY(ca2).translate(px + Math.cos(ca2) * 1.85, ty + 0.44, pz + Math.sin(ca2) * 1.85));
+              tints.push([0.80, 0.78, 0.70]);                               // the snapped drum still lying against it
+              continue;
+            }
             const ph = hero ? 5.6 : 3.4;
-            parts.push(new THREE.CylinderGeometry(0.46, 0.56, ph, 10).translate(px, ty + ph / 2, pz)); tints.push([0.95, 0.93, 0.84]);
-            col.add({ type: 'capsule', a: V3(px, ty, pz), b: V3(px, ty + ph, pz), r: 0.7 });
+            const broken = (c % 5) === 3;                                   // not every column survived
+            const ch = broken ? ph * 0.62 : ph;
+            parts.push(columnGeometry(ch, broken, rng).scale(0.55, 1, 0.55).translate(px, ty, pz));
+            tints.push([0.95, 0.93, 0.84]);
+            col.add({ type: 'capsule', a: V3(px, ty, pz), b: V3(px, ty + ch, pz), r: 0.7 });
           }
           if (hero) {                                                       // the altar: a gilded drum on a stepped dais
             parts.push(new THREE.CylinderGeometry(4.2, 4.8, 0.5, 12).translate(x, ty + 0.25, z)); tints.push([0.94, 0.92, 0.82]);
