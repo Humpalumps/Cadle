@@ -824,10 +824,26 @@ export class Water {
     if (fade > 0) for (let i = 0; i < 4; i++) { const w = WAVES[i]; y += fade * w.amp * Math.sin(w.k * (w.dx * x + w.dz * z) - w.w * t); }
     return y;
   }
+  /** Is the world water plane wearing the molten skin here? Same test the look grade uses (`_gradeWater`). */
+  isLava(x, z) {
+    const b = this.game.terrain?.biomeBlend?.(x, z, this._lb ??= {});
+    return !!(b && b.w > 0.30 && BIOMES[b.id]?.lava);
+  }
   submergedDepth(a, b, c) {
     const x = typeof a === 'object' ? a.x : a, y = typeof a === 'object' ? a.y : b, z = typeof a === 'object' ? a.z : c;
     if (this._bed(x, z) >= this.level) return 0;   // dry ground below the plane (Void abyss, Infernal ash) is DRY — physics-audit "the abyss is swimmable"
-    return Math.max(0, this.heightAt(x, z) - y);
+    const d = Math.max(0, this.heightAt(x, z) - y);
+    // WAVE-6 INFERNAL BLOCKER: "lava is classified as water and costs 32 hp that regenerates" — the player
+    // breast-stroked across the Cinder Maw. The Infernal channels genuinely ARE this water plane wearing the
+    // molten skin (uLava, `_gradeWater` below); that is what makes a lava river real geometry instead of a
+    // decal, and terrainKernel cuts them below waterLevel on purpose. So the classification belongs HERE, at
+    // the ONE function that answers "how deep is the player" — every caller routes through it.
+    // Report a WADE, never a SWIM: PlayerController.wadeDepth (0.35) < 1.2 < swimDepth (1.45), so wading,
+    // the movement drag and the lava burn in Player.js (which needs `wading || swimming`) all keep working,
+    // while the swim state — and its buoyancy spring, which is the thing that floated the player across —
+    // never engages. You wade into lava, you burn, you climb out. You do not do the breaststroke in it.
+    // ponytail: 1.2 is pinned between PlayerController.wadeDepth and .swimDepth; if either moves, move this.
+    return d > 1.2 && this.isLava(x, z) ? 1.2 : d;
   }
   excludeFromReflection(obj) { this._noReflect.add(obj); }
   includeInReflection(obj) { this._noReflect.delete(obj); }

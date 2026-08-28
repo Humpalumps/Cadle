@@ -73,7 +73,7 @@ export class Terrain {
   biomeAt(x, z) {
     const d2 = x * x + z * z;
     if (d2 > RING_IN * RING_IN) {                      // outside the home bowl: one of the 9 outer regions, else ring/corridor rock
-      const k = wedgeAt(x, z);
+      const k = this._seam(x, z).k;                    // meandering seam, not a razor bearing line (see _seam)
       if (weightAt(x, z, k) > 0.02) return ORDER[k];
       if (d2 > RING_OUT * RING_OUT) return 'wilds';
     }
@@ -107,20 +107,62 @@ export class Terrain {
   grassAt(x, z) {
     const d2 = x * x + z * z;
     if (d2 > RING_IN * RING_IN) {
-      const k = wedgeAt(x, z), w = weightAt(x, z, k);
+      const b = this.biomeBlend(x, z, this._bgr ??= {});
       let wild = 0.5 * (1 - ss(28, 56, this.heightAt(x, z)));        // ring rock + the corridors between regions: patchy scrub
       wild *= 1 - ss(EDGE - 70, EDGE - 20, Math.sqrt(d2));           // never at the world-edge wall base (the void-rim green smudge)
-      return mix(wild, BIOMES[ORDER[k]].grass.d, w);
+      const dHere = mix(wild, BIOMES[b.id].grass.d, b.w);
+      // Across the seam band, cross-fade the two regions' DESIGN densities (Frostveil 0.03 <-> Celestial
+      // 0.05 <-> Vale 1.0) instead of stepping. This is the "gradient of CONTENT" half of the border fix:
+      // the ground cover thins/thickens over ~34 m the same way the splat already cross-fades the albedo.
+      return b.m > 0.001 ? mix(dHere, mix(wild, BIOMES[b.id2].grass.d, b.w2), b.m) : dHere;
     }
     const b = this.biomeAt(x, z);
     return b === 'meadow' ? 1 : b === 'crystal' ? 0.7 : b === 'forest' ? 0.6 : b === 'ruins' ? 0.2 : 0;
   }
 
-  /** { id, w } — nearest outer biome + its 0..1 weight. w = 0 anywhere in the home bowl. Allocation-free. */
-  biomeBlend(x, z, out = this._bb ??= { id: 'meadow', w: 0, k: -1 }) {
-    out.id = 'meadow'; out.w = 0; out.k = -1;
+  /**
+   * THE SEAM, on the CPU, exactly as the ground splat already draws it (FRAG_SPLAT + `colorAt`).
+   *
+   * WAVE-6 TUNDRA BLOCKER: "both borders are razor-line texture swaps ... summer oaks shoulder to shoulder
+   * with snow-laden pines across a straight line." It is NOT the look radii — those are a deliberate
+   * partition and CLAUDE.md forbids shrinking them. It is that `Biomes.wedgeAt` is a bare `Math.round` on
+   * the bearing, i.e. a perfectly straight radial line. The GROUND has meandered across a jittered ~34 m
+   * cross-fade band since the splat shipped; every CPU consumer of the wedge — `biomeAt`, `grassAt`,
+   * `biomeBlend`, and through it every `Vegetation` scatter — kept stepping on the razor. So the texture
+   * feathered and everything standing on it did not. Same jitter (52 m + 19 m macro), same half-band,
+   * derived ONCE here instead of a fifth copy of the magic numbers.
+   *
+   * out: { k, k2, m } — k the owning wedge, k2 the neighbour being crossed to, m 0..0.5 the cross-fade.
+   * The un-jittered bearing is tested first, so the ~90% of the map nowhere near a seam still pays only an
+   * atan2: the jitter moves the line by at most 35.5 m of arc and the band is 34 m, so 80 m is a safe skip.
+   */
+  _seam(x, z, out = this._sm ??= { k: 0, k2: 0, m: 0 }) {
+    const arc = Math.max(Math.sqrt(x * x + z * z), 1) * STEP;
+    const f0 = (Math.atan2(z, x) - THETA0) / STEP;
+    const w9 = (n) => ((n % 9) + 9) % 9;
+    // `f0` counts wedges, so |f0 - round(f0)| is 0 at a wedge CENTRE and 0.5 on the BISECTOR: the distance
+    // to the seam in metres is (0.5 - that) * arc. Skip the noise only when the seam is far away.
+    if ((0.5 - Math.abs(f0 - Math.round(f0))) * arc > 80) { out.k = out.k2 = w9(Math.round(f0)); out.m = 0; return out; }
+    const macro = this._macroNoise(x * (1 / 143), z * (1 / 143));
+    const macro2 = this._macroNoise(x * (1 / 61) + 0.37, z * (1 / 61) + 0.37);
+    const f = f0 + ((macro - 0.5) * 52 + (macro2 - 0.5) * 19) / arc;
+    const kf = Math.floor(f + 0.5), u = f - kf;
+    out.k = w9(kf); out.k2 = w9(kf + (u >= 0 ? 1 : -1));
+    out.m = 0.5 * ss(0.5 - clamp(34 / arc, 0.02, 0.45), 0.5, Math.abs(u));
+    return out;
+  }
+
+  /** { id, w } — owning outer biome + its 0..1 weight, PLUS the neighbour being crossed to ({ id2, w2, m }:
+   *  m is 0 inside a region and ramps to 0.5 on the seam, so a scatter can interleave the two species over a
+   *  real band instead of flipping on a line). w = 0 anywhere in the home bowl. Allocation-free.
+   *  Callers that only want "which region am I in" keep reading id/w and ignore the rest. */
+  biomeBlend(x, z, out = this._bb ??= { id: 'meadow', w: 0, k: -1, id2: 'meadow', w2: 0, k2: -1, m: 0 }) {
+    out.id = 'meadow'; out.w = 0; out.k = -1; out.id2 = 'meadow'; out.w2 = 0; out.k2 = -1; out.m = 0;
     if (x * x + z * z < RING_IN * RING_IN) return out;
-    const k = wedgeAt(x, z); out.k = k; out.id = ORDER[k]; out.w = weightAt(x, z, k);
+    const s = this._seam(x, z);
+    out.k = s.k; out.id = ORDER[s.k]; out.w = weightAt(x, z, s.k); out.m = s.m;
+    if (s.m > 0.001) { out.k2 = s.k2; out.id2 = ORDER[s.k2]; out.w2 = weightAt(x, z, s.k2); }
+    else { out.k2 = s.k; out.id2 = out.id; out.w2 = out.w; }
     return out;
   }
   /** 0..1 "no standing water here" mask (Infernal ash, the Void abyss, the frozen Frostveil lake). Water/Lava read it. */
@@ -667,7 +709,14 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   // tundra treeline (wave-3 celestial "texture-splat error"). steep = 0.95 keeps it off faces; this keeps it
   // off the low ground, which is where the offending chute actually was.
   float bCel = mix(bW * step(1.5, bK) * step(bK, 2.5), bW2 * step(1.5, bK2) * step(bK2, 2.5), bMix);
-  wB *= mix(1.0, smoothstep(46.0, 62.0, P.y), bCel);
+  // ...but a HARD zero on the low ground is the other half of the wave-6 border blocker: "a razor-line
+  // texture swap into a flat, literally zero-detail kelly-green plane". wB is what the biome floor is
+  // painted with, and where it goes to 0 the base layer takes over — and the base layer is layer 0, the
+  // VALE MEADOW grass. So celestial's whole 210..320 m edge band, which is under 46 m by construction
+  // (the landform reach RR is 210 while the look reach runs to 320), was painted Vale lawn. Keep 40% of
+  // the region's own ground down there: the plateau above 62 m is untouched, the 40-degree chute the
+  // steep gate above already handles, and the edge stops being somebody else's meadow.
+  wB *= mix(1.0, 0.40 + 0.60 * smoothstep(46.0, 62.0, P.y), bCel);
   float bShf = mix(bW * step(5.5, bK) * step(bK, 6.5), bW2 * step(5.5, bK2) * step(bK2, 6.5), bMix);   // shadowfen: bed-depth grade under the standing water
   float bFor = mix(bW * step(bK, 0.5), bW2 * step(bK2, 0.5), bMix);   // whisperwood deep: floor AO lift under the canopy
   // ---- THE MOUNTAIN RING WEARS THE REGION'S CLOTHES ------------------------------------------------

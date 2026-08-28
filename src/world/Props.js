@@ -374,6 +374,21 @@ function coffer(w, d, nx, nz, depth = 0.4, rib = 0.4) {
  *  faces +Z, lies in XY centred on the origin, and carries baked AO in its vertex colour, because on a
  *  relief the thing you actually see at 40 m is the shadow, not the displacement. A flat quad with an
  *  emissive decal on it reads as a sticker — that was the Empyrean Gate's sun for three waves running. */
+/**
+ * A BONE, not a stick: an ARC and a KNUCKLE at each end. This shipped inside _dragonNest and was never
+ * reachable from the two clutter kits that draw the same ribcages (dragon + infernal), which is why the
+ * wave-6 judge still measured "'bones' that are plain grey cylinders with flat ends" on the hero apron.
+ * Module scope so all three call sites share the one definition.
+ */
+function boneRib(rt, rb, ht, seg = 5) {
+  const g = new THREE.CylinderGeometry(rt, rb, ht, seg, 5), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const t = p.getY(i) / ht; p.setX(i, p.getX(i) + (0.25 - t * t) * ht * 0.34); }
+  g.computeVertexNormals();
+  return mergeGeometries([g.toNonIndexed(),
+    new THREE.SphereGeometry(rb * 1.75, 6, 4).translate(0, -ht / 2, 0).toNonIndexed(),
+    new THREE.SphereGeometry(rt * 2.0, 6, 4).translate(0, ht / 2, 0).toNonIndexed()]);
+}
+
 function relief(w, hh, motif, depth = 0.24, nx = 54, ny = 54) {
   const g = new THREE.PlaneGeometry(w, hh, nx, ny), p = g.attributes.position, col = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {
@@ -1189,8 +1204,13 @@ export class Props {
           const a = rng() * Math.PI, ca = Math.cos(a), sa = Math.sin(a), seg = 2 + ((rng() * 3) | 0);
           for (let i = 0; i < seg; i++) {                                  // the seam CLIMBS THE SPOIL (was y + 0.5 + i*0.26 + rng()*0.6 — free-floating nuggets, a wave-2 finding)
             const t = (i - seg / 2) * 1.1;
-            P(box(1.0 + rng() * 0.6, 0.26, 0.34).rotateY(a).rotateZ(0.18 + (rng() - 0.5) * 0.3)
-              .translate(x + ca * t, y + 0.22 + Math.abs(t) * 0.10, z + sa * t), [1.90, 1.35, 0.42]);   // gold: saturated hue, ordinary value — it catches the sun, it does not bloom
+            // WAVE-6 DRAGON major: "'gold ingots' that are flat mustard boxes". A [1.90,1.35,0.42] vertex
+            // tint on a grey granite photo is a rough DIELECTRIC - it can never be metal, whatever the hue.
+            // The file already ships real gold (goldMat, metalness 1.0, hammered facets); the clutter kit
+            // just had no bucket for it. That bucket is world-space and this geometry already is.
+            { const ig = box(1.0 + rng() * 0.6, 0.26, 0.34).rotateY(a).rotateZ(0.18 + (rng() - 0.5) * 0.3)
+                .translate(x + ca * t, y + 0.22 + Math.abs(t) * 0.10, z + sa * t);
+              this._gold.parts.push(ig); this._gold.tints.push([1.0, 0.96, 0.86]); }
           }
           for (let i = 0; i < 3; i++) { const g = rock(2); const sc = 0.3 + rng() * 0.5; g.scale(sc, sc * 0.6, sc); g.translate(x + (rng() - 0.5) * 2.4, y + 0.1, z + (rng() - 0.5) * 2.4); P(g, [0.88, 0.84, 0.78]); }
           return;
@@ -1198,10 +1218,10 @@ export class Props {
         if (kd < 0.34) { this._dragonNest(x, y, z, P, rng, col, 0.78 + rng() * 0.3); return; }
         if (rng() < 0.42) {                                                // ribcage: a spine and its ribs, picked clean
           const a = rng() * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ribs = 4 + ((rng() * 4) | 0);
-          P(cyl(0.20, 0.26, ribs * 1.25, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.42, z), BONE);
+          P(boneRib(0.20, 0.26, ribs * 1.25, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.42, z), BONE);
           for (let i = 0; i < ribs; i++) {
             const t = (i - ribs / 2) * 1.25, rh = 1.8 + Math.cos((i / ribs - 0.5) * 2.6) * 1.3;
-            for (const sd of [-1, 1]) P(cyl(0.11, 0.16, rh, 5).rotateZ(sd * 0.55).rotateY(a)
+            for (const sd of [-1, 1]) P(boneRib(0.11, 0.16, rh, 5).rotateZ(sd * 0.55).rotateY(a)
               .translate(x + ca * t - sa * sd * rh * 0.26, y + 0.36 + rh * 0.44, z + sa * t + ca * sd * rh * 0.26), BONE2);
           }
         } else {                                                            // scorched rock fangs off the ledges
@@ -1222,10 +1242,10 @@ export class Props {
           const kb = rng(), a = rng() * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
           if (kb < 0.5) {                                                   // ribcage over a spine, half sunk in the ash
             const ribs = 5 + ((rng() * 4) | 0);
-            P(cyl(0.24, 0.30, ribs * 1.45, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.45, z), BN);
+            P(boneRib(0.24, 0.30, ribs * 1.45, 6).rotateZ(Math.PI / 2).rotateY(a).translate(x, y + 0.45, z), BN);
             for (let i = 0; i < ribs; i++) {
               const t = (i - ribs / 2) * 1.45, rh = 2.1 + Math.cos((i / ribs - 0.5) * 2.6) * 1.5;
-              for (const sd of [-1, 1]) P(cyl(0.12, 0.19, rh, 5).rotateZ(sd * 0.6).rotateY(a)
+              for (const sd of [-1, 1]) P(boneRib(0.12, 0.19, rh, 5).rotateZ(sd * 0.6).rotateY(a)
                 .translate(x + ca * t - sa * sd * rh * 0.28, y + 0.4 + rh * 0.44, z + sa * t + ca * sd * rh * 0.28), BN2);
             }
             for (let i = 0; i < 4; i++)                                     // vertebral spines off the top of the backbone
@@ -1472,7 +1492,11 @@ export class Props {
         if (y0 < (K.minY ?? WL + 0.35) || terrain.slopeAt(x, z) > (K.maxSlope ?? 0.45)) continue;
         if (Math.hypot(x - B.cx, z - B.cz) < (K.clear ?? 26)) continue;      // keep the landmark's own ground clear (tundra: the whole frozen lake bowl the Throne stands in)
         { const LMK = this.landmarks[B.id];                                  // ...and the hero's own footprint when it does not stand on the centre (celestial)
-          if (LMK && Math.hypot(x - LMK.x, z - LMK.z) < 30) continue; }
+          // 30 -> 44 (wave-6 dragon: "a grey rubble blob punches through the gate's door leaves"). 30 m
+          // from a hero landmark is still inside its own apron — the ground the player stands on to look
+          // at it. Widening this is what the guard is FOR, and it now measures from the GATE (see the LM
+          // assignment in the dragon branch of _buildLandmarks), not from a point 58 m behind it.
+          if (LMK && Math.hypot(x - LMK.x, z - LMK.z) < 44) continue; }
         // TERRAIN CONFORM (wave-1 physics audit, re-cut wave 3 for the "floating boulders / hovering shelf
         // disc" majors in tundra + dragon). Leaning the piece to the local plane is only half the job: the
         // failure the critics photograph is a CROWN — a ridge or dome where the ground falls away on BOTH
@@ -1720,14 +1744,7 @@ export class Props {
     // A BONE, not a stick. Straight tapered cylinders with flat ends read as sawhorse legs at 40 m
     // (tools/out/sc3-dragon/shot-dragon-h22-d45.png); the two things that make a rib read as a rib are the
     // ARC and the KNUCKLE at each end, and both are nearly free.
-    const rib = (rt, rb, ht, seg = 5) => {
-      const g = new THREE.CylinderGeometry(rt, rb, ht, seg, 5), p = g.attributes.position;
-      for (let i = 0; i < p.count; i++) { const t = p.getY(i) / ht; p.setX(i, p.getX(i) + (0.25 - t * t) * ht * 0.34); }
-      g.computeVertexNormals();
-      return mergeGeometries([g.toNonIndexed(),
-        new THREE.SphereGeometry(rb * 1.75, 6, 4).translate(0, -ht / 2, 0).toNonIndexed(),
-        new THREE.SphereGeometry(rt * 2.0, 6, 4).translate(0, ht / 2, 0).toNonIndexed()]);
-    };
+    const rib = boneRib;   // module scope now: the dragon + infernal clutter kits draw the same ribcages
     const BONE = [1.58, 1.50, 1.30], WOOD = [0.66, 0.55, 0.42], BED = [0.72, 0.66, 0.58];
     const R = 3.1 * s;
     // WAVE-4 dragon major, and it is the THIRD wave for it: "every dressed object in the region sits on a
@@ -1808,8 +1825,16 @@ export class Props {
           const x = ox * r + tx * side * 9.5, z = oz * r + tz * side * 9.5, y = h(x, z);
           if (y < 6) continue;                                   // never a stone standing in water
           const hh = (7.4 + rng() * 2.6) * s;
-          parts.push(monolithGeometry(hh, rng).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5, z));
+          // WAVE-6 INFERNAL major: "a 15 m monolith of literally uniform colour (std 4/255), no carving, no
+          // chamfer". This is the ONE monolithGeometry call site in the file that never went through
+          // `weather()` - every other one does. weather() bakes per-vertex grime/AO into the colour attribute
+          // and mergeAll multiplies the tint into it, so without it all 54 stones carry one flat constant and
+          // measure exactly the std the judge reported. And this function's own comment promises "dark violet
+          // + gold world-order accents" while emitting no gold at all: the collar is the chamfer AND the accent.
+          parts.push(weather(monolithGeometry(hh, rng).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5, z), 1.0, 870 + k * 6 + (side + 1)));
           tints.push([1.05, 1.0, 1.15]);   // near-neutral over megalith_violet — the map is the value
+          this._gold.parts.push(new THREE.BoxGeometry(3.46, 0.30, 2.06).rotateY(-a).rotateZ(side * -0.045).translate(x, y - 0.5 + hh * 0.70, z));
+          this._gold.tints.push([1.0, 0.96, 0.86]);
           col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 1, z), r: 1.5 });
         }
       }
@@ -2176,8 +2201,15 @@ export class Props {
       // An idle with no spine channels gets a tiny breath to keep the torso alive. An idle that DOES
       // animate the spine (merchant, some of the new bodies) must be left alone — writing rotation.x
       // after the mixer would stomp the clip's spine quaternion. Detect it from the clip, per body.
+      // WAVE-6 VALE major: "the villager is a mannequin: no breathing, no weight shift." Measured against the
+      // shipped GLBs, only ONE of the seven idles (herbwife) has no spine channel, so six villagers got no
+      // procedural motion at all and the one that did got 1.3 deg of it — invisible at 6 m. Two changes:
+      //  - amplitude up to something a person can see at conversation range (still well under a "loop");
+      //  - the clip-owns-spine bail becomes an ADD, not a veto. Reading the bone's post-mixer value each
+      //    frame and writing base + offset composes with the clip instead of stomping it (same pattern the
+      //    Wayfinder head-track uses), so a baked spine keeps its animation and gains a breath on top.
       const clipOwnsSpine = B.idle.tracks.some((tk) => /spine/i.test(tk.name));
-      const sway = (spine && !clipOwnsSpine) ? { b: spine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
+      const sway = spine ? { b: spine, add: clipOwnsSpine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
       const v = { mesh: inst, skin, mixer, yaw, restYaw: yaw, acc: 0, baseY, sway };
       this.villagers.push(v);
       if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
@@ -2225,10 +2257,11 @@ export class Props {
         v.yaw += dy * (1 - Math.exp(-3.5 * step)); m.rotation.y = v.yaw - Math.PI / 2;   // +X-forward rigs (see _buildVillagers)
       }
       v.mixer.update(step);
-      if (v.sway) {                                      // herbwife/mason clips carry no spine channels: tiny breath + sway, applied after the mixer
+      if (v.sway) {                                      // breath + weight shift, applied AFTER the mixer so it composes with whatever the clip did
         const S = v.sway; S.t += step;
-        S.b.rotation.x = S.rx + Math.sin(S.t * 1.7) * 0.022;
-        S.b.rotation.z = S.rz + Math.sin(S.t * 0.9 + 1.3) * 0.014;
+        const bx = S.add ? S.b.rotation.x : S.rx, bz = S.add ? S.b.rotation.z : S.rz;   // a clip that owns the spine supplies the base; otherwise the rest pose does
+        S.b.rotation.x = bx + Math.sin(S.t * 1.55) * 0.055 + Math.sin(S.t * 0.37) * 0.030;   // breath, and a slower settle under it
+        S.b.rotation.z = bz + Math.sin(S.t * 0.41 + 1.3) * 0.052;                            // weight shifting hip to hip, ~15 s period
       }
     }
   }
@@ -2271,7 +2304,16 @@ export class Props {
       const dais = (r0, steps, step = 0.55, tint, Pu = P) => {
         for (let i = 0; i < steps; i++) {
           const r = r0 - i * (r0 * 0.16), y = CY + i * step;
-          Pu(new THREE.CylinderGeometry(r - 0.3, r, step, 14).translate(CX, y + step / 2, CZ), tint);
+          // WAVE-6 LOST major, and the third place in this file to hit it: every step was a `step`-thick disc
+          // pinned to ONE height sample taken at the landmark centre (CY), so on the mound the Convergence
+          // stands on, the outer rings hung metres clear of the ground and read as "thin flat slabs
+          // cantilevered into open air". Probe the rim and SKIRT the disc down to the lowest ground it covers
+          // - the same fix _dragonNest (per-vertex skirt) and the clutter kit (8-probe crown) already carry,
+          // and it costs one cylinder height instead of a second piece of geometry. The top face does not move.
+          let low = CY;
+          for (let q = 0; q < 8; q++) { const hq = h(CX + Math.cos(q * 0.7854) * r, CZ + Math.sin(q * 0.7854) * r); if (hq < low) low = hq; }
+          const drop = Math.min(Math.max(0, CY - low + 0.3), 12);
+          Pu(new THREE.CylinderGeometry(r - 0.3, r, step + drop, 14).translate(CX, y + step / 2 - drop / 2, CZ), tint);
           col.add({ type: 'box', box: new THREE.Box3(V3(CX - r * 0.72, CY - 2, CZ - r * 0.72), V3(CX + r * 0.72, y + step, CZ + r * 0.72)), walkable: true });
         }
         return CY + steps * step;
@@ -2875,6 +2917,12 @@ export class Props {
         const r0 = Math.hypot(CX, CZ), ux = CX / r0, uz = CZ / r0, tx = -uz, tz = ux;
         const ryF = Math.atan2(-ux, -uz);                       // +X -> tangent, +Z -> home: the facade faces arrivals
         const D = 58, gx = CX + ux * D, gz = CZ + uz * D, gy = h(gx, gz);
+        // WAVE-6 DRAGON major: "a grey rubble blob punches through the gate's door leaves." The gate is 58 m
+        // out from the heart but `landmarks.dragon` stayed AT the heart, so every clearance radius that reads
+        // it (_buildBiomeClutter's 30 m guard, _buildChests' spawn ring, the stele offset, the HUD marker)
+        // was measured from a point 58 m away and left the gate apron wide open to the scatter. Celestial
+        // already sets LM for exactly this reason; dragon never did. One assignment, four callers fixed.
+        LM = V3(gx, gy, gz);
         const G = (geo, t, d, yy, tint) => { geo.rotateY(ryF).translate(gx + tx * t + ux * d, gy + yy, gz + tz * t + uz * d); P(geo, tint); };
         const GD = (geo, t, d, yy, tint) => { geo.rotateY(ryF).translate(gx + tx * t + ux * d, gy + yy, gz + tz * t + uz * d); PG(geo, tint ?? [1.0, 0.98, 0.92]); };   // the same frame, into the real-metal bucket
         // WAVE-4 dragon major: "the hero landmark is a greybox box with a flat black rectangle for a door."
@@ -3080,7 +3128,11 @@ export class Props {
         // It now sits flush on the first step's riser band (r 20.16..24 spans y CY+0.7..1.4).
         for (let i = 0; i < 28; i++) {
           const a = i / 28 * 6.2832, rr = 20.32, ry2 = CY + 1.05, bx = CX + Math.cos(a) * rr, bz = CZ + Math.sin(a) * rr;
-          P2(weather(new THREE.BoxGeometry(2.05, 0.78, 0.5).rotateY(-a).translate(bx, ry2, bz), 0.85, 30 + i), [1.26, 1.16, 1.42]);
+          // WAVE-6 LOST major: "a fan of thin flat slabs cantilevered into open air." rotateY maps local +X to
+        // (cos t, -sin t), so `-a` put each block's 2.05 m LONG axis RADIAL - 28 spokes sticking 1 m in and
+        // out of the rim on a 0.5 m edge. Its own carving one line down already uses `PI/2 - a` (normal
+        // radial, which is right for an inscription band); the block is the half that was wrong.
+        P2(weather(new THREE.BoxGeometry(2.05, 0.78, 0.5).rotateY(Math.PI / 2 - a).translate(bx, ry2, bz), 0.85, 30 + i), [1.26, 1.16, 1.42]);
           P2(relief(1.86, 0.62, runesGrid(6, 1), 0.10, 44, 12).rotateY(Math.PI / 2 - a).translate(bx + Math.cos(a) * 0.26, ry2, bz + Math.sin(a) * 0.26), [1.26, 1.16, 1.42]);
           if (i % 4 === 0) PA(new THREE.BoxGeometry(0.9, 0.34, 0.34).rotateX(Math.PI / 4).rotateY(-a).translate(CX + Math.cos(a) * (rr + 0.30), ry2, CZ + Math.sin(a) * (rr + 0.30)), AETH);
         }
@@ -3101,14 +3153,22 @@ export class Props {
             trace([[-1.15, -1.5, 0], [0, -1.05, 0], [1.15, -1.5, 0]], 0.065).toNonIndexed()]);
           PG(fil.rotateY(Math.PI / 2 - a).translate(CX + Math.cos(a) * rr, top + 2.5, CZ + Math.sin(a) * rr), GLD);
         }
-        PG(new THREE.CylinderGeometry(9.55, 9.7, 0.75, 34).translate(CX, top + 5.85, CZ), GLD);            // gold cap course: the one warm accent on a violet plain
+        // WAVE-6 LOST BLOCKER: "stand at the heart of The Convergence and an opaque brown-orange stippled
+        // dome replaces the sky and occludes the 60 m spire." THREE.CylinderGeometry is CAPPED by default,
+        // so this "cap course" was a solid 19.1 m gold PLATE floating 5.85 m over the dais - and because it
+        // lands in the shared `ornament-gold` bucket it survived hiding landmark-lost, the slabs, the glyph,
+        // the water, every terrain LOD and postfx, which is exactly what the judge measured. The drum below
+        // it is front-face-only and its collider is r 5.6 against a 10.6 m drum, so you walk in underneath
+        // and the plate's lit underside becomes your sky. openEnded makes it the collar it always said it
+        // was. Same bug one line down in the aether bucket -> a second violet lid behind the gold one.
+        PG(new THREE.CylinderGeometry(9.55, 9.7, 0.75, 34, 1, true).translate(CX, top + 5.85, CZ), GLD);    // gold cap course: the one warm accent on a violet plain
         PG(dentilRing(9.5, 44, 0.30, 0.30, 0.34).translate(CX, top + 6.32, CZ), BRASS);                    // ...and a bead course riding it, so the metal has a rhythm instead of a rim
-        PA(new THREE.CylinderGeometry(9.72, 9.72, 0.34, 24).translate(CX, top + 6.60, CZ), AETH);          // the aether course at the drum head — the focal light at night
+        PA(new THREE.CylinderGeometry(9.72, 9.72, 0.34, 24, 1, true).translate(CX, top + 6.60, CZ), AETH);  // the aether course at the drum head — the focal light at night
         for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832;                                            // buttress fins off the drum, with a moulded weathering set
           P(weather(new THREE.BoxGeometry(2.2, 7.4, 5.0).rotateY(-a).translate(CX + Math.cos(a) * 9.6, top + 3.4, CZ + Math.sin(a) * 9.6), 0.8, 50 + i), VIO2);
           P(weather(moulding(profile([['f', 0.16, 0.10, 0.34], ['s', 0.36, 0.34, 0.0]]), 4.6).rotateY(Math.PI / 2 - a)
             .translate(CX + Math.cos(a) * 10.75, top + 6.6, CZ + Math.sin(a) * 10.75), 0.5, 60 + i), VIO);  // its weathering course
-          PA(new THREE.BoxGeometry(0.55, 5.4, 0.55).rotateY(Math.PI / 4).rotateY(-a).translate(CX + Math.cos(a) * 12.0, top + 3.6, CZ + Math.sin(a) * 12.0), AETH); }   // diamond section: a crystal ridge, not a stripe
+          PA(new THREE.BoxGeometry(0.55, 5.4, 0.55).rotateY(Math.PI / 4).rotateY(-a).translate(CX + Math.cos(a) * 10.55, top + 3.6, CZ + Math.sin(a) * 10.55), AETH); }   // diamond section: a crystal ridge, not a stripe - SEATED on the fin (outer face r 10.7), not hanging 1.3 m clear of it in open air
         P(weather(flute(1.7, 5.4, 44, 14, 9, 0.05).translate(CX, top + 6.2 + 22, CZ), 0.5, 45), VIO);      // the shaft, fluted the whole way up: it catches a rim at every hour
         for (const sd of [-1, 1]) for (const ax of [0, 1]) {                                               // four aether conduits running the full height of the shaft
           // WAVE-5 "flat pastel decals": the conduits were straight boxes at a constant r 3.4 up a shaft
@@ -3527,7 +3587,12 @@ export class Props {
           const arc = [4.55, 5.10, 3.70][k], st = [0.42, 2.35, 4.30][k];
           P(weather(new THREE.TorusGeometry(RR - k * 2.7, 1.45 - k * 0.26, 7, 34, arc).rotateZ(st).rotateY(ryV).translate(CX, RC, CZ), 1.0, 400 + k), k % 2 ? VST : VST2);
         }
-        PA(new THREE.TorusGeometry(RR - 5.6, 0.34, 5, 30, 4.9).rotateZ(0.9).rotateY(ryV).translate(CX, RC, CZ), VAE);   // the conduit still burning inside the wound
+        // WAVE-6 VOID minor: "a dashed hairline black polygon sliver rendering across empty sky beside the
+        // landmark." A 0.34 m tube on FIVE radial segments is a pentagon 0.68 m across at 11.4 m radius -
+        // sub-pixel to hairline - and the aether bucket is merged with flat(), so its 5 hard facets alternate
+        // lit/unlit down a 30-segment arc: that is the "dashed". aetherMat is dark violet-grey by day, so it
+        // reads black against sky. Round the section and give it width the eye can actually resolve.
+        PA(new THREE.TorusGeometry(RR - 5.6, 0.62, 9, 34, 4.9).rotateZ(0.9).rotateY(ryV).translate(CX, RC, CZ), VAE);   // the conduit still burning inside the wound
         PA(new THREE.OctahedronGeometry(2.0).scale(0.8, 1.7, 0.8).translate(CX, RC, CZ), VAE);                          // and the heart of it, hanging in the middle of the ring
         for (let k = 0; k < 4; k++) {                                            // the ring's own foot mouldings, tying it into the drum
           const a2 = 2.4 + k * 0.42;
@@ -3538,7 +3603,7 @@ export class Props {
           const fx2 = CX + Math.cos(ryV + 1.5708) * Math.cos(a2) * d2, fz2 = CZ + Math.sin(ryV + 1.5708) * Math.cos(a2) * d2;
           const fy2 = RC + Math.sin(a2) * d2 * 0.55 + up, sc = 0.7 + rng() * 1.5;
           P(weather(new THREE.BoxGeometry(3.0 * sc, 1.5 * sc, 2.2 * sc).rotateX(rng() * 3).rotateZ(rng() * 3).rotateY(rng() * 3).translate(fx2, fy2, fz2), 1.25, 410 + k), k % 3 ? VST : VST3);
-          if (k % 3 === 0) PA(new THREE.BoxGeometry(1.5 * sc, 0.30, 0.30).rotateY(rng() * 3).translate(fx2, fy2 + 0.9 * sc, fz2), VAE);
+          if (k % 3 === 0) PA(new THREE.BoxGeometry(1.5 * sc, 0.46, 0.46).rotateY(rng() * 3).translate(fx2, fy2 + 0.9 * sc, fz2), VAE);   // 0.30 was a hairline at range - same read as the conduit above
         }
         col.add({ type: 'capsule', a: V3(CX, CY - 2, CZ), b: V3(CX, CY + 10, CZ), r: 11.0 });
         ring(10, 24, (a, i) => { const x = CX + Math.cos(a) * 26, z = CZ + Math.sin(a) * 26, y = h(x, z) + 6 + (i % 4) * 5, hh = 8 + rng() * 6;
@@ -3593,8 +3658,23 @@ export class Props {
     // Brazier flames (Kharaz-Dun): SAME material as the meadow lantern flames — same emissiveIntensity
     // cap (invariants rule g), same flicker program — just a bigger octahedron in an iron bowl.
     if (this._braziers?.length && this.flameMat) {
-      const fm = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.30).scale(1, 1.7, 1), this.flameMat, this._braziers.length);
-      this._braziers.forEach((p, i) => fm.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p[0], p[1], p[2])));
+      // WAVE-6 DRAGON major: "brazier flames that are cream low-poly cones". The material is fine (it is the
+      // shared lantern flame, capped by invariants rule g) - the GEOMETRY was one detail-0 octahedron, i.e. an
+      // 8-triangle bi-cone, at the identical size and rotation in every brazier in the world. Three nested,
+      // twisted, offset tongues read as a flame at the same order of magnitude of triangles, and a
+      // per-instance yaw + scale means no two braziers are the same object.
+      const tongue = mergeGeometries([
+        new THREE.OctahedronGeometry(0.30, 1).scale(1, 1.9, 1).toNonIndexed(),
+        new THREE.OctahedronGeometry(0.19, 1).scale(1, 2.4, 1).rotateY(0.9).translate(0.10, 0.34, -0.06).toNonIndexed(),
+        new THREE.OctahedronGeometry(0.13, 1).scale(1, 2.7, 1).rotateY(2.1).translate(-0.09, 0.58, 0.08).toNonIndexed()]);
+      const fm = new THREE.InstancedMesh(tongue, this.flameMat, this._braziers.length);
+      const fmM = new THREE.Matrix4(), fmQ = new THREE.Quaternion(), fmP = new THREE.Vector3(), fmS = new THREE.Vector3(), fmA = new THREE.Vector3(0, 1, 0);
+      this._braziers.forEach((p, i) => {
+        fmQ.setFromAxisAngle(fmA, (i * 2.39996) % 6.2832);
+        fmP.set(p[0], p[1], p[2]);
+        const sc = 0.88 + ((i * 0.37) % 1) * 0.3; fmS.set(sc, sc * (0.9 + ((i * 0.61) % 1) * 0.35), sc);
+        fm.setMatrixAt(i, fmM.compose(fmP, fmQ, fmS));
+      });
       fm.name = 'brazier-flames'; scene.add(fm);
     }
   }
@@ -3903,7 +3983,11 @@ export class Props {
           tgt = clamp(rel2, -0.7, 0.7);
         }
         near.look += (tgt - near.look) * (1 - Math.exp(-4.0 * dt));
-        near.head.rotation.y += near.look;
+        // `+=` onto a bone is only correct if the mixer really rewrites it every frame. Several of the
+        // shipped idle clips carry no head channel at all, and there the offset ACCUMULATES and the head
+        // spins off over a few seconds. Capture the clip's own value once and assign base + offset.
+        near._headRest ??= near.head.rotation.y;
+        near.head.rotation.y = near._headRest + near.look;
       }
       return;
     }
@@ -4245,7 +4329,11 @@ export class Props {
     this.chests = specs;
     if (!specs.length) { console.log('[props] chests: 0 (no valid spots found)'); return; }
 
-    const chestMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.15 });
+    // WAVE-6 DRAGON major: "an untextured tan/lavender greybox crate". This was the only prop material in
+    // the file with no `map` at all - a flat vertex colour on a smooth box is a greybox by definition.
+    // timberMat already carries the sawn-oak read (bark_gnarled); borrow its map so the wood has grain and
+    // the iron bands have something to break up. Box UVs are intact here (no flat()), so a plain map fits.
+    const chestMat = new THREE.MeshStandardMaterial({ map: this.timberMat?.map ?? null, vertexColors: true, roughness: 0.75, metalness: 0.15 });
     const body = new THREE.InstancedMesh(bodyGeo, chestMat, specs.length);
     const lid = new THREE.InstancedMesh(lidGeo, chestMat, specs.length);
     body.castShadow = lid.castShadow = true; body.receiveShadow = lid.receiveShadow = true;
@@ -4507,8 +4595,17 @@ export class Props {
     }
     for (let i = 0; i < 8; i++) {
       const a = (i + 0.5) / 8 * Math.PI * 2, x = Math.cos(a) * 5.9, z = Math.sin(a) * 5.9;
-      parts.push(new THREE.CylinderGeometry(0.2, 0.26, 2.4, 8).translate(x, 2.3, z), new THREE.BoxGeometry(0.55, 0.2, 0.55).translate(x, 3.6, z), new THREE.OctahedronGeometry(0.22).translate(x, 3.95, z));
-      const a2 = i / 8 * Math.PI * 2; parts.push(new THREE.OctahedronGeometry(0.16).translate(Math.cos(a2) * 6.65, 0.85, Math.sin(a2) * 6.65)); // step-edge studs
+      parts.push(new THREE.CylinderGeometry(0.2, 0.26, 2.4, 8).translate(x, 2.3, z), new THREE.BoxGeometry(0.55, 0.2, 0.55).translate(x, 3.6, z));
+      // WAVE-6 COHERENCE: "Aetheryte pylon finials render as flat near-black diamonds that read as holes in
+      // the image." A 0.44 m octahedron on plinthMat is the void-pillar failure verbatim (Props.js ~1691):
+      // `flat()` strips the UVs so the piece is 100% TRIPLANAR, 0.44 m spans a quarter of one tile of a
+      // dark-violet flagstone map, and `pow(abs(n),4)` normalises to (1/3,1/3,1/3) on EVERY octahedron
+      // facet — so all 8 faces resolve to the same constant dark sample and the diamond has no facet
+      // break-up at all. It is not a lighting bug, it is a piece too small for its own material. These are
+      // ORNAMENT: put them in the gold bucket, which is what "ornate gold filigree accents on dark
+      // materials" means and what every other accent on this landmark already does.
+      PGA(new THREE.OctahedronGeometry(0.22).translate(x, 3.95, z), [1, 0.94, 0.82]);
+      const a2 = i / 8 * Math.PI * 2; PGA(new THREE.OctahedronGeometry(0.16).translate(Math.cos(a2) * 6.65, 0.85, Math.sin(a2) * 6.65), [1, 0.94, 0.82]); // step-edge studs
     }
     const plinth = new THREE.Mesh(flat(mergeAll(parts)), this.plinthMat); plinth.castShadow = plinth.receiveShadow = true; plinth.name = 'aetheryte-plinth'; g.add(plinth);
     // rune plaques on the pedestal (share monoMat program with the arena monoliths — box faces map the rune strip cleanly)
@@ -4518,8 +4615,19 @@ export class Props {
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 8, Y - 1, Z - 8), V3(X + 8, Y + 0.35, Z + 8)), walkable: true });
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 6.6, Y - 1, Z - 6.6), V3(X + 6.6, Y + 0.7, Z + 6.6)), walkable: true });
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 5.4, Y - 1, Z - 5.4), V3(X + 5.4, Y + 1.1, Z + 5.4)), walkable: true });
-    col.add({ type: 'capsule', a: V3(X, Y + 1.0, Z), b: V3(X, Y + 6.5, Z), r: 2.7 });
+    // WAVE-6 COHERENCE BLOCKER: "holding W from spawn, your head goes INSIDE the Aetheryte and stays there."
+    // The blocking capsule was r 2.7 — SMALLER than the pedestal it is meant to fence (base radius 2.8) and
+    // barely past the gold pedestal collar (torus 2.55 + tube 0.14 = 2.69 outer, at y 2.72). A player who
+    // sprints up the steps rests at 2.7 + bodyRadius 0.4 = 3.1 m from the axis with their eye at
+    // stepTop 1.1 + 1.65 = 2.75 m — i.e. 0.41 m from a 0.28 m gold tube AT EXACTLY EYE HEIGHT, which fills
+    // the frame with gold and reads as "inside the landmark". The ornament envelope, not the pillar, is what
+    // has to be fenced: r 3.6 leaves the eye 1.3 m clear of the collar and still leaves a 1.2 m walkable rim
+    // on the top step (radius 5.2-5.6) to stand on and look up. Probe: colProbes 'aetheryte-plinth' below.
+    col.add({ type: 'capsule', a: V3(X, Y + 0.9, Z), b: V3(X, Y + 7.0, Z), r: 3.6 });
     for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI * 2; col.add({ type: 'capsule', a: V3(X + Math.cos(a) * 5.9, Y + 1, Z + Math.sin(a) * 5.9), b: V3(X + Math.cos(a) * 5.9, Y + 4, Z + Math.sin(a) * 5.9), r: 0.3 }); }
+    // the exact coherence route: walk north into the plinth and assert the body ends OUTSIDE the ornament
+    // envelope (fp 3.5 -> the old r 2.7 collider parked the player at 3.1 and would fail this).
+    (this.colProbes ??= []).push({ kind: 'wall', name: 'aetheryte-plinth', sx: X, sz: Z + 8, dx: 0, dz: -1, maxTravel: 6.0, dur: 2.5, fp: { cx: X, cz: Z, ry: 0, hw: 3.5, hd: 3.5 } });
     // the crystal
     // BLOB LAW, VALE BLOCKER (wave 3): "two perfectly round white-cored balls with radial violet-to-white
     // falloff sit in the crystal body", core (255,249,248), and 5.3% of the crystal body washed at noon.

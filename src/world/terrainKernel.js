@@ -125,7 +125,19 @@ const BH = [
     // Channels are cut BELOW terrain.waterLevel on purpose: the world water surface fills them and wears the
     // molten skin (Water uLava), so the lava rivers are real geometry you can fall into, not a decal.
     // Lower frequency than the old cut: fewer, longer, wider rivers across the plain instead of a rash.
-    t -= ss(0.50, 0.88, ridged3(x * 0.0075 + 3, z * 0.0075 - 2, s + 244)) * 14;
+    // 0.30 (was 0.50) widens the valley SHOULDER without moving the full-depth threshold: the same channels
+    // at the same 14 m, but the descent spreads over ~25 m instead of ~12 — a ~30 deg bank you can walk back
+    // out of, not the ~49 deg shaft the wave-6 judge fell down.
+    t -= ss(0.30, 0.88, ridged3(x * 0.0075 + 3, z * 0.0075 - 2, s + 244)) * 14;
+    // LAVA FLOOR — wave-6 infernal blocker: "walk into the Cinder Maw and you drop 18 m into state 'swim'
+    // INSIDE the world, looking at back-faces with a rectangle of sky punched through solid geometry."
+    // waterLevel is 4. At the old bed (measured 1.49 at the Maw) the player's EYE sat at 3.14 — UNDER the
+    // water plane — so they were looking up at the UNDERSIDE of the water mesh and out through the square
+    // seam where the coarse skirt hands over to the fine grid. That is the "rectangle of sky"; the
+    // back-faces are the water mesh, not the terrain. Clamp the channel bed to 2.6: still 1.4 m of lava
+    // (a wade — see Water.submergedDepth), but the eye rides at 4.25, ABOVE the plane, with nothing to look
+    // up through. Bed geometry under opaque lava is never seen, so a flat floor costs nothing visually.
+    if (t < 2.6) t = 2.6;
     return mix(h, t, w);
   },
   function bhLost(x, z, h, s, w, cx, cz) {                                     // The Lost Realm: ceremonial plain inside a ruined rampart ring
@@ -216,7 +228,19 @@ const BH = [
     // are untouched (same r1 field, same plat) — the walkable ring and the isle/updraft routes hold.
     const cut = ss(0.32, 0.205, r1);
     const pit = -40 - 62 * ss(200, 95, d) + (rmf(x * 0.016, z * 0.016, s + 284, 3) - 0.5) * 9;
-    let t = mix(plat, pit, cut);
+    // WAVE-6 VOID BLOCKER (safety half): "heightAt drops 49.4 to -82.7 over 20 m with no lip ... the player
+    // fell to y=-11.6 mid-fight with no traversal input." `mix(plat, pit, cut)` is monotone, so the shelf top
+    // ran flat straight into a 130 m sheer face — there was nothing underfoot and nothing on screen to say
+    // "edge". Two terms, both inside the existing cut field so the walkable ring, the isle routes and the
+    // updraft columns are untouched:
+    //   cutS  — squaring the ramp flattens dt/dcut at BOTH ends, so the last metre of shelf rolls over
+    //           instead of ending on a knife edge (a shoulder you can see and feel from a running start).
+    //   rim   — a raised strata lip peaked where cut is still tiny, i.e. ON the shelf just before the roll.
+    //           ~1.1 m: a parapet that stops you WALKING off, low enough to vault deliberately. The Void is
+    //           meant to be shelves over an abyss you cross by updraft, not a pit you fall in by accident.
+    const cutS = cut * cut * (3 - cut - cut);
+    const rim = ss(0.0, 0.030, cut) * ss(0.175, 0.055, cut);
+    let t = mix(plat, pit, cutS) + rim * (1.9 + rmf(x * 0.05, z * 0.05, s + 285, 3) * 1.4);
     const band = cut * (1 - cut) * 4;                                          // wall band only
     if (band > 0.02) t += band * (rmf(x * 0.019, z * 0.019, s + 283, 4) * 18 - 5);
     t = mix(t, plat, ss(120, 62, d));                                          // The Unmaking needs ground under it

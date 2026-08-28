@@ -40,10 +40,15 @@ const TRAIL_N = 32;
 const TRAIL_LIFE = 4.0;
 
 // per quality: ring radii (m), patches per cell per ring (16 blades each), cache texels, near shadow casting
+// FAR RING RADIUS (wave-6 vale blocker, second half). The width ramp below is what stopped the field
+// ending in a razor arc at ~25 m; this is what carries it to the treeline. The far ring is the CHEAP ring
+// — 3 verts per blade, 1 triangle each, capped at P=3 patches per 16 m^2 cell — so buying 34 m of extra
+// reach costs ~1.1k instances and ~18k triangles, which is 0.5% of the frame's 3.6 M. Spend on DISTANCE,
+// not density: the near ring's P is untouched.
 const PRESETS = {
-  low:    { R: [9, 26, 52],    P: [23, 8, 2],  N: 256, step: 0.5, cast: false },
-  medium: { R: [13, 42, 84],   P: [34, 13, 3], N: 384, step: 0.5, cast: false },
-  high:   { R: [18, 60, 116],  P: [55, 18, 3], N: 512, step: 0.5, cast: false },  // perf: near-ring shadow casting re-runs the blade vertex shader per CSM cascade — never worth it
+  low:    { R: [9, 26, 66],    P: [23, 8, 2],  N: 256, step: 0.5, cast: false },
+  medium: { R: [13, 42, 105],  P: [34, 13, 3], N: 384, step: 0.5, cast: false },
+  high:   { R: [18, 60, 150],  P: [55, 18, 3], N: 512, step: 0.5, cast: false },  // perf: near-ring shadow casting re-runs the blade vertex shader per CSM cascade — never worth it
 };
 
 // ---------------- GLSL ----------------
@@ -139,10 +144,18 @@ vec3 transformed; vec3 objectNormal;
   float H = uBlade.x * (0.40 + 0.92 * r2 * r2) * clump * sc;
   float wShape = 0.58 + 0.84 * r1 * r1;
   float W = uBlade.y * wShape * sc;
+  // WAVE-6 VALE BLOCKER: "the grass stops dead at ~25-28 m in a straight arc and the edge slides with you."
+  // It was never the ring radii (high already reaches 116 m) and never the density curve alone — it is
+  // SCREEN WIDTH. A blade is uBlade.y ~0.021 m wide; at 1080p/60 deg one pixel is d*0.00097 m, so with the
+  // old mid-ring ramp (1 + d*0.018) a blade at 30 m was 0.7 px. Sub-pixel slivers at 18/m^2 do not
+  // composite into coverage, they alias into a faint tint — so the field ended exactly where the near
+  // ring's 3x density plateau ended and the far ring's much steeper 0.060 ramp had not yet kicked in.
+  // ONE ramp for all three rings, sized to hold ~1.5-2.5 px of blade from 15 m to 116 m. This costs ZERO
+  // triangles (same instance count, same density curve) and it is also the anti-blob direction: sub-pixel
+  // geometry is precisely what flickers through the bloom threshold frame to frame.
+  H *= 1.0 + d * 0.003; W *= 1.0 + d * 0.055;
   #if RING == 2
-  H *= 1.0 + d * 0.004; W *= 1.0 + d * 0.060;                    // far: soft wide ground-cover cards
-  #else
-  H *= 1.0 + d * 0.002; W *= 1.0 + d * 0.018;
+  W *= 1.0 + d * 0.004;                                          // far: soft wide ground-cover cards
   #endif
   #if RING < 2
   // drifts, not confetti: flowers clump into ~9 m patches, and heads shrink to nothing past ~20 m
