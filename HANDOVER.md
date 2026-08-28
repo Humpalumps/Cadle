@@ -234,6 +234,27 @@ before.**
    combat no fails, pointer lock OK; sole red = in-gate collidecheck eval race (dedicated run all OK).
    REMAINING BEFORE THE OPUS FLEET: re-fill lands -> PERF PASS (2e) -> one quiet-GPU capstone
    gate.mjs + curvecheck + questgate all green -> judges (Opus high, script per 3 below).**
+2g. **WAVE 6 JUDGED (2026-08-28, Opus fleet, 13 agents): average 4.73 — a SECOND regression
+   (5.75 -> 4.90 -> 4.73), no region at the bar, best tundra 5.8, worst dragon 4.0. BUT the trend
+   inside it is not all bad: blob violations 5 -> 2 (forest treant-KILL bloom, shadowfen grenade
+   core), and the COHERENCE score rose 5.0 -> 5.5 with the verdict "Cadle is a real game with a real
+   world in it, being sabotaged by three or four specific objects... the parts are wave-6 quality,
+   the assembly is not". Full: `tools/out/wave6-summary.txt`, `wave6-verdicts.json`,
+   `wave6-judge-workflow.js` (re-fire with resumeFromRunId for a wave-7 judging).
+   **THE JUDGES' OWN LESSON, again: the gate could not see what they saw.** The combat suite never
+   KILLED anything, never fired the player's gun and never threw a grenade, so the kill-bloom, the
+   sight-post bloom and the grenade white core were all outside it. The scenario now covers kills +
+   loot payout + player fire + grenade (bursts `cvfx-<region>-k`, `cvfx-pfire-*`).
+   **The animation lane's find is the wave's best catch: EVERY grounded creature died as a mannequin
+   tipping over** — death-window bone motion at float noise (0.001-0.009 rad/frame) passing a
+   threshold set BELOW frozen-skeleton level. Fixed: 0.04-0.12 rad/frame limb collapse on 20+ types.
+   **WAVE 7 = the discrete defect list, in two lanes (in flight):** combat-visual (magenta bolt lens,
+   kill-VFX bloom, grenade core, the OPAQUE FILM class that is hue-legal so the detector passes it,
+   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Aetheryte ring has no
+   collider and eats the player's head in the first 30 seconds; Cinder Maw drops you inside the world
+   with lava classified as swimmable water; vale grass LOD bubble at 25-28 m that slides with the
+   camera; villager facing not firing live; border content collapse). Then: re-run the extended gate,
+   re-judge.
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
@@ -291,7 +312,9 @@ pause them on request.**
 the wave-6 judge fleet until a large batch of fixes has landed — the campaign was burning most of its
 credits on judging instead of building. (2) When critics/judges DO run, spawn them with
 `model: 'opus', effort: 'high'` in the agent() opts (Workflow tool) — never on the default session
-model; the user does not want Fable credits spent on judge sub-agents. (3) BUILDERS run on
+model; the user does not want Fable credits spent on judge sub-agents. (3) MODEL STATE 2026-08-28: **the Fable monthly spend limit was hit mid-wave-7 and the session
+switched to OPUS 5** — builders now inherit the session model (omit `model`, keep `effort: 'high'`).
+The earlier directive was builders on
 **Fable 5 at high effort** — omit `model` (inherits the session's fable-5) and pass
 `effort: 'high'` explicitly.
 
