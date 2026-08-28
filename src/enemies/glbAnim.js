@@ -25,6 +25,12 @@ import { chainWave, damp } from './rig.js';
  */
 
 const _q = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _m = new THREE.Matrix4();
+// SIT pose targets (Gloamtide corsairs at camp — def.sit, blended by e.sitK; see the sit block in animate()).
+// All radians about the same world axes rot() uses (0 = lateral pitch, positive pitches forward). One table
+// so the integrate pass tunes a number, not code. drop = metres the root sinks (ref space): hips land on a
+// ~0.45 m log seat from a ~0.9 m standing hip height.
+const SIT = { drop: 0.42, lean: 0.14, hip: -1.45, knee: 1.40, foot: 0.15, splay: 0.18,
+  restSh: 0.45, restEl: 0.35, raiseSh0: 0.30, raiseSh1: -1.15, raiseEl0: 0.45, raiseEl1: 1.55, shIn: 0.35 };
 const seg = (x, a, b) => { const k = (x - a) / (b - a); return k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k); };
 const SW = (e) => (e.state === 'attack' ? e.attackT : 0);   // attack progress 0..1, strike lands at 0.35
 
@@ -304,6 +310,40 @@ export function glbAnimator(profile, tuning) {
         rot(G, ids[0], 0, swing, 2, sgn * (0.16 + 0.22 * wind - 0.15 * rec));
         if (ids[1] != null) rot(G, ids[1], 0, -0.22 - (melee ? 0.55 : 0.18) * wind + (melee ? 0.40 : 0.10) * strike);
         for (let k = 2; k < ids.length; k++) rot(G, ids[k], 0, -0.12 + Math.sin(tt * 1.4 + k) * 0.05);
+      }
+
+      // ---- SITTING (def.sit at camp, e.sitK 0..1 damped in Enemy.update). A seat pose slerped OVER
+      // whatever the gait just wrote, weighted by sitK — so the ~0.5 s sitK ramp IS the stand-up (and
+      // sit-back-down) transition, and mid-blend frames are a real pose between the two. Breath and the
+      // slow ale-raise cycle keep a seated corsair visibly alive (a held pose reads as a statue).
+      // Mixer path excluded by construction (USE_CLIPS keeps sit bodies procedural — see glbBody.js).
+      const sk = e.sitK ?? 0;
+      if (sk > 0.003 && !M && !dead) {
+        const sq = (i, k, a, k2, a2) => { const b = G.bones[i]; if (!b) return;
+          _q.copy(G.bind[i]);
+          if (a) _q.premultiply(_dq.setFromAxisAngle(G.axes[i][k], a));
+          if (a2) _q.premultiply(_dq.setFromAxisAngle(G.axes[i][k2], a2));
+          b.quaternion.slerp(_q, sk); };
+        const rb2 = G.bones[G.root];
+        if (rb2) rb2.position.y = G.rootY - SIT.drop * sk;
+        const nsp = Math.max(1, G.spine.length);
+        for (let k = 0; k < G.spine.length; k++) sq(G.spine[k], 0, SIT.lean / nsp + Math.sin(tt * 1.6 - k * 0.7) * T.breathe * 1.6);
+        for (const Lg of G.legs) { const ids = Lg.ids;
+          sq(ids[0], 0, SIT.hip, 1, (Lg.left ? 1 : -1) * SIT.splay);
+          if (ids[1] != null) sq(ids[1], 0, SIT.knee);
+          for (let k = 2; k < ids.length; k++) sq(ids[k], 0, SIT.foot);
+        }
+        // the ale arm: the RIGHT hand holds the tankard (Enemy parents it to handR); a slow cycle raises
+        // it to the head, holds a beat, and lowers it. The left arm rests toward the knee.
+        const cyc = seg(Math.sin(tt * 0.8), 0.35, 0.9);
+        for (const R2 of G.arms) { const ids = R2.ids;
+          if (R2.left) { sq(ids[0], 0, SIT.restSh); if (ids[1] != null) sq(ids[1], 0, SIT.restEl); }
+          else {
+            sq(ids[0], 0, SIT.raiseSh0 + (SIT.raiseSh1 - SIT.raiseSh0) * cyc, 2, -SIT.shIn * cyc);
+            if (ids[1] != null) sq(ids[1], 0, SIT.raiseEl0 + (SIT.raiseEl1 - SIT.raiseEl0) * cyc);
+          }
+        }
+        if (G.neck.length) sq(G.neck[G.neck.length - 1], 0, 0.10 + 0.10 * cyc);
       }
 
       // ---- wings: beat about the forward axis, outer joints lagging so the membrane cambers

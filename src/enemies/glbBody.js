@@ -60,6 +60,13 @@ export const GLB_CFG = {
   golem:     { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: 'L1L_2' },
   giant:     { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: null },
   warden:    { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: 'L1R_3' },
+  // ---- Gloamtide Corsairs (pirate camps): standard Tripo upright rigs, Spine_0-3 + Head chain + 4 limb
+  // chains, so the auto classifier does all the work. Facing MEASURED against the sentinel in a lineup()
+  // (which aims enemies at the player): Y90 like every other upright. Do not "verify" facing with
+  // showcase() — it spawns enemies looking the same way the camera looks, so a correct model shows its
+  // back there, and chasing that put these two 180° out for one round (tools/out/pirate-close).
+  raider:    { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: null },
+  captain:   { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: null },
   // NPC quest giver, not in DEFS — here so it is drivable the moment someone wires it up
   wayfinder: { profile: 'biped',     yaw: Y90, scale: 1, lift: 0, walkGroup: null, headIndex: -1, headBone: null },
 };
@@ -74,6 +81,9 @@ export const GLB_CFG = {
 const USE_CLIPS = {
   hound: false, riftling: false, frostwolf: false, drake: false, sprite: false, wraith: false,
   sentinel: false, treant: false, golem: false, warden: false,
+  // corsairs stay procedural too: the SIT pose (glbAnim) composes onto bind with rot(), which the mixer
+  // path would overwrite every frame — flipping these true needs the sit pose moved to the radd layer first
+  raider: false, captain: false,
 };
 export function clipsEnabled(bn) {
   let ovr = null;

@@ -79,6 +79,42 @@ export const DEFS = {
     palette: [[0xb070ff, 0xffffff]], glow: 2.4, rim: 0.55, bump: 0.055,
     deathTime: 2.6, xp: 400,
   },
+  // -------------------------------------------------- Gloamtide Corsairs (pirate camps, mountain-ring roads)
+  // Humanoid raiders with AETHER FLINTLOCKS: a slow heavy solar bolt fired in a 2-shot brace with a long
+  // reload — a musket cadence, not a sentinel's arc volley. `sit: true` = at camp, unaggroed, they SIT on
+  // their log seats and drink (glbAnim sit pose, gated on e.camp so a bare spawn behaves normally);
+  // `handProps: true` = Enemy parents a tankard + flintlock to the hand bones (tankard while seated, gun up
+  // on aggro). `meleeRange` is the ranged-role melee fallback: inside it they pistol-whip ('bite' path)
+  // instead of shooting their own feet. Colours obey the blob law: saturated ember/aether hues, capped glow.
+  raider: {
+    name: 'Gloamtide Corsair', element: 'solar', role: 'ranged', flying: false, scale: 1.0,
+    sit: true, handProps: true,
+    health: 190, shield: 0, damage: 8, speed: 4.6, turn: 3.6, accel: 11,
+    // perception 20: modest on purpose — a stealthy player can crouch the ridge and watch the camp drink.
+    perception: 20, fov: 2.4, attackRange: 26, band: [9, 18], attackWindup: 0.7, attackCooldown: 2.6, attackRecover: 0.4, volley: 2, volleyGap: 0.45, standoff: 2.2,
+    meleeRange: 3.4, lungeSpeed: 4,
+    projectile: { speed: 22, radius: 0.24, element: 'solar', life: 4 },
+    strafe: 0.8, stagger: 0.22, staggerTime: 0.5,
+    radius: 0.5, height: 1.85, center: 1.0, weakPoints: [{ bone: 'head', radius: 0.24, mult: 2.0, off: [0, 0.1, 0] }],
+    palette: [[0xffa03a, 0x6a5a4a], [0xff8a3d, 0x5a5460], [0xffb95e, 0x4c5566]], glow: 1.5, rim: 0.45, bump: 0.05,
+    deathTime: 1.5, xp: 34,
+  },
+  'raider-captain': {
+    name: 'Corsair Captain', body: 'captain', element: 'solar', role: 'ranged', flying: false, scale: 1.2,
+    sit: true, handProps: true,
+    health: 560, shield: 200, shieldElement: 'solar', damage: 10, speed: 4.2, turn: 3.4, accel: 10,
+    perception: 24, fov: 2.6, attackRange: 30, band: [10, 20], attackWindup: 0.75, attackCooldown: 2.4, attackRecover: 0.45, volley: 3, volleyGap: 0.35, standoff: 2.4,
+    meleeRange: 3.8, lungeSpeed: 4,
+    // NO explodeRadius: an explosive solar volley that ends its life AT the camera is the exact wave-3
+    // dragon full-frame blowout recipe (see Enemy._fireBolt's ribbon note); with six crew already firing,
+    // the captain's weight comes from per-bolt damage, not from painting the lens orange.
+    projectile: { speed: 24, radius: 0.28, element: 'solar', life: 4 },
+    strafe: 0.7, stagger: 0.26, staggerTime: 0.5, shieldRadius: 1.15,
+    radius: 0.56, height: 2.2, center: 1.18, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.0, off: [0, 0.1, 0] }],
+    // violet emissive: the captain's glowing aether amulet is the tell that this one is the mini-boss
+    palette: [[0xb070ff, 0x6a5a72]], glow: 1.7, rim: 0.5, bump: 0.05,
+    deathTime: 1.8, xp: 150,
+  },
 };
 /**
  * Biome bestiary (Biomes.js roster). Each entry names the procedural `body` it wears — bodies are silhouettes,

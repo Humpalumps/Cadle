@@ -1055,6 +1055,8 @@ export class Props {
     await new Promise((r) => requestAnimationFrame(r));
     this._buildWayfinders();
     await new Promise((r) => requestAnimationFrame(r));
+    this._buildPirateCamps(h, col);   // BEFORE _buildChests: each camp's strongbox joins the shared chest instancing
+    await new Promise((r) => requestAnimationFrame(r));
     this._buildChests(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildVillage(rng, h, col);
@@ -2117,20 +2119,19 @@ export class Props {
   }
 
   /**
-   * THE VILLAGERS (user ask "the towns people should have their own skins"). Twelve clones of THREE
-   * dedicated villager GLBs — herbwife / merchant / mason (15k tris, one draw each, idle+walk clips,
-   * walk root travel detrended to in-place at merge) — scene AND materials cloned per instance
-   * (ASSETS.md rule). The wayfinder GLB stays UNIQUE to the guide at the Aetheryte. Bodies go by role
-   * (women -> herbwife, trade -> merchant, labour -> mason), differentiated further by a SUBTLE
-   * per-instance robe tint (the painterly albedos carry the colour now — the tint only nudges value and
-   * hue, deviation-from-1 roughly halved vs the wayfinder-era tints), a 0.93-1.05 scale spread, desynced
-   * phases, and two villagers on slow A-to-B walk loops. No body+tint combo repeats. herbwife/mason clips
-   * carry no spine channels (rig-labeling fix), so those two get a tiny procedural breath on the spine
-   * bone after the mixer. Mixers run distance-banded like enemies (full rate to 35 m, quarter to 80 m,
-   * 1/12 beyond, pose HELD entirely when invisible).
+   * THE VILLAGERS. Pruned to ONE villager per unique body (user decree 2026-08-28: "only use the NPC's
+   * skins once in each village — no multiples of the same npc"): Serel (herbwife), Wick (merchant),
+   * Bram (mason), plus the unique Wayfinder at the Aetheryte. All three are STATIC idlers at a fixed
+   * post — the walk routes were removed outright on the same decree ("the movement on the npc's is
+   * terrible, lets not have any of them moving"); the walk clips stay unused in the assets, and a later
+   * pass re-fills the hamlet as more unique bodies are generated. The six town quests were re-authored
+   * onto these three givers (src/rpg/quests/meadow.js), so props.npcs carries exactly the ids quest
+   * data still names. Each idles with its clip + a tiny spine breath, and TURNS to face the player
+   * inside 8 m (a quest giver who ignores you reads dead) — damped full-body yaw, back to its rest
+   * facing when you leave.
    *
    * Named villagers are published on `this.npcs` = [{ id, name, position, object }] (game.world.props.npcs)
-   * so the rpg lane's quest data/markers can address them by stable id. Walker positions are live refs.
+   * so the rpg lane's quest data/markers can address them by stable id.
    */
   _buildVillagers(h, col) {
     const { scene } = this.game;
@@ -2141,80 +2142,58 @@ export class Props {
       if (!s || !c.length) continue;
       const bb = new THREE.Box3().setFromObject(s);
       bodies[n] = { src: s, minY: bb.min.y, scl: 1.78 / Math.max(0.5, bb.max.y - bb.min.y),
-        idle: THREE.AnimationClip.findByName(c, 'idle') ?? c.find((k) => /idle/i.test(k.name)) ?? c[0],
-        walk: THREE.AnimationClip.findByName(c, 'walk') ?? c.find((k) => /walk/i.test(k.name)) ?? null };
+        idle: THREE.AnimationClip.findByName(c, 'idle') ?? c.find((k) => /idle/i.test(k.name)) ?? c[0] };
     }
-    const bNames = Object.keys(bodies);
-    if (!bNames.length) { console.log('[props] villagers: no villager bodies loaded, hamlet stays quiet'); return; }
+    if (!Object.keys(bodies).length) { console.log('[props] villagers: no villager bodies loaded, hamlet stays quiet'); return; }
     const rng = mulberry32(this.game.seed + 7707);
-    const CX = 118, CZ = -96;                                                  // Hearthfall's centre (see _buildVillage)
     const _c = new THREE.Color();
     const spawn = (x, z, yaw, o = {}) => {
-      const B = bodies[o.body] ?? bodies[bNames[0]];                           // missing body -> first loaded, never the wayfinder
-      const P = (o.path && B.walk) ? { ax: o.path[0], az: o.path[1], bx: o.path[2], bz: o.path[3], t: rng() * 0.9, dir: 1, speed: 0.85 } : null;
-      if (P) { P.len = Math.max(1, Math.hypot(P.bx - P.ax, P.bz - P.az)); x = P.ax + (P.bx - P.ax) * P.t; z = P.az + (P.bz - P.az) * P.t; }
+      const B = bodies[o.body]; if (!B) return null;
       const inst = cloneSkinned(B.src);
       const T = o.tint ?? [1, 1, 1], val = 0.90 + rng() * 0.16;                // subtle value spread on top of the palette nudge
       let skin = null, spine = null;
       inst.traverse((obj) => { if (obj.isBone && !spine && /spine/i.test(obj.name)) spine = obj;
         if (obj.isMesh) { skin = obj; obj.castShadow = obj.receiveShadow = true;
         if (obj.material) { obj.material = obj.material.clone(); obj.material.color?.multiply?.(_c.setRGB(T[0] * val, T[1] * val, T[2] * val)); } } });
-      const scl = B.scl * (o.scale ?? (0.93 + rng() * 0.12));
+      const scl = B.scl * (o.scale ?? 1);
       const y = h(x, z), baseY = -B.minY * scl;
       inst.scale.setScalar(scl);
       inst.position.set(x, y + baseY, z);
-      inst.rotation.y = yaw + Math.PI;                                        // the Tripo rigs are authored facing -Z (same as the wayfinder)
+      // MEASURED, four-way, on frame (tools/out/npc-quad, 2026-08-28): these rigs are authored facing +X
+      // (the same axis as every Tripo upright in GLB_CFG), so the rotation that faces a bearing
+      // yaw = atan2(toward) is `yaw - PI/2`. The shipped `yaw + PI` was 90° off on top of backwards —
+      // the reported "npcs move sideways / don't look at the character" class, root and branch.
+      inst.rotation.y = yaw - Math.PI / 2;
       inst.visible = false;
       scene.add(inst);
       const mixer = new THREE.AnimationMixer(inst);
-      mixer.clipAction(P ? B.walk : B.idle).play();
+      mixer.clipAction(B.idle).play();
       mixer.update(rng() * 4);                                                // desync the loop phases
-      // Collider so you cannot walk through anyone. For a walker it is REGISTERED spanning the whole
-      // path (broadphase cells are computed once, at add) and then pinched to the body — the grid keeps
-      // covering the path while the capsule itself follows the villager. See Colliders._bounds.
-      const ca = col.add(P
-        ? { type: 'capsule', a: V3(P.ax, y, P.az), b: V3(P.bx, y + 1.55, P.bz), r: 0.38 }
-        : { type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });
-      if (P) { ca.a.set(x, y, z); ca.b.set(x, y + 1.55, z); }
-      // herbwife/mason idle+walk have no spine channels — a tiny breath keeps the torso alive.
-      // merchant's clips DO animate the spine, so overwriting there would kill the clip: skip it.
+      col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });   // you cannot walk through anyone
+      // herbwife/mason idle has no spine channels — a tiny breath keeps the torso alive.
+      // merchant's clip DOES animate the spine, so overwriting there would kill the clip: skip it.
       const sway = (spine && o.body !== 'merchant') ? { b: spine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
-      const v = { mesh: inst, skin, mixer, yaw, path: P, colA: ca.a, colB: ca.b, acc: 0, baseY, sway };
+      const v = { mesh: inst, skin, mixer, yaw, restYaw: yaw, acc: 0, baseY, sway };
       this.villagers.push(v);
       if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
       return v;
     };
     // subtle nudges — the painterly robe albedos own the colour, the tint only leans it
-    const BLU = [0.86, 0.90, 1.04], WIN = [1.04, 0.85, 0.86], GRN = [0.87, 0.98, 0.86],
-      UND = [1.02, 1.00, 0.95], VIO = [0.94, 0.90, 1.03], BRN = [1.03, 0.95, 0.87];
-    // doorway idlers: someone in their own door, watching the lane
-    for (const [ci, tt, bd] of [[1, UND, 'herbwife'], [5, GRN, 'mason']]) { const c = this._cottages?.[ci]; if (!c) continue;
-      const ez = [Math.sin(c.ry), Math.cos(c.ry)];
-      spawn(c.x + ez[0] * (c.d / 2 + 1.25), c.z + ez[1] * (c.d / 2 + 1.25), Math.atan2(ez[0], ez[1]), { tint: tt, body: bd }); }
-    // a pair stopped mid-lane, talking — southeast of the well, clear of Wick, the stalls and the bench
-    { const ax = CX + 8.0, az = CZ - 1.5, bx = CX + 9.3, bz = CZ - 0.6;
-      spawn(ax, az, Math.atan2(bx - ax, bz - az), { tint: VIO, body: 'herbwife' });
-      spawn(bx, bz, Math.atan2(ax - bx, az - bz), { tint: UND, body: 'merchant' }); }
-    // THE NAMED FIVE — ids and home positions come from the town quests' giver data
-    // (src/rpg/quests/meadow.js: 'npc:maren|tam|serel|wick|bram'), so QuestMarkers.npcAt(id) resolves
-    // every town quest giver to a real body instead of its fx/fz fallback point. Do not rename one side
-    // without the other. The plaza guard is published too, for future quest content.
+    const BLU = [0.86, 0.90, 1.04], UND = [1.02, 1.00, 0.95], VIO = [0.94, 0.90, 1.03];
+    // THE KEPT THREE — ids and home positions match the town quests' giver data
+    // (src/rpg/quests/meadow.js: 'npc:serel|wick|bram'), so QuestMarkers.npcAt(id) resolves every town
+    // quest giver to a real body. Do not rename one side without the other. Bram + Wick are the vendors.
     spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94, body: 'herbwife' });
-    spawn(130, -104, Math.atan2(12, -8), { id: 'tam', name: 'Old Tam the Shepherd', tint: BRN, scale: 1.04, body: 'mason' });  // watching the strips past the field walls
     spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO, body: 'merchant' });      // tending the market lantern
     spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03, body: 'mason' });       // eyeing somebody's stonework
-    spawn(0, 0, 0, { id: 'maren', name: 'Maren the Herbwife', tint: GRN, path: [104, -90, 122, -86], body: 'herbwife' });      // gathering along the lane
-    // the stall vendor, the plaza-edge watcher, and a second walker down the lantern lane
-    spawn(CX - 4.5 - Math.sin(2.536) * 0.35, CZ + 6.5 - Math.cos(2.536) * 0.35, 2.536, { tint: BRN, body: 'merchant' });       // behind the stall counter
-    spawn(11.4, -19.6, Math.atan2(-11.4, -8.4), { id: 'warden-guard', name: 'Warden Aldric', tint: BLU, scale: 1.05, body: 'mason' });  // plaza edge, watching the Aetheryte
-    spawn(0, 0, 0, { tint: WIN, path: [CX - 22.5, CZ + 13, CX - 52, CZ + 30], body: 'merchant' });
-    console.log(`[props] villagers: ${this.villagers.length} (${this.npcs.length} named, ${this.villagers.filter((v) => v.path).length} walking)`);
+    console.log(`[props] villagers: ${this.villagers.length} (one per unique body, all static)`);
   }
 
-  /** Distance-banded villager animation: full rate to 35 m, 1/4 to 80 m, 1/12 to SHOW, pose held beyond. */
+  /** Distance-banded villager animation: full rate to 35 m, 1/4 to 80 m, 1/12 to SHOW, pose held beyond.
+   *  Static idlers only (no walk routes — user decree); inside 8 m they turn to face the player. */
   _updateVillagers(dt) {
     const vs = this.villagers; if (!vs || !vs.length) return;
-    const cam = this.game.camera.position, terrain = this.game.terrain;
+    const cam = this.game.camera.position, pp = this.game.player?.position;
     this._vTick = (this._vTick | 0) + 1;
     for (let i = 0; i < vs.length; i++) {
       const v = vs[i], m = v.mesh, d2 = m.position.distanceToSquared(cam);
@@ -2225,16 +2204,12 @@ export class Props {
       const every = d2 < 1225 ? 1 : d2 < 6400 ? 4 : 12;
       if ((this._vTick + i) % every) continue;
       const step = Math.min(v.acc, 0.25); v.acc = 0;
-      const P = v.path;
-      if (P) {
-        P.t += P.dir * P.speed * step / P.len;
-        if (P.t > 1) { P.t = 1; P.dir = -1; } else if (P.t < 0) { P.t = 0; P.dir = 1; }
-        const x = P.ax + (P.bx - P.ax) * P.t, z = P.az + (P.bz - P.az) * P.t, y = terrain.heightAt(x, z);
-        m.position.set(x, y + v.baseY, z);
-        const want = Math.atan2((P.bx - P.ax) * P.dir, (P.bz - P.az) * P.dir);
+      // face the player when they come to talk; drift back to the rest post when they leave
+      if (pp) {
+        const dx = pp.x - m.position.x, dz = pp.z - m.position.z;
+        const want = (dx * dx + dz * dz < 64) ? Math.atan2(dx, dz) : v.restYaw;
         let dy = want - v.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-        v.yaw += dy * (1 - Math.exp(-4 * step)); m.rotation.y = v.yaw + Math.PI;
-        v.colA.set(x, y, z); v.colB.set(x, y + 1.55, z); // the capsule follows; its broadphase cells already span the path
+        v.yaw += dy * (1 - Math.exp(-3.5 * step)); m.rotation.y = v.yaw - Math.PI / 2;   // +X-forward rigs (see _buildVillagers)
       }
       v.mixer.update(step);
       if (v.sway) {                                      // herbwife/mason clips carry no spine channels: tiny breath + sway, applied after the mixer
@@ -3827,14 +3802,19 @@ export class Props {
         });
         inst.scale.setScalar(scl);
         inst.position.copy(st.pos); inst.position.y -= box.min.y * scl;        // feet on the dais top
-        inst.rotation.y = st.faceAngle + Math.PI;                              // the Tripo rig is authored facing -Z (verified on frame: at faceAngle alone he showed arrivals his back)
+        // REST rotation stays faceAngle+PI (eye-verified: the rotation where he greets arrivals). But the
+        // rig is +X-forward (measured four-way on the same body family — tools/out/npc-quad), so the
+        // ROTATION that faces a world point is atan2(toward) - PI/2. `yaw` below stores the raw rotation
+        // and the look-at writes it verbatim; the old flat `+PI` on the look target is what made him show
+        // a player inside talking range his back (user report).
+        inst.rotation.y = st.faceAngle + Math.PI;
         inst.visible = false;
         scene.add(inst);
         const mixer = new THREE.AnimationMixer(inst);
         mixer.clipAction(idle).play();
         const seed = (this.wayfinders.length * 2.39996) % 6.2832;
         mixer.update(seed);                                                    // desync the eleven idle phases
-        st.wf = { mesh: inst, mixer, head, baseYaw: st.faceAngle, yaw: st.faceAngle, seed, look: 0 };
+        st.wf = { mesh: inst, mixer, head, baseYaw: st.faceAngle + Math.PI, yaw: st.faceAngle + Math.PI, seed, look: 0 };   // stores ROTATION (see the +Z note above)
         this.wayfinders.push(st.wf);
       }
       console.log(`[props] wayfinders: ${this.wayfinders.length} rigged GLB instances (clip '${idle?.name}', scale ${scl.toFixed(3)})`);
@@ -3891,17 +3871,21 @@ export class Props {
       const d2n = p2 ? Math.sqrt(bestD2) : 999;
       let want2 = near.baseYaw;
       if (p2 && d2n < 14) {
-        const a2 = Math.atan2(p2.x - near.mesh.position.x, p2.z - near.mesh.position.z);
+        // +X-forward rig: the ROTATION that faces the player is atan2(toward) - PI/2 (npc-quad probe)
+        const a2 = Math.atan2(p2.x - near.mesh.position.x, p2.z - near.mesh.position.z) - Math.PI / 2;
         let rel2 = a2 - near.baseYaw; rel2 = Math.atan2(Math.sin(rel2), Math.cos(rel2));
-        want2 = near.baseYaw + clamp(rel2, -1.0, 1.0);   // he turns toward you, he does not spin on the spot
+        // inside conversation range he squares up FULLY (user report: "the cloaked guy doesn't look at
+        // the character" — the ±1.0 clamp meant an approach from behind left him staring past you);
+        // in the 8-14 m band he only turns toward you, he does not spin on the spot.
+        want2 = near.baseYaw + (d2n < 8 ? rel2 : clamp(rel2, -1.0, 1.0));
       }
       let dy2 = want2 - near.yaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2));
-      near.yaw += dy2 * (1 - Math.exp(-3.0 * dt)); near.mesh.rotation.y = near.yaw + Math.PI;   // keep the -Z-forward offset while turning
+      near.yaw += dy2 * (1 - Math.exp(-3.0 * dt)); near.mesh.rotation.y = near.yaw;   // yaw IS the rotation now (+Z-forward rig)
       near.mixer.update(dt);
       if (near.head) {                                   // applied AFTER the mixer writes this frame's pose, so it adds on top of the clip
         let tgt = Math.sin(t * 0.33 + near.seed) * 0.22; // ambient glance
         if (p2 && d2n < 18) {
-          const a2 = Math.atan2(p2.x - near.mesh.position.x, p2.z - near.mesh.position.z);
+          const a2 = Math.atan2(p2.x - near.mesh.position.x, p2.z - near.mesh.position.z) - Math.PI / 2;   // +X-forward rig, same as the body turn
           let rel2 = a2 - near.yaw; rel2 = Math.atan2(Math.sin(rel2), Math.cos(rel2));
           tgt = clamp(rel2, -0.7, 0.7);
         }
@@ -3936,7 +3920,7 @@ export class Props {
     if (p && d < 14) {
       const a = Math.atan2(p.x - near.mesh.position.x, p.z - near.mesh.position.z);
       let rel = a - near.baseYaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
-      want = near.baseYaw + clamp(rel, -1.0, 1.0);   // clamped: he turns toward you, he does not spin on the spot
+      want = near.baseYaw + (d < 8 ? rel : clamp(rel, -1.0, 1.0));   // full square-up in talking range; partial turn beyond (same fix as the GLB branch)
     }
     let dy = want - near.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     near.yaw += dy * (1 - Math.exp(-3.0 * dt)); near.mesh.rotation.y = near.yaw;
@@ -4045,6 +4029,145 @@ export class Props {
   }
 
   /**
+   * PIRATE CAMPS — the Gloamtide Corsairs (user ask 2026-08-28: "camps of pirates ... their own skins,
+   * a chest in the middle of them and a mini boss type pirate in each one"). Three camps in the
+   * mountain-ring foothills, each parked just OFF a pass road home (the radial bearing the passes and
+   * steles already use), which is where highwaymen belong. Anchors are fixed data; the exact pitch is
+   * probed deterministically (own mulberry stream — NEVER the shared `rng` chain, which would shift
+   * every stele/chest/village placement after it) for the flattest dry ground within 22 m.
+   *
+   * Each camp: campfire (stone ring + crossed logs + the SAME capped flameMat the lanterns/braziers
+   * wear — no new emissive recipe, no point light), a log-seat ring the raiders SIT on (Enemies reads
+   * `props.pirateCamps[].seats`), 2 crew tents + the captain's gold-trimmed one, crates/barrels, a
+   * crimson swallow-tail banner (the stele banner recipe re-cut), and the STRONGBOX at the centre —
+   * appended to the shared world-chest instancing in _buildChests, so opening it goes through the one
+   * chest path (prompt/[E]/loot/respawn) that already exists. Whole camp = ONE merged mesh + its
+   * share of two instanced draws (flames, chest kit). Colliders on everything walk-into-able, with a
+   * collidecheck wall probe on each captain tent.
+   */
+  _buildPirateCamps(h, col) {
+    const { scene, terrain } = this.game;
+    const WL = terrain.waterLevel ?? 4;
+    const rng = mulberry32(this.game.seed + 4242);
+    // fixed anchors, one per pass road (forest / infernal / sunken bearings), r ~400: past the home bowl,
+    // below the crag line, beside the road a traveller to that region actually walks
+    const SPECS = [
+      { id: 'driftfire',  name: 'Driftfire Hollow',   captain: 'Captain Sable Vane', x: -10,  z: -396, level: 5, nSeats: 5 },
+      { id: 'cindertithe', name: 'The Cinder Tithe',  captain: 'Rooke the Red',      x: 142,  z: 375,  level: 6, nSeats: 4 },
+      { id: 'saltgrin',   name: 'The Salt-Grin Camp', captain: 'Morrow Gilt',        x: -396, z: -62,  level: 7, nSeats: 6 },
+    ];
+    this.pirateCamps = [];
+    this.campMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.04 });
+    const flames = [];
+    // palette (albedo tints on campMat, all <= 1 — nothing here can emit)
+    const CANVAS = [0.19, 0.165, 0.21], CANVAS2 = [0.155, 0.135, 0.175], WOODC = [0.30, 0.21, 0.13], WOOD2 = [0.22, 0.155, 0.10],
+      STONE = [0.36, 0.34, 0.36], CHAR = [0.10, 0.09, 0.09], GOLDC = [0.85, 0.63, 0.24], CRIMSON = [0.60, 0.10, 0.12], IRONC = [0.20, 0.19, 0.21];
+    for (const S of SPECS) {
+      // deterministic pitch probe: flattest dry spot within 22 m of the anchor
+      let cx = S.x, cz = S.z, best = 9;
+      for (let i = 0; i < 12; i++) {
+        const a = rng() * Math.PI * 2, r = rng() * 22;
+        const x = S.x + Math.sin(a) * r, z = S.z + Math.cos(a) * r;
+        const s = terrain.slopeAt(x, z), wet = h(x, z) < WL + 0.5 ? 5 : 0;
+        if (s + wet < best) { best = s + wet; cx = x; cz = z; if (best < 0.15) break; }
+      }
+      const cy = h(cx, cz), ry = Math.atan2(-cx, -cz);          // camp "front" faces the road home
+      const P = [], T = [], put = (g, t) => { P.push(g); T.push(t); };
+      const at = (a, r) => ({ x: cx + Math.sin(ry + a) * r, z: cz + Math.cos(ry + a) * r });
+      // ---- campfire: stone ring, charred crossed logs, one flame (shared flameMat instancing below)
+      for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2, sx = cx + Math.sin(a) * 0.75, sz = cz + Math.cos(a) * 0.75;
+        put(new THREE.BoxGeometry(0.30, 0.22, 0.24).rotateY(a + rng()).translate(sx, h(sx, sz) + 0.10, sz), STONE.map((v) => v * (0.85 + rng() * 0.3))); }
+      for (let i = 0; i < 3; i++) { const a = i * 2.09 + 0.4;
+        put(new THREE.CylinderGeometry(0.07, 0.09, 0.95, 6).rotateX(Math.PI / 2 - 0.45).rotateY(a).translate(cx, cy + 0.22, cz), CHAR); }
+      flames.push([cx, cy + 0.42, cz]);
+      col.add({ type: 'sphere', pos: V3(cx, cy + 0.2, cz), r: 0.85 });
+      // ---- log-seat ring: one log per raider + a barrel throne for the captain. Seats live on the arc
+      // that faces the road; enemies sit AT the log, facing the fire (seat yaw below).
+      const seats = [];
+      const arc0 = -1.9, arc1 = 1.9;                            // the gap behind (toward the tents) stays open
+      for (let i = 0; i < S.nSeats; i++) {
+        const a = arc0 + (i + 0.5) / S.nSeats * (arc1 - arc0);
+        const p = at(a, 2.6), py = h(p.x, p.z);
+        // cylinder laid along X then yawed ry+a = tangent to the seat circle. NO COLLIDER on a seat: the
+        // corsair SITS at the log's own position, and Enemy._move's collider push-out was shoving every
+        // sitter off its seat (pirate-camp3: half the crew "standing behind their log"). A knee-high log
+        // the player can step over costs nothing to leave un-solid.
+        put(new THREE.CylinderGeometry(0.17, 0.19, 1.35, 7).rotateZ(Math.PI / 2).rotateY(ry + a).translate(p.x, py + 0.20, p.z), WOODC.map((v) => v * (0.85 + rng() * 0.3)));
+        seats.push({ x: p.x, z: p.z, yaw: Math.atan2(cx - p.x, cz - p.z) });
+      }
+      // captain's seat: an upturned barrel at the head of the circle, in front of his tent
+      const capP = at(Math.PI - 0.5, 2.9), capY = h(capP.x, capP.z);
+      put(new THREE.CylinderGeometry(0.34, 0.30, 0.55, 9).translate(capP.x, capY + 0.27, capP.z), WOOD2);
+      put(new THREE.TorusGeometry(0.33, 0.025, 4, 9).rotateX(Math.PI / 2).translate(capP.x, capY + 0.44, capP.z), IRONC);
+      // no collider, same reason as the logs: the captain sits ON it
+      const captainSeat = { x: capP.x, z: capP.z, yaw: Math.atan2(cx - capP.x, cz - capP.z) };
+      // ---- tents: two crew A-frames + the captain's bigger one (dark canvas, gold-trace trim on his)
+      const tent = (a, r, w, d, hh, canvas, trim) => {
+        const p = at(a, r), py = h(p.x, p.z), ty = ry + a + Math.PI;          // opening faces the fire
+        const L = (g) => g.rotateY(ty).translate(p.x, py, p.z);
+        const half = w / 2, slope = Math.hypot(half, hh);
+        for (const s of [-1, 1]) {
+          // -s: the +X end of a Z-rotated box lifts COUNTERclockwise, so +angle on the right panel made a
+          // V (butterfly tents, pirate-camp4) — the ridge is at the CENTRE, eaves down-and-out
+          put(L(new THREE.BoxGeometry(slope + 0.12, 0.05, d).rotateZ(-s * Math.atan2(hh, half)).translate(s * half / 2, hh / 2, 0)), canvas);
+          put(L(new THREE.CylinderGeometry(0.045, 0.055, hh, 6).translate(s * (half - 0.12), hh / 2 - 0.02, d / 2 - 0.15)), WOOD2);
+        }
+        put(L(new THREE.CylinderGeometry(0.05, 0.05, d + 0.5, 6).rotateX(Math.PI / 2).translate(0, hh, 0)), WOOD2);   // ridge pole
+        put(L(new THREE.BoxGeometry(w * 0.88, hh * 0.82, 0.04).translate(0, hh * 0.40, -d / 2)), canvas);             // back sheet closes the tent
+        if (trim) for (const s of [-1, 1])                                    // gold-trace along the captain's eaves
+          put(L(new THREE.BoxGeometry(0.045, 0.045, d).translate(s * half * 0.96, 0.16, 0)), GOLDC);
+        obbCol(col, p.x, p.z, ty, half + 0.15, d / 2 + 0.15, py - 0.5, py + hh + 0.3, { tile: 1.2 });
+        return { p, py, ty, half, d, hh };
+      };
+      tent(Math.PI - 1.35, 6.2, 2.6, 2.3, 1.7, CANVAS);
+      tent(Math.PI + 1.15, 6.6, 2.6, 2.3, 1.7, CANVAS2);
+      const ct = tent(Math.PI - 0.35, 7.0, 3.4, 2.9, 2.1, CANVAS2, true);
+      (this.colProbes ??= []).push({ kind: 'wall', name: `pirate-${S.id}-tent`,
+        sx: ct.p.x + Math.sin(ct.ty) * (ct.d / 2 + 2.2), sz: ct.p.z + Math.cos(ct.ty) * (ct.d / 2 + 2.2),
+        dx: -Math.sin(ct.ty), dz: -Math.cos(ct.ty), maxTravel: ct.d + 1.6,
+        fp: { cx: ct.p.x, cz: ct.p.z, ry: ct.ty, hw: ct.half, hd: ct.d / 2 } });
+      // ---- crates + barrels (the take): a plunder pile between the tents
+      const pile = at(Math.PI + 0.55, 5.0), pileY = h(pile.x, pile.z);
+      for (let i = 0; i < 3; i++) { const s = 0.5 + rng() * 0.2, a2 = rng() * 3, px2 = pile.x + (rng() - 0.5) * 1.8, pz2 = pile.z + (rng() - 0.5) * 1.8, py2 = h(px2, pz2);
+        put(new THREE.BoxGeometry(s, s, s).rotateY(a2).translate(px2, py2 + s / 2, pz2), WOODC.map((v) => v * (0.85 + rng() * 0.3)));
+        put(new THREE.BoxGeometry(s + 0.05, 0.06, s + 0.05).rotateY(a2).translate(px2, py2 + s - 0.03, pz2), WOOD2); }
+      for (let i = 0; i < 2; i++) { const px2 = pile.x + (rng() - 0.5) * 2.2, pz2 = pile.z + (rng() - 0.5) * 2.2, py2 = h(px2, pz2);
+        put(new THREE.CylinderGeometry(0.30, 0.27, 0.78, 9).translate(px2, py2 + 0.39, pz2), WOOD2);
+        for (const yy of [0.16, 0.62]) put(new THREE.TorusGeometry(0.30, 0.022, 4, 9).rotateX(Math.PI / 2).translate(px2, py2 + yy, pz2), IRONC); }
+      col.add({ type: 'sphere', pos: V3(pile.x, pileY + 0.4, pile.z), r: 1.5 });
+      // ---- the faction banner: crimson swallow-tail on a pole by the captain's tent (stele recipe re-cut;
+      // silhouette + saturated ALBEDO, not one photon of emissive — blob law)
+      { const bp = at(Math.PI - 0.85, 4.2), by = h(bp.x, bp.z), fa = ry + Math.PI;
+        put(new THREE.CylinderGeometry(0.05, 0.065, 3.4, 7).translate(bp.x, by + 1.7, bp.z), WOOD2);
+        put(new THREE.BoxGeometry(0.80, 0.05, 0.05).rotateY(fa).translate(bp.x, by + 3.18, bp.z), GOLDC);
+        const cg = new THREE.BoxGeometry(0.68, 1.45, 0.03, 5, 9, 1), pp2 = cg.attributes.position;
+        for (let vi = 0; vi < pp2.count; vi++) { const vx = pp2.getX(vi), vy = pp2.getY(vi);
+          const amp = (0.72 - vy) / 1.45 * 0.14;
+          pp2.setZ(vi, pp2.getZ(vi) + Math.sin(vy * 4.2 + vx * 3.0) * amp);
+          if (vy < -0.70) pp2.setY(vi, vy + 0.20 * (1 - Math.min(1, Math.abs(vx / 0.34)))); }   // swallow-tail
+        cg.computeVertexNormals();
+        put(cg.rotateY(fa).translate(bp.x, by + 2.42, bp.z), CRIMSON);
+        put(new THREE.BoxGeometry(0.16, 0.16, 0.035).rotateY(fa).translate(bp.x, by + 2.62, bp.z), GOLDC);   // the Gloamtide mark
+        col.add({ type: 'capsule', a: V3(bp.x, by, bp.z), b: V3(bp.x, by + 3.2, bp.z), r: 0.14 });
+      }
+      // ---- merge: one mesh per camp, tight bounding sphere so the other camps cull
+      const mesh = new THREE.Mesh(flat(mergeAll(P, T)), this.campMat);
+      mesh.castShadow = mesh.receiveShadow = true; mesh.name = `pirate-camp-${S.id}`;
+      mesh.geometry.computeBoundingSphere(); scene.add(mesh);
+      // ---- publish for Enemies (spawning) and _buildChests (the strongbox at the centre)
+      const chP = at(Math.PI - 0.15, 1.9);
+      this.pirateCamps.push({ id: S.id, name: S.name, captain: S.captain, x: cx, z: cz, y: cy, level: S.level, region: 'meadow',
+        seats, captainSeat, chest: { x: chP.x, y: h(chP.x, chP.z), z: chP.z, yaw: Math.atan2(cx - chP.x, cz - chP.z) } });
+    }
+    if (flames.length && this.flameMat) {
+      const fm = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.26).scale(1, 1.8, 1), this.flameMat, flames.length);
+      flames.forEach((p, i) => fm.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p[0], p[1], p[2])));
+      fm.name = 'pirate-campfires'; scene.add(fm);
+    }
+    console.log(`[props] pirate camps: ${this.pirateCamps.length} (${this.pirateCamps.map((c) => `${c.name} @ ${c.x.toFixed(0)},${c.z.toFixed(0)}`).join(' · ')})`);
+  }
+
+  /**
    * WORLD CHESTS — 1-3 per region scattered around (not next to) the landmark, so exploring off the
    * direct path to a stele/boss is rewarded. One shared low-poly wood+iron+gold kit, instanced (2 draw
    * calls total for every chest in the world regardless of count). Deterministic placement (same `rng`
@@ -4098,6 +4221,14 @@ export class Props {
         col.add({ type: 'box', box: new THREE.Box3(V3(x - 0.6, y - 0.05, z - 0.45), V3(x + 0.6, y + 0.65, z + 0.45)) });
       }
     }
+    // pirate camp strongboxes: same instanced kit, one at each camp's centre by the fire (positions
+    // published by _buildPirateCamps, which runs first). No extra draws, no extra code path — the
+    // prompt/[E]/open/respawn flow below already handles them.
+    for (const pc of this.pirateCamps ?? []) {
+      const ch = pc.chest;
+      specs.push({ id: `pirate-${pc.id}-chest`, region: pc.region, level: pc.level, position: V3(ch.x, ch.y, ch.z), yaw: ch.yaw, opened: false, respawnAt: 0 });
+      col.add({ type: 'box', box: new THREE.Box3(V3(ch.x - 0.6, ch.y - 0.05, ch.z - 0.45), V3(ch.x + 0.6, ch.y + 0.65, ch.z + 0.45)) });
+    }
     this.chests = specs;
     if (!specs.length) { console.log('[props] chests: 0 (no valid spots found)'); return; }
 
@@ -4146,7 +4277,14 @@ export class Props {
       this._chestLid.instanceColor.needsUpdate = true; this._chestBody.instanceColor.needsUpdate = true;
     }
     this.game.events.emit('props:chest', { region: c.region, position: c.position.clone(), level: c.level });
-    this.game.hud?.toast?.('Chest opened');
+    // The payout, through the rpg lane's public API (defensively — no listener ever consumed
+    // 'props:chest', so opening a chest paid NOTHING; the event stays emitted for anything that
+    // wants to react). Glimmer + one loot roll; pirate strongboxes pay a richer purse — they are
+    // guarded by a camp and a captain, and the fight has to be worth the plunder.
+    const rpg = this.game.rpg, pirate = c.id.startsWith('pirate-');
+    rpg?.grant?.({ glimmer: (pirate ? 40 : 18) + c.level * (pirate ? 9 : 5) });
+    rpg?.dropLoot?.(V3(c.position.x, c.position.y + 0.55, c.position.z), pirate ? 'rare' : undefined, { luck: 0.1 });
+    this.game.hud?.toast?.(pirate ? 'Strongbox cracked' : 'Chest opened');
   }
   _respawnChest(c) {
     c.opened = false;

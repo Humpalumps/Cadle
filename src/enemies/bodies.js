@@ -1260,7 +1260,50 @@ const sprite = {
   },
 };
 
-export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent, frostwolf, treant, riftling, sprite };
+// ---------------------------------------------------------------- RAIDER / CAPTAIN (Gloamtide Corsairs)
+// ponytail: deliberately minimal. These two ship as rigged GLBs (raider.glb / captain.glb, always in the
+// Assets manifest), so this procedural entry exists for the two jobs the pipeline contract demands of it:
+// (1) the bind-pose BOUNDING BOX the GLB is normalised against — a 1.85 m human silhouette, which is what
+// def.radius/height/center and the standoff ring were tuned to — and (2) an emergency fallback that stands,
+// breathes and swings its arms if the .glb ever fails to load. Upgrade path: a real corsair body build if
+// the fallback is ever what the player actually sees.
+function humanoid(bulk = 1) {
+  return {
+    build() {
+      const R = new Rig(), { root } = R;
+      const COAT = 0x3a3244, SKIN = 0x8a705c, TRIM = 0xd9a53a, DARK = 0x241f2e;
+      const body = R.bone('body', root, 0, 1.0, 0);
+      R.part(body, prim.limb(0.8), { p: [0, 1.25, 0], s: [0.26 * bulk, 0.42, 0.17 * bulk], color: COAT, mottle: 0.12 });   // torso/coat
+      R.part(body, prim.box(), { p: [0, 0.92, 0], s: [0.40 * bulk, 0.16, 0.24 * bulk], color: DARK });                     // belt
+      R.part(body, prim.box(), { p: [0, 1.03, 0.10], s: [0.10, 0.30, 0.06], color: TRIM, flat: true });                    // sash trim
+      const head = R.bone('head', body, 0, 0.62, 0);
+      R.part(head, prim.sphereLo(), { p: [0, 1.70, 0], s: [0.135, 0.155, 0.14], color: SKIN });
+      R.part(head, prim.hex(), { p: [0, 1.82, 0], s: [0.16, 0.07, 0.16], color: DARK, flat: true });                       // hat brim
+      for (const s of [-1, 1]) {
+        const arm = R.bone(s > 0 ? 'shL' : 'shR', body, s * 0.30 * bulk, 0.48, 0);
+        R.part(arm, prim.limb(0.7), { p: [s * 0.33 * bulk, 1.48, 0], r: [0, 0, -s * 0.12], s: [0.09, 0.56, 0.09], color: COAT });   // prim.limb HANGS from its origin
+        R.part(arm, prim.sphereLo(), { p: [s * 0.37 * bulk, 0.90, 0], s: 0.07, color: SKIN });                             // hand
+        const leg = R.bone(s > 0 ? 'hipL' : 'hipR', body, s * 0.14, -0.08, 0);
+        R.part(leg, prim.limb(0.75), { p: [s * 0.14, 0.96, 0], s: [0.10 * bulk, 0.94, 0.11 * bulk], color: DARK });        // hangs 0.96 -> 0.02: the box FLOOR is the GLB's ground line
+        R.part(leg, prim.box(), { p: [s * 0.14, 0.06, 0.05], s: [0.11, 0.12, 0.22], color: 0x1c1824 });                    // boot
+      }
+      return R.build();
+    },
+    setup() {},
+    animate(e, dt, t) {   // fallback only: breathe + counter-swing so it never reads dead (animcheck idle/move minimums)
+      const b = e.bones, tt = t + e.seedT, ph = e.phase;
+      if (b.body) { b.body.rotation.x = Math.sin(tt * 1.7) * 0.03 + e.tilt; b.body.rotation.z = -e.strafeLean * 0.1; b.body.updateMatrix(); }
+      if (b.head) { b.head.rotation.y = Math.sin(tt * 0.6) * 0.2; b.head.updateMatrix(); }
+      const sw = e.speedN * 0.5;
+      for (const [n, s] of [['shL', 1], ['shR', -1], ['hipL', -1], ['hipR', 1]]) {
+        const bn = b[n]; if (!bn) continue; bn.rotation.x = Math.sin(ph + (s > 0 ? 0 : Math.PI)) * sw; bn.updateMatrix();
+      }
+    },
+  };
+}
+const raider = humanoid(1), captain = humanoid(1.12);
+
+export const BODIES = { wisp, hound, sentinel, golem, drake, warden, giant, wraith, serpent, frostwolf, treant, riftling, sprite, raider, captain };
 
 /* ================================================================ RIGGED GLB VARIANTS
  * docs/CREATURE-PIPELINE.md: monsters are rigged GLBs now, architecture stays procedural. Nothing above this

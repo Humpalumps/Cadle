@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BODIES } from './bodies.js';
 import { cloneBones, plantLegs, damp } from './rig.js';
 import { createCreatureMaterial, createCreatureMaterialGLB, createShieldMaterial } from './materials.js';
@@ -54,6 +55,38 @@ const GLB_RIM_MAX = 0.30;
  * Shield bubble (def.shield + def.shieldRadius): coloured by def.shieldElement (Combat.ELEMENT_COLORS) so the
  * bubble tells you what strips it, and faded out over SHIELD_FADE0..1 — it is a combat read, not scenery.
  */
+// ---- corsair hand props (def.handProps): a tankard while seated, an aether flintlock on aggro. ONE merged
+// vertex-coloured geometry + ONE shared material each, so a prop is a single extra draw call per visible
+// corsair and links exactly one program (warmed at boot with everything else — the warm pool instance
+// carries them too). No emissive anywhere on them (blob law): the "aether" read is a saturated violet
+// ALBEDO crystal; the light comes from the muzzle flash vfx that already plays on fire.
+const PROP_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.35 });
+const _tinted = (g, [r, gg, b]) => { const n = g.index ? g.toNonIndexed() : g; const c = n.attributes.position.count, a = new Float32Array(c * 3); for (let i = 0; i < c; i++) { a[i * 3] = r; a[i * 3 + 1] = gg; a[i * 3 + 2] = b; } n.setAttribute('color', new THREE.BufferAttribute(a, 3)); return n; };
+const PEWTER = [0.42, 0.41, 0.46], DKWOOD = [0.16, 0.11, 0.08], GOLD = [0.85, 0.62, 0.22], AETHER = [0.48, 0.24, 0.72];
+let TANKARD_GEO = null, FLINTLOCK_GEO = null;
+function propGeos() {
+  if (TANKARD_GEO) return;
+  TANKARD_GEO = mergeGeometries([
+    _tinted(new THREE.CylinderGeometry(0.055, 0.062, 0.13, 8), PEWTER),
+    _tinted(new THREE.TorusGeometry(0.062, 0.010, 4, 8).translate(0, 0.055, 0), GOLD),          // rim band
+    _tinted(new THREE.TorusGeometry(0.052, 0.011, 4, 8).rotateY(Math.PI / 2).translate(0, 0, 0.075), PEWTER), // handle
+  ]);
+  // aether flintlock: down-curved dark stock, long barrel along local +Z, gold lock plate, violet crystal
+  FLINTLOCK_GEO = mergeGeometries([
+    _tinted(new THREE.BoxGeometry(0.045, 0.075, 0.16).rotateX(0.6).translate(0, -0.045, -0.10), DKWOOD),   // grip
+    _tinted(new THREE.BoxGeometry(0.05, 0.055, 0.26).translate(0, 0.005, 0.02), DKWOOD),                    // stock
+    _tinted(new THREE.CylinderGeometry(0.020, 0.024, 0.34, 7).rotateX(Math.PI / 2).translate(0, 0.028, 0.24), PEWTER), // barrel
+    _tinted(new THREE.TorusGeometry(0.027, 0.007, 4, 8).rotateX(Math.PI / 2).translate(0, 0.028, 0.40), GOLD),         // muzzle ring
+    _tinted(new THREE.BoxGeometry(0.014, 0.05, 0.05).translate(0.028, 0.02, -0.02), GOLD),                  // lock plate
+    _tinted(new THREE.OctahedronGeometry(0.026).translate(0, 0.065, -0.02), AETHER),                        // aether "flint"
+  ]);
+}
+// per-body prop mounting (hand-bone local frames differ per Tripo rig; tuned by screenshot)
+const PROP_FIT = {
+  raider:  { pos: [0, 0.05, 0], rot: [0, 0, 0] },
+  captain: { pos: [0, 0.05, 0], rot: [0, 0, 0] },
+};
+
 const IDENTITY = new THREE.Matrix4();
 // SphereGeometry, not IcosahedronGeometry(1, 2): a three icosahedron is non-indexed with FACE normals, so a
 // fresnel shell built on it renders as 320 flat facets — the "hard terminator banding on its surface" in the
@@ -177,6 +210,20 @@ export class Enemy {
       this.actIdle = act('idle'); this.actWalk = act('walk') ?? act('quadruped-walk'); this.actRun = act('run');
     }
     this.body.setup(this, asset);
+    // ---- seated-camp state + hand props (Gloamtide corsairs). sitK is the 0..1 seat blend glbAnim reads;
+    // props ride the RIGHT hand bone (bone children get matrixWorld composed by the normal scene update,
+    // so they follow every pose for free). Tankard while seated, flintlock otherwise — see _sync.
+    this.sitK = 0; this.props = null;
+    if (def.handProps && this.rigged) {
+      const hand = byName.handR ?? byName.hdR ?? null;
+      if (hand) {
+        propGeos();
+        const fit = PROP_FIT[this.def.body ?? type] ?? PROP_FIT.raider;
+        const mk = (geo) => { const m = new THREE.Mesh(geo, PROP_MAT); m.castShadow = false; m.receiveShadow = false;
+          m.position.set(...fit.pos); m.rotation.set(...fit.rot); m.visible = false; hand.add(m); return m; };
+        this.props = { tankard: mk(TANKARD_GEO), gun: mk(FLINTLOCK_GEO) };
+      }
+    }
     this._fBody = this.bones.torso ?? this.bones.body ?? this.bones.core ?? null;
     this._fHead = this.bones.head ?? this.bones.neck1 ?? this.bones.neck ?? null;
     if (this._fHead === this._fBody) this._fHead = null;
@@ -335,6 +382,9 @@ export class Enemy {
     this.alive = false; this.target.alive = false; this._setState('dead'); this.deathT = 0; this.telegraph = 0; this.attackKind = null; this._breath?.stop(); this._breath = null;
     this.game.combat.unregister(this.target);
     this.mesh.castShadow = false; if (this.shieldMesh) this.shieldMesh.visible = false;
+    // hand props do not run the dissolve shader (own material) — hide them with the death, or a flintlock
+    // outlives its owner floating over the grass
+    if (this.props) { this.props.tankard.visible = false; this.props.gun.visible = false; }
     this.game.events.emit('enemy:death', { enemy: this, killer });
     this.game.audio?.play?.('enemy-death', { pos: this.center });
     this.sys._onDeath(this);
@@ -346,6 +396,10 @@ export class Enemy {
     this.stateT += dt; this.attackCd -= dt; this.fleeCd -= dt;
     this.flash = Math.max(0, this.flash - dt * 6); this.phaseFlash = Math.max(0, this.phaseFlash - dt * 1.5);
     if (this.su && this.su.uHit.value > 0) this.su.uHit.value = Math.max(0, this.su.uHit.value - dt * 4);
+    // seat blend (def.sit): 1 only while parked idle at a camp with nothing to shoot. damp 6 ≈ the ~0.5 s
+    // stand-up decreed for the aggro moment — glbAnim slerps the seat pose by this weight, so the ramp IS
+    // the transition. Gated on camp so a bare harness spawn (animcheck, lineup) behaves like any biped.
+    if (this.def.sit) this.sitK = damp(this.sitK, this.camp && !this.alert && this.state === 'idle' ? 1 : 0, 6, dt);
     this._lod = lod; this._d2 = d2cam;   // squared camera distance, read by _sync (shield-bubble fade)
     // perception (throttled, staggered; far enemies look less often)
     this.percT -= dt; if (this.percT <= 0) { this.percT = (lod >= 2 ? 0.5 : 0.22) + (this.id % 7) * 0.015; this._perceive(t); }
@@ -471,6 +525,13 @@ export class Enemy {
     if (st === 'stagger') { this.staggerT -= dt; if (this.staggerT <= 0) this._setState(this.alert ? 'chase' : 'idle'); return; }
     if (st === 'idle') {
       if (this.alert) { this._setState('chase'); return; }
+      if (def.sit && this.camp) {
+        // seated corsair: never wanders off its log. Settle onto the seat's authored facing (toward the
+        // fire) so a camp reads as a circle of drinkers, not people staring at random compass points.
+        const sy = this.slot?.opts?.yaw;
+        if (sy != null) this.yaw += wrapAngle(sy - this.yaw) * Math.min(1, 3 * dt);
+        return;
+      }
       if (this.stateT > this.idleDur) { this._pickWander(); this._setState('patrol'); }
       if (def.flying) { this.wantPos.copy(this.position); }
       return;
@@ -530,6 +591,9 @@ export class Enemy {
       _w.normalize(); this.wantDir.copy(_w); this.wantSpeed = def.speed * (dh > b1 + 8 ? 1 : 0.65); this.facePlayer = true;
       this.strafeLean = damp(this.strafeLean, this.strafeDir, 3, dt);
       if (def.flying) { this.wantPos.copy(this.position).addScaledVector(_w, 4); this.wantPos.y = this.sys.heightAt(this.wantPos.x, this.wantPos.z) + def.hover + Math.sin(t * 0.7 + this.seedT) * 0.4; }
+      // melee fallback (def.meleeRange, corsairs): inside the standoff dance a musketeer pistol-whips
+      // instead of firing a two-count volley into its own boots. Reuses the whole 'bite' path.
+      if (def.meleeRange && dh < def.meleeRange && this.attackCd <= 0 && los) { this._startAttack('bite'); return; }
       if (d < def.attackRange && this.attackCd <= 0 && los) this._startAttack(def.volley ? 'volley' : 'bolt');
       return;
     }
@@ -615,7 +679,9 @@ export class Enemy {
         this._muzzle(_w);
         const bk = this._nearK(_w);   // the jaw sits ~1 m from the eye at the standoff ring — see _nearK
         if (bk > 0.05) g.vfx?.emit?.('aether-burst', _w, { color: this.glowColor.getHex(), count: Math.round(3 + 5 * bk), scale: 0.6 * (0.45 + 0.55 * bk) });
-        if (facing && dh < def.attackRange + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) {
+        // reach: a melee role's whole attackRange is its bite; a ranged type with a melee FALLBACK must
+        // strike only inside meleeRange (its attackRange is 26+ m of musket range, not an arm)
+        if (facing && dh < (def.meleeRange ?? def.attackRange) + 1.0 && Math.abs(pf.y - this.position.y) < 2.5) {
         this._hitThreat(this.damage, 'kinetic');
         if (sig?.chill && atPlayer) g.player.controller?.chill?.(sig.chill.secs, sig.chill.mul);   // the bite is cold: you slow down (player-only — the guide has no controller)
       }
@@ -905,6 +971,9 @@ export class Enemy {
     // all on a GLB creature, which is a combat cue the player is entitled to. Route it through the aether RIM
     // instead — a lighting term, hue-locked to ecol, clamped at the highest rim the bestiary already ships.
     if (this.rigged) u.uRim.value = Math.min(GLB_RIM_MAX, this.def.rim * (1 + tg * 0.9 + phaseF * 1.2));
+    // corsair hand props: tankard while seated, flintlock the rest of its life (patrol included — a
+    // corsair walking its camp with the gun slung in hand is the right silhouette).
+    if (this.props) { const sit = this.sitK > 0.5; this.props.tankard.visible = this.alive && sit; this.props.gun.visible = this.alive && !sit; }
     const wps = this.target.weakPoints;
     if (wps && lod < 2) for (let i = 0; i < wps.length; i++) { const w = wps[i]; w.position.copy(w.off).applyMatrix4(w.bone.matrixWorld); }
     if (this.shieldMesh) {

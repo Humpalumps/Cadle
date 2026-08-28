@@ -30,7 +30,9 @@ import { OUTER } from '../world/Biomes.js';
  *   objectives — `enemy.elite === true`, optional `enemy.questTag`. populate() places camps per the CLAUDE.md layout (meadow wisps, Sundered
  *   Spire ruins + Warden, Whisperwood edge, crystal fields) plus, per outer region: 3 camps (heart + two satellites ~140 m off the region
  *   bearing), 2 roaming packs of the region's common trash type walking a waypoint LOOP (heart -> satellite -> the rare's POI; camp.route),
- *   and ONE NAMED RARE (NAMED_RARES: gold elite at 2.5x hp, band-top level, 8-12 min respawn, at a POI off the pass road, `enemy.namedRare`
+ *   and ONE NAMED RARE (NAMED_RARES: gold elite at 2.5x hp, band-top level, 8-12 min respawn, at a POI off the pass road, `enemy.namedRare`);
+ *   plus the three GLOAMTIDE CORSAIR camps (props.pirateCamps — raiders seated on their log ring drinking until aggro, def.sit,
+ *   one named elite captain each; layout/geometry owned by Props._buildPirateCamps, spawning wired at the end of populate())
  *   — RPG.js drops a guaranteed legendary off it; it announces itself once per spawn inside 120 m and again on death, and it is
  *   exempt from cap recycling so the 8-min clock can never be started by anything but a real kill); slots respawn 45-60 s (boss/mini-boss 180 s)
  *   after death when the player is > 50 m away. Dragon nests are encounters (_updateNests): approach one and a guardian wyvern pair
@@ -395,6 +397,21 @@ export class Enemies {
         camp(b.short + '-roam' + i, (b.cx + sat.cx) / 2, (b.cz + sat.cz) / 2, 80, midLevel, [[roamType, i === 0 ? 3 : 2, 0, 80]],
           { respawn, levelOf, route: [{ x: b.cx, z: b.cz }, { x: sat.cx, z: sat.cz }, { x: rx, z: rz }] });
       }
+    }
+    // --- PIRATE CAMPS (Gloamtide Corsairs, user ask 2026-08-28). Layout comes from Props (world builds
+    // before enemies in Game.systems, and Props owns the fire/tents/seats/chest geometry), read
+    // DEFENSIVELY: no props, no pirates, nothing crashes. Each camp: raiders seated on the log ring
+    // (slot yaw = facing the fire; def.sit keeps them drinking until aggro) + ONE named captain
+    // (elite modifier at its own def stats — hpMul 1 keeps the 3x elite multiplier off a def that is
+    // already elite-statted; the elite flag still buys the gold tint, damage bump and loot-tier floor).
+    // Same slot/respawn/streaming machinery as every other camp — zero new code paths in update().
+    for (const pc of this.game.world?.props?.pirateCamps ?? []) {
+      const c = { name: pc.name, center: new THREE.Vector3(pc.x, 0, pc.z), radius: 24, level: pc.level, slots: [], alertT: -99, respawn: 120, route: null };
+      for (const s of pc.seats) c.slots.push({ type: 'raider', pos: new THREE.Vector3(s.x, 0, s.z), enemy: null, deadAt: -1e9, level: pc.level, opts: { yaw: s.yaw } });
+      const cs = pc.captainSeat;
+      c.slots.push({ type: 'raider-captain', pos: new THREE.Vector3(cs.x, 0, cs.z), enemy: null, deadAt: -1e9, level: pc.level + 1,
+        opts: { yaw: cs.yaw, elite: true, hpMul: 1, name: pc.captain, questTag: 'pirate:' + pc.id } });
+      this.camps.push(c);
     }
     // Only the home region is populated up front — the rest stream in as the player travels (see update).
     for (const c of this.camps) for (const s of c.slots) if (s.pos.lengthSq() < 340 * 340) this._spawnSlot(c, s);

@@ -44,6 +44,11 @@ export const POIS = {
   'Whisperwood': { x: 0, z: -220 },
   'The Crystal Fields': { x: 250, z: 30 },
   'The Hollow Crown': { x: -60, z: 260 },
+  // Gloamtide Corsair camps (fixed anchors; Props._buildPirateCamps pitches each camp within ~22 m of
+  // its anchor, so `reach` radii on these stay >= 25)
+  'Driftfire Hollow': { x: -10, z: -396 },
+  'The Cinder Tithe': { x: 142, z: 375 },
+  'The Salt-Grin Camp': { x: -396, z: -62 },
 };
 
 export const QUESTS = [...meadow, ...forest, ...tundra, ...shadowfen, ...infernal, ...sunken, ...dragon, ...celestial, ...theVoid, ...lost];

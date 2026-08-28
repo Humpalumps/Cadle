@@ -1,9 +1,14 @@
-// The Vale (meadow) — levels 1-5. Roster: wisp, hound, sentinel, golem, drake, warden.
-// XP subtotal: 1,713.  12 quests: 4 chain + 2 side + 6 town quests (5 Hearthfall villagers + the plaza guard).
+// The Vale (meadow) — levels 1-5. Roster: wisp, hound, sentinel, golem, drake, warden (+ the Gloamtide
+// Corsair camps on the pass roads, spawned by their camps — `spawns: true` on those objectives).
+// XP subtotal: 2,243.  15 quests: 4 chain + 2 side + 6 town quests + 3 corsair quests.
 // Town quests carry giver 'npc:<id>' + giverPos [x,z]; <id> matches a Props named villager
 // ('npc:elder' -> props.npcs id 'npc-elder' — see Props._buildVillagers). They are offered and turned
 // in AT the villager (quest.readGiver), never at the stele. giverPos is only the fallback anchor for
 // when the NPC body is absent (missing GLB); QuestMarkers prefers the live props.npcs position.
+// 2026-08-28 (user decree: one villager per unique body): the hamlet keeps THREE named villagers —
+// Serel (herbwife), Wick (merchant), Bram (mason). The six town quests were RE-AUTHORED onto them
+// (ids kept stable for saves): Tam's wolves went to Serel, Maren's moonpetal to Wick, Warden Aldric's
+// drakes to Bram — each rewritten in its new giver's voice, giverName/giverPos matching the kept body.
 export default [
   {
     id: 'vale-01', region: 'meadow', level: 1, next: 'vale-02',
@@ -126,11 +131,11 @@ export default [
   {
     id: 'vale-t1', region: 'meadow', level: 2,
     name: 'Petals That Will Not Be Picked',
-    giver: 'npc:maren', giverName: 'Maren the Herbwife', giverPos: [113, -88],
+    giver: 'npc:wick', giverName: 'Wick the Lamplighter', giverPos: [125.4, -88.4],
     text: {
-      offer: 'Moonpetal only opens where the wisps drift — the light coaxes it, or frightens it, I have never settled which. Either way the wisps hang over every patch worth cutting, and my knees are past arguing with them. Bring me four blooms with the shine still on them.',
+      offer: 'Maren the herbwife left me her recipe when she moved on: moonpetal steeped in lamp-oil, for hands that spend all night at hot glass. The catch is that moonpetal only opens where the wisps drift, and I am done arguing with things that float. Bring me four blooms with the shine still on them.',
       progress: 'Follow the wisps at dusk-light. Where they linger, the moonpetal opens.',
-      done: 'Still warm. You can tell my customers the salve works because somebody else did the walking.',
+      done: 'Still warm. Maren would say the salve works best when somebody else did the walking. She was right about most things.',
     },
     objectives: [{ type: 'collect', item: 'moonpetal', name: 'Moonpetal Blooms', count: 4, from: ['wisp'], chance: 0.55 }],
     reward: { xp: 90, glimmer: 30, tier: 'common',
@@ -142,11 +147,11 @@ export default [
   {
     id: 'vale-t2', region: 'meadow', level: 2,
     name: 'Wolves Wearing Light',
-    giver: 'npc:tam', giverName: 'Old Tam the Shepherd', giverPos: [130, -104],
+    giver: 'npc:serel', giverName: 'Serel the Well-Keeper', giverPos: [116, -99],
     text: {
-      offer: 'Hounds took two ewes this week, and these are not honest wolves — they glow, and honest wolves have the decency not to. My dog will not go near them and my throwing arm went with my hair. Thin them out before the flock decides the far hills are safer than my field.',
-      progress: 'They come up out of the tall grass between here and the Spire. You will see them before you hear them — that is the wrong way round, and it never stops being unsettling.',
-      done: 'The flock came back to the near field on its own. Sheep know. That is the whole of what sheep know, but they know it.',
+      offer: 'Old Tam lost two ewes to the hounds before he took his flock over the hill, and now the same beasts pace the well-road at dusk. They are not honest wolves — they glow, and honest wolves have the decency not to. Nobody fetches water after dark while they hold the grass. Thin them out for me.',
+      progress: 'They come up out of the tall grass between the village and the Spire. You will see them before you hear them — that is the wrong way round, and it never stops being unsettling.',
+      done: 'Buckets on the well-stone this morning, before the sun was properly up. That is how you measure fear in a village: by who fetches water, and when.',
     },
     objectives: [{ type: 'kill', enemy: 'hound', name: 'Aether Hounds', count: 6, where: 'meadow' }],
     reward: { xp: 100, glimmer: 30, tier: 'common',
@@ -209,17 +214,76 @@ export default [
   {
     id: 'vale-t6', region: 'meadow', level: 4,
     name: 'The Post That Cannot Move',
-    giver: 'npc:warden-guard', giverName: 'Warden Aldric', giverPos: [11.4, -19.6],
+    giver: 'npc:bram', giverName: 'Bram the Mason', giverPos: [110, -105],
     text: {
-      offer: 'I stand this post so the plaza never learns what the Spire road knows. But the drakes are riding the warm air further west each week, and a guard who chases one leaves the Aetheryte unwatched — which is what a clever thing would want. I cannot leave. You can. Bring the sky back down for me.',
+      offer: 'Warden Aldric watched the sky from the plaza before they called him east, and his last word to me was to keep watching it. Easy for him — my work is up scaffolds, and the drakes ride the warm air closer every week. A mason on a wall is a field mouse under a hawk. Bring the sky back down, so I can finish a course of stone without flinching at shadows.',
       progress: 'They circle high over the crystal fields and stoop when your back is turned. Watch your shadow — theirs crosses it first.',
-      done: 'Quiet air. Nobody in the plaza knows this week was any different from last week, and that is the whole job, stranger — nobody knowing. I will remember that you do.',
+      done: 'A whole day on the scaffold and my eyes never left the stone. Aldric would call that a watched sky. I call it a wall that finally gets built.',
     },
     objectives: [{ type: 'kill', enemy: 'drake', name: 'Meadow Drakes', count: 2, where: 'meadow' }],
     reward: { xp: 110, glimmer: 40, tier: 'uncommon',
       choices: [
         { tier: 'uncommon', kind: 'weapon', archetype: 'autorifle', element: 'kinetic' },
         { tier: 'uncommon', kind: 'armour', slot: 'legs', set: 'pilgrim' },
+      ] },
+  },
+
+  // ---- the Gloamtide Corsairs (pirate camps on the pass roads — Props._buildPirateCamps spawns the
+  // camps, Enemies seats the crews, so every objective here carries `spawns: true`: the corsairs are
+  // not in any Biomes roster, the camps themselves guarantee them) ----
+  {
+    id: 'vale-p1', region: 'meadow', level: 4,
+    name: 'The Road Takes Its Cut',
+    giver: 'npc:wick', giverName: 'Wick the Lamplighter', giverPos: [125.4, -88.4],
+    text: {
+      offer: 'Two shipments of powder and wick-oil, gone on the forest road, and the carter came back walking with his boots in his hand. Gloamtide Corsairs — they sit out past the pass, drinking around a fire like the road belongs to them, and every cart that rolls by pays for the privilege. I sell provisions, not tribute. Thin their crew.',
+      progress: 'They camp beside the pass roads out of the Vale. You will smell the smoke before you see the fire — and they will be sitting at it, right up until they are not.',
+      done: 'The carter went out this morning and came back with his boots on his feet and the cart still under him. That is all the receipt I need.',
+    },
+    objectives: [{ type: 'kill', enemy: 'raider', name: 'Gloamtide Corsairs', count: 6, spawns: true }],
+    reward: { xp: 150, glimmer: 60, tier: 'uncommon',
+      choices: [
+        { tier: 'uncommon', kind: 'weapon', archetype: 'handcannon', element: 'kinetic' },
+        { tier: 'uncommon', kind: 'armour', slot: 'arms', set: 'pilgrim' },
+      ] },
+  },
+  {
+    id: 'vale-p2', region: 'meadow', level: 5,
+    name: 'The Captain Drinks First',
+    giver: 'npc:bram', giverName: 'Bram the Mason', giverPos: [110, -105],
+    text: {
+      offer: 'A season of dressed stone, seized on the north road by a corsair who calls himself Captain Sable Vane. He wears a stolen aether amulet and lets his crew do the standing up. The stone I can quarry again; the idea that a road out of this Vale has an owner — that I want broken, and broken where his crew can watch it happen.',
+      progress: 'Driftfire Hollow, off the forest pass. The captain is the big one by the fire — the amulet glows, in case the hat was not enough.',
+      done: 'They say the crew did not even finish their ale. Good. Let every cutthroat on every road hear how the Vale answers a toll.',
+    },
+    objectives: [
+      { type: 'reach', poi: 'Driftfire Hollow', r: 40, text: 'Find Driftfire Hollow on the forest pass road' },
+      { type: 'slay', enemy: 'raider-captain', name: 'Captain Sable Vane', at: 'Driftfire Hollow', spawns: true },
+    ],
+    reward: { xp: 200, glimmer: 90, tier: 'rare', kind: 'weapon',
+      choices: [
+        { tier: 'rare', kind: 'weapon', archetype: 'scout', element: 'solar' },
+        { tier: 'rare', kind: 'weapon', archetype: 'shotgun', element: 'kinetic' },
+        { tier: 'rare', kind: 'armour', slot: 'chest', set: 'pilgrim' },
+      ] },
+  },
+  {
+    id: 'vale-p3', region: 'meadow', level: 5,
+    name: 'What the Tide Washed Up',
+    giver: 'npc:serel', giverName: 'Serel the Well-Keeper', giverPos: [116, -99],
+    text: {
+      offer: 'The corsairs carry letters of marque — forged, every one, but stamped prettily enough that some fool lord out there is honouring them. Take the marques off the crews, and while you are in their camp, crack the strongbox they keep by the fire. What is in it was ours before it was theirs; the well fund does not rob itself.',
+      progress: 'The marques are on the corsairs; the strongbox sits in the middle of the camp, by the fire, where they can all watch it. They like watching it. You will have to interrupt.',
+      done: 'Forged, forged, and forged — but the coin in that box was honest, and now it is honest again. The well thanks you. So do I, which is worth less, but comes with tea.',
+    },
+    objectives: [
+      { type: 'collect', item: 'corsair-marque', name: 'Forged Marques', count: 3, from: ['raider', 'raider-captain'], chance: 0.55, spawns: true },
+      { type: 'reach', poi: 'Driftfire Hollow', r: 26, text: 'Raid the strongbox at the heart of Driftfire Hollow' },   // r >= 25: the camp pitches within ~22 m of the anchor
+    ],
+    reward: { xp: 180, glimmer: 80, tier: 'uncommon', kind: 'armour',
+      choices: [
+        { tier: 'uncommon', kind: 'weapon', archetype: 'sniper', element: 'verdant' },
+        { tier: 'uncommon', kind: 'armour', slot: 'cloak', set: 'pilgrim' },
       ] },
   },
 ];
