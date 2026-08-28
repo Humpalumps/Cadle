@@ -1,0 +1,13 @@
+[
+ { "wait": 10 },
+ { "eval": "(()=>{const sp=document.getElementById('splash');if(sp)sp.remove();__game.god(true);return 'ready'})()" },
+ { "hour": 13 },
+ { "eval": "(()=>{const c=__game.game.world.props.pirateCamps[0];__game.teleport(c.x+9,null,c.z+9);return JSON.stringify({x:+c.x.toFixed(0),z:+c.z.toFixed(0)})})()" },
+ { "wait": 6 },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];const near=g.enemies.list.filter(e=>Math.hypot(e.position.x-c.x,e.position.z-c.z)<30);return JSON.stringify({nearCamp:near.length,types:near.map(e=>e.type).slice(0,8),sitting:near.filter(e=>e.sitK>0.5).length})})()" },
+ { "eval": "(()=>{const c=__game.game.world.props.pirateCamps[0];const p=__game.game.player.position;__game.look(Math.atan2(-(c.x-p.x),-(c.z-p.z)),-0.08);return 'look'})()" },
+ { "wait": 2 }, { "shot": "camp-close" },
+ { "eval": "__game.passive(false)" }, { "wait": 1 },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];for(const e of g.enemies.list){if(Math.hypot(e.position.x-c.x,e.position.z-c.z)<30){e.alert=true;e.lastSeenT=g.time;}}return 'aggro'})()" },
+ { "wait": 3 }, { "burst": { "name": "camp-aggro", "n": 4, "interval": 0.4 } }
+]

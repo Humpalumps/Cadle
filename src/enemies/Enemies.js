@@ -558,10 +558,20 @@ export class Enemies {
        // 40-alive cap at spawn and leave every distant biome empty forever. Instead a slot is eligible
        // only inside STREAM m of the player, and when the cap is full the FARTHEST live camp enemy is
        // recycled to make room for a much nearer one (1.6x margin = no thrash on the boundary).
+      // THE 50 m NEAR-GUARD IS A NO-POP-IN RULE, AND IT HAS A HOLE: it also means a camp you ARRIVE
+      // inside never populates at all. Walking in is fine (you cross 300..50 m and it fills ahead of
+      // you), but the game has fast travel, and `goto()` is how every critic and every harness probe
+      // enters a region — so a teleport into a pirate camp showed tents, banner, fire and NO CREW
+      // (measured: nearCamp 0, and after clearEnemies() nothing anywhere refilled). Detect the jump
+      // and let that one pass ignore the near-guard: pop-in you caused by teleporting is not pop-in.
+      const pj = this._lastPP ??= P.position.clone();
+      const jumped = pj.distanceToSquared(P.position) > 30 * 30;
+      pj.copy(P.position);
+      const nearGuard = jumped ? 0 : 50 * 50;
       for (const c of this.camps) for (const s of c.slots) {
         if (s.enemy || t - s.deadAt < c.respawn) continue;
         const d2 = s.pos.distanceToSquared(P.position);
-        if (d2 < 50 * 50 || d2 > STREAM * STREAM) continue;
+        if (d2 < nearGuard || d2 > STREAM * STREAM) continue;
         if (this.list.length >= this.maxAlive) {
           const far = this._farthestCampEnemy();
           if (!far || far.position.distanceToSquared(P.position) < d2 * 1.6) continue;
