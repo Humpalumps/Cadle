@@ -5,7 +5,7 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-for (const name of ['herbwife', 'merchant', 'mason', 'raider', 'captain']) {
+for (const name of ['fisherman', 'farmwoman', 'guard', 'scholar']) {   // batch 3b (3a five verified + shipped)
   const path = `public/assets/creatures/${name}.glb`;
   const doc = await io.read(path);
   const root = doc.getRoot();

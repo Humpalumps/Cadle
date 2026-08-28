@@ -73,6 +73,9 @@ const MODEL = Object.fromEntries([
   // Wave-5 NPCs/raiders (biped 15k tier, idle+walk clips; walk root travel detrended to in-place at merge):
   '/assets/creatures/herbwife.glb', '/assets/creatures/merchant.glb', '/assets/creatures/mason.glb',
   '/assets/creatures/raider.glb', '/assets/creatures/captain.glb',
+  // Batch-3b villagers (same pipeline: biped 15k tier, idle+walk clips, walk detrended in place):
+  '/assets/creatures/fisherman.glb', '/assets/creatures/farmwoman.glb',
+  '/assets/creatures/guard.glb', '/assets/creatures/scholar.glb',
 ].map((u) => [u.split('/').pop().split('.')[0], u]));
 
 const AUDIO = {};
