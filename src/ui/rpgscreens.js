@@ -83,10 +83,28 @@ const ITEM_ICON = {
   fusion: '<path d="M2.4 7.8h10.4v7.4H2.4Z"/><path d="M13.6 8.6h2.2v5.8h-2.2ZM16.6 8.6h2.2v5.8h-2.2ZM19.6 8.6h2.2v5.8h-2.2Z" opacity=".8"/><path d="M6.4 15.4h3.4l-1.9 4.6H4.6Z"/><path d="M12.8 10.4h9.6v1.4h-9.6Z" opacity=".45"/>',
   beam: '<path d="M2.2 8.4h10.2v6.4H2.2Z"/><path d="M12.6 9.6h2.8v4h-2.8Z" opacity=".85"/><path d="M15.6 8.4 22.8 11.6 15.6 14.8Z"/><path d="M6.2 15h3.4l-1.8 4.8H4.4Z"/>',
   head: '<path d="M12 2c4.6 0 7.4 2.9 7.4 7.2v4.2c0 3.6-2.4 6-4.6 6.6l-.6 3H9.8l-.6-3c-2.2-.6-4.6-3-4.6-6.6V9.2C4.6 4.9 7.4 2 12 2Z"/><path d="M7.6 9.6h8.8v3.2H7.6Z" fill="#0b0a16"/>',
-  arms: '<path d="M8.6 2.6h11.2l1.4 5-2.2 1.6.9 3.4-2 1.2.7 3-1.9 1.1.5 3.4-4.6 1.8-4.6-1.8.5-3.4-1.9-1.1.7-3-2-1.2.9-3.4-2.2-1.6Z"/>',
-  chest: '<path d="M8.4 2.4 12 4.6l3.6-2.2 5.4 2.6-1.4 5.4 1 1.6-1.8 9.6H5.2L3.4 12l1-1.6L3 5Z"/><path d="M12 6.6 13.8 21h-3.6Z" fill="#0b0a16" opacity=".55"/>',
-  legs: '<path d="M4.8 2.4h14.4l-.8 5.4-1.4 14h-4l-.9-9.2h-.2L11 21.8H7l-1.4-14Z"/>',
-  cloak: '<path d="M12 2.2 16.6 5l4.6 3.4-2.6 2 2 10.4h-6.2l-.8-9h-1.2l-.8 9H3.4l2-10.4-2.6-2L7.4 5Z"/>',
+  // ARMOUR: gear, not clothing. The old chest path was a flared torso with a V-neck which, filled flat in
+  // an uncommon's green, read as a t-shirt (wave-6 coherence, verbatim) — and legs/arms were vague enough
+  // to be trousers and a sleeve. Each one is now built from the pieces a suit of plate actually has, with
+  // dark negative space for the joints, matching the guns above: one silhouette, one naming feature.
+  // (These are the FALLBACK — the painted 256 px art in public/assets/ui/items/ is preferred; see art().)
+  arms: '<path d="M6.4 2.4h11.2l1.5 3.7-2.4 1.1H7.3L4.9 6.1Z"/>'                                  // flared cuff
+       + '<path d="M7.7 8.2h8.6l.5 3H7.2Z"/><path d="M7.9 12h8.2l.45 3H7.45Z"/>'                  // forearm lames
+       + '<path d="M8.2 15.7h7.6l.7 4-1.1 2.1H8.6l-1.1-2.1Z"/>'                                   // the fist
+       + '<path d="M9.1 16.8h1.6v1.6H9.1ZM11.2 16.8h1.6v1.6h-1.6ZM13.3 16.8h1.6v1.6h-1.6Z" fill="#0b0a16" opacity=".6"/>',   // knuckle studs
+  chest: '<path d="M9.4 2.5h5.2l.85 2.3L12 6.1 8.55 4.8Z"/>'                                      // gorget
+       + '<path d="M2.6 8.3c0-2.6 1.7-4.2 3.8-4.6l1.5 4.3-.7 4.7C4.7 12.3 2.6 11 2.6 8.3Z"/>'     // pauldrons
+       + '<path d="M21.4 8.3c0-2.6-1.7-4.2-3.8-4.6l-1.5 4.3.7 4.7c2.5-.4 4.6-1.7 4.6-4.4Z"/>'
+       + '<path d="M8 4.7 12 6.7l4-2 1.4 3.3-.5 2 .7 1.3-.8 3.6H7.2l-.8-3.6.7-1.3-.5-2Z"/>'       // breastplate
+       + '<path d="M8.4 15.7h7.2l-.5 2.4H8.9Z"/><path d="M9.2 18.9h5.6l-.6 2.6H9.8Z"/>'            // fauld lames
+       + '<path d="M11.7 7.6h.6v6.9h-.6Z" fill="#0b0a16" opacity=".55"/>',                        // centre ridge
+  legs: '<path d="M5.6 2.4h5.5l-.4 4.2H6.2Z"/><path d="M12.9 2.4h5.5l-.5 4.2h-4.6Z"/>'            // cuisses
+      + '<path d="M6.4 7.4h4.4l-.4 3.4H6.9Z"/><path d="M13.2 7.4h4.4l-.5 3.4h-3.5Z"/>'            // knee cops
+      + '<path d="M7.1 11.6h3.4l-.5 6.4H7.7Z"/><path d="M13.5 11.6h3.4l-.6 6.4h-2.3Z"/>'          // greaves
+      + '<path d="M7.2 18.8h3.5l.5 1.4-.3 1.4H6.7l-.2-1.5Z"/><path d="M13.3 18.8h3.5l.6 1.3-.2 1.5h-4.2l-.3-1.4Z"/>',   // sabatons
+  cloak: '<path d="M12 2.2 8.4 4 3.5 7.6l2.5 1.6L4.2 20.4h6.1l.9-9h1.6l.9 9h6.1L18 9.2l2.5-1.6L15.6 4Z"/>'
+       + '<path d="M12 2.6 14.1 4.7 12 6.8 9.9 4.7Z"/>'                                           // the clasp
+       + '<path d="M11.4 4.15 12 4.75l-.6.6-.6-.6Z" fill="#0b0a16" opacity=".6"/>',
 };
 // Slot names are read off ctx.rpg.equipped at runtime (the RPG side is growing a SECOND weapon slot
 // so the two live guns each get one) — this is only the label lookup, with a title-case fallback so

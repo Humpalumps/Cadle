@@ -9,6 +9,7 @@ import { CSS as THEME_CSS } from './theme.js';
 import { SCREEN_CSS } from './screencss.js';
 import * as R from './rpgscreens.js';
 import * as MAP from './mapscreen.js';
+import { HINT_KEY } from './HUD.js';
 
 const TABS = [
   ['map', 'The Vale', 'KeyM'],
@@ -361,6 +362,8 @@ export class Screens {
     const g = this.game;
     this._build();
     this.tab = tab || this.tab;
+    // retire the HUD tracker's one-time "J — Quest Log" affordance: they found it.
+    if (this.tab === 'quests') { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) {} }
     if (!this.visible) {
       this.visible = true;
       g.paused = true;

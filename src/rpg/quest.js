@@ -109,6 +109,7 @@ export class Quests {
       for (const id in d.active ?? {}) if (BY_ID[id]) this.active.set(id, (d.active[id] || []).map((n) => n | 0));
       this.tracked = BY_ID[d.tracked] ? d.tracked : null;
       this._region = d.region ?? null;
+      this._opened = !!d.opened;   // the opening quest has been handed over once; see update()
       // THE POINT of persisting these: a player who logs back in must get the same three rewards
       // they were deliberating over, not a fresh roll. Items are plain JSON by construction
       // (items.js: "Everything here returns plain JSON-safe objects"), so this is a straight restore.
@@ -122,7 +123,7 @@ export class Quests {
       const active = {}; for (const [id, c] of this.active) active[id] = c;
       const choices = {}; for (const [id, c] of this.choices) choices[id] = c;
       const pending = {}; for (const [id, c] of this._pending) pending[id] = c;
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, done: [...this.done], active, choices, pending, tracked: this.tracked, region: this._region }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, done: [...this.done], active, choices, pending, tracked: this.tracked, region: this._region, opened: !!this._opened }));
     } catch (e) {}
   }
 
@@ -575,6 +576,19 @@ export class Quests {
     // region entry: auto-offer the chain where no stele stands yet
     const reg = regionAt(p.x, p.z);
     if (reg !== this._region) { this._region = reg; this._save(); }
+    // THE FIRST TWO MINUTES. A brand-new save had nothing active, nothing on the tracker and no reason to
+    // walk anywhere: the only thing a fresh player could see was the Aetheryte, and it offers "E Attune",
+    // not a quest. The Wayfinder stele 35 m away was carrying the whole opening and a player who has never
+    // seen a stele does not know to press E at one. So the chain HEAD is pushed once, on a save that has
+    // completed nothing and accepted nothing — the same "the region hands out its own chain" move the
+    // no-stele branch below makes, just also allowed where a stele exists. From the second link on the
+    // stele takes over normally, and side quests still wait there to be read. One quest, once, ever.
+    if (!this._opened && !this.done.size && !this.active.size) {
+      this._opened = true;                              // persisted: abandoning the opener must not re-push it forever
+      const head = this.offersAt(reg).find((qid) => BY_ID[qid].next);
+      if (head) { this.accept(head); return; }
+      this._save();
+    }
     // No stele here yet: the region hands out its OWN chain, one quest at a time, the way a giver would,
     // and the next link arrives on turn-in. Side quests are NOT pushed — they wait at the stele. (Dumping
     // three at once was toast spam and it spent the active cap before the player had chosen anything.)

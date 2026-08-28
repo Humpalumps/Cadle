@@ -78,6 +78,13 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 // enemy: <the Enemy>}), not the Enemy itself. Only the Enemy has `namedRare`, so every rare check has to
 // hop the back-reference. Accepts either shape so callers holding a real Enemy (map screen) also work.
 const isRare = (t) => !!(t && (t.namedRare || t.enemy?.namedRare));
+// "you have a quest log, it is on J" — shown under the tracker until the player opens it once.
+// Screens.js sets the flag; keep the key in sync if either side moves.
+export const HINT_KEY = 'cadle.sawlog';
+// Scratch for the enemy nameplate's head anchor. Same technique QuestMarkers.js uses for the "!"
+// over a villager: the model's world bounding box, not the spawn root, because a posed/animated body
+// is not centred on its own origin. Rebuilt only when the target changes, never per frame.
+const _box = new THREE.Box3();
 const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // The quest engine's objective text already carries a baked-in "— h / n" (or a trailing "✓" when
 // h>=n===1) for the benefit of an old string-only HUD (see src/rpg/quest.js's own doc-comment). This
@@ -118,7 +125,7 @@ const TEMPLATE = `
 <div id="minimap"><canvas width="164" height="164"></canvas><i class="rim"></i><b class="np">N</b><div class="zone"></div><div class="wpd"></div></div>
 <div id="abil"><div id="abrow"></div><div id="smeter"><i></i></div></div>
 <div id="pickups"></div>
-<div id="quest" class="hidden"><div class="qt"></div><div class="qlist"></div><div class="qothers"></div></div>
+<div id="quest" class="hidden"><div class="qt"></div><div class="qlist"></div><div class="qothers"></div><div class="qhint"><kbd>J</kbd>&nbsp;Quest Log</div></div>
 <div id="toasts"></div>
 <div id="notify"><h2></h2><div class="fl"></div><p></p></div>
 <div id="iprompt"><kbd>E</kbd><span class="ipt"></span><span class="ip2" style="display:none">&nbsp;&middot;&nbsp;<kbd class="ipk2"></kbd><span class="ipt2"></span></span></div>
@@ -195,12 +202,13 @@ export class HUD {
     this._buildMenus();
     if (g.auto) { $('#start')?.remove(); }
 
-    // death screen: any key / click to respawn (after a beat so the killing blow doesn't skip it)
-    const tryRespawn = () => {
-      if (this.game.player.alive || this.game.time - this._deadSince < 1.2) return;
-      const sp = this.game.terrain?.POI?.spawn;
-      this.game.player.respawn(sp ? { x: sp.x, y: sp.y + 0.2, z: sp.z } : undefined);
-    };
+    // Death screen: any key / click to respawn (after a beat so the killing blow doesn't skip it).
+    // These DOM listeners are the real-player path and stay — a click with pointer lock released
+    // still has to work. They are NOT the only path: update() calls the same method off game.input,
+    // because Input.press()/button() (window.__game.input.*, which is all the harness has) mutate the
+    // key/button sets directly and never dispatch a DOM event. Death was therefore unexitable under
+    // ?auto=1 — a gate could stage a death and could never end one.
+    const tryRespawn = () => this._tryRespawn();
     window.addEventListener('keydown', tryRespawn); window.addEventListener('mousedown', tryRespawn);
   }
 
@@ -218,8 +226,12 @@ export class HUD {
       if (e.killed && isRare(e.target)) this.notify(e.target.enemy?.name ?? e.target.name ?? 'Rare Slain', 'rare felled', '', 'rare');
     });
     ev.on('player:damaged', (e) => {
-      const src = e.source?.position ?? e.info?.point;
-      if (src) this._dmgArc(src);
+      // source = the attacker (Combat's info.owner, forwarded by Player.damage). center is the body,
+      // position is the feet — either is fine for a bearing. Falls back to the impact point, and
+      // _dmgArc falls back again to the projectile's travel direction when that point is on us.
+      const s = e.source;
+      const src = s?.center ?? s?.position ?? e.info?.point;
+      this._dmgArc(src, e.info?.dir);
       this._barFlash();
     });
     ev.on('player:died', () => { this._deadSince = g.time; this.deathEl.classList.add('on'); this.deathEl.style.opacity = 1; });
@@ -290,6 +302,18 @@ export class HUD {
     this._qt ??= this.questEl.querySelector('.qt');
     this._qList ??= this.questEl.querySelector('.qlist');
     this._qOthers ??= this.questEl.querySelector('.qothers');
+    // One-time "press J" affordance. A fresh player had a tracker (once the opener lands) and no idea a
+    // quest LOG existed — the wave-6 pass named it explicitly. It retires itself the first time the log is
+    // opened (Screens.show writes the flag), so a returning player never sees it again.
+    // Read storage only until it says "seen" — a tracked `reach` objective re-renders at 2 Hz (its live
+    // distance changes every poll) and a synchronous localStorage hit on each one is a frame cost for
+    // an answer that can only ever flip once.
+    this._qHint ??= this.questEl.querySelector('.qhint');
+    if (this._qHint && !this._qHintOff) {
+      let seen = true; try { seen = localStorage.getItem(HINT_KEY) === '1'; } catch (e) {}
+      this._qHintOff = seen;
+      this._qHint.style.display = seen ? 'none' : '';
+    }
     if (!title) return;
     setT(this._qt, title);
     const objs = Array.isArray(objective) ? objective.slice(0, 6) : (objective ? [{ text: String(objective) }] : []);
@@ -435,15 +459,30 @@ export class HUD {
     setCls(n.el, 'crit', crit);
     this.dnActive.push(n); this._dnLast = n;
   }
-  _dmgArc(srcPos) {
+  /** Respawn from the death card. One method, two callers (DOM listeners + update()'s input poll). */
+  _tryRespawn() {
+    if (this.game.player.alive || this.game.time - this._deadSince < 1.2) return;
+    const sp = this.game.terrain?.POI?.spawn;
+    this.game.player.respawn(sp ? { x: sp.x, y: sp.y + 0.2, z: sp.z } : undefined);
+  }
+  /**
+   * Directional damage wedge (Destiny/FF14 convention): "something hit me, it is over THERE".
+   * `srcPos` is the attacker's world position when we have one; a projectile that only reports a hit
+   * POINT lands on the player's own body, which is a zero-length vector and an arbitrary angle, so
+   * the travel direction (`dir`, reversed) is the fallback that actually points back down the shot.
+   * Same wedge is re-used for the stacking case: 8 pooled arcs, each animating independently.
+   */
+  _dmgArc(srcPos, dir) {
     const p = this.game.player;
-    const dx = srcPos.x - p.position.x, dz = srcPos.z - p.position.z;
+    let dx = srcPos ? srcPos.x - p.position.x : 0, dz = srcPos ? srcPos.z - p.position.z : 0;
+    if (dx * dx + dz * dz < 0.25 && dir) { dx = -dir.x; dz = -dir.z; }   // came from wherever the bolt was headed
+    if (dx * dx + dz * dz < 1e-6) return;
     const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     const a = Math.atan2(fx * dz - fz * dx, fx * dx + fz * dz); // + = clockwise from screen-top
     const arc = this.arcPool[this.arcI++ % this.arcPool.length];
     arc.style.transform = `rotate(${a}rad)`;
     arc.getAnimations().forEach((x) => x.cancel());
-    arc.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: 950 });
+    arc.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: 0.06 }, { opacity: 1, offset: 0.45 }, { opacity: 0 }], { duration: 1050 });
   }
   _barFlash() {
     this.hbar.parentElement.animate([{ filter: 'brightness(2.2)' }, { filter: 'brightness(1)' }], { duration: 260 });
@@ -561,25 +600,34 @@ export class HUD {
     c.beginPath(); c.moveTo(0, -7.5); c.lineTo(5.2, 6); c.lineTo(0, 3); c.lineTo(-5.2, 6); c.closePath();
     c.fill(); c.stroke(); c.restore();
     c.restore();
-    // zone label + border crossing (1 Hz). Outside the home bowl the label is the REGION you are standing
-    // in — crossing the seam between two regions renames the map and throws the name card, which is the
-    // whole point of a border. Inside the bowl the regions are one, so the nearest landmark is the useful
-    // label instead. Same `regionAt` the music and the ambient bed use, so all three land on one step.
-    if (t - this._mmZoneT > 1) {
-      this._mmZoneT = t;
-      const rid = regionAt(p.x, p.z), B = BIOMES[rid];
-      if (rid !== 'meadow') setT(this.mmZone, B?.short ?? '');
-      else {
-        let best = null, bd = 1e9;
-        for (const l of ctx.world.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
-        setT(this.mmZone, best ? best.name : '');
-      }
-      if (this._region === undefined) this._region = rid;                      // first poll: you did not cross into where you spawned
-      else if (rid !== this._region) {
-        this._region = rid;
-        const lv = B?.level;
-        this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '', B?.passive ?? '');
-      }
+  }
+
+  /**
+   * Zone label + border-crossing card. Outside the home bowl the label is the REGION you are standing in —
+   * crossing the seam renames the map and throws the name card, which is the whole point of a border.
+   * Inside the bowl the regions are one, so the nearest landmark is the useful label instead.
+   *
+   * ONE AUTHORITY, ONE STEP. `Biomes.regionAt` is the single answer to "which region am I in" (CLAUDE.md),
+   * and this polls it on the SAME 0.5 s cadence as Audio._zoneTick, which drives the music theme and the
+   * ambient bed off the identical call. It used to live inside _minimap() at 1 Hz behind that function's
+   * moved-far-enough early return, so the label and the music could disagree by up to a second — and a
+   * player standing still on a seam kept the old name indefinitely.
+   */
+  _zoneLabel(t) {
+    if (t - this._mmZoneT < 0.5) return;
+    this._mmZoneT = t;
+    const p = this.game.player.position, rid = regionAt(p.x, p.z), B = BIOMES[rid];
+    if (rid !== 'meadow') setT(this.mmZone, B?.short ?? '');
+    else {
+      let best = null, bd = 1e9;
+      for (const l of this.game.world?.landmarks ?? []) { const d = (l.position.x - p.x) ** 2 + (l.position.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } }
+      setT(this.mmZone, best ? best.name : '');
+    }
+    if (this._region === undefined) this._region = rid;                      // first poll: you did not cross into where you spawned
+    else if (rid !== this._region) {
+      this._region = rid;
+      const lv = B?.level;
+      this.notify(B?.name ?? '', lv ? `levels ${lv[0]}–${lv[1]}` : '', B?.passive ?? '');
     }
   }
 
@@ -618,6 +666,9 @@ export class HUD {
   update(dt, t) {
     const g = this.game, p = g.player, w = p.weapons?.current;
     if (g.input.justPressed('F3')) this.setPerfVisible(!this._perfOn);
+    // any key / any mouse button ends a death — read from the shared input state, so a synthetic press
+    // (the harness) exits the death card exactly like a real one does. See _tryRespawn.
+    if (!p.alive && (g.input.pressed.size || g.input.mouse.pressed)) this._tryRespawn();
 
     // vitals (health-only; shield removed — WoW-style regen lives in Player.update)
     const hp = p.health / p.maxHealth;
@@ -690,6 +741,8 @@ export class HUD {
     }
 
     this._minimap(t);
+    this._zoneLabel(t);   // NOT inside _minimap: that one early-returns when you have not moved, and the
+                          // region label has to keep step with the music/ambient poll regardless.
 
     // damage numbers (project + float)
     const cam = g.camera, W = this._w ?? innerWidth, H = this._h ?? innerHeight;
@@ -797,12 +850,29 @@ export class HUD {
         if (all) for (let i = 0; i < all.length; i++) if (all[i].alive && all[i].def?.boss) { this._boss = all[i]; break; }
       }
       const tg = this._findTarget();
-      if (tg) { this._tgt = tg; this._tgtUntil = t + 0.6; }
+      if (tg) {
+        if (tg !== this._tgt) this._tgtTop = this._headOffset(tg);   // new creature -> re-measure its head
+        this._tgt = tg; this._tgtUntil = t + 0.6;
+      }
     }
     // suppressed for whatever currently has the boss frame raised — "Warden of the Spire" over the boss bar
     // AND "Warden of the Spire Lv 6" floating under it is the same name twice; one plate per target, always.
-    const showTgt = this._tgt && t < this._tgtUntil && this._tgt.alive && p.alive
+    let showTgt = this._tgt && t < this._tgtUntil && this._tgt.alive && p.alive
       && !(bossActive && this._tgt.name === this.bossName.textContent);
+    // WORLD-ANCHORED, not a fixed band at top:15.5%. It used to be pinned to the screen, which put the
+    // plate ~350 px above whatever you were aiming at — "floating in open sky" (wave-6 coherence) — and
+    // during the 0.6 s sticky hold that stranded plate sat over whatever ELSE had walked into the middle
+    // of the screen, so a wisp got labelled "Aether Hound". Projecting the creature's own head fixes both
+    // at once: the name is always physically ON the thing it names, and a stale plate is over its own
+    // owner (or off-screen and hidden), never over a bystander.
+    if (showTgt) {
+      const tg = this._tgt;
+      const v = this._v.set(tg.position.x, tg.position.y + (this._tgtTop ??= this._headOffset(tg)), tg.position.z).project(cam);
+      if (v.z > -1 && v.z < 1) {
+        const x = (v.x * 0.5 + 0.5) * W, y = (0.5 - v.y * 0.5) * H;
+        this.tgtEl.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-100%)`;
+      } else showTgt = false;                        // behind the camera: no plate, ever
+    }
     if (showTgt !== this._tgtVis) { this._tgtVis = showTgt; this.tgtEl.style.opacity = showTgt ? 1 : 0; }
     if (showTgt) {
       const tg = this._tgt;
@@ -838,6 +908,18 @@ export class HUD {
     if (this._proxPrompt && !this._extPrompt && g.input.justPressed('KeyE') && !this._attuned) {
       this._attuned = true; this.toast('Attuned to the Aetheryte', { kind: 'super' }); g.events.emit('ui:click');
     }
+  }
+
+  /** Metres from a combat target's `position` (Enemy.center) to just above its head, for the nameplate.
+   *  Measured off the model's world bbox — a drake and a wisp are not the same height and neither is
+   *  centred on its own root. Returned as an OFFSET so the plate tracks the creature as it moves. */
+  _headOffset(tg) {
+    const obj = tg.object ?? tg.enemy?.root;
+    if (obj?.isObject3D) {
+      _box.setFromObject(obj);
+      if (Number.isFinite(_box.max.y) && _box.max.y > _box.min.y) return _box.max.y - tg.position.y + 0.42;
+    }
+    return (tg.height ?? 1.8) * 0.55 + 0.42;   // no model published: half the declared capsule + the margin
   }
 
   _findTarget() {

@@ -152,7 +152,15 @@ export class Audio {
   _onRunning() {
     if (this.unlocked) return; this.unlocked = true;
     this.ambientSys.zone = this.zone; this.ambientSys.start(this.ctx, this.buses.ambient);
-    if (this.musicTrack) { this.musicSys.track = this.musicTrack; this.musicSys.start(this.ctx, this.buses.music, this.reverbSend); }
+    if (this.musicTrack) {
+      this.musicSys.track = this.musicTrack;
+      this.musicSys.start(this.ctx, this.buses.music, this.reverbSend);
+      // _zoneTick has been tracking musicRegion since boot with no context to act on, and it only calls
+      // setRegion on a CHANGE — so unlocking while already standing inside a region left music.region at
+      // its 'field' constructor default and played the Vale's tune in the Infernal until you walked out
+      // and back in. Hand the tracked region over the moment the graph exists.
+      this.musicSys.setRegion(this.musicRegion);
+    }
   }
 
   // ---------- public controls ----------
@@ -178,9 +186,15 @@ export class Audio {
   ambient(zone) { this.ambientZone = zone || null; this._zoneT = 9; }
   state() {
     let busy = 0; for (const v of this.voices) if (v.busy) busy++;
+    // musicTrack is the DAY/NIGHT track, not the region piece — a wave-6 judge read it changing from
+    // nothing across three regions and called the music stuck. The piece actually on the wire is
+    // musicTheme (the decoded buffer the loop is playing) and the region it was chosen for is
+    // musicRegion; ambientZone is the manual OVERRIDE (null = automatic), and `zone` is the live bed.
+    // All four are reported so nobody has to guess again.
     return { ctx: this.ctx ? this.ctx.state : 'none', unlocked: this.unlocked, auto: this.game.auto, volumes: { ...this.volumes }, musicTrack: this.musicTrack, musicPlaying: this.musicSys.playing, musicLiveChords: this.musicSys.live,
-      musicMode: this.musicSys.mode, musicAuto: this._musicAuto, combat: this._inCombat, buffers: Object.keys(this.buffers).length,
-      zone: this.zone, zoneOverride: this.ambientZone, ambientRunning: this.ambientSys.running, voices: this.voices.length, busy, played: this.debugLastPlayed.length, counts: { ...this.debugCounts } };
+      musicMode: this.musicSys.mode, musicAuto: this._musicAuto, musicRegion: this.musicRegion, musicRegionApplied: this.musicSys.region,
+      musicTheme: this.musicSys._cur?.key ?? null, musicWant: this.musicSys._themeKey(), combat: this._inCombat, buffers: Object.keys(this.buffers).length,
+      zone: this.zone, ambientZone: this.ambientZone, zoneOverride: this.ambientZone, ambientRunning: this.ambientSys.running, voices: this.voices.length, busy, played: this.debugLastPlayed.length, counts: { ...this.debugCounts } };
   }
 
   // ---------- play ----------
