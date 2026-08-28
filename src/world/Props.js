@@ -3931,9 +3931,16 @@ export class Props {
       mesh.boundingSphere = this._wfAsset.geometry.boundingSphere.clone();
       mesh.castShadow = mesh.receiveShadow = true;
       mesh.name = 'wayfinder-' + st.id;
-      mesh.position.copy(st.pos); mesh.rotation.y = st.faceAngle; mesh.visible = false;
+      // REST YAW MUST USE THE RIG'S OWN CONVENTION. `faceAngle` is the -Z/plane convention (see place():
+      // "a plane/box rotated by faceAngle has its front face pointing at dir"), but this is a +X-forward
+      // Tripo rig — the same convention the look-at below uses (atan2(toward) - PI/2). Applying the plane
+      // angle straight to the mesh left him standing 90 degrees off, which is the user's report that the
+      // cloaked guy "doesn't look at the character": his look-at was correct and his REST pose was not,
+      // so he only ever squared up inside the 8 m turn radius and stood side-on the rest of the time.
+      const restYaw = st.faceAngle - Math.PI / 2;
+      mesh.position.copy(st.pos); mesh.rotation.y = restYaw; mesh.visible = false;
       scene.add(mesh);
-      st.wf = { mesh, mat, u, b: byName, baseYaw: st.faceAngle, yaw: st.faceAngle, seed: (this.wayfinders.length * 2.39996) % 6.2832 };
+      st.wf = { mesh, mat, u, b: byName, baseYaw: restYaw, yaw: restYaw, seed: (this.wayfinders.length * 2.39996) % 6.2832 };
       this.wayfinders.push(st.wf);
     }
     console.log(`[props] wayfinders: ${this.wayfinders.length} (shared geo ${this._wfAsset.geometry.attributes.position.count / 3} tris)`);
