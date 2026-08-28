@@ -73,6 +73,19 @@
   }
  },
  {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-vale-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
   "eval": "__game.clearEnemies()"
  },
  {
@@ -124,6 +137,19 @@
    "name": "cvfx-forest-c",
    "n": 8,
    "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-forest-k",
+   "n": 8,
+   "interval": 0.18
   }
  },
  {
@@ -181,6 +207,19 @@
   }
  },
  {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-tundra-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
   "eval": "__game.clearEnemies()"
  },
  {
@@ -232,6 +271,19 @@
    "name": "cvfx-celestial-c",
    "n": 8,
    "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-celestial-k",
+   "n": 8,
+   "interval": 0.18
   }
  },
  {
@@ -289,6 +341,19 @@
   }
  },
  {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-dragon-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
   "eval": "__game.clearEnemies()"
  },
  {
@@ -340,6 +405,19 @@
    "name": "cvfx-infernal-c",
    "n": 8,
    "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-infernal-k",
+   "n": 8,
+   "interval": 0.18
   }
  },
  {
@@ -397,6 +475,19 @@
   }
  },
  {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-lost-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
   "eval": "__game.clearEnemies()"
  },
  {
@@ -448,6 +539,19 @@
    "name": "cvfx-shadowfen-c",
    "n": 8,
    "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-shadowfen-k",
+   "n": 8,
+   "interval": 0.18
   }
  },
  {
@@ -505,6 +609,19 @@
   }
  },
  {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-sunken-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
   "eval": "__game.clearEnemies()"
  },
  {
@@ -556,6 +673,81 @@
    "name": "cvfx-void-c",
    "n": 8,
    "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-void-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
+  "eval": "__game.clearEnemies()"
+ },
+ {
+  "log": "PLAYER-FIRE PHASE (viewmodel SHOWN): muzzle/tracer/sight-post bloom + the grenade core are player-side combat VFX the suite never covered"
+ },
+ {
+  "eval": "(()=>{ __game.game.player.weapons.setHidden(false); return 'viewmodel shown' })()"
+ },
+ {
+  "tp": [
+   2,
+   null,
+   -2
+  ]
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;['hound','hound','sentinel'].forEach((t,i)=>{g.spawn(t,p.x+(i-1)*4,p.z-12);});for(const e of g.game.enemies.list){e.alert=true;}return 'targets up'})()"
+ },
+ {
+  "eval": "__game.give('handcannon',0)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "click": 0,
+  "down": true
+ },
+ {
+  "burst": {
+   "name": "cvfx-pfire-a",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
+  "click": 0,
+  "down": false
+ },
+ {
+  "eval": "__game.ability('grenade')"
+ },
+ {
+  "wait": 0.35
+ },
+ {
+  "burst": {
+   "name": "cvfx-pfire-nade",
+   "n": 8,
+   "interval": 0.18
   }
  },
  {
