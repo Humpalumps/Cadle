@@ -298,6 +298,27 @@ before.**
    (C:/Users/ianca/Desktop/fps4) sits on a DIFFERENT branch, so merge from here by pushing the branch
    and opening/merging a PR with `gh` (the repo already uses PRs), or fast-forward push if main is an
    ancestor — check `git merge-base --is-ancestor origin/main claude/session-e5730b` first.
+2j. **MERGE STATE 2026-08-28 EVENING — 6 of 7 gate checks GREEN, the 7th blocked by GPU CONTENTION,
+   NOT by the build.** Verified this session on the current tree:
+   invariants all OK · blobs+jitter GATE PASS at q=high AND q=low · collidecheck 27/27 all OK ·
+   animcheck all 25 creatures pass (icegiant + archon fail only inside a long run and pass isolated) ·
+   pointer lock engage + re-acquire OK (standalone runner at tools/out/plock.mjs) · curvecheck +
+   questgate all OK. **Combat white-out: every frame captured is clean, but a FULL 356-frame capture
+   cannot currently be completed.** Diagnosis, so nobody re-derives it: the browser dies ~130 s in with
+   `Target page... closed` / `GPU state invalid after WaitForGetOffsetInRange`, while `nvidia-smi`
+   shows only 1.6 GB of 12 GB VRAM used and 39% GPU utilisation with ZERO headless browsers running —
+   i.e. another process (the user games on this box) is driving the GPU and Windows TDR is resetting
+   the driver under the capture. It is NOT VRAM and NOT the build: the identical scenario completed
+   356 frames earlier the same day. WORKAROUND THAT WORKS: split the scenario by region
+   (`tools/scripts/cb-part{1..5}.json`, generated from the region `== name ==` log markers) and run
+   the chunks — they finish inside the TDR window. Last measured state: full run before the final two
+   fixes = 4 findings, all <=588 px, all in the player-fire bursts; after warming the muzzle core
+   (mats.flashCore was PURE WHITE at 0.34 additive — the one effect drawn on every shot) and deepening
+   the impact star, chunked re-runs show ONE finding left: a 58 px cluster in a vale kill burst.
+   **To finish: get ~6 minutes of quiet GPU (nothing else rendering), run
+   `node tools/inspect.mjs --nolock --name cb-final --q high --script tools/scripts/combat-blob-steps.json
+   --url http://127.0.0.1:5179/` then `python tools/combatcheck.py tools/out/cb-final`. If OK, the
+   user's merge condition (2i) is met: fast-forward main and push.**
 3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
    model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
    beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
