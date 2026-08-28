@@ -39,7 +39,52 @@ function creatureOnBeforeCompile(shader) {
       // 255-value texels) would come out at 1.61 under a sun calibrated so white lands at 1.0, i.e. over the
       // 1.05 day bloom threshold, flickering on and off as the creature moves. Same law as the grass cap.
       float gm = mix(1.0, (0.62 + grain * 0.72) * (0.80 + blotch * 0.40), uGrain);
-      diffuseColor.rgb *= uTint * gm;
+      diffuseColor.rgb *= gm;
+      // ---------------------------------------------------------------- TINT ON A TEXTURED BODY (uGLB 1)
+      // WHY THIS EXISTS: on a rigged GLB a tint MULTIPLIES a baked albedo, and Enemy.js washes it 55% toward
+      // white first (GLB_TINT_WASH). A multiply cannot re-colour anything — grey plate x teal is dark grey-teal,
+      // dark red x cool grey is still dark red — so after the wash def.palette reached the screen almost
+      // entirely as the emissive fresnel RIM below. That is the mechanism behind three separate wave-6 verdicts
+      // ("the seraph is identical to the forgeknight", "the Drowned Courtier is the sentinel re-tinted infernal
+      // RED", "the wyvern is a uniformly saturated vermillion mass"): the body was always the same bake, and the
+      // only thing a region could change was the colour of the outline drawn around it.
+      // WHAT IT DOES: a SATURATED tint becomes a real repaint — keep the map's VALUE structure (every sculpted
+      // plate, every wear streak, all of it) and take the tint's HUE, with the value range expanded because a
+      // Tripo bake is lit dark (drake albedo mean is sRGB 60,36,29 — linear 0.045, i.e. a black creature).
+      // WHY IT IS SAFE: gated on the tint's own chroma, above every near-neutral tint the roster ships, so an
+      // existing creature gets exactly the multiply it got before unless its def opts in by shipping a strongly
+      // saturated tint. It is also the same blob law as everywhere else — the repaint NORMALISES to the
+      // albedo's own luminance and hard-caps it at 0.86, so it can only ever move colour, never add energy.
+      // TWO THINGS ALREADY SIT ABOVE THE GATE and are repainted on purpose, both verified by screenshot:
+      // magmagolem's tint 0xff6a14 (chroma 0.447) and ELITE_TINT 0xd9a53a in Enemy.js (0.655, unwashed). The
+      // magma golem comes out as warm volcanic rock instead of a dark orange multiply, and an elite comes out
+      // solid antique gold — which is exactly what ELITE_TINT's own comment asks for ("distinguishing").
+      // The gate is the tint's LINEAR chroma AFTER Enemy.js's wash. Measured over the whole roster (every
+      // palette in defs.js): the most saturated tint anyone ships incidentally lands at 0.292 (forgeknight,
+      // voidhorror), so the window opens at 0.32 — an existing creature cannot fall into the repaint by
+      // accident, a def opts in by shipping a bright, strongly saturated tint and nothing else does.
+      float tMin = min(uTint.r, min(uTint.g, uTint.b));
+      float tMax = max(uTint.r, max(uTint.g, uTint.b));
+      float tK = uGLB * smoothstep(0.32, 0.44, tMax - tMin);
+      vec3 based = diffuseColor.rgb * uTint;
+      if (tK > 0.002) {
+        float aL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float aMax = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+        float aC = (aMax - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b))) / (aMax + 0.004);
+        // ORNAMENT SURVIVES THE REPAINT. Measured on sentinel.glb's albedo: gold filigree sits at linear
+        // luminance ~0.17 with relative chroma ~0.9, the grey plate at ~0.055 / 0.13, drake.glb's red hide at
+        // ~0.036 / 0.86. So a texel that is BOTH brighter than the bulk AND already saturated is ornament and
+        // keeps its own hue; everything else is bulk and gets repainted. Without this the repaint eats exactly
+        // the ornate gold the style guide is built on, and the drake's hide (dark, saturated) would survive it.
+        float k = tK * (1.0 - 0.92 * smoothstep(0.05, 0.18, aL) * smoothstep(0.20, 0.50, aC));
+        float tL = max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+        // aL * 3.4: a Tripo bake is lit dark (drake albedo mean is linear 0.045 — a black creature), so the
+        // repaint re-ranges the map's own value structure instead of copying its blackness. Hard-capped at
+        // 0.86: this only ever MOVES colour and expands range, it can never hand the lighting more energy
+        // than a physically sane albedo, so no repaint can bloom.
+        based = mix(based, uTint * (min(aL * 3.4 + 0.04, 0.86) / tL), k);
+      }
+      diffuseColor.rgb = based;
       // saturated aether: push the emissive color toward its square so it stays colored through ACES instead of clipping white
       vec3 ecol = mix(uEmissive, uEmissive * uEmissive, 0.9) * 2.2;
       // crystals/glow parts: darken the lit base so the colored emissive dominates (no sunlit-white paper cutouts at noon)
@@ -268,22 +313,63 @@ export function createCreatureMaterialGLB({ tex = null, tint = 0xffffff, emissiv
   return m;
 }
 
-// Shield bubble: fresnel-alpha sphere, hit flash + hex shimmer. Shared program, per-enemy instance (uniforms).
+/**
+ * Shield bubble. Rebuilt after the wave-6 void verdict ("hard-edged low-poly translucent eggs twice the body
+ * width, no fresnel, no pattern, no animation, and the palest element in frame"). Three things made it pale
+ * and flat, and all three are structural, not tuning:
+ *   1. a FLAT EMISSIVE FLOOR. three adds `emissive` to every pixel in <emissivemap_fragment>, so at
+ *      emissiveIntensity 0.8 the whole sphere carried the element colour before the fresnel ever ran — that
+ *      is what flattened the gradient into a uniform egg. The hue is now a COLOUR SOURCE only (the floor is
+ *      zeroed) and every visible photon comes from a view-dependent term.
+ *   2. a LIT PASTEL BASE. `color` is the element colour on a standard material, so the sun painted a bright
+ *      low-saturation dome across the shell plus a white specular lobe. Every lit term is now discarded and
+ *      the shader owns the whole outgoing colour: a force field is not a plastic ball.
+ *   3. PASTEL HUES. Combat's element colours are authored light (arc is 0x7fd8ff, a pale cyan) and a pale
+ *      colour over a creature is by definition the palest thing on screen. The shell strips the white floor
+ *      out of the element colour and normalises to a pure saturated hue — same decree as everywhere else,
+ *      saturate the COLOUR, cap the VALUE (the two caps at the bottom are unchanged).
+ * Structure + animation: three great-circle band families on the object-space normal give a seamless
+ * triangular rune lattice — no UVs, no pole pinching, no seam, welded to the object so it turns with the
+ * creature instead of swimming in screen space — plus a slow drift and a vertical ripple that a hit drives
+ * through the shell.
+ */
 function shieldOnBeforeCompile(shader) {
   Object.assign(shader.uniforms, this.userData.u);
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nvarying vec3 vSPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSPos = position;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\nuniform float uHit; uniform float uTime; uniform float uAlpha; varying vec3 vSPos;\n${NOISE_GLSL}`)
+    .replace('#include <common>', '#include <common>\nuniform float uHit; uniform float uTime; uniform float uAlpha; varying vec3 vSPos;')
+    // see (1) above — kill the flat floor, keep `emissive` as the hue source for the terms below
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n      totalEmissiveRadiance = vec3(0.0);')
     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-      float fr = pow(1.0 - saturate(dot(normal, geometryViewDir)), 2.2);
-      float hex = smoothstep(0.55, 0.9, enoise(vSPos * 6.0 + uTime * 0.4));
-      // SATURATE BEFORE YOU NORMALISE: push the element hue toward its square so an arc cyan or a solar
-      // orange still reads as that colour through ACES instead of washing out to cream.
-      vec3 scol = mix(emissive, emissive * emissive, 0.8);
-      diffuseColor.a = uAlpha * (0.012 + fr * 0.26 + hex * 0.03 + uHit * 0.42);
-      reflectedLight.indirectDiffuse += scol * (fr * 1.1 + hex * 0.2 + uHit * 2.6);`)
+      vec3 sn = normalize(vSPos);
+      // DEEPEN THE ELEMENT HUE (3): strip the white floor, then renormalise to max 1 so the colour is a pure
+      // hue and the terms below own the intensity outright. An arc shell is cyan, not sky-blue tissue paper.
+      float eMin = min(emissive.r, min(emissive.g, emissive.b));
+      vec3 sc = max(emissive - eMin * 0.72, vec3(0.004));
+      sc /= max(max(sc.r, sc.g), max(sc.b, 0.004));
+      // RUNE LATTICE: three great-circle band families, 60 deg apart on the sphere. min() of the three
+      // distances-to-band-centre gives the cell interior, so the thin lines are the CELL EDGES. 4.2 bands, not
+      // 7: at 7 the net is finer than the creature's own armour detail and reads as a stocking, not a ward.
+      vec3 h = vec3(dot(sn, vec3(0.8165, 0.0, 0.5774)), dot(sn, vec3(-0.4082, 0.7071, 0.5774)), dot(sn, vec3(-0.4082, -0.7071, 0.5774)));
+      vec3 bands = abs(fract(h * 4.2 + uTime * 0.05) - 0.5) * 2.0;
+      float cell = min(bands.x, min(bands.y, bands.z));
+      float lattice = smoothstep(0.16, 0.05, cell);
+      // a slow vertical ripple, kicked into a fast sweep by a hit — the shell is alive, and being shot moves it
+      float wave = smoothstep(0.60, 1.0, sin(sn.y * 8.0 - uTime * 1.5 - uHit * 7.0));
+      float fr = pow(1.0 - saturate(dot(normal, geometryViewDir)), 3.0);
+      // TRANSPARENT FACE-ON, BRIGHT AT THE GRAZING RIM. 0.010 base means you read the creature through the
+      // middle of its own shield (the shield is a combat state, not a curtain); the rim carries the read.
+      diffuseColor.a = uAlpha * (0.010 + fr * 0.36 + lattice * 0.14 + wave * 0.05 + uHit * 0.40);
+      // (2) EVERY lit term is discarded, not just the specular: Enemy.spawn re-assigns material.color to the
+      // element colour on each spawn (Enemy.js:273), so a near-black base set in the constructor does not
+      // survive — the sun would still paint a pale low-saturation dome across the shell and a white highlight
+      // on top of it. Owning the whole outgoing colour here makes the shell independent of what is assigned.
+      reflectedLight.directDiffuse = vec3(0.0);
+      reflectedLight.indirectDiffuse = sc * (fr * fr * 1.05 + lattice * 0.34 + wave * 0.12 + uHit * 1.8);
+      reflectedLight.directSpecular = vec3(0.0);
+      reflectedLight.indirectSpecular = vec3(0.0);`)
     .replace('#include <opaque_fragment>', `#include <opaque_fragment>
       // BLOB LAW ON THE SHELL. A shield bubble is a combat READ, not a light source, and at melee standoff
       // it covers most of the frame (see SHELL_COV in Enemy.js) — so every pixel of it has to stay well
@@ -296,7 +382,10 @@ function shieldOnBeforeCompile(shader) {
       if (sLum > 0.50) gl_FragColor.rgb *= 0.50 / sLum;`);
 }
 export function createShieldMaterial(color = 0x7fd8ff) {
-  const m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0, transparent: true, opacity: 1, depthWrite: false, side: THREE.FrontSide });
+  // color near-black on purpose (2); `emissive` carries the element hue and nothing else reads it.
+  // DoubleSide: the far wall of the bubble contributes its own faint rim, which is what makes a sphere read
+  // as a hollow shell instead of a disc. depthWrite is off, so it costs one extra pass of a 560-tri sphere.
+  const m = new THREE.MeshStandardMaterial({ color: 0x080810, emissive: color, emissiveIntensity: 1, roughness: 0.5, metalness: 0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
   m.userData.u = { uHit: { value: 0 }, uTime: { value: 0 }, uAlpha: { value: 1 } };
   m.onBeforeCompile = shieldOnBeforeCompile;
   m.customProgramCacheKey = () => 'aether-shield';

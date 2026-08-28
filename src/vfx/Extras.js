@@ -17,6 +17,15 @@ const TR_VERT = /* glsl */`
     // polygon spanning the frame corner-to-corner. Slide the vertex along its own segment back to just in
     // front of the plane; the existing depth fade (smoothstep below) then takes its alpha to ~0.
     const float NEARP = 0.07;
+    // ...and if the WHOLE segment is behind the eye, no slide along it can help: the clamp lands on an
+    // endpoint that is still behind, and forcing p.z leaves x/y at their behind-the-camera values, which
+    // project to a hard-edged band running clean across the frame — the shadowfen "perfectly straight
+    // screen-wide horizontal green beam spanning the full 1920 px, depth-tested"
+    // (tools/out/sf-fight/burst-approach-3.png). A segment with no visible part must draw nothing.
+    // Written as a flag, NOT an early return: returning before the varyings are assigned leaves vUv/vCol/
+    // vFog/vCore undefined for those vertices, which is UB and can interpolate to NaN in the fragment.
+    // (And no backticks in here, ever: this comment lives inside a JS template literal.)
+    float gone = step(-NEARP, a.z) * step(-NEARP, b.z);
     if (p.z > -NEARP) {
       vec3 seg = b - a;
       if (abs(seg.z) > 1e-5) p = a + seg * clamp((-NEARP - a.z) / seg.z, 0.0, 1.0);
@@ -30,7 +39,8 @@ const TR_VERT = /* glsl */`
     vUv = uv; vCore = iW.z;
     vCol = vec4(iCol, iW.y * smoothstep(0.05, 0.4, depth));
     vFog = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
-    gl_Position = projectionMatrix * vec4(p, 1.0);
+    vCol.a *= 1.0 - gone;
+    gl_Position = mix(projectionMatrix * vec4(p, 1.0), vec4(2.0, 2.0, 2.0, 1.0), gone);   // wholly behind the eye -> outside the clip volume
   }`;
 const TR_FRAG = /* glsl */`
   uniform float uDark;

@@ -179,7 +179,14 @@ export function makeMaterials(assets = null) {
     grip: std({ color: glove ? 0xcfc6ba : 0x2e211a, map: glove, roughness: 0.85, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(glove ? 0.6 : 1.1, glove ? 0.6 : 1.1) }),
     hand: std({ color: handTex ? 0xdcc4a4 : 0x4a382c, map: handTex, roughness: 0.92, metalness: 0.0, normalMap: T.wrapNormal, normalScale: new THREE.Vector2(0.35, 0.35) }),
     ivory: std({ color: 0xe8dcc3, roughness: 0.45, metalness: 0.05, normalMap: T.normal, normalScale: new THREE.Vector2(0.45, 0.45) }),
-    white: std({ color: 0xfff4da, emissive: 0xfff4da, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0 }),   // sights stay lit-white but under the day bloom threshold (1.05): 2.2 bloomed into permanent white balls over the grass
+    // Sight beads. The EMISSIVE alone was already pinned under the day bloom threshold (1.05) — the wave-6 halo came
+    // from the REST of the stack: a near-white albedo (0xfff4da) lit by the noon sun adds a full diffuse term on top of
+    // the emissive, and roughness 0.4 adds a broad specular lobe, so the sum crossed the threshold and the two posts
+    // bloomed a flickering white halo onto the grass in every frame the gun was on screen. Fix is albedo + roughness,
+    // not intensity: a near-black bronze albedo contributes ~nothing under any sun, roughness 0.9 kills the lobe, and
+    // the emissive — now a SATURATED amber (min channel 0.15 linear vs 0.63 for cream) — carries the whole "lit bead"
+    // read on its own. It tone-maps to amber, never to white, and stays vivid against the dark notch at ADS.
+    white: std({ color: 0x1c1710, emissive: 0xffcf72, emissiveIntensity: 0.9, roughness: 0.9, metalness: 0 }),
     // envMapIntensity 0.5 + roughness 0.08: at night the flat ocular/objective discs mirrored the bright aurora
     // sky as a uniform washed-white sheet filling the whole lens — soften the reflection so the lens reads as glass
     glass: std({ color: 0x9fd0ff, roughness: 0.08, metalness: 0.0, transparent: true, opacity: 0.28, depthWrite: false, emissive: 0x4080c0, emissiveIntensity: 0.25, envMapIntensity: 0.5, side: THREE.DoubleSide }),

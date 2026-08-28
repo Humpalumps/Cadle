@@ -307,9 +307,14 @@ export class Combat {
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCN = normalize(normalMatrix * normal);');
+      // Floor 0.10, not 0.42. At 0.42 the limb still carried 42% of a fully-saturated instance colour and
+      // then STOPPED at the silhouette — which is why the wave-6 coherence pass photographed "a hard-edged
+      // solid magenta lens with zero falloff, zero texture, 100% saturation" (tools/out/COH-fight/zoom-magenta.png).
+      // The sphere is OPAQUE, so its edge is a real cut; the only way it reads as an orb instead of a
+      // sticker is for the limb to go dark. Centre keeps the full hot instance colour.
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
-        .replace('#include <opaque_fragment>', 'outgoingLight *= 0.42 + 0.58 * pow(saturate(dot(normalize(vCN), vec3(0.0, 0.0, 1.0))), 0.65);\n#include <opaque_fragment>');
+        .replace('#include <opaque_fragment>', 'outgoingLight *= 0.10 + 0.90 * pow(saturate(dot(normalize(vCN), vec3(0.0, 0.0, 1.0))), 0.55);\n#include <opaque_fragment>');
     };
     this.coreMesh = new THREE.InstancedMesh(geo, coreMat, POOL);
     this.coreMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -730,8 +735,19 @@ export class Combat {
         // as a giant flat colour polygon filling the corner (combat gate r5, sunken crop). Shrink it out
         // over the last ~2 m instead.
         const nk = Math.min(1, Math.max(0, (cd - 1.0) / 2.2));   // full size past ~3.2 m; inside that the halo carries the read
-        if (nk > 0.01) {
-          const s = p.size * 0.45 * nk;
+        // PROJECTED-SIZE CLAMP. The distance fade above is not the same rule as "how much of the frame does
+        // this own": nk is FULL at 3.2 m, and a 0.28 m void bolt's stretched core (size*0.45 long-axis
+        // *stretch*1.35 = 4.7:1) projects there at ~330 x 70 px of opaque, fully-saturated colour — the
+        // wave-6 coherence blocker, "a hard-edged solid magenta lens ~4 m across floats over the Sentinel",
+        // whose 4.7:1 aspect is this ellipsoid's exactly (tools/out/COH-fight/zoom-magenta.png).
+        // A dart core is a small hot CENTRE at every range, so clamp what it may subtend: 0.055 is the
+        // projected half-length of a healthy mid-range bolt (measured 90 px long at 9 m, which reads
+        // correctly). Beyond that the core shrinks and the halo — which has its own coverage fades — carries
+        // the near read. Same law as everywhere else here: the hue may be vivid, the COVERAGE is capped.
+        const proj = (p.size * 0.45 * nk * p.stretch * 1.35) / Math.max(cd, 0.1);
+        const ck = nk * Math.min(1, 0.055 / Math.max(proj, 1e-4));
+        if (ck > 0.01) {
+          const s = p.size * 0.45 * ck;
           this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++;
         }
       }

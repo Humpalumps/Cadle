@@ -100,38 +100,78 @@ function vignetteTexture() {
   g.fillStyle = grd; g.fillRect(0, 0, S, S); return new THREE.CanvasTexture(c);
 }
 
-// Stylized energy hand + forearm (right hand; left mirrors with group.scale.x = -1). One merged geometry = 1 draw call per layer.
-// Vertex-color brightness ramp (dark wrist -> bright fingertips) so the hand reads as an energy gradient, not a flat cream mitt.
+// ---------- super energy hand ----------
+// Wave-5/6 verdict, still open at wave 7 and CONFIRMED on screen (tools/out/w7-a1/burst-super-2.png): "two flat solid
+// unshaded orange clip-art mittens", "tube fingers and no wrists". Two separate causes, both fixed here:
+//   GEOMETRY — four identical straight capsules of equal length, radius constant end to end, stuck into a squashed
+//     sphere. Nothing tapers, nothing bends, and the forearm met the palm at full thickness, so there was no wrist
+//     to read. `digit()` below builds each finger from three shortening, NARROWING segments with a per-joint curl
+//     and knuckle balls, and each of the five digits gets its own length/radius/splay — an anatomical silhouette.
+//   SHADING — the fresnel rim ran at pow 2.0 x 0.9, and on cylinders and a sphere almost every visible texel sits at
+//     a glancing angle, so the "rim" covered the WHOLE hand: it pushed green up under a saturated red and handed
+//     back one flat pale-cream fill with no value range. It is now a true edge term (pow 3.6 x 0.55) and the key
+//     light swings 0.12..1.0 instead of 0.32..1.0, so the fingers turn and the palm has a dark side.
+// Super-hand placement (weapons overlay camera space). 0.76 + z back to -0.57: the wave-6/7 pair at 0.88/-0.50 ate
+// both bottom corners of the frame, so the corners read as mitten instead of as world. One place, read by _ensureVM
+// and _updateVM — they used to carry duplicate literals and drift apart.
+// HAND_Y -0.245, not -0.27: at -0.27 the hand sat at 91% of the half-frame (fov 55 => on-screen is |y| <= 0.52*|z|),
+// which cropped the wrist off the bottom edge — and a hand with its wrist cropped is exactly what reads as a mitten.
+const HAND_S = 0.76, HAND_X = 0.30, HAND_Y = -0.245, HAND_Z = [-0.59, -0.57];
+const _o3 = new THREE.Object3D();
+// One digit: `segs` shortening/narrowing cylinders, each curled a little further toward the palm, with a knuckle ball
+// at every joint and a rounded tip. Advancing by (0,0,-l) through the SAME euler is what keeps the chain connected.
+function digit(parts, x, y, z, len, r0, r1, splay, pitch, curl, segs = 3) {
+  const p = new THREE.Vector3(x, y, z), step = new THREE.Vector3();
+  let ang = pitch;
+  for (let s = 0; s < segs; s++) {
+    const l = len / segs * (1 - s * 0.12);                       // phalanges get shorter toward the tip
+    const ra = r0 + (r1 - r0) * (s / segs), rb = r0 + (r1 - r0) * ((s + 1) / segs);
+    const g = new THREE.CylinderGeometry(rb, ra, l, 8).rotateX(-Math.PI / 2).translate(0, 0, -l / 2);
+    _o3.position.copy(p); _o3.rotation.set(ang, splay, 0, 'YXZ'); _o3.updateMatrix();
+    parts.push(g.applyMatrix4(_o3.matrix));
+    parts.push(new THREE.SphereGeometry(ra * 1.12, 6, 5).translate(p.x, p.y, p.z));   // knuckle
+    p.add(step.set(0, 0, -l).applyEuler(_o3.rotation));
+    ang += curl;
+  }
+  parts.push(new THREE.SphereGeometry(r1, 6, 5).translate(p.x, p.y, p.z));            // fingertip
+}
+// Right hand; the left mirrors with scale.x = -1. One merged geometry, one material = 1 draw call for both hands.
+// Vertex-colour ramp (deep at the forearm -> full gold at the fingertips) so the hand reads as an energy gradient.
 function handGeo() {
   const parts = [];
-  const arm = new THREE.CylinderGeometry(0.055, 0.030, 0.42, 10); // thick end = elbow (+Y pre-rotation)
-  arm.rotateX(2.25);                                              // +Y axis -> down & toward the camera
-  arm.translate(0, -0.128, 0.182);                                // wrist lands just behind the palm
-  parts.push(arm);
-  const palm = new THREE.SphereGeometry(0.055, 12, 10); palm.scale(1.15, 0.68, 1.3); parts.push(palm);
-  for (let i = 0; i < 4; i++) { // fingers: forward + tilted up (channeling pose)
-    const f = new THREE.CapsuleGeometry(0.0115, 0.062, 3, 6);
-    f.rotateX(-Math.PI / 2 + 0.38); f.translate(-0.036 + i * 0.024, 0.012, -0.078); parts.push(f);
-  }
-  const th = new THREE.CapsuleGeometry(0.012, 0.05, 3, 6); th.rotateX(-1.0); th.rotateZ(0.7); th.translate(-0.06, 0.005, -0.028); parts.push(th);
+  const arm = new THREE.CylinderGeometry(0.052, 0.034, 0.34, 10);  // thick end = elbow (+Y pre-rotation)
+  arm.rotateX(2.25); arm.translate(0, -0.118, 0.176); parts.push(arm);
+  // WRIST: deliberately narrower than both the forearm and the palm — the pinch is the whole reason a hand reads as
+  // attached to an arm instead of as a mitten glued to a pipe.
+  const wrist = new THREE.CylinderGeometry(0.030, 0.036, 0.055, 10).rotateX(2.25); wrist.translate(0, -0.024, 0.062); parts.push(wrist);
+  const joint = new THREE.SphereGeometry(0.032, 10, 8); joint.scale(1.05, 0.9, 1.0); joint.translate(0, -0.012, 0.044); parts.push(joint);  // blends the cylinder's flat cap into the heel of the palm
+  const palm = new THREE.SphereGeometry(0.055, 14, 10); palm.scale(1.16, 0.60, 1.30); parts.push(palm);
+  const thenar = new THREE.SphereGeometry(0.030, 8, 6); thenar.scale(1.0, 0.72, 1.25); thenar.translate(-0.040, -0.004, -0.016); parts.push(thenar);  // thumb-base pad
+  // index / middle / ring / little: own length, thickness, splay and curl. Middle longest, little shortest+thinnest.
+  const F = [[-0.040, 0.078, 0.0125, -0.20, 0.30, 0.16], [-0.014, 0.088, 0.0130, -0.06, 0.34, 0.15],
+             [0.012, 0.082, 0.0121, 0.07, 0.32, 0.17], [0.036, 0.064, 0.0104, 0.20, 0.28, 0.19]];
+  for (const [x, len, r, splay, pitch, curl] of F) digit(parts, x, 0.010, -0.062, len, r, r * 0.72, splay, pitch, curl);
+  // thumb: fewer, fatter segments, and rooted OUTSIDE the palm ellipsoid (half-width 0.064) — at x -0.056 its first
+  // segment started inside the palm and the thumb read as a lump rather than as an opposable digit.
+  digit(parts, -0.066, -0.004, -0.006, 0.062, 0.0148, 0.0104, -1.05, 0.16, 0.26, 2);
   const geo = mergeGeometries(parts);
   const p = geo.attributes.position, cols = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {
-    const t = Math.max(0, Math.min(1, (0.28 - p.getZ(i)) / 0.42)), b = 0.15 + 0.85 * t * t;
+    const t = Math.max(0, Math.min(1, (0.26 - p.getZ(i)) / 0.40)), b = 0.12 + 0.88 * t * t;
     cols[i * 3] = cols[i * 3 + 1] = cols[i * 3 + 2] = b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
   return geo;
 }
 
-// Fresnel-shaded energy-hand material. The old unlit MeshBasic + additive shell was the wave-6 verdict's
-// "two enormous flat solid-yellow cartoon hands": no shading terms exist in the overlay scene, so the hand
-// has to model itself — deep-amber-to-gold ramp along the arm (vertex colour), a fixed key-light lambert so
-// the fingers turn, and a pale-gold fresnel rim that replaces the shell. Channels capped at 1.15 with the
-// blue channel structurally tiny: saturated gold through ACES, never white (blob decree).
+// Fresnel-shaded energy-hand material. No shading terms exist in the weapons overlay scene, so the hand has to model
+// itself: deep-amber-to-gold ramp along the arm (vertex colour), a hard key lambert so the fingers TURN, a small cool
+// bounce so the shadow side is dark but not dead, and a narrow gold fresnel line at the silhouette.
+// The rim is the term that went wrong before — see handGeo's header. Channels capped at 1.0 (just under the 1.05 day
+// bloom threshold) with blue structurally tiny: saturated gold through ACES, never white (blob decree).
 function handMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uDeep: { value: new THREE.Color(0x6b3407) }, uGold: { value: new THREE.Color(GOLD_CORE) }, uRim: { value: new THREE.Color(0xffd27a) } },
+    uniforms: { uDeep: { value: new THREE.Color(0x5a2a05) }, uGold: { value: new THREE.Color(GOLD_CORE) }, uRim: { value: new THREE.Color(0xffc860) }, uFill: { value: new THREE.Color(0x4a2a6a) } },
     vertexShader: /* glsl */`
       varying float vRamp; varying vec3 vN; varying vec3 vV;
       void main() {
@@ -141,14 +181,16 @@ function handMaterial() {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
-      uniform vec3 uDeep; uniform vec3 uGold; uniform vec3 uRim;
+      uniform vec3 uDeep; uniform vec3 uGold; uniform vec3 uRim; uniform vec3 uFill;
       varying float vRamp; varying vec3 vN; varying vec3 vV;
       void main() {
         vec3 n = normalize(vN), v = normalize(vV);
-        float fr = pow(1.0 - abs(dot(n, v)), 2.0);
-        float lam = 0.32 + 0.68 * max(0.0, dot(n, normalize(vec3(0.4, 0.75, 0.5))));   // hard-ish key: the fingers have to TURN, or the hand is a flat orange cutout again
-        vec3 c = mix(uDeep, uGold, pow(vRamp, 1.5)) * lam + uRim * fr * 0.9;           // ramp biased deep: only the fingertips reach full gold
-        gl_FragColor = vec4(min(c, vec3(1.15)), 1.0);
+        float fr = pow(1.0 - abs(dot(n, v)), 3.6);                                     // 3.6, not 2.0: a rim is an EDGE. At 2.0 it covered every glancing texel of every cylinder — i.e. the whole hand — and flattened it to pale cream.
+        float key = max(0.0, dot(n, normalize(vec3(0.45, 0.80, 0.42))));
+        float lam = 0.12 + 0.88 * key;                                                 // 0.12 floor, not 0.32: the shadow side has to be genuinely dark or the fingers do not read as separate objects
+        float bnc = max(0.0, dot(n, normalize(vec3(-0.55, -0.35, 0.55)))) * 0.30;      // cool bounce: keeps the underside from going to a dead silhouette
+        vec3 c = mix(uDeep, uGold, pow(vRamp, 1.5)) * lam + uFill * bnc + uRim * fr * 0.55;
+        gl_FragColor = vec4(min(c, vec3(1.0)), 1.0);
       }`,
     vertexColors: true, side: THREE.DoubleSide, fog: false,
   });
@@ -224,16 +266,16 @@ export class Abilities {
     for (let i = 0; i < 2; i++) { // 0 = left, 1 = right
       const h = new THREE.Group();
       const c = new THREE.Mesh(geo, core);
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(GOLD_CORE), opacity: 0.4 }));
-      glow.scale.set(0.19, 0.19, 1); glow.position.set(0, 0.03, -0.055);   // small palm ember, not a flat yellow disc over the hand
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(GOLD_CORE), opacity: 0.3 }));
+      glow.scale.set(0.17, 0.17, 1); glow.position.set(0, 0.03, -0.05);   // small palm ember, not a flat yellow disc over the hand
       h.add(c, glow);
       for (let k = 0; k < 3; k++) { // orbiting palm wisps: small saturated embers circling each palm
-        const wsp = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(0xffc14d).multiplyScalar(0.9), opacity: 0.85 }));
+        const wsp = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(0xffc14d).multiplyScalar(0.9), opacity: 0.6 }));
         wsp.scale.set(0.05, 0.05, 1); h.add(wsp); this._vm.wisps.push({ sp: wsp, hand: i, k });
       }
-      h.position.set(i ? 0.27 : -0.27, -0.24, i ? -0.50 : -0.52); h.rotation.set(0, i ? -0.14 : 0.14, i ? -0.08 : 0.08);
-      h.scale.setScalar(0.88);                       // wave-6 "enormous": a touch smaller so the frame corners stay world, not mitten
-      if (!i) h.scale.x = -0.88;
+      h.position.set(i ? HAND_X : -HAND_X, HAND_Y, HAND_Z[i]); h.rotation.set(0, i ? -0.14 : 0.14, i ? -0.08 : 0.08);
+      h.scale.setScalar(HAND_S);
+      if (!i) h.scale.x = -HAND_S;
       this._vm.group.add(h); this._vm.hands.push(h); this._vm.glows.push(glow);
     }
     // golden screen vignette (persistent super-state feedback)
@@ -256,9 +298,11 @@ export class Abilities {
     // the actual grenade, sitting in the fist until release — you could previously never see the thing being thrown
     const orb = new THREE.Group();
     const oc = new THREE.Color(COL.grenade);
-    orb.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.052, 1), new THREE.MeshStandardMaterial({ color: 0x3a1060, emissive: oc, emissiveIntensity: 1.8, roughness: 0.3, metalness: 0 })));
-    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.006, 6, 24), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.85 })));
-    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.005, 6, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.7 })));
+    // Held orb: same budget as the thrown one (see _makeOrb) — round sphere, matte (no sun hot spot), and the summed
+    // layers kept under clip so the core stays LAVENDER. It sits inside the palm glow sprite, so its share is smaller.
+    orb.add(new THREE.Mesh(new THREE.SphereGeometry(0.052, 20, 14), new THREE.MeshStandardMaterial({ color: 0x2a0c48, emissive: oc, emissiveIntensity: 1.3, roughness: 0.85, metalness: 0 })));
+    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.006, 6, 24), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.5 })));
+    orb.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.005, 6, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ ...ADD, color: oc, opacity: 0.42 })));
     orb.position.set(0, 0.03, -0.055); orb.visible = false;
     for (const o of orb.children) o.frustumCulled = false;
     mg.add(mglow, orb); mg.visible = false; w.scene.add(mg);
@@ -282,17 +326,17 @@ export class Abilities {
     const out = this.superTimeLeft < 0.4 ? this.superTimeLeft / 0.4 : 1; // sink away at the end
     for (let i = 0; i < 2; i++) {
       this._pulse[i] *= Math.exp(-8 * dt);
-      const h = vm.hands[i], base = -0.24;
+      const h = vm.hands[i], base = HAND_Y;
       h.position.y = base - 0.35 * (1 - ease) - 0.3 * (1 - out) + 0.008 * Math.sin(t * 2.2 + i * 2.4);
       h.rotation.x = -0.7 * (1 - ease) + 0.05 * Math.sin(t * 1.7 + i);
-      if (sway) { h.position.x = (i ? 0.27 : -0.27) - sway.x * 0.4; h.position.y += sway.y * 0.25; }
+      if (sway) { h.position.x = (i ? HAND_X : -HAND_X) - sway.x * 0.4; h.position.y += sway.y * 0.25; }
       // every bolt punches the hand forward and snaps the wrist — the super used to fire with the hands
       // perfectly still, so 6 s of bolts read as a static prop with particles coming off it
       const pu = this._pulse[i];
-      h.position.z = (i ? -0.50 : -0.52) - 0.13 * pu + 0.05 * pu * pu;
+      h.position.z = HAND_Z[i] - 0.13 * pu + 0.05 * pu * pu;
       h.rotation.x += -0.38 * pu; h.rotation.z = (i ? -1 : 1) * 0.14 * pu;
-      const sc = 0.88 * (1 + 0.22 * pu); h.scale.set(i ? sc : -sc, sc, sc);   // 0.88: base size, see _ensureVM
-      vm.glows[i].material.opacity = 0.2 + 0.3 * this._pulse[i] + 0.04 * Math.sin(t * 9 + i * 3);
+      const sc = HAND_S * (1 + 0.22 * pu); h.scale.set(i ? sc : -sc, sc, sc);
+      vm.glows[i].material.opacity = 0.14 + 0.22 * this._pulse[i] + 0.03 * Math.sin(t * 9 + i * 3);  // additive, and it sits ON a hand whose red already runs near 1.0 — keep its share small or the palm clips to white
     }
     for (const w of vm.wisps) { // palm wisps: tilted orbits, tighter + brighter on fire pulse
       const a = t * (3.2 + w.k * 0.8) + w.k * 2.1 + w.hand * 3.14, r = 0.085 + 0.02 * Math.sin(t * 2.3 + w.k);
@@ -328,8 +372,8 @@ export class Abilities {
       mv.orb.visible = isThrow && p < k.rel;
       if (mv.orb.visible) { const sc = 0.75 + 0.35 * (p / k.rel); mv.orb.scale.setScalar(sc); mv.orb.rotation.set(p * 7, p * 5, 0); }
     }
-    mv.glow.material.opacity = Math.min(0.9, 0.28 + 0.45 * this._mvPulse + held * 0.4);   // capped: an additive sprite over 1.0 tone-maps to white, not to its hue
-    mv.glow.scale.setScalar(0.15 + held * 0.09);
+    mv.glow.material.opacity = Math.min(0.55, 0.24 + 0.40 * this._mvPulse + held * 0.34); // capped: this sprite sits ON the held orb, so its share is part of the orb's clip budget, not a separate one
+    mv.glow.scale.setScalar(0.13 + held * 0.07);   // and it was 2x the orb's own diameter, so the "orb" you saw was mostly pale sprite; smaller = the saturated emissive core reads
   }
 
   // ---------- pools ----------
@@ -356,10 +400,25 @@ export class Abilities {
   _makeOrb() {
     const grp = new THREE.Group(); grp.visible = false;
     const c = new THREE.Color(COL.grenade);
-    grp.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 2), new THREE.MeshStandardMaterial({ color: 0x3a1060, emissive: c, emissiveIntensity: 3, roughness: 0.3, metalness: 0 })));
-    grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshBasicMaterial({ ...ADD, color: c, opacity: 0.3 })));
-    grp.add(new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.014, 6, 40), new THREE.MeshBasicMaterial({ ...ADD, color: new THREE.Color(c).multiplyScalar(1.1), opacity: 0.9 })));
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(c), opacity: 0.8 })); glow.scale.set(2.4, 2.4, 1); grp.add(glow);
+    // FOUR layers land on the same pixels at the orb centre, so the budget is the SUM, not any one term. Wave-6
+    // measured 428 px of pure white (peak 255,254,247) there. Mechanism, per layer:
+    //   - emissive 3 x 0xb070ff = (1.28, 0.48, 3.0) linear: BLUE is meant to run hot, but RED was already past clip;
+    //   - roughness 0.3 put a tight GGX sun highlight on the sun-facing side — a white specular dot, all three
+    //     channels equally, which is what put the clipped patch in the TOP-LEFT of an otherwise lavender ball;
+    //   - the additive shell + ring + 2.4-scale glow sprite then added ~(0.4, 0.15, 0.9) on top of that.
+    // Every channel clipped and ACES handed back white. Fixed by min-channel discipline (dominant channel hot, the
+    // smallest under ~0.98 linear): emissive 1.6 -> (0.68, 0.26, 1.6), roughness 0.85 -> no specular hot spot at all,
+    // and the additive layers roughly halved. Summed centre is now ~(0.92, 0.35, 2.1): saturated violet, never white.
+    // SphereGeometry, not Icosahedron: detail-2 icosa gave the "visibly faceted low-poly ball" the critic counted.
+    grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 28, 20), new THREE.MeshStandardMaterial({ color: 0x2a0c48, emissive: c, emissiveIntensity: 1.6, roughness: 0.85, metalness: 0 })));
+    grp.add(new THREE.Mesh(new THREE.SphereGeometry(0.34, 20, 14), new THREE.MeshBasicMaterial({ ...ADD, color: c, opacity: 0.10 })));
+    grp.add(new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.014, 6, 40), new THREE.MeshBasicMaterial({ ...ADD, color: c, opacity: 0.55 })));
+    // The shell and glow are the only layers that can wash something BEHIND the orb: the emissive core is opaque and
+    // replaces what it covers, but these two ADD to it. Over dark grass that was invisible; flying past the pale-lit
+    // aetheryte and the noon sky it pushed an already-bright background to near-neutral white (combatcheck WHITE CORE
+    // on pfire-nade-0/1). Halved again, and the sprite shrunk from 2.4 to 1.8 — a 2.4 m halo on a 0.44 m orb was a
+    // pale ball with an orb somewhere inside it, which is also why the core never read as violet.
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(c), opacity: 0.28 })); glow.scale.set(1.8, 1.8, 1); grp.add(glow);
     this.root.add(grp);
     return { grp, alive: false, t: 0, bounces: 0, bounceT: 0, puffT: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), trail: null };
   }
@@ -444,7 +503,11 @@ export class Abilities {
     const { combat, vfx, audio, postfx } = this.game, c = COL.grenade;
     combat.explode?.({ point: p, radius: 5, damage: 110, element: 'void', owner: this.player, team: 'player', falloff: true, knockback: 5 });
     vfx?.shockwave?.(p, { radius: 5, color: c, duration: 0.45 }); vfx?.flash?.(p, { color: c, intensity: 8, distance: 14, duration: 0.1 });
-    this._burst(p, 0xcf9bff, 2.4, 0.16); this._burst(p, c, 5, 0.6); this._ring(p, c, 5.5, 0.5); this._ring(p, 0xc08bff, 3, 0.3);
+    // The inner highlight burst and the inner ring used to be PALE lavenders (0xcf9bff / 0xc08bff, min channel 0.26-0.33
+    // linear). Additive over noon grass — itself already ~0.6 linear — that lands as a near-neutral bright band, which is
+    // exactly the combatcheck WHITE CORE on the pfire nade frames. Same fix as everywhere else: keep the read, saturate
+    // the colour so what the player sees added is violet light, not white light.
+    this._burst(p, 0xa96bff, 2.4, 0.16); this._burst(p, c, 5, 0.6); this._ring(p, c, 5.5, 0.5); this._ring(p, 0x9d5cff, 3, 0.3);
     this._sigil('dot', p, c, 3.2, 5);
     const d = p.distanceTo(this.player.eye), k = 1 / (1 + d / 6);
     this.player.view.shake?.(1.2 * k, 0.35); postfx?.kick?.(0.6 * k); audio?.play?.('explosion', { pos: p });
@@ -677,7 +740,9 @@ export class Abilities {
     for (let i = 0; i < this.rings.length; i++) {
       const g = this.rings[i]; if (g.alive) { g.t += dt; if (g.t >= g.dur) g.alive = false; }
       if (!g.alive) { this._setInst(this.ringMesh, i, g.pos, g.quat, 0, 0, 0); continue; }
-      anyR = true; const k = g.t / g.dur, sc = g.r * (0.15 + 0.85 * (1 - Math.pow(1 - k, 2))); this._setInst(this.ringMesh, i, g.pos, g.quat, sc, 1, sc, this._c.copy(g.col).multiplyScalar(1 - k));
+      // 0.8 peak, not 1.0: a ground ring is a big additive band lying on sunlit grass, so its first frame stacks on top
+      // of an already-bright surface. Dimming the peak keeps the sweep readable and stops the leading edge clipping.
+      anyR = true; const k = g.t / g.dur, sc = g.r * (0.15 + 0.85 * (1 - Math.pow(1 - k, 2))); this._setInst(this.ringMesh, i, g.pos, g.quat, sc, 1, sc, this._c.copy(g.col).multiplyScalar(0.8 * (1 - k)));
     }
     this.ringMesh.instanceMatrix.needsUpdate = this.ringMesh.instanceColor.needsUpdate = true; this.ringMesh.visible = anyR;
     // grenade trail puffs

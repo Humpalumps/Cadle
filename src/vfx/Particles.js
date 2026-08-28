@@ -50,6 +50,20 @@ const VERT = /* glsl */`
     // spanning ~2/3 of the frame starts fading, past ~1.3 frames it is gone. Muzzle sprites (~0.3 m at the
     // barrel) stay under the threshold; a 3 m fireball 10 m away is untouched.
     env *= 1.0 - smoothstep(1.2, 2.4, size / max(depth, 0.05));
+    // COVERAGE GOVERNOR (wave-6 "opaque structureless sheet" class). Do the arithmetic on the fade above:
+    // a quad of extent 'size' at 'depth' has angular half-width atan(0.5*size/depth), and the frame's own
+    // half-width at fov 103 is atan(1.26) — so size/depth = 1.2 is a quad ALREADY spanning ~60% of the
+    // frame, and it is only fully gone at 150% of the frame. Everything below that was allowed to paint
+    // the viewport at full alpha, and N of them summed to a film: celestial's "opaque structureless
+    // orange sheet over half the viewport", infernal's "flat 2D concentric-ring polygon covering ~70% of
+    // the viewport for 1.1 s", shadowfen's "80% of the screen in an opaque orange bloom for a full
+    // second". None of those clip to white, so combatcheck's hue tests pass them — they are a COVERAGE
+    // bug, not a value bug, and this is where coverage is known.
+    // The discipline: an effect may be VIVID but must never be an OPAQUE SHEET. Past ~28% of the frame
+    // width a quad's per-pixel contribution falls off with the area it is claiming, so it keeps its
+    // shape, its structure and its hue and loses only the ability to own the screen. The 0.18 floor
+    // keeps a point-blank detonation visible; its PUNCH is carried by shake/flash/kick, not by fill.
+    env *= mix(1.0, 0.18, smoothstep(0.35, 1.2, size / max(depth, 0.05)));
     vFog = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
     vCol = vec4(mix(iCol0, iCol1, t), iAR.x * env);
     float tex = iTS.x;

@@ -44,6 +44,7 @@ const QMUL = { low: 0.5, medium: 0.75, high: 1 };
 const EMIT_RATE = { trail: 90, 'spark-trail': 45, slide: 45, aura: 30, charge: 40, 'heal-motes': 22, dust: 6, sparks: 8, 'exp-smoke': 11 };   // spark-trail 45 not 70: riftling+voidhorror volleys sustained ~375 live additive particles and the stack washed the void out
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color(), _hsl2 = { h: 0, s: 0, l: 0 };
+const _c4 = new THREE.Color(), _c5 = new THREE.Color();   // impact spark pair (see elemental() / the void-amber note)
 const _PS = new THREE.Vector3();   // _plume/_preheat spawn point (px/py/pz are set explicitly right after reset)
 const NOPTS = {};
 
@@ -395,26 +396,52 @@ export class VFX {
    */
   _paleK(p) {
     const b = this.game.terrain?.biomeAt?.(p.x, p.z);
-    return b === 'tundra' || b === 'celestial' ? 0.5 : b === 'sunken' ? 0.6 : b === 'dragon' ? 0.75 : 1;   // sunken 0.6 (was 0.75): the Drowned Court's pink-pale marble washed a deep-pink bolt halo at 0.75 (gate mix5)
+    // lost 0.6 (added): the Convergence plaza is bright violet marble in a region that is one hue at one
+    // value, so an additive cloud there starts from an already-high base in EVERY channel - the kill
+    // bursts measured 1145 px at rgb (204,236,238) on it (cvfx-w7 burst-cvfx-lost-k-7). Same physics as
+    // tundra snow and celestial marble; it was only ever off the list because its hue is violet, not white.
+    return b === 'tundra' || b === 'celestial' ? 0.5 : b === 'sunken' || b === 'lost' ? 0.6 : b === 'dragon' ? 0.75 : 1;   // sunken 0.6 (was 0.75): the Drowned Court's pink-pale marble washed a deep-pink bolt halo at 0.75 (gate mix5)
   }
   _anchor(p) { const a = this._anchors[this._ai = (this._ai + 1) % this._anchors.length]; a.copy(p); return a; }
   tracer(from, to, o = NOPTS) {
     // Shots fly along the view axis, so a tracer projects to a SHORT screen segment near the muzzle: length + width + on-screen
     // time are the only things that make it read. Noon: ~17x HDR core, ~2.4x width, 20+ m bolt, >= 0.22 s alive (hand cannon
     // cadence is 0.33 s — anything shorter and half the frames of real firing footage show nothing at all).
-    const c = this._col(o, 0xffe9c4), h = o.hdr ?? (7 + 10 * this.day), len = o.len ?? (11 + 10 * this.day);
+    // MIN-CHANNEL DISCIPLINE — the tracer was the last bright element in the game with NO cap of any kind.
+    // hdr rides to 17 at noon so the bolt reads against a bright sky, and 17 x a PASTEL weapon colour
+    // (kinetic is 0xffe9c4) puts all three channels far past clip: the streak tone-mapped to pure white
+    // and the combat gate flagged it at 4225 px, mean rgb (246,242,229), over a hound at point-blank
+    // (tools/out/cvfx-w7 burst-cvfx-pfire-a-7.png). Same two-step every other author here uses: deepen the
+    // hue first (a pastel has no hue left to survive ACES), then cap the SMALLEST channel just under clip
+    // so the dominant one keeps the full noon heat and the bolt reads as a hot GOLD dart, not a white bar.
+    const c = deepen(this._col(o, 0xffe9c4)), h = o.hdr ?? (7 + 10 * this.day), len = o.len ?? (11 + 10 * this.day);
+    // Cap at 0.72, not the usual 0.98. A tracer is born AT the muzzle, on the same pixels as the flash's
+    // own core, and two elements each sitting exactly at clip sum to twice clip: the pair tone-mapped to
+    // rgb (254,249,228) at the barrel even after both were hue-corrected. A thin bright line does not need
+    // to ride the clip point to read — its dominant channel is still 7x here.
+    let tr = c.r * h, tg = c.g * h, tb = c.b * h;
+    { const m = Math.min(tr, tg, tb); if (m > 0.72) { const s = 0.72 / m; tr *= s; tg *= s; tb *= s; } }
     const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
     const spd = Math.min(o.speed ?? 320, (dist + len) / 0.22);
-    this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, (o.width ?? 0.05) * (1 + 1.4 * this.day), o.duration ?? 0.14, spd, len, o.alpha ?? 1, o.core ?? 0.55, false);
+    this.tracers.add(from, to, tr, tg, tb, (o.width ?? 0.05) * (1 + 1.4 * this.day), o.duration ?? 0.14, spd, len, o.alpha ?? 1, o.core ?? 0.55, false);
   }
-  beam(from, to, o = NOPTS) { const c = this._col(o, 0x7fd8ff), h = o.hdr ?? 4; this.tracers.add(from, to, c.r * h, c.g * h, c.b * h, o.width ?? 0.08, o.duration ?? 0.25, 0, 0, o.alpha ?? 1, o.core ?? 0.7, true); }
+  beam(from, to, o = NOPTS) {
+    const c = deepen(this._col(o, 0x7fd8ff)), h = o.hdr ?? 4;                       // same law as tracer()
+    let r = c.r * h, g = c.g * h, b = c.b * h;
+    const m = Math.min(r, g, b); if (m > 0.98) { const s = 0.98 / m; r *= s; g *= s; b *= s; }
+    this.tracers.add(from, to, r, g, b, o.width ?? 0.08, o.duration ?? 0.25, 0, 0, o.alpha ?? 1, o.core ?? 0.7, true);
+  }
   decal(p, n, o = NOPTS) {
     const type = o.type ?? 'bullet';
     if (type === 'sigil') return this.sigil(p, { normal: n, color: o.color, size: o.size ?? 2.5, duration: o.duration ?? 10 });
-    if (type === 'scorch') this.decals.add(p, n, o.size ?? 2.5, 1, o.life ?? 60, 0.12, 0.1, 0.09, o.rot);
-    // bullet tint 0.34 not 0.28: with the rebuilt crater tile (small pit + lip + cracks) the mark keeps its
-    // read from structure; near-black multiply on dark rock was the "hole in the world" half of the verdict
-    else this.decals.add(p, n, o.size ?? 0.14, 0, o.life ?? 45, 0.34, 0.32, 0.29, o.rot);
+    if (type === 'scorch') this.decals.add(p, n, o.size ?? 2.5, 1, o.life ?? 60, 0.22, 0.19, 0.17, o.rot);
+    // Bullet tint 0.52 (was 0.34, was 0.28). These are MULTIPLY decals, so the tint is what the surface is
+    // multiplied BY: 0.34 is a 66% darkening, which on anything but bright stone reads as a hole punched in
+    // the world — wave-6 vale, verbatim and unchanged: "the impact decal is still a black smear (now a
+    // black spiked circle on gold)", plus the coherence pass's "black scribble decals" over the meadow.
+    // At 0.52 the mark is a SCUFF: the crater tile's pit/lip/cracks still carry the read by structure,
+    // which is where a bullet hole's read is supposed to come from. Scorch lifted for the same reason.
+    else this.decals.add(p, n, o.size ?? 0.14, 0, o.life ?? 45, 0.52, 0.49, 0.45, o.rot);
   }
   flash(p, o = NOPTS) {
     let f = null; for (const x of this.lights) if (x.t >= x.dur) { f = x; break; }
@@ -584,6 +611,22 @@ const axisOf = (o, def) => o.normal ?? o.dir ?? def;
 // feeds presets a PASTEL glowColor (frost 0x9fd8ff, seraph 0xffd27a) — the combat gate's residual
 // pale pops (r5: tundra death ball, sunken/lost/celestial glints) were all pastel survivors.
 // A colour only reads as magic through ACES if it starts deep: S >= 0.7, L <= 0.55.
+/**
+ * ELEMENTAL IMPACT COLOUR. Every impact preset used to spark, flash and glow GOLD/ORANGE whatever had
+ * been hit by whatever — so a void bolt landing on voidstone painted warm amber over a violet region.
+ * The void verdict measured 52.8% of the frame warm with the player never firing and named these exact
+ * literals as the cause. Physical warm sparks belong to KINETIC (steel on stone); an aether bolt
+ * shatters in ITS OWN hue, which is also what makes an element readable at a glance.
+ * Writes the hot start colour into _c4 and the cool end colour into _c5 and returns _c4; callers pass
+ * `.color(_c4, _c5)` immediately (Brush copies both out, so the temps are free again on return).
+ */
+const elemental = (o, c, warmHot, warmCool) => {
+  if ((o.element && o.element !== 'kinetic') || o.color != null) {
+    _c4.copy(c).offsetHSL(0, 0.45, 0.02);
+    deepen(_c5.copy(c));
+  } else { _c4.set(warmHot); _c5.set(warmCool); }
+  return _c4;
+};
 const deepen = (col) => {
   col.getHSL(_hsl2);
   if (_hsl2.s < 0.05) { col.set(0x8a5cff); col.getHSL(_hsl2); }   // a grey/white input has NO hue to deepen — clamping would invent red (hue 0); fall back to the house aether violet
@@ -602,16 +645,40 @@ const PRESETS = {
     // SMALL and capped ~12x, and every white start fades into the deep 'ember' hue (HOT_TINT pulls the start 55% toward
     // it) — warm ember for kinetic, violet for aether. Noon readability comes from size + the dark backing puff, not HDR.
     const b = v.brush, d = o.dir ?? UP, A = v.add, day = v.day, ds = s * (1 + 0.6 * day); // daylight: bigger or the flash vanishes against a noon sky
-    const sat = _c2.copy(c).offsetHSL(0, 0.45, -0.07);        // bright saturated element hue
-    const ember = _c3.copy(c).offsetHSL(0, 0.5, -0.2);        // deep ember of the same hue: the fringe/fade-out colour
+    // DOUBLE-DRAWN AT THE LENS. In first person the flash is drawn TWICE at the same place: Weapons.js has
+    // its own viewmodel flash mesh (3 petals + star + a white core, models.js `mats.flash`), and this world
+    // burst lands on the same pixels 0.6 m from the eye. Their sum is what the combat gate still flags on
+    // burst-cvfx-pfire-a-* after both were hue-corrected. The viewmodel mesh owns the first-person read;
+    // this burst owns the world read (distance, other angles, reflections), so damp it — and only it —
+    // where the two overlap. 0.45 floor: still clearly a flash in first person, no longer a second full stack.
+    const mk = 0.45 + 0.55 * Math.min(1, Math.max(0, (v.game.camera.position.distanceTo(p) - 0.4) / 2.2));
+    // deepen(), not offsetHSL alone. The weapon colours are PALE by authoring (kinetic is 0xffe9c4, HSL
+    // lightness 0.88) and `offsetHSL(0, +0.45, -0.07)` cannot deepen a near-white — saturating at L 0.81
+    // leaves (1.00, 0.87, 0.62), whose smallest channel is 0.62. At hdr 6 BRUSH_MINCH_CAP then pins that
+    // to 0.98 with the other two at 1.4-1.6, and the muzzle core tone-maps to rgb (252,247,225): a cream
+    // flashbulb, flagged at 1204 px by the combat gate. This is the exact trap deepen() was written for
+    // (see its comment) and every other preset already routes through it — the muzzle was the last one
+    // that did not. Deepened, the min channel lands near 0.10, nothing caps, and the flash blooms GOLD.
+    const sat = deepen(_c2.copy(c).offsetHSL(0, 0.45, -0.07));   // saturated element hue, forced deep
+    const ember = deepen(_c3.copy(c).offsetHSL(0, 0.5, -0.3));   // deeper ember of the same hue: the fringe/fade-out colour
     // dark backing puff (alpha, 1-2 frames): gives the additive petal contrast at high sun; ~invisible at night
     if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.17).size(0.85 * ds, 1.1 * ds, 1.6).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.46 * day).rot().fade(0, 0.4).burst(2);
-    b.reset(A, p).tex(TEX.FLARE).size(1.02 * ds, 1.22 * ds, 1.3).life(0.16).color(ember, ember).hdr(2.4 + 1.4 * day, 0.9).alpha(0.9).rot().fade(0, 0.25).burst(1);  // ember fringe petal: low HDR keeps the hue through ACES — this is the colour read
-    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.70 * ds, 1.4).life(0.15).color(0xffffff, ember).hdr(6 + 2.5 * day, 2.5).rot().fade(0, 0.3).burst(1); // crisp petal cross: capped at impact-enemy's praised core level so it reads as fire, not a white ball
-    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.13).color(0xffffff, ember).hdr(5 + 2 * day, 2).rot().fade(0, 0.3).burst(1);      // warm ember core
-    b.reset(A, p).tex(TEX.GLOW).size(0.30 * ds, 0.40 * ds, 1.4).life(0.12).color(sat, ember).hdr(3 + 1.5 * day, 1.2).alpha(0.7).fade(0, 0.3).burst(1); // small halo (support layer only)
-    b.reset(A, p).tex(TEX.GLOW).size(0.34 * ds, 0.42 * ds, 0.35).life(0.34).color(ember, ember).hdr(1.6 + 1.2 * day).alpha(0.8).fade(0.02, 0.12).burst(1);  // hot-barrel afterglow, shrinking: the between-shots evidence
-    b.reset(A, p).axis(d).spread(0.24).speed(18 * s, 36 * s).life(0.14, 0.34).size(0.02, 0.042, 0.4).tex(TEX.SPARK).color(0xffffff, ember).hdr(5 + 3 * day, 2).stretch(0.028).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
+    b.reset(A, p).tex(TEX.FLARE).size(1.02 * ds, 1.22 * ds, 1.3).life(0.16).color(ember, ember).hdr((2.4 + 1.4 * day) * mk, (0.9) * mk).alpha(0.9).rot().fade(0, 0.25).burst(1);  // ember fringe petal: low HDR keeps the hue through ACES — this is the colour read
+    // The two hot cores start SATURATED, not white. A white start is HOT_TINTed 55% toward the ember, which
+    // leaves its smallest channel at ~0.52 of the colour — and at hdr 7-8 BRUSH_MINCH_CAP then pins that
+    // smallest channel to exactly 0.98 while the other two ride 1.3-1.7. That is a bright CREAM, not a hue:
+    // rgb (246,242,229) measured, a 4225 px six-point flare at the muzzle (combat gate burst-cvfx-pfire-a-7).
+    // The cap can stop a value CLIPPING; it cannot invent chroma that the start colour never had. Starting
+    // from `sat` puts the min channel near 0.12, so nothing caps, the dominant channel keeps the full noon
+    // heat, and the flash blooms as fire in the weapon's own element — saturate the COLOUR, cap the VALUE.
+    // ...and the two of them plus the halo and the afterglow all sit on the SAME pixel at the barrel, so
+    // even in-hue they summed to a 487 px cream centre. Petal 8.5 -> 6.3, core 7 -> 5.2: the flash still
+    // blooms hard, its centre now stays gold. Size and the ember fringe carry the punch.
+    b.reset(A, p).tex(TEX.FLARE).size(0.58 * ds, 0.70 * ds, 1.4).life(0.15).color(sat, ember).hdr((4.5 + 1.8 * day) * mk, (2) * mk).rot().fade(0, 0.3).burst(1); // crisp petal cross
+    b.reset(A, p).tex(TEX.STAR).size(0.34 * ds, 0.42 * ds, 1.3).life(0.13).color(sat, ember).hdr((3.8 + 1.4 * day) * mk, (1.6) * mk).rot().fade(0, 0.3).burst(1);      // warm ember core
+    b.reset(A, p).tex(TEX.GLOW).size(0.30 * ds, 0.40 * ds, 1.4).life(0.12).color(sat, ember).hdr((3 + 1.5 * day) * mk, (1.2) * mk).alpha(0.7).fade(0, 0.3).burst(1); // small halo (support layer only)
+    b.reset(A, p).tex(TEX.GLOW).size(0.34 * ds, 0.42 * ds, 0.35).life(0.34).color(ember, ember).hdr((1.6 + 1.2 * day) * mk).alpha(0.8).fade(0.02, 0.12).burst(1);  // hot-barrel afterglow, shrinking: the between-shots evidence
+    b.reset(A, p).axis(d).spread(0.24).speed(18 * s, 36 * s).life(0.14, 0.34).size(0.02, 0.042, 0.4).tex(TEX.SPARK).color(0xffffff, ember).hdr((5 + 3 * day) * mk, (2) * mk).stretch(0.028).gravity(12).drag(2.5).fade(0, 0.5).burst(8 * k);
     b.reset(v.alpha, p).axis(d).spread(0.55).speed(1.4, 3.0).life(0.55, 0.95).size(0.22 * ds, 0.34 * ds, 3).tex(TEX.SMOKE).color(0x8c8c90).lit(L(v)).alpha(0.15 + 0.11 * day).rot().spin(2).drag(3).gravity(-0.8).fade(0.12, 0.3).burst(2 * k); // wisp lingers between shots
   },
   'spark-trail'(v, p, o, k, s, c) {
@@ -665,11 +732,12 @@ const PRESETS = {
     // brief pop so the shot visibly lands even in grass. The old 0xfff0d0 x hdr 3 DISCARDED the element
     // colour and bypassed HOT_TINT (not exact white) — the vale "wisp bolt impact = hard white core on the
     // meadow". Elemental shots pop in their own saturated hue; plain kinetic stays a warm dust flash.
-    const pop = o.element || o.color != null ? _c3.copy(c).offsetHSL(0, 0.35, -0.05) : _c3.set(0xffc060);
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.16 * s, 0.22 * s, 1.6).life(0.08).color(pop, 0xd8b070).hdr(2, 1).fade(0, 0.3).burst(1);
+    // ...and the FADE-OUT colour is elemental too (see elemental()): a violet pop that ends warm-tan is
+    // still a warm pixel on screen for most of its life — the void-amber finding was the sum of these tails.
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.16 * s, 0.22 * s, 1.6).life(0.08).color(elemental(o, c, 0xffc060, 0xd8b070), _c5).hdr(2, 1).fade(0, 0.3).burst(1);
     b.reset(v.alpha, _v2).axis(n).spread(0.9).speed(1.4 * s, 3.2 * s).life(0.9, 1.5).size(0.22 * s, 0.38 * s, 3.2).tex(TEX.SMOKE).color(DUST).lit(L(v)).vary(0.3).alpha(0.6).rot().spin(1.5).drag(2.5).gravity(-0.3).fade(0.08, 0.4).burst(6 * k);
     b.reset(v.alpha, p).axis(n).spread(0.8).speed(3 * s, 7 * s).life(0.5, 1.0).size(0.025 * s, 0.06 * s, 0.8).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(12).gravity(20).drag(0.5).floor(fl, 0.35).fade(0, 0.7).burst(10 * k);
-    b.reset(v.add, p).axis(n).spread(0.7).speed(3 * s, 6 * s).life(0.15, 0.35).size(0.012, 0.022, 0.3).tex(TEX.SPARK).color(0xffd070, 0xffa040).hdr(2.5, 1).stretch(0.025).gravity(14).drag(1).fade(0, 0.5).burst(2 * k);
+    b.reset(v.add, p).axis(n).spread(0.7).speed(3 * s, 6 * s).life(0.15, 0.35).size(0.012, 0.022, 0.3).tex(TEX.SPARK).color(elemental(o, c, 0xffd070, 0xffa040), _c5).hdr(2.5, 1).stretch(0.025).gravity(14).drag(1).fade(0, 0.5).burst(2 * k);
   },
   dust(v, p, o, k, s, c) { PRESETS['impact-terrain'](v, p, o, k * 0.6, s, c); },
   'impact-rock'(v, p, o, k, s, c) {
@@ -680,14 +748,14 @@ const PRESETS = {
     // and the 0.11 s pop lands as a small cream-white ball beside its own gold sparks (combat gate final9,
     // vale a-8: a bolt hitting a lamppost, 47 px at rgb 243,231,210). The sparks + chips + dark backing puff
     // ARE the rock-hit punch; the glow's job is warm colour, and a deep gold survives ACES as gold.
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.34 * s, 0.46 * s, 1.5).life(0.11).color(0xe89a20, 0xff9040).hdr(2.4, 1.4).fade(0, 0.3).burst(1);   // 0xe89a20: S 0.76 / L 0.52 — inside the deepen() discipline
-    b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.35, 0.8).size(0.03, 0.058, 0.5).tex(TEX.SPARK).color(0xffcf5a, 0xff8030).hdr(5, 2.4).stretch(0.05).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.34 * s, 0.46 * s, 1.5).life(0.11).color(elemental(o, c, 0xe89a20, 0xff9040), _c5).hdr(2.4, 1.4).fade(0, 0.3).burst(1);   // 0xe89a20: S 0.76 / L 0.52 — inside the deepen() discipline; elemental() so a void bolt on voidstone does not flash gold
+    b.reset(v.add, p).axis(n).spread(1.0).speed(5 * s, 14 * s).life(0.35, 0.8).size(0.03, 0.058, 0.5).tex(TEX.SPARK).color(elemental(o, c, 0xffcf5a, 0xff8030), _c5).hdr(5, 2.4).stretch(0.05).gravity(18).drag(1.2).floor(fl, 0.5).fade(0, 0.55).burst(14 * k);
     b.reset(v.alpha, p).axis(n).spread(0.9).speed(2 * s, 6 * s).life(0.5, 0.9).size(0.035 * s, 0.07 * s, 0.8).tex(TEX.DIRT).color(0x8a8684).lit(L(v)).vary(0.5).rot().spin(14).gravity(18).drag(0.4).floor(fl, 0.4).fade(0, 0.7).burst(8 * k);
     b.reset(v.alpha, p).axis(n).spread(0.8).speed(1 * s, 2.4 * s).life(0.5, 0.95).size(0.18 * s, 0.32 * s, 2.6).tex(TEX.SMOKE).color(0x9a9490).lit(L(v)).vary(0.3).alpha(0.45).rot().spin(2).drag(3).gravity(-0.3).fade(0.08, 0.35).burst(4 * k);
   },
   'impact-prop'(v, p, o, k, s, c) { PRESETS['impact-rock'](v, p, o, k, s, c); },
   sparks(v, p, o, k, s, c) {
-    v.brush.reset(v.add, p).axis(axisOf(o, UP)).spread(o.spread ?? 1.0).speed(5 * s, 14 * s).life(0.3, 0.7).size(0.018, 0.034, 0.5).tex(TEX.SPARK).color(0xffcf5a, o.color != null || o.element ? c : 0xff8030).hdr(4, 2).stretch(0.03).gravity(18).drag(1.2).floor(p.y - 0.01, 0.5).fade(0, 0.55).burst(14 * k);
+    v.brush.reset(v.add, p).axis(axisOf(o, UP)).spread(o.spread ?? 1.0).speed(5 * s, 14 * s).life(0.3, 0.7).size(0.018, 0.034, 0.5).tex(TEX.SPARK).color(elemental(o, c, 0xffcf5a, 0xff8030), _c5).hdr(4, 2).stretch(0.03).gravity(18).drag(1.2).floor(p.y - 0.01, 0.5).fade(0, 0.55).burst(14 * k);
   },
   'impact-water'(v, p, o, k, s, c) {
     const b = v.brush;
@@ -700,23 +768,39 @@ const PRESETS = {
   },
   'impact-enemy'(v, p, o, k, s, c) {
     const b = v.brush, n = axisOf(o, UP), crit = !!o.crit, day = v.day;
+    // OVERLAP GOVERNOR (energy share) — the same law 'explosion' carries, and the reason the extended
+    // combat gate's player-fire burst failed: a hand cannon lands ~3 hits/s and every layer here lives
+    // 0.13-0.45 s, so holding the trigger keeps 3-4 full stacks alive ON THE SAME PIXELS of the same
+    // creature. Each stack is min-channel capped, but N capped stacks SUM past clip and ACES returns a
+    // white ball (tools/out/cvfx-w7-base burst-cvfx-pfire-a-3.png: 11234 px at mean rgb 241,239,236 on a
+    // hound's shoulder). The k-th concurrent impact within 1.6 m emits at 1/sqrt(k+1).
+    // ...times a near-lens damp: a hound attacking fills 40% of the screen, and its hit flash at 1.5 m is
+    // a sheet, not a spark (coherence: "you cannot tell what is hitting you"). ...times the pale-ground damp.
+    const tNow = v.game.time, cp = v.game.camera.position;
+    v._recentHit = v._recentHit?.filter((x) => tNow - x.t < 0.45) ?? [];
+    const near = v._recentHit.filter((x) => (x.x - p.x) ** 2 + (x.y - p.y) ** 2 + (x.z - p.z) ** 2 < 2.56).length;
+    v._recentHit.push({ t: tNow, x: p.x, y: p.y, z: p.z });
+    const dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
+    const hk = (1 / Math.sqrt(1 + near)) * (0.35 + 0.65 * Math.min(1, Math.max(0, (dd - 1.0) / 4.0))) * v._paleK(p);
+    const k0 = k;                       // the DARK backing puff is the contrast the additive reads against — never thinned
+    k *= Math.max(0.4, hk);             // thin the additive counts: overlap is what sums
     // Element identity survives ACES only at MODERATE HDR: anything above ~3x clips to white. So the hue lives in big,
     // saturated, low-HDR layers (halo, ring, motes) and only a small core is allowed to go white-hot.
     const sat = deepen(_c2.copy(c).offsetHSL(0, 0.45, -0.08));
     // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
-    b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k);
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr(1.5 + 0.5 * day, 0.5).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
-    b.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.55 * s, 1.6).life(0.2).color(sat, sat).hdr(2.6 + 1.0 * day, 1.1).alpha(0.9).fade(0, 0.3).burst(1);
-    b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(sat, c).hdr(3.5 + 1.5 * day, 2).rot().fade(0, 0.3).burst(1);           // small hot core only, in the saturated hue (was white at hdr 9: the lost-region "near-white egg over the golem chest")
-    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.04, 0.075, 0.3).tex(TEX.SPARK).color(sat, sat).hdr(4.5 + 1.5 * day, 2).stretch(0.06).gravity(7).drag(2.5).fade(0, 0.5).burst(16 * k);
+    b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k0);
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr((1.5 + 0.5 * day) * hk, 0.5 * hk).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
+    b.reset(v.add, p).tex(TEX.GLOW).size(0.4 * s, 0.55 * s, 1.6).life(0.2).color(sat, sat).hdr((2.6 + 1.0 * day) * hk, 1.1 * hk).alpha(0.9).fade(0, 0.3).burst(1);
+    b.reset(v.add, p).tex(TEX.STAR).size(0.26 * s, 0.34 * s, 1.4).life(0.13).color(sat, c).hdr((3.5 + 1.5 * day) * hk, 2 * hk).rot().fade(0, 0.3).burst(1);           // small hot core only, in the saturated hue (was white at hdr 9: the lost-region "near-white egg over the golem chest")
+    b.reset(v.add, p).axis(n).spread(1.1).speed(4 * s, 11 * s).life(0.28, 0.6).size(0.04, 0.075, 0.3).tex(TEX.SPARK).color(sat, sat).hdr((4.5 + 1.5 * day) * hk, 2 * hk).stretch(0.06).gravity(7).drag(2.5).fade(0, 0.5).burst(16 * k);
     // ember flecks: brief saturated chunks that arc out and die fast — the physical "something broke off" presence the
     // wave-1 feel audit asked for. Saturated colour at moderate HDR (blob law: hue survives ACES, value never clips).
-    b.reset(v.add, p).axis(n).spread(1.4).speed(2 * s, 6 * s).life(0.25, 0.5).size(0.05, 0.09, 0.5).tex(TEX.STAR).color(sat, sat).hdr(3 + 1 * day, 1.5).rot().spin(6).gravity(10).drag(1.5).fade(0, 0.5).burst(6 * k);
-    b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.5, 0.9).size(0.1 * s, 0.18 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr(2.6 + 0.9 * day).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
-    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 7).life(0.45).color(sat, sat).hdr(2.4 + 1.0 * day, 0.9).alpha(1).fade(0, 0.18).burst(1);   // saturated ring, big enough to read at 8 m
-    if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.22).color(sat, sat).hdr(3.5 + 1.5 * day, 2).rot().spin(2).fade(0, 0.3).burst(2);
-      b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.28 * s, 0.28 * s, 11).life(0.6).color(sat, sat).hdr(2.2 + 0.8 * day, 0.7).alpha(0.9).fade(0.04, 0.25).burst(1);  // crit: second wider ring
-      b.reset(v.add, p).axis(n).spread(3.14).speed(4, 10).life(0.35, 0.7).size(0.026, 0.05, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr(4.5 + 1.5 * day, 2.5).stretch(0.04).gravity(6).drag(2).fade(0, 0.5).burst(10 * k); }
+    b.reset(v.add, p).axis(n).spread(1.4).speed(2 * s, 6 * s).life(0.25, 0.5).size(0.05, 0.09, 0.5).tex(TEX.STAR).color(sat, sat).hdr((3 + 1 * day) * hk, 1.5 * hk).rot().spin(6).gravity(10).drag(1.5).fade(0, 0.5).burst(6 * k);
+    b.reset(v.add, p).spread(3.14).speed(0.6, 2).life(0.5, 0.9).size(0.1 * s, 0.18 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.6 + 0.9 * day) * hk).rot().spin(3).gravity(-1).drag(2).fade(0.05, 0.5).burst(6 * k);
+    b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 7).life(0.45).color(sat, sat).hdr((2.4 + 1.0 * day) * hk, 0.9 * hk).alpha(1).fade(0, 0.18).burst(1);   // saturated ring, big enough to read at 8 m
+    if (crit) { b.reset(v.add, p).tex(TEX.STAR).size(0.34 * s, 0.46 * s, 1.8).life(0.22).color(sat, sat).hdr((3.5 + 1.5 * day) * hk, 2 * hk).rot().spin(2).fade(0, 0.3).burst(2);
+      b.reset(v.add, p).axis(n).flat().tex(TEX.RING).size(0.28 * s, 0.28 * s, 11).life(0.6).color(sat, sat).hdr((2.2 + 0.8 * day) * hk, 0.7 * hk).alpha(0.9).fade(0.04, 0.25).burst(1);  // crit: second wider ring
+      b.reset(v.add, p).axis(n).spread(3.14).speed(4, 10).life(0.35, 0.7).size(0.026, 0.05, 0.3).tex(TEX.SPARK).color(0xffffff, sat).hdr((4.5 + 1.5 * day) * hk, 2.5 * hk).stretch(0.04).gravity(6).drag(2).fade(0, 0.5).burst(10 * k); }
   },
   blood(v, p, o, k, s, c) { PRESETS['impact-enemy'](v, p, o, k, s, c); },
   // ---- big ---------------------------------------------------------------------------------------------------------
@@ -761,7 +845,14 @@ const PRESETS = {
     b.reset(A, p).jitter(0.3 * r).spread(3.14).speed(1.6 * r, 4 * r).life(0.5, 1.0).size(0.18 * r, 0.36 * r, 2.6).tex(TEX.SMOKE).color(fire, 0x8a1a00).hdr(1.2 * fr * er, 0.25).vary(0.5).alpha(0.85).rot().spin(3).drag(3.2).gravity(-2.5).fade(0.0, 0.3).burst(Math.max(4, Math.round(12 * k * fr))); // fire tongues (12 not 22 at hdr 1.2: a stack of tongues clips its BLUE channel first and the whole pile goes cream — fewer, dimmer, still fire)
     // smoke ball: Destiny grenade gradient — fire-lit orange-brown -> mid grey-brown -> dark. Starts SMALL and semi-transparent
     // and grows (endMul 3.4), so 0.2-1.0 s reads as a churning fireball, not an instant ink blob.
-    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(0xb06a2e, 0x272119).hdr(1.7, 1).lit(L(v)).vary(0.35).alpha(0.62).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(14 * k);
+    // Smoke lit by THIS detonation, not always by a fire-orange one. At 0xb06a2e x hdr 1.7 the start colour
+    // was (1.17, 0.71, 0.31) — over clip on red — on a 2-7 m ALPHA quad, 14 of them, with no range/near
+    // fade of any kind on the alpha layers: a detonation 2-4 m from the eye painted the whole viewport a
+    // flat rust-orange for a full second in a GREEN region (shadowfen, tools/out/sf-fight/burst-fight2-0.png)
+    // and read as an orange curtain in dragon/infernal/celestial. Hue follows the element, value under clip,
+    // and Particles.js's coverage governor now owns the near-camera case for every layer at once.
+    const smk = _c3.copy(fire).offsetHSL(0, -0.15, -0.30);
+    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(smk, 0x272119).hdr(1.15, 0.8).lit(L(v)).vary(0.35).alpha(0.55).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(14 * k);
     v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(6, 11 * v.mult), scale: r / 3 });                                              // smoke column keeps pumping from the site
     _v3.set(p.x, p.y + (n ? 0.95 : 0), p.z);                                                                                                          // grounded ring lifts clear of 1 m meadow grass
     if (n) b.reset(A, _v3).axis(n).flat(); else b.reset(A, _v3).rot();
@@ -813,24 +904,52 @@ const PRESETS = {
     if (!o.tick) b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr((2.4 + 1.0 * day2) * pk, 0.9 * pk).alpha(0.95).fade(0, 0.2).burst(1);
   },
   death(v, p, o, k, s, c) {
-    // the kill reward: dark void veil first, then a white-hot pop + double ring + rising motes — most readable vfx in the game
+    // the kill reward: dark void veil first, then a saturated pop + double ring + rising motes — most readable vfx in the game
     const b = v.brush, A = v.add, day = v.day;
+    // ENERGY CONSERVATION BY CREATURE SIZE (wave-6 forest BLOB, tools/out/F6-fight/burst-treantfight-0.png:
+    // killing an Elder Treant at 16 m produced 8978 px of near-white pale-cyan bloom with hard 8-point star
+    // flares). `s` is radius/0.5, so a treant/golem kills at s = 3 — every layer below was 3x LONGER, i.e.
+    // 9x the screen AREA, at the SAME per-pixel additive value, and the counts did not drop either. 36
+    // stars of 1.1 m each at hdr 5.2, overlapping inside one 3 m ball: BRUSH_MINCH_CAP is per particle, so
+    // N capped particles still SUM past clip and ACES hands back a white mass with star flares.
+    // Same three laws `explosion` already carries, which `death` never got: area-conserving energy (er),
+    // range + near-lens fade, pale-ground damp. A big creature's death is BIGGER, not BRIGHTER.
+    const er = Math.min(1, 1.35 / Math.max(1, s));                       // s=1 untouched; s=3 -> 0.45 (area grew 9x)
+    const cp = v.game.camera.position, dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
+    const nk = 0.3 + 0.7 * Math.min(1, dd / 7);                          // a kill AT the lens must not fill the frame
+    // Range fade from 8 m, not 20 (measured: tools/out/cvfx-w7 burst-cvfx-vale-k-1, a 12 m sentinel kill,
+    // 1606 px at mean rgb 214,238,236). The mote cloud is ~2 m across, so by ~12 m all 36 stars project
+    // onto the same few hundred pixels and their SMALLEST channel accumulates until the sum is white —
+    // BRUSH_MINCH_CAP is per particle and cannot see a stack. Same mechanism note as 'trail'/'explosion'.
+    const rk = 1 - 0.55 * Math.min(1, Math.max(0, (dd - 8) / 32));
+    const fk = er * nk * rk * v._paleK(p);
+    const ck = Math.max(0.35, er);                                        // and thin the COUNTS too: overlap is what sums
     b.reset(v.alpha, p).jitter(0.35 * s).spread(3.14).speed(0.4, 1.2).life(1.5, 2.4).size(0.35 * s, 0.6 * s, 2.4).tex(TEX.SMOKE).color(0x0e0817, 0x1a1026).vary(0.3).alpha(0.72).rot().spin(1).drag(2).gravity(-0.6).fade(0.04, 0.45).burst(10 * k);
     const dsat0 = deepen(_c3.copy(c).offsetHSL(0, 0.4, -0.06));   // rings grow LARGE (2.7 m): pastel glowColors must go DEEP or the pop is a pale ball (gate r5 tundra)
     // pop in the creature's own hue, not white: at hdr 5-7 the HOT_TINTed white still landed as a pale
     // ball post-cap (combat gate r3: tundra 22k-px cluster at rgb 232,234,233 was exactly this pop over
     // a dead wisp). The punch is the SIZE + double ring + flash; the colour is the element.
-    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(dsat0, c).hdr(3, 1.5).fade(0, 0.3).burst(1);
-    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(dsat0, c).hdr(3.5, 1.8).rot().fade(0, 0.3).burst(1);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(dsat0, c).hdr(3.5, 1.5).alpha(0.9).fade(0, 0.2).burst(1);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(dsat0).hdr(3, 1.2).alpha(0.7).fade(0.1, 0.3).burst(1);
+    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(dsat0, c).hdr(3 * fk, 1.5 * fk).fade(0, 0.3).burst(1);
+    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(dsat0, c).hdr(3.5 * fk, 1.8 * fk).rot().fade(0, 0.3).burst(1);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(dsat0, c).hdr(3.5 * fk, 1.5 * fk).alpha(0.9).fade(0, 0.2).burst(1);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(dsat0).hdr(3 * fk, 1.2 * fk).alpha(0.7).fade(0.1, 0.3).burst(1);
     // afterglow motes: at 8 m the old 0.11 m stars were sub-pixel and the kill tail vanished by 0.75 s. 2x size, longer life,
     // saturated at moderate HDR so the element colour holds through noon exposure — the payoff now reads for ~2.5 s.
+    // The star sprite is an 8-POINT FLARE: at s=3 it is a metre across, and 36 of them at hdr 5.2 is exactly
+    // the "hard 8-point star flares" the forest critic photographed. Size no longer scales linearly with s.
+    const ss = Math.sqrt(s);                                             // 3x creature -> 1.7x mote, not 3x
     const dsat = deepen(_c2.copy(c).offsetHSL(0, 0.35, 0));
-    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * s, 0.36 * s, 0.4).tex(TEX.STAR).color(dsat, dsat).hdr(3.6 + 1.6 * day, 1.8).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(36 * k);
-    b.reset(A, p).jitter(0.5 * s).axisUp().spread(0.7).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * s, 0.75 * s, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr(1.7 + 0.5 * day).alpha(0.7).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(14 * k);
-    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, c).hdr(4, 2).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
-    v.flash(p, { color: c, intensity: 2 * s, distance: 10, duration: 0.4 });
+    // 24 stars at hdr 1.9, not 36 at 5.2. The kill tail's read comes from HOW LONG it lives (1.8-3.0 s) and
+    // from the double ring, not from per-mote value: 36 overlapping stars whose smallest channel is 0.36
+    // linear complete each other to white after ~6 of them overlap, whatever hue each one started from.
+    b.reset(A, p).jitter(0.6 * s).axisUp().spread(0.5).speed(1.0, 2.8).life(1.8, 3.0).size(0.22 * ss, 0.36 * ss, 0.4).tex(TEX.STAR).color(dsat, dsat).hdr((1.9 + 0.7 * day) * fk, 1.0 * fk).rot().spin(3).swirl(1.5, 3, true).gravity(-1.5).drag(0.8).fade(0.08, 0.6).burst(Math.max(8, Math.round(24 * k * ck)));
+    // The soft GLOW motes are the layer that actually clipped: dsat for arc is (0.10, 0.65, 1.00), so its
+    // SMALLEST channel is 0.10 and BRUSH_MINCH_CAP never engages — but 10 of them piled inside one 1 m ball
+    // sum that 0.10 ten times over and the cloud completes to pale cyan (measured 540 px at rgb 212,238,236
+    // on a dying hound, burst-cvfx-vale-k-1). Fewer, dimmer, spread wider: overlap is the whole mechanism.
+    b.reset(A, p).jitter(0.95 * s).axisUp().spread(0.9).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * ss, 0.75 * ss, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr((0.9 + 0.3 * day) * fk).alpha(0.6).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(Math.max(3, Math.round(6 * k * ck)));
+    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, c).hdr(4 * fk, 2 * fk).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
+    v.flash(p, { color: c, intensity: 2 * Math.min(s, 1.6), distance: 10, duration: 0.4 });   // was 2*s: a treant's 6.0 lit the whole clearing to cream
   },
   // ---- rings / sigils / FF14 magic ----------------------------------------------------------------------------------
   ring(v, p, o, k, s, c) {

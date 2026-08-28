@@ -37,7 +37,10 @@ export const DEFS = {
     health: 260, shield: 140, shieldElement: 'arc', damage: 7, speed: 3.6, turn: 3.5, accel: 10,
     perception: 45, fov: 2.6, attackRange: 30, band: [13, 24], attackWindup: 0.75, attackCooldown: 2.6, attackRecover: 0.4, volley: 3, volleyGap: 0.16, standoff: 2.2,
     projectile: { speed: 32, radius: 0.22, element: 'arc', life: 4 },
-    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.05,
+    // shieldRadius 1.05 -> 0.96 (and the same ~9% trim on every other sentinel-body humanoid): the wave-6
+    // verdict called the bubbles "twice the body width". The model's shoulders are ~0.55 m half-width at this
+    // scale, so 0.96 still stands the shell well clear of the body and the weapon.
+    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 0.96,
     radius: 0.55, height: 2.7, center: 1.74, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
     palette: [[0x7fd8ff, 0xffffff], [0xffd27a, 0xfff1d6]], glow: 1.9, rim: 0.55, bump: 0.05,
     deathTime: 1.6, xp: 45,
@@ -109,7 +112,7 @@ export const DEFS = {
     // dragon full-frame blowout recipe (see Enemy._fireBolt's ribbon note); with six crew already firing,
     // the captain's weight comes from per-bolt damage, not from painting the lens orange.
     projectile: { speed: 24, radius: 0.28, element: 'solar', life: 4 },
-    strafe: 0.7, stagger: 0.26, staggerTime: 0.5, shieldRadius: 1.15,
+    strafe: 0.7, stagger: 0.26, staggerTime: 0.5, shieldRadius: 1.06,
     radius: 0.56, height: 2.2, center: 1.18, weakPoints: [{ bone: 'head', radius: 0.26, mult: 2.0, off: [0, 0.1, 0] }],
     // violet emissive: the captain's glowing aether amulet is the tell that this one is the mini-boss
     palette: [[0xb070ff, 0x6a5a72]], glow: 1.7, rim: 0.5, bump: 0.05,
@@ -191,9 +194,17 @@ const BIOME_DEFS = {
     health: 520, shield: 300, shieldElement: 'solar', damage: 12, speed: 4.0, turn: 3.8, accel: 11,
     perception: 52, fov: 2.8, attackRange: 34, band: [15, 27], attackWindup: 0.7, attackCooldown: 2.4, attackRecover: 0.4, volley: 4, volleyGap: 0.14, standoff: 2.4,
     projectile: { speed: 36, radius: 0.22, element: 'solar', life: 4 },
-    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.15,
+    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.02,
     radius: 0.58, height: 2.9, center: 1.86, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
-    palette: [[0xffd27a, 0xfff1d6], [0xffe6b0, 0xfff6e2]], glow: 2.1, rim: 0.6, bump: 0.05,
+    // WAVE-6 BLOCKER: "the signature creature is the wrong creature — a rust-bronze plate brute, identical to
+    // the Infernal/Dragon forgeknight". Both wear the sentinel GLB, and a near-white tint on a GLB is a no-op
+    // (see the TINT ON A TEXTURED BODY block in materials.js), so the only thing that ever differed between
+    // them was a warm rim colour. The tint is now saturated enough to trip the repaint: the plate is remapped
+    // to COOL MARBLE at its own value range x2.6 (the Tripo bake is lit dark), while the albedo's bright
+    // saturated texels — the gold filigree and the gem inlays — are held out of the repaint by the ornament
+    // gate, so what is left is white-blue marble with gold. rim 0.6 -> 0.34 for the same reason as the treant:
+    // a rim multiplies the emissive at every grazing angle, and a warm rim at 0.6 IS the bronze read.
+    palette: [[0x5aa8ff, 0x40d8ff], [0x74b8ff, 0x55dcff]], glow: 2.1, rim: 0.34, bump: 0.05,
     deathTime: 1.7, xp: 260,
   },
   skyserpent: {
@@ -214,7 +225,15 @@ const BIOME_DEFS = {
     projectile: { speed: 34, radius: 0.27, element: 'solar', life: 3.5, explodeRadius: 1.8 },
     stagger: 0.26, staggerTime: 0.5,
     radius: 0.8, height: 1.3, center: 0, weakPoints: [{ bone: 'head', radius: 0.32, mult: 2.0, off: [0, 0.02, 0.12] }],
-    palette: [[0xff8a3d, 0xffffff], [0xd8703a, 0xffe6c8]], glow: 2.2, rim: 0.5, bump: 0.045,
+    // WAVE-6: "a uniformly saturated vermillion mass whose outline resolves as neither head, neck nor wing at
+    // any of the three distances". Looked at it (tools/out/before-dra): the body is BLACK — drake.glb's albedo
+    // is linear luminance ~0.036 — and every visible pixel was the solar rim, which at 0.5 fires on every
+    // grazing angle. A wyvern is wings, neck, tail and horns: it is nearly ALL grazing angle, so the rim drew
+    // an orange wireframe around a void. Exactly the treant lime-pinstripe failure one creature over.
+    // Fix is the same shape as the treant's: the light belongs in the BODY, not on its edges. rim 0.5 -> 0.16,
+    // and the tint is saturated enough to trip the repaint, which remaps the bake's own value structure
+    // (dark membrane vs lighter bone plate) across a 2.6x range instead of leaving it all at black.
+    palette: [[0xff5a14, 0xff5a1e], [0xe0641c, 0xff8c3a]], glow: 2.2, rim: 0.16, bump: 0.045,
     flame: { color: 0xff6a14, width: 0.46, spread: 0.17, strands: 3, lag: 0.085 },
     breath: { color: 0xff5c0e, width: 0.44, spread: 0.21, strands: 3, length: 6.5, standoff: 6.0, alpha: 0.85, near: 11, far: 20 },
     deathTime: 1.8, xp: 320,
@@ -224,7 +243,7 @@ const BIOME_DEFS = {
     health: 480, shield: 240, shieldElement: 'solar', damage: 11, speed: 3.4, turn: 3.2, accel: 9,
     perception: 44, fov: 2.6, attackRange: 28, band: [11, 21], attackWindup: 0.8, attackCooldown: 2.5, attackRecover: 0.45, volley: 3, volleyGap: 0.15, standoff: 2.2,
     projectile: { speed: 30, radius: 0.24, element: 'solar', life: 4 },
-    strafe: 0.7, stagger: 0.2, staggerTime: 0.5, shieldRadius: 1.05,
+    strafe: 0.7, stagger: 0.2, staggerTime: 0.5, shieldRadius: 0.96,
     radius: 0.56, height: 2.6, center: 1.68, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
     palette: [[0xffb44a, 0xffe8b0], [0xd89a3c, 0xffdca0]], glow: 1.9, rim: 0.5, bump: 0.06,
     deathTime: 1.7, xp: 230,
@@ -271,7 +290,7 @@ const BIOME_DEFS = {
     health: 340, shield: 120, shieldElement: 'strand', damage: 10, speed: 3.8, turn: 3.6, accel: 10,
     perception: 42, fov: 2.7, attackRange: 30, band: [12, 23], attackWindup: 0.75, attackCooldown: 2.4, attackRecover: 0.4, volley: 3, volleyGap: 0.18, standoff: 2.2,
     projectile: { speed: 26, radius: 0.26, element: 'strand', life: 4.5, explodeRadius: 1.8 },
-    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.05,
+    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 0.96,
     radius: 0.54, height: 2.6, center: 1.68, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
     palette: [[0x7cff9c, 0x1f3324], [0xa8ff6a, 0x263320]], glow: 1.7, rim: 0.6, bump: 0.05,
     signature: { mend: { cd: 7.0, r: 22, frac: 0.11 } },
@@ -283,9 +302,14 @@ const BIOME_DEFS = {
     health: 400, shield: 160, shieldElement: 'arc', damage: 10, speed: 3.4, turn: 3.4, accel: 9,
     perception: 40, fov: 2.6, attackRange: 26, band: [10, 20], attackWindup: 0.8, attackCooldown: 2.5, attackRecover: 0.45, volley: 3, volleyGap: 0.16, standoff: 2.2,
     projectile: { speed: 28, radius: 0.23, element: 'arc', life: 4 },
-    strafe: 0.8, stagger: 0.22, staggerTime: 0.5, shieldRadius: 1.05,
+    strafe: 0.8, stagger: 0.22, staggerTime: 0.5, shieldRadius: 0.96,
     radius: 0.56, height: 2.7, center: 1.72, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
-    palette: [[0x4fd8c8, 0xd8fff6], [0xff7a9c, 0xffe0e8]], glow: 1.6, rim: 0.65, bump: 0.055,
+    // WAVE-6: "the generic sentinel GLB re-tinted infernal RED". Measured cause: the second palette entry was
+    // [0xff7a9c, 0xffe0e8] — a hot pink EMISSIVE behind rim 0.65, and on a GLB the emissive rim is the only
+    // channel a palette had, so half of all spawns came up as a red-outlined courtier in a teal kingdom.
+    // Drowned teal / verdigris now, with the tint saturated enough to repaint the plate itself instead of
+    // outlining it, and bone/gold ornament preserved by the ornament gate in materials.js.
+    palette: [[0x2fd8c0, 0x00ffd0], [0x46e0b4, 0x2affc0]], glow: 1.6, rim: 0.34, bump: 0.055,
     deathTime: 1.7, xp: 130,
   },
   leviathan: {
@@ -338,7 +362,12 @@ const BIOME_DEFS = {
     volleyRange: [8, 34], volley: 6, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 32, radius: 0.3, element: 'void', life: 4, damage: 13 },
     stagger: 0.42, staggerTime: 0.5, shieldRadius: 2.1, phases: [0.7, 0.4],
     radius: 1.15, height: 4.2, center: 2.3, weakPoints: [{ bone: 'head', radius: 0.44, mult: 1.6, off: [0, 0.26, 0] }, { bone: 'torso', radius: 0.4, mult: 2.2, off: [0, 0.67, 0.39] }],
-    palette: [[0xb070ff, 0xffe6b0]], glow: 2.4, rim: 0.6, bump: 0.06,
+    // WAVE-6: "the same body as the Stone Golem reskinned darker" — a level-50 boss that was a dark violet
+    // mass standing in a violet world, i.e. camouflaged by its own region. Two changes, both mechanism:
+    // the tint is saturated royal violet so the warden bake is REPAINTED (and value-expanded) rather than
+    // multiplied into mud, and the emissive — which on a GLB is only the rim — is GOLD, so the endgame boss
+    // is the one silhouette in the Lost Realm outlined in a colour the Lost Realm does not own.
+    palette: [[0xffc65a, 0xa040ff]], glow: 2.4, rim: 0.45, bump: 0.06,
     deathTime: 2.8, xp: 900,
   },
 };
