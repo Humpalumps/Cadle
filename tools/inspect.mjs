@@ -47,7 +47,7 @@ const DEFAULT_TOUR = [
   { log: 'spawn look-around' },
   { look: [0, 0] }, { shot: 'spawn-n' }, { look: [1.5708, 0] }, { shot: 'spawn-e' }, { look: [3.1416, 0] }, { shot: 'spawn-s' }, { look: [4.7124, -0.1] }, { shot: 'spawn-w' },
   { look: [0, -0.9] }, { shot: 'ground-close' }, { look: [0.5, 0.7] }, { shot: 'sky' },
-  { look: [-1.5708, 0] },   // face east (spawn meadow; the aetheryte is north at z=-28)
+  { look: [-1.5708, 0] },   // face east (spawn meadow; the waystone is north at z=-28)
   { perfWindow: { secs: 3, label: 'idle' } },
   { log: 'walk' }, { key: 'KeyW', down: true }, { wait: 1.5 }, { burst: { name: 'walk', n: 6, interval: 0.12 } }, { wait: 1 }, { shot: 'walk' },
   { log: 'sprint' }, { key: 'ShiftLeft', down: true }, { wait: 1 }, { shot: 'sprint' }, { perfWindow: { secs: 3, label: 'sprint' } },

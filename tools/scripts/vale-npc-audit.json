@@ -33,7 +33,7 @@
   { "eval": "__at(100.4,-85.8,3.2,1.9,0.06)" }, { "wait": 1.2 }, { "shot": "pell-face" },
   { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "pell-feet" },
 
-  { "log": "WAYFINDER at aetheryte" },
+  { "log": "WAYFINDER at waystone" },
   { "eval": "__at(0,-28,4.5,2.6,0.05)" }, { "wait": 1.5 }, { "shot": "wayfinder-face" },
   { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "wayfinder-feet" },
 

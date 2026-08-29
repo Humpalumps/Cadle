@@ -415,7 +415,7 @@ export class Abilities {
     grp.add(new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.014, 6, 40), new THREE.MeshBasicMaterial({ ...ADD, color: c, opacity: 0.55 })));
     // The shell and glow are the only layers that can wash something BEHIND the orb: the emissive core is opaque and
     // replaces what it covers, but these two ADD to it. Over dark grass that was invisible; flying past the pale-lit
-    // aetheryte and the noon sky it pushed an already-bright background to near-neutral white (combatcheck WHITE CORE
+    // waystone and the noon sky it pushed an already-bright background to near-neutral white (combatcheck WHITE CORE
     // on pfire-nade-0/1). Halved again, and the sprite shrunk from 2.4 to 1.8 — a 2.4 m halo on a 0.44 m orb was a
     // pale ball with an orb somewhere inside it, which is also why the core never read as violet.
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ ...ADD, map: this._glow, color: new THREE.Color(c), opacity: 0.28 })); glow.scale.set(1.8, 1.8, 1); grp.add(glow);

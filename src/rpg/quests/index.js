@@ -38,7 +38,7 @@ import lost from './lost.js';
 
 /** named points inside the home bowl — the outer nine resolve through Biomes' LANDMARKS/centres */
 export const POIS = {
-  'Aetheryte Plaza': { x: 0, z: -28 },
+  'Waystone Plaza': { x: 0, z: -28 },
   'Mirrormere': { x: -170, z: -70 },
   'The Sundered Spire': { x: 140, z: 60 },
   'Whisperwood': { x: 0, z: -220 },

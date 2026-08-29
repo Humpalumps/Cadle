@@ -7,7 +7,7 @@ User decree, 2026-08-28, after ten minutes of play in the starting area produced
 > everything in the starting biome, that includes bones, limbs, coherence, collisions, hitches everything"
 
 This file is the standing charter for that loop. It is re-read at the start of every round. It applies to
-**biome 1, The Vale** — the spawn meadow, Hearthfall hamlet, the Aetheryte plaza, Mirrormere, the Sundered
+**biome 1, The Vale** — the spawn meadow, Hearthfall hamlet, the Waystone plaza, Mirrormere, the Sundered
 Spire ruins, Whisperwood's home edge, the crystal fields and the Hollow Crown — and to everything a player
 meets there in the first ten minutes.
 
@@ -64,7 +64,7 @@ summary, never another critic's report, never a screenshot someone else chose.
    fixed or explained to the user as a deliberate trade with the fidelity it bought.
 
    **The baseline is already served — do not stash anything to get it.** The worktree
-   `C:/Users/ianca/Desktop/fps4/.claude/worktrees/cadle-character-load-perf-ee5b7b` sits at 26b0b9e
+   `<repo>/.claude/worktrees/cadle-character-load-perf-ee5b7b` sits at 26b0b9e
    (= `origin/main` as of this wave's start) with a clean `src/`, and its dev server is up at
    **http://127.0.0.1:5179/**. The candidate build is this worktree at **http://127.0.0.1:5185/**. So the A/B
    is two `--url` flags against two live servers, back to back, with nothing else rendering. Verify the

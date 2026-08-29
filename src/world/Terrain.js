@@ -17,7 +17,7 @@ import { heightAt, bakeKernel, layerTex, LAYERS, BC } from './terrainKernel.js';
  *   terrain.biomeAt(x, z)   -> 'meadow'|'forest'|'lake'|'ruins'|'crystal'|'arena'|'mountain'
  *   terrain.colorAt(x, z, outColor) -> THREE.Color  approximate LINEAR ground albedo, matches the material's splat
  *                            (analytic + the exact layer-7 macro noise; Grass uses it to blend far blades into the ground)
- *   terrain.POI             { spawn, aetheryte, lake, ruins, forest, crystal, arena } Vector3 at ground height
+ *   terrain.POI             { spawn, waystone, lake, ruins, forest, crystal, arena } Vector3 at ground height
  *   terrain.mesh            THREE.Group of the LOD level meshes (receives + casts shadows). terrain.mesh.material = the shared material.
  *   terrain.meshes          the per-level THREE.Mesh list, terrain.material the shared MeshStandardMaterial
  *
@@ -57,7 +57,7 @@ export class Terrain {
     this.seed = game.seed;
     this._n = new THREE.Vector3();
     const P = (x, z) => new THREE.Vector3(x, this.heightAt(x, z), z);
-    this.POI = { spawn: P(0, 0), aetheryte: P(0, -28), lake: P(-170, -70), ruins: P(140, 60), forest: P(0, -235), crystal: P(300, 0), arena: P(-60, 260) };
+    this.POI = { spawn: P(0, 0), waystone: P(0, -28), lake: P(-170, -70), ruins: P(140, 60), forest: P(0, -235), crystal: P(300, 0), arena: P(-60, 260) };
     this.biomePOI = {};                                                  // the 9 outer biome hearts (POI.forest stays Whisperwood, the home-side forest edge)
     for (let k = 0; k < ORDER.length; k++) { const c = centerOf(k); this.biomePOI[ORDER[k]] = P(c.x, c.z); if (!this.POI[ORDER[k]]) this.POI[ORDER[k]] = this.biomePOI[ORDER[k]]; }
     this._R = game.quality === 'low' ? 256 : 512;   // layer texture resolution

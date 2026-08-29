@@ -91,6 +91,23 @@ The gate's `combatcheck` was failing on 46 of 356 frames. What it actually was, 
 it inits) and on weapons slots (Player, index 5) while Enemies is index 7, so it spawned into a system
 whose `pools[]` did not exist. `spawn()` now returns null instead of throwing, and the gate waits for the
 pools. **questgate and curvecheck now both pass** — the mechanics gate had been red and unreadable.
+### 2026-08-29 — MOBILE: THE SITE IS RESPONSIVE, THE GAME IS GATED (worktree `graphics-ff14-quality-audit-7eb837`, branch `claude/cadle-mobile-responsive-309f5f`, dev server **:5181**)
+
+User ask: cadle.gg responsive, its Play button greyed out on mobile with a "not available on mobile"
+message, and `/play` on a phone saying you need a desktop. Shipped:
+- `index.html` — every `a.btn[href^="/play"]` goes grey and inert under `(hover:none) and (pointer:coarse)`
+  and swaps its label to "Desktop only" (a second `<span class="lbl mob">` in the markup, not pseudo-content).
+  The top bar's Play is hidden outright there — "Desktop only" is twice as wide as "Play" and wrapped the
+  bar onto a fourth row. The hero's honesty line now names mobile and is shown on any coarse pointer.
+  The device test is the pointer media query, never a width: a narrow desktop window still plays.
+- `play/index.html` — a head-parse gate sets `window.__nomobile` and the engine's `<script type="module">`
+  is CREATED rather than static, so a phone downloads no engine, no three and no assets. It gets a
+  brand-styled "Desktop only" card instead (`#nomobile`), with a short-viewport rule for landscape.
+  `?auto=1` is never gated — that is the harness, and gating it would blank every tool in `tools/`.
+- Fixed while in there: **the hero's gradient CADLE was invisible at every viewport**, and had been for as
+  long as the split-word cascade has existed. `.split.in .w>span` ended on `filter:blur(0)`; any filter
+  makes the span its own rendering group and Chromium then drops its glyphs from the ancestor's
+  `background-clip:text` mask. End state is `filter:none` now; the entrance is unchanged.
 
 
 ### ★★ 2026-08-29 — THE GO-LIVE PLAN. TWO ITEMS, THEN WE SHIP. ★★
@@ -223,9 +240,9 @@ This worktree needs **its own** dev server - 5173 serves the MAIN repo and 5179 
 different worktree entirely, so a run against either measures the wrong build.
 
 ```
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js --port 5181 --strictPort --host 127.0.0.1
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js build
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js preview --port 5182 --strictPort --host 127.0.0.1
+node <repo>/node_modules/vite/bin/vite.js --port 5181 --strictPort --host 127.0.0.1
+node <repo>/node_modules/vite/bin/vite.js build
+node <repo>/node_modules/vite/bin/vite.js preview --port 5182 --strictPort --host 127.0.0.1
 $env:CADLE_URL='http://127.0.0.1:5181'; node tools/gate.mjs      # needs the GPU to itself
 ```
 
@@ -469,13 +486,13 @@ before.**
    threshold set BELOW frozen-skeleton level. Fixed: 0.04-0.12 rad/frame limb collapse on 20+ types.
    **WAVE 7 = the discrete defect list, in two lanes (in flight):** combat-visual (magenta bolt lens,
    kill-VFX bloom, grenade core, the OPAQUE FILM class that is hue-legal so the detector passes it,
-   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Aetheryte ring has no
+   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Waystone ring has no
    collider and eats the player's head in the first 30 seconds; Cinder Maw drops you inside the world
    with lava classified as swimmable water; vale grass LOD bubble at 25-28 m that slides with the
    camera; villager facing not firing live; border content collapse). Then: re-run the extended gate,
    re-judge.
 2h. **WAVE 7 STATUS (2026-08-28, the "every cheap high-impact defect" round the user asked for).**
-   LANDED + PUSHED: **world** (13 defects — Aetheryte collider was smaller than the pedestal it
+   LANDED + PUSHED: **world** (13 defects — Waystone collider was smaller than the pedestal it
    fenced; the Cinder Maw "hole" was the underside of the water mesh, not missing colliders; the
    grass bubble was blade SCREEN WIDTH (0.7 px at 30 m), not radius or density; border collapse was
    `wedgeAt` being a bare Math.round against a jittered 34 m splat band, fixed at Terrain._seam;
@@ -514,7 +531,7 @@ before.**
    merge on a red gate and does not want the wave sitting unmerged once it is green. This is a
    durable authorization for the merge itself — no need to re-ask once the two conditions are met.
    Mechanics note: `main` has been deliberately untouched all campaign and the main checkout
-   (C:/Users/ianca/Desktop/fps4) sits on a DIFFERENT branch, so merge from here by pushing the branch
+   (<repo>) sits on a DIFFERENT branch, so merge from here by pushing the branch
    and opening/merging a PR with `gh` (the repo already uses PRs), or fast-forward push if main is an
    ancestor — check `git merge-base --is-ancestor origin/main claude/session-e5730b` first.
 2j. **MERGE STATE 2026-08-28 EVENING — 6 of 7 gate checks GREEN, the 7th blocked by GPU CONTENTION,
@@ -573,7 +590,7 @@ settings) or take the deferred Blender/Mixamo evaluation. The mixer wiring is do
   - `Enemy.js` `GLB_TINT_WASH = 0.55` makes rigged-creature palettes largely inert — the corsairs were
     fixed by going near-white on their own tints, but the global knob is still the reason other rigged
     creatures resist re-colouring.
-  - Aetheryte glow reads as a 161 px pale disc against pale mountains (Props).
+  - Waystone glow reads as a 161 px pale disc against pale mountains (Props).
 **F. PERFORMANCE (deferred by user decree, but the numbers are known).** Uncapped q=high mean 8.1-8.5 ms
 vs a 7 ms budget and q=low 6.6 vs 4 (both PRE-EXISTING and GPU-bound — `gpuMs ~= frameMs`); one hamlet
 angle reads 4.1 M tris vs the 4 M line (1.8 M of it CSM shadows, 1.1 M grass); `public/assets` is
@@ -928,7 +945,7 @@ settling is not strobing.
 
    **THE WAVE-6 BUILD BATCH IS IN FLIGHT: workflow `wf_a359a136-2de`, 8 file-owned lanes, builders
    Fable-5 effort-high** (terrain: ring banding + region ring splat + near field | props: Elderheart,
-   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + aetheryte, Hagstone, Drowned
+   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + waystone, Hagstone, Drowned
    Court, celestial isles + 8 m marble, Wayfinder placement | water: fen murk + sunken cascade shot |
    sky: infernal blue polygon, shadowfen sun, void haze | grass: vale neon retune | weapons: the
    viewmodel rebuild | vfx+abilities: combat gate to zero, impact decal, Starfall super, firing wedge |
@@ -1180,7 +1197,7 @@ holding them up, rubble that never landed, snapped pillars of something older, 0
 - DONE: bridges got kerbs and posts; the isles carry snapped pillars and rubble that never landed.
 - gap: same isle silhouette problem as the Celestial Isles (see there).
 
-**🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Aetheryte, Mirrormere,
+**🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Waystone, Mirrormere,
 the Sundered Spire, the hamlet. Full grass [1.0], neutral light. **Do not "improve" it casually** — it is what
 the blob gate is calibrated against, and it is the one region the user has signed off.
 
@@ -1236,7 +1253,7 @@ A border to walk: `?at=tundra&back=-260` (the tundra/celestial seam, gate stones
 | Contact sheet | `tools/sheet.py` | `python tools/sheet.py tools/out/<dir> 3 640` → `sheet.png` to Read |
 | Progress page | `progress/state.json` + `tools/progress.mjs` | → `progress.html` |
 
-**Where you work.** `main` is checked out at `C:/Users/ianca/Desktop/fps4`; the biome work was done in the
+**Where you work.** `main` is checked out at `<repo>`; the biome work was done in the
 worktree `.claude/worktrees/graphics-ff14-quality-audit-7eb837` and is fully merged, so **start from the main
 checkout** and make a fresh branch. The dev server on 5173 was last started from that worktree — if you edit
 the main checkout and nothing changes in the browser, that is why: kill it and restart from where you are
@@ -1293,7 +1310,7 @@ pins the ceilings — **fix the code, never the rule.**
 
 `CLAUDE.md` says "the dev server is **always already running** at `http://127.0.0.1:5173/`". That
 sentence was true and became a trap the moment work moved into a **git worktree**. The user's server
-was started in the MAIN repo (`C:/Users/ianca/Desktop/fps4`), which sits on its own branch. A worktree
+was started in the MAIN repo (`<repo>`), which sits on its own branch. A worktree
 under `.claude/worktrees/<name>/` is a different directory with different files, and nothing about
 `localhost:5173` tells you which one it is showing you.
 
@@ -1308,7 +1325,7 @@ running page although it was plainly there in `src/main.js` on disk.
 ```bash
 curl -s http://127.0.0.1:5173/src/main.js | grep -c "<a phrase you just wrote>"
 ```
-Zero matches = wrong tree. Or check the obvious: `git -C C:/Users/ianca/Desktop/fps4 branch --show-current`.
+Zero matches = wrong tree. Or check the obvious: `git -C <repo> branch --show-current`.
 
 **The fix is in the harness now, so this cannot silently recur.** `tools/inspect.mjs` fetches
 `src/main.js`, `src/core/Game.js` and `src/render/PostFX.js` back off the server before it navigates,
@@ -2393,7 +2410,7 @@ last few rows of a Gaussian tail and found alpha ~0), and the mobile nav was alr
 review finished — the selector had been `#bar .wrap`, which matches nothing because `#bar` has no `.wrap`
 child, and is `#bar{flex-wrap:wrap}` now.
 
-**The weapon strip was six photographs of the same place** � identical aetheryte, identical grass,
+**The weapon strip was six photographs of the same place** � identical waystone, identical grass,
 identical hour in all six, one muzzle flash between them, under copy that says each gun is "in hand and
 firing". Re-shot: six regions, six hours, six camera angles, HUD hidden and viewmodel kept, the shot
 actually landing (`god(true)`/`passive(true)`, a spawned target, and a burst of frames around the trigger

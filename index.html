@@ -122,7 +122,12 @@ h2.sec{font-family:var(--serif);font-weight:400;font-size:clamp(30px,4.4vw,64px)
 .split .w{display:inline-block;overflow:hidden;vertical-align:bottom}
 .split .w>span{display:inline-block;transform:translateY(105%) rotate(2deg);opacity:0;filter:blur(6px);
   transition:transform .85s var(--spring),opacity .6s var(--ease),filter .6s var(--ease)}
-.split.in .w>span{transform:none;opacity:1;filter:blur(0)}
+.split.in .w>span{transform:none;opacity:1;filter:none}
+/* `filter:none`, NOT `blur(0)`, and that is load-bearing: a filter of any value - blur(0) included -
+   makes the span its own rendering group, and Chromium then leaves its glyphs out of the ancestor's
+   `background-clip:text` mask. The hero's gradient CADLE was therefore INVISIBLE at every viewport,
+   for as long as the split cascade has existed. `none` still interpolates from blur(6px) through
+   blur(0), so the entrance is unchanged; only the resting state now paints. */
 
 /* reveal */
 .js .reveal{opacity:0;transform:translateY(30px);filter:blur(4px);
@@ -169,6 +174,30 @@ h2.sec{font-family:var(--serif);font-weight:400;font-size:clamp(30px,4.4vw,64px)
 .btn.ghost:hover{background:rgba(216,189,122,.06)}
 .btn.ghost:hover::before{box-shadow:inset 0 0 0 1px rgba(253,243,205,.9)}
 .btn.sm{font-size:13px;padding:.6em 1.5em;letter-spacing:.2em}
+
+/* --- on a phone Play is dead, and it says so on its face. It is a mouse-and-keyboard FPS: a gold CTA
+   that opens a game you cannot move in is worse than no CTA. This is COSMETIC - /play carries the real
+   gate. The test is `(hover:none) and (pointer:coarse)`, not a width: a 900px window on a desktop still
+   plays perfectly, and a tablet with a trackpad is a desktop as far as this game is concerned. */
+.btn .lbl.mob{display:none}
+.mobonly{display:none}
+@media (hover:none) and (pointer:coarse){
+  a.btn[href^="/play"]{pointer-events:none;animation:none;color:rgba(232,222,196,.62);
+    background:linear-gradient(101deg,#221f38,#332f4e 50%,#221f38);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  a.btn[href^="/play"]::before{box-shadow:inset 0 0 0 1px rgba(216,189,122,.24)}
+  a.btn[href^="/play"] .lbl{display:none}
+  a.btn[href^="/play"] .lbl.mob{display:block}
+  a.btn[href^="/play"] svg.tip{display:none}
+  /* the top bar's copy goes entirely: "Desktop only" is twice the width of "Play" and wrapped the bar
+     onto a fourth row for a button that cannot be pressed. The hero says it once, properly. */
+  #bar .btn{display:none}
+  .railhint .kbonly{display:none}      /* no arrow keys on a phone; the drag half is still true */
+  /* "press the button, count to fifteen" over a button that cannot be pressed. The closing section
+     gets the honest sentence instead. */
+  #end .lede:not(.mobonly){display:none}
+  .mobonly{display:block}
+  .deskonly{display:block}
+}
 
 /* ---------------------------------------------------------------- top bar ---------------------- */
 #bar{position:fixed;top:0;left:0;right:0;z-index:70;display:flex;align-items:center;gap:26px;
@@ -967,7 +996,7 @@ html.leaving{cursor:progress}
       <path class="mute" d="M15.5 9.5l5 5m0-5l-5 5"/>
     </svg>
   </button>
-  <a class="btn sm press" href="/play/?start"><span class="lbl">Play</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
+  <a class="btn sm press" href="/play/?start"><span class="lbl">Play</span><span class="lbl mob">Desktop only</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
   <span class="prog" aria-hidden="true"></span>
 </header>
 
@@ -983,10 +1012,10 @@ html.leaving{cursor:progress}
     <p class="pitch reveal">Ten regions. One broken sky. Whatever the Sundering left behind is still
       out there, and it is still hungry.</p>
     <div class="cta reveal">
-      <a class="btn press" href="/play/?start"><span class="lbl">Play Now</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
+      <a class="btn press" href="/play/?start"><span class="lbl">Play Now</span><span class="lbl mob">Desktop only</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
     </div>
     <p class="fine reveal"><b>Free.</b> No download, no account, no launcher. It starts in this tab.</p>
-    <p class="deskonly reveal">Bring a mouse and a keyboard - the Vale has no touch controls yet.</p>
+    <p class="deskonly reveal">Not available on mobile yet - Cadle needs a mouse and a keyboard. Open cadle.gg on a desktop to play.</p>
   </div>
   <div class="cue" aria-hidden="true">Scroll<i></i></div>
 </section>
@@ -1013,7 +1042,7 @@ html.leaving{cursor:progress}
         leave. <em>It settled.</em> It learned the shape of the world and started wearing it.</blockquote>
       <p class="attrib reveal">- the only line of it anyone wrote down</p>
       <div class="cols">
-        <p class="reveal">You start in the Vale: a green bowl inside a mountain wall, with an aetheryte
+        <p class="reveal">You start in the Vale: a green bowl inside a mountain wall, with an waystone
           burning in the middle of it and something already circling the ruins on the far side. Nine other
           places press up against its edges - a forest that closed over itself, a tundra that buried
           one, a caldera that is still burning, an abyss with shelves you can stand on.</p>
@@ -1242,7 +1271,7 @@ html.leaving{cursor:progress}
       <li><a href="/play/?start&amp;at=lost">The Lost Realm</a><span>40-50</span></li>
     </ul>
   </noscript>
-  <p class="railhint">Drag, or use the arrow keys</p>
+  <p class="railhint">Drag<span class="kbonly">, or use the arrow keys</span></p>
 </section>
 
 <!-- =========================================== BESTIARY ========================================= -->
@@ -1261,7 +1290,7 @@ html.leaving{cursor:progress}
           <img class="beast sprite" src="/assets/site/beasts/sprite.webp" alt="An aether sprite"
             data-hp="2" width="450" height="471" loading="lazy" decoding="async">
           <div class="shot reveal shootable">
-            <img data-src="/assets/site/creatures-c.jpg" alt="Creatures around the aetheryte"
+            <img data-src="/assets/site/creatures-c.jpg" alt="Creatures around the waystone"
               width="900" height="506" decoding="async">
           </div>
         </div>
@@ -1303,7 +1332,7 @@ html.leaving{cursor:progress}
         width="1600" height="900" alt="Whisperwood Deep"><figcaption>Whisperwood Deep - morning through a closed canopy</figcaption></figure>
       <figure class="reveal shootable" data-par="0.09"><img src="/assets/site/ability.jpg" srcset="/assets/site/ability-sm.jpg 800w, /assets/site/ability.jpg 1600w"
         sizes="(max-width:600px) 92vw, (max-width:1100px) 48vw, 32vw" loading="lazy" decoding="async"
-        width="1600" height="900" alt="An Aether Orb going off"><figcaption>An Aether Orb going off at the aetheryte</figcaption></figure>
+        width="1600" height="900" alt="An Aether Orb going off"><figcaption>An Aether Orb going off at the waystone</figcaption></figure>
       <figure class="reveal shootable" data-par="0.07"><img src="/assets/site/void.jpg" srcset="/assets/site/void-sm.jpg 800w, /assets/site/void.jpg 1600w"
         sizes="(max-width:600px) 92vw, (max-width:1100px) 48vw, 32vw" loading="lazy" decoding="async"
         width="1600" height="900" alt="The Void"><figcaption>The Void - crystal spires over the abyss</figcaption></figure>
@@ -1327,7 +1356,8 @@ html.leaving{cursor:progress}
       alt="An ember drake" data-hp="3" width="679" height="679" loading="lazy" decoding="async"></div>
     <h2 class="sec split reveal">The Vale is waiting.</h2>
     <p class="lede reveal">Press the button, count to fifteen, and you are standing in it.</p>
-    <a class="btn press reveal" href="/play/?start"><span class="lbl">Play Now</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
+    <p class="lede reveal mobonly">It needs a mouse and a keyboard, so not from this phone - open <b>cadle.gg</b> on a desktop and the Vale is fifteen seconds away.</p>
+    <a class="btn press reveal" href="/play/?start"><span class="lbl">Play Now</span><span class="lbl mob">Desktop only</span><svg class="tip" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.6 11.4 12.9 10.5 12.1 6.1 21.4 12 12.1 17.9 12.9 13.5 2.6 12.6Z"/><path d="M14.1 8.9 18.9 12 14.1 15.1 14.5 12Z" opacity=".42"/></svg></a>
   </div>
 </section>
 </main>

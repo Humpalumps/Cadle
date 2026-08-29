@@ -3,7 +3,7 @@
  * RUNS them. Adding a quest means adding an object, never writing a function.
  *
  * Quests are WRITTEN, never spoken (user decision 2026-08-23). No voice, no portrait card — the Vale's
- * opening beat survives as `vale-01` with the same staging (aetheryte flare, zone card, waypoint east).
+ * opening beat survives as `vale-01` with the same staging (waystone flare, zone card, waypoint east).
  *
  * Objective types (see ./quests/index.js for the authoring contract):
  *   kill    { enemy, count, where? }            — enemy:death, optionally scoped to a region
@@ -577,7 +577,7 @@ export class Quests {
     const reg = regionAt(p.x, p.z);
     if (reg !== this._region) { this._region = reg; this._save(); }
     // THE FIRST TWO MINUTES. A brand-new save had nothing active, nothing on the tracker and no reason to
-    // walk anywhere: the only thing a fresh player could see was the Aetheryte, and it offers "E Attune",
+    // walk anywhere: the only thing a fresh player could see was the Waystone, and it offers "E Attune",
     // not a quest. The Wayfinder stele 35 m away was carrying the whole opening and a player who has never
     // seen a stele does not know to press E at one. So the chain HEAD is pushed once, on a save that has
     // completed nothing and accepted nothing — the same "the region hands out its own chain" move the

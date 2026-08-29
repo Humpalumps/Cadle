@@ -574,15 +574,15 @@ Fixed by shimming, not installing (the skill is stdlib-only, Python 3.12.13 was 
 `python`):
 
 ```
-C:\Users\ianca\bin\python3.cmd   ->  @echo off / python %*        (cmd + PowerShell)
-C:\Users\ianca\bin\python3       ->  #!/bin/sh / exec python "$@"  (Git Bash — .cmd is not executable there)
+~/bin\python3.cmd   ->  @echo off / python %*        (cmd + PowerShell)
+~/bin\python3       ->  #!/bin/sh / exec python "$@"  (Git Bash — .cmd is not executable there)
 ```
-with `C:\Users\ianca\bin` prepended to the **user** PATH. `python` is untouched. Verified: `next.py`,
+with `~/bin` prepended to the **user** PATH. `python` is untouched. Verified: `next.py`,
 `new_pre_spec_assessment.py`, `build_detail_inventory.py`, `generate_threejs_factory.py`,
 `turntable_gate.py` and `diagnose_render.py` all run, and PIL + numpy are importable for the
 optional helpers.
 
-Run skill scripts **from the skill root** (`C:/Users/ianca/.claude/skills/img2threejs`), writing
+Run skill scripts **from the skill root** (`~/.claude/skills/img2threejs`), writing
 artifacts into the game repo. `probe_glb.py` on a Tripo GLB returns `referenceReadiness: pass` with
 the expected warning that a merged single-mesh asset carries no semantic part boundaries — so
 per-region claims need browser ID-mask evidence rather than metadata.

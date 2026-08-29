@@ -48,7 +48,7 @@ uniform float uWarp;        // 0..1 the dive at hand-off
 uniform float uCalm;        // 1 while idle, ->0 as the live game (which has its own vfx) takes over
 uniform float uDim;         // global exposure, dips under the loading UI
 
-// Where the light is in the vista. At the menu's hour that is not the sun — it is the aetheryte, so the
+// Where the light is in the vista. At the menu's hour that is not the sun — it is the waystone, so the
 // shafts radiate out of the crystal. Move this if the still is ever re-shot from a different pose.
 const vec2 SUN = vec2(0.600, 0.740);
 
@@ -63,7 +63,7 @@ float fbm(vec2 p){ return 0.58 * vnoise(p) + 0.30 * vnoise(p * 2.07) + 0.12 * vn
 
 // ---- the stand-in sky, for the frames before the vista has decoded --------------------------
 // Matched to the vista it stands in for: a violet night, a rose band on the mountain ring, an aether
-// glow where the aetheryte is, and a dark field underneath. Never a black frame, and never a wrong one.
+// glow where the waystone is, and a dark field underneath. Never a black frame, and never a wrong one.
 vec3 proceduralSky(vec2 uv){
   vec3 c = mix(vec3(0.055, 0.048, 0.115), vec3(0.145, 0.105, 0.255), pow(uv.y, 0.85));
   c = mix(c, vec3(0.42, 0.26, 0.35), pow(max(0.0, 1.0 - abs(uv.y - 0.66) * 4.2), 2.0));   // rose ridge band

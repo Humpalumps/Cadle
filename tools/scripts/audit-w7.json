@@ -1,6 +1,6 @@
 [
  { "wait": 8 },
- { "log": "AUDIT 1: the first 25 seconds a new player lives — hold W from spawn, the Aetheryte must not eat the head" },
+ { "log": "AUDIT 1: the first 25 seconds a new player lives — hold W from spawn, the Waystone must not eat the head" },
  { "eval": "(()=>{__game.god(true);return 'god'})()" },
  { "key": "KeyW", "down": true },
  { "wait": 9 }, { "shot": "a1-walk-09s" },

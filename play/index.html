@@ -19,6 +19,16 @@
      there is no title screen, nothing ever uses the image, and every harness run then logs a
      "preloaded but not used" warning into report.json that reads like a bug. Still runs during head
      parse, so the fetch starts before the module graph is even requested. -->
+<!-- THE MOBILE GATE. Cadle is a mouse-and-keyboard FPS with no touch controls, so a phone gets an
+     honest card instead of a title screen it cannot press past. Decided HERE, during head parse, so a
+     phone never downloads the engine, never builds a renderer and never spends a byte on assets — the
+     module tag at the bottom of the body is created only when this passes.
+     `(hover:none) and (pointer:coarse)` is the device test, not a width: a narrow desktop window still
+     plays fine, and a tablet with a trackpad reports a fine pointer. ?auto=1 is never gated — that is
+     the harness, and every tool in tools/ would otherwise see a blank page. -->
+<script>window.__nomobile = new URLSearchParams(location.search).get('auto') !== '1'
+  && matchMedia('(hover:none) and (pointer:coarse)').matches;
+if (window.__nomobile) document.documentElement.className += ' nomobile';</script>
 <script>if(new URLSearchParams(location.search).get('auto')!=='1'){var l=document.createElement('link');
 l.rel='preload';l.as='image';l.href='/assets/ui/menu_vista.jpg';l.fetchPriority='high';document.head.appendChild(l);}</script>
 <!-- The HUD stylesheet is 40 KB and the HUD does not exist until the game has booted, so it must not
@@ -350,9 +360,62 @@ canvas#menucanvas.still{background-image:url('/assets/ui/menu_vista.jpg');backgr
   #nav{width:auto;right:clamp(28px,6vw,60px)}
   #panel{width:auto;right:clamp(28px,6vw,60px)}
 }
+
+/* ---------- the mobile gate's card ---------- */
+/* Hidden outright unless html.nomobile is on, so it costs a desktop nothing but these few rules. The
+   menu, the splash and both canvases go with it: there is no game behind this card. */
+#nomobile{display:none}
+html.nomobile #menu,html.nomobile #splash,html.nomobile canvas{display:none}
+html.nomobile #nomobile{position:fixed;inset:0;z-index:150;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:0;padding:32px 26px;text-align:center;
+  color:var(--ivory);overflow-y:auto}
+#nomobile .sig{position:relative;display:block;width:66px;height:66px;margin:0 0 22px;opacity:.97}
+#nomobile .sig i{position:absolute;inset:0;display:block;background:center/contain no-repeat}
+#nomobile .sig .ring{background-image:url(/assets/ui/mark/ring.webp);animation:spinA 34s linear infinite}
+#nomobile .sig .ticks{background-image:url(/assets/ui/mark/ticks.webp);animation:spinB 21s linear infinite reverse}
+#nomobile .sig .gem{background-image:url(/assets/ui/mark/gem.webp);
+  animation:breathe 4.2s cubic-bezier(.4,0,.6,1) infinite}
+#nomobile h1{margin:0;font-weight:400;font-size:clamp(38px,13vw,62px);line-height:.92;letter-spacing:.16em;
+  text-indent:.16em;background:linear-gradient(100deg,#a97f2a 0%,#d3a548 30%,#fdf3cd 46%,#d3a548 62%,#a97f2a 100%);
+  background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:sheen 9s ease-in-out infinite}
+#nomobile .rule{width:min(62vw,300px);height:1px;margin:18px 0;
+  background:linear-gradient(90deg,rgba(211,165,72,0),rgba(211,165,72,.9) 50%,rgba(211,165,72,0))}
+#nomobile h2{margin:0;font-weight:400;font-size:clamp(17px,5.4vw,24px);letter-spacing:.26em;
+  text-indent:.26em;font-variant:small-caps;color:var(--gold-hi)}
+#nomobile p{margin:16px 0 0;max-width:34ch;font-size:clamp(14px,4vw,16px);line-height:1.65;
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:rgba(233,222,196,.74)}
+#nomobile p.keys{margin-top:10px;font-size:clamp(12px,3.4vw,13.5px);letter-spacing:.06em;
+  color:rgba(185,162,255,.72)}
+#nomobile a{display:inline-block;margin-top:26px;padding:13px 30px;color:var(--gold-hi);
+  text-decoration:none;background:linear-gradient(180deg,rgba(253,243,205,.16),rgba(211,165,72,.08));
+  box-shadow:inset 0 0 0 1px rgba(253,243,205,.45);
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px);
+  font:400 14px/1 Georgia,serif;font-variant:small-caps;letter-spacing:.2em;text-indent:.2em}
+/* a phone held sideways is ~360 px tall: the mark and the wordmark eat the whole card and push the
+   way out below the fold. It still scrolls, but a card you have to scroll is a card that looks broken. */
+@media (max-height:560px){
+  #nomobile .sig{display:none}
+  #nomobile h1{font-size:clamp(30px,8vw,44px)}
+  #nomobile .rule{margin:12px 0}
+  #nomobile p{margin-top:10px}
+  #nomobile a{margin-top:16px;padding:11px 26px}
+}
 </style>
 </head>
 <body>
+<!-- The mobile gate's card. Ships as markup like the title screen does, so a phone sees a finished
+     screen at first paint with no script of its own; the head gate decides whether it is shown. -->
+<div id="nomobile">
+  <span class="sig" aria-hidden="true"><i class="ring"></i><i class="ticks"></i><i class="gem"></i></span>
+  <h1>CADLE</h1>
+  <div class="rule"></div>
+  <h2>Desktop only</h2>
+  <p>Cadle is a first-person shooter with no touch controls yet. It needs a mouse to aim and a keyboard
+    to move, so there is nothing here a phone can play.</p>
+  <p class="keys">Open <b>cadle.gg</b> on a desktop or a laptop and press Play.</p>
+  <a href="/">Back to cadle.gg</a>
+</div>
 <div id="splash"></div>
 <canvas id="game"></canvas>
 <canvas id="menucanvas"></canvas>
@@ -385,7 +448,7 @@ canvas#menucanvas.still{background-image:url('/assets/ui/menu_vista.jpg');backgr
   <div id="meta"><b>CADLE</b> v0.1.0<br>10 regions · levels 1–50</div>
 
   <div id="load">
-    <p class="dest">The Vale <span>·</span> Aetheryte Plaza</p>
+    <p class="dest">The Vale <span>·</span> Waystone Plaza</p>
     <!-- .pct is plain text until Menu.init() swaps in the digit strips, so ?start (which paints this
          screen during parse) never shows an empty slot while the module is still downloading. -->
     <div class="row"><p class="phase" aria-live="polite">GATHERING AETHER</p>
@@ -422,6 +485,10 @@ document.getElementById('nav').addEventListener('click', function (e) {
 
 <div id="flash"></div>
 <div id="ui"></div>
-<script type="module" src="/src/main.js"></script>
+<!-- Created rather than written statically: on a gated device this tag never exists, so the phone
+     downloads no engine, no three, no assets. On every other device it is added during parse, exactly
+     where the static tag was. -->
+<script>if(!window.__nomobile){var m=document.createElement('script');m.type='module';m.src='/src/main.js';
+document.body.appendChild(m);}</script>
 </body>
 </html>

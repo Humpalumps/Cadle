@@ -122,7 +122,7 @@ export const BIOMES = {
     k: -1, name: 'The Vale', short: 'Meadow', zone: 'meadow', level: [1, 5],
     fog: 0xa8c4de, fogMul: 1.0, sun: 0xffffff, amb: 1.0,
     grass: { d: 1.0, tint: 0xffffff }, music: 'field',
-    blurb: 'Peaceful grasslands, wildflowers and the Aetheryte. Where every Vale-walker begins.',
+    blurb: 'Peaceful grasslands, wildflowers and the Waystone. Where every Vale-walker begins.',
   },
   forest: {
     name: 'Whisperwood Deep', short: 'Enchanted Forest', zone: 'forest', level: [5, 11],
