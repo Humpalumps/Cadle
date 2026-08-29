@@ -485,10 +485,14 @@ document.getElementById('nav').addEventListener('click', function (e) {
 
 <div id="flash"></div>
 <div id="ui"></div>
-<!-- Created rather than written statically: on a gated device this tag never exists, so the phone
-     downloads no engine, no three, no assets. On every other device it is added during parse, exactly
-     where the static tag was. -->
-<script>if(!window.__nomobile){var m=document.createElement('script');m.type='module';m.src='/src/main.js';
-document.body.appendChild(m);}</script>
+<!-- The engine entry. It MUST be a module script the bundler can SEE: a previous version created the
+     tag at runtime with a literal '/src/main.js', which works in dev and silently breaks production —
+     Vite only rewrites entries it can find in the HTML, so the built page asked the host for a source
+     path that does not exist in dist/ and the game never booted (cadle.gg, 404 on /src/main.js).
+     An inline module with a RELATIVE dynamic import is both: Vite bundles and hashes it, and the phone
+     still fetches nothing, because the gate decides before the import is reached. -->
+<script type="module">
+  if (!window.__nomobile) import('../src/main.js');
+</script>
 </body>
 </html>
