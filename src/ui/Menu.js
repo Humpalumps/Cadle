@@ -117,7 +117,7 @@ const PANELS = {
     Vale are generated in code and shipped in the page — no streaming, no CDN, nothing to install.</p>
     <p>Reference points, openly: <i>Destiny 2</i> for how it feels in the hand, <i>Final Fantasy XIV</i>
     for how the light falls.</p>
-    <p class="note">v0.1.0 · runs best in a Chromium browser with hardware acceleration on</p>`,
+    <p class="note">v0.6.0 · runs best in a Chromium browser with hardware acceleration on</p>`,
 };
 
 const QUALITIES = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']];
