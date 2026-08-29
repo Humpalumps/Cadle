@@ -86,6 +86,13 @@ const SCAT = {
   sunken:    { d: 0.72, mix: [0.46, 0.28, 0.26], s: [0.11, 0.38], col: [0.90, 1.00, 1.00], c: [0.28, 1.35], t: [1.30, 0.95], wade: true },   // shore wrack and wet cobbles below the cataracts
   void:      { d: 0.72, mix: [0.28, 0.46, 0.26], s: [0.14, 0.50], col: [0.86, 0.78, 1.06], c: [0.50, 1.05], t: [1.35, 1.10], stab: true },   // voidstone splinters, standing where they broke
 };
+// HEARTHFALL'S YARD. Same table shape as any region, it just isn't keyed by a biome id — `terrain.villWearAt`
+// picks it instead. A lived-in floor is not the meadow's kit with the grass removed: it is grit and small
+// stones pressed into the earth by feet, chaff and stubble round the stalls, and there is a LOT of it, because
+// coverage is the whole difference between "worn earth" and "bare earth" (the 2026-08-28 drought verdict).
+// Pieces are smaller than the meadow's field stones and there are ~2x as many, cobble-heavy with real stubble
+// in the mix. Colour still comes from the ground's own albedo, so it belongs to the packed earth it lies on.
+const VILLAGE = { d: 0.82, mix: [0.50, 0.22, 0.28], s: [0.07, 0.26], col: [0.96, 0.93, 0.84], c: [0.28, 1.35], t: [1.15, 1.10] };
 // Landmark clearance, metres from the region centre. MUCH smaller than Vegetation's LM_CLEAR (26-56 m),
 // and it has to be: those values are sized for a 13 m pine's crown, while this layer needs the built FLOOR
 // cleared and nothing else. Measured consequence of getting it wrong — at 28/34/29 m the whole 26 m ring
@@ -193,7 +200,9 @@ export class GroundScatter {
     // Per-CELL queries, not per-item: a 6 m cell holds one slope, one ground colour and one region.
     const b = terrain.biomeBlend ? terrain.biomeBlend(xc, zc, this._bb) : null;
     const id = b && b.w > 0.32 ? b.id : 'meadow';
-    const S = SCAT[id]; if (!S) return;
+    // Hearthfall swaps kit (and only Hearthfall: villWearAt is 0 everywhere else in two multiplies).
+    const vill = terrain.villWearAt ? terrain.villWearAt(xc, zc).b : 0;
+    const S = vill > 0.20 ? VILLAGE : SCAT[id]; if (!S) return;
     if (b && b.k >= 0) {                                               // hero landmarks keep their own floor
       const B0 = BIOMES[id];
       if (Math.hypot(xc - B0.cx, zc - B0.cz) < (LM_CLEAR[id] ?? 20)) return;

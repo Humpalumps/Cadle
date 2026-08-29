@@ -33,6 +33,22 @@ const TALK2 = 3.2 * 3.2;        // [E] radius at a villager — matches the stel
 const GOLD = 0xffc84d;
 const _box = new THREE.Box3();   // scratch for the head-anchor bbox (2 Hz rebuild only)          // <= 1.0/channel: tone-maps to gold, never white (blob decree)
 const GREY = 0x9aa0a8;
+const SKULL = 0.26;             // head BONE (skull base, where every humanoid rig puts it) -> crown of the head
+const GLYPH_H = 1.44;           // must match the PlaneGeometry below
+const GAP = 0.16;               // clear air between the crown and the bottom edge of the glyph
+
+/** highest bone whose name says head; a neck joint is the fallback for rigs with no head joint. */
+function findHeadBone(obj) {
+  let head = null, neck = null, hy = -Infinity, ny = -Infinity;
+  obj.traverse((c) => {
+    if (!c.isBone) return;
+    c.updateWorldMatrix(true, false);
+    const y = c.matrixWorld.elements[13];
+    if (/head/i.test(c.name)) { if (y > hy) { hy = y; head = c; } }
+    else if (/neck/i.test(c.name)) { if (y > ny) { ny = y; neck = c; } }
+  });
+  return head ?? neck ?? null;
+}
 
 function glyphTexture(ch) {
   const cv = document.createElement('canvas'); cv.width = 128; cv.height = 256;
@@ -79,24 +95,54 @@ export class QuestMarkers {
     return true;
   }
 
-  /** villager marker anchor. USER REPORT: "the exclamation mark isn't directly above their head —
-   *  it's slightly off." Two causes closed here: (1) npcAt() returns the npc RECORD {id,name,
-   *  position,object}, and the old code read `.x` off the record, silently falling back to the
-   *  quest's AUTHORED [x,z] — a marker floating at the placement coordinate while the body idles a
-   *  step away; (2) the spawn-root position is not the visual centre of a posed body. The anchor is
-   *  now the model's world bounding box: centre x/z, top y + margin — directly over the head. */
+  /** villager marker anchor. USER REPORT, twice: "the exclamation mark isn't directly above their
+   *  head — it's slightly off."
+   *  Round 1 closed two causes: (1) npcAt() returns the npc RECORD {id,name,position,object} and the
+   *  old code read `.x` off the record, silently falling back to the quest's AUTHORED [x,z]; (2) the
+   *  spawn-root position is not the visual centre of a posed body. It anchored on the model's world
+   *  bounding box top instead.
+   *  ROUND 2 (this): THE BOUNDING BOX IS NOT THE HEAD. Measured live on all seven villagers, the box
+   *  top overshoots the head bone by 1.07-1.31 m (serel 1.09, cole 1.31) — Box3.setFromObject reads
+   *  the geometry's BIND-pose box, and these Tripo rigs bind with the arms up, so the box top is a
+   *  raised wrist, not a skull. The glyph therefore floated ~0.8 m clear of the crown: "not directly
+   *  above their head" exactly. Anchor on the HEAD BONE (cached per giver, the rigs name it Head_*),
+   *  and only trust the box top when it is within a skull's height of that bone. */
   _npcPos(rec) {
     const props = this.game.world?.props ?? this.game.props;
-    const ent = props?.npcAt?.(rec.id)
-      ?? props?.npcs?.find?.((n) => n && (n.id === rec.id || n.id === 'npc-' + rec.id || n.name === rec.id));
-    const obj = ent?.object;
+    // RESOLVE THE BODY FROM THE ROSTER, NOT FROM npcAt(). `props.npcAt(id)` returns a **Vector3** (the
+    // villager's spawn position) — see its doc-comment in Props.js — not the {id,name,position,object}
+    // record this file's previous author assumed. So `ent.object` was always undefined, the head-anchor
+    // branch below never executed once, and every marker silently took the old fixed `root + 2.4 m`
+    // path: measured live as `crown:false, boneName:null` on all three givers, with the glyph ~0.9 m
+    // over the skull. That is the user's "it isn't directly above their head", reported twice, with a
+    // fix in between that could not have worked. Take the object from the roster; keep npcAt as the
+    // POSITION fallback it actually is.
+    const ent = props?.npcs?.find?.((n) => n && (n.id === rec.id || n.id === 'npc-' + rec.id || n.name === rec.id));
+    const obj = ent?.object ?? (ent?.isObject3D ? ent : null);
     if (obj?.isObject3D) {
       _box.setFromObject(obj);
       if (Number.isFinite(_box.max.y) && _box.max.y > _box.min.y) {
-        return { x: (_box.min.x + _box.max.x) / 2, y: _box.max.y + 0.45, z: (_box.min.z + _box.max.z) / 2, top: true };
+        // crown = head bone + a skull's worth, and NOTHING ELSE when we have the bone. Do not clamp it
+        // against the box top: measured live, `Box3.setFromObject` returns the POSED box for a skinned
+        // mesh, so the same villager reports a box 1.09 m over the head bone in the first frames (bind
+        // pose, arms up) and 0.01 m UNDER it once the idle settles with the arms down. Taking the min of
+        // the two put the glyph a metre in the air at spawn and buried it in the hair a second later —
+        // one anchor drifting between two wrong answers. The bone is the only stable landmark; the box
+        // stays as the fallback for a body that has no head joint at all.
+        if (rec.headBone === undefined || rec.headBone?.parent === null || rec.headOwner !== obj) {
+          rec.headBone = findHeadBone(obj); rec.headOwner = obj;   // re-resolve if Props rebuilt the body
+        }
+        const hb = rec.headBone;
+        if (hb) hb.updateWorldMatrix(true, false);
+        const y = hb ? hb.matrixWorld.elements[13] + SKULL : _box.max.y;
+        // `bone` rides along so update() can re-read the head EVERY FRAME. A 2 Hz snapshot is not good
+        // enough for a living body: the idle clip and the breath move the head, and the villager turns to
+        // face you when you walk up, so a marker pinned to a half-second-old head Y drifts visibly at
+        // conversation range — measured as a 0.6 m spread across three villagers standing still.
+        return { x: (_box.min.x + _box.max.x) / 2, y, z: (_box.min.z + _box.max.z) / 2, top: true, bone: hb };
       }
     }
-    const pos = ent?.position ?? (ent?.x != null ? ent : null);
+    const pos = ent?.position ?? props?.npcAt?.(rec.id) ?? (ent?.x != null ? ent : null);
     if (pos?.x != null) return { x: pos.x, y: pos.y ?? this._groundY(pos.x, pos.z), z: pos.z };
     return { x: rec.fx, y: this._groundY(rec.fx, rec.fz), z: rec.fz };
   }
@@ -119,7 +165,7 @@ export class QuestMarkers {
       const at = this._npcPos(rec);
       // keep the LIVE position ref: walkers move between the 0.5 s polls, and a marker placed from a
       // snapshot visibly lags behind them (user report). update() tracks refs per frame.
-      if (s) sites.push({ x: at.x, y: at.top ? at.y : at.y + 2.4, z: at.z, state: s, ref: at });
+      if (s) sites.push({ x: at.x, y: at.top ? at.y : at.y + 2.4, z: at.z, state: s, ref: at, crown: !!at.top });
       if (p) {
         const dx = p.x - at.x, dz = p.z - at.z;
         // quests-first rule: a pending exchange (turn-in or a fresh offer) takes the press; a vendor
@@ -133,7 +179,7 @@ export class QuestMarkers {
       if (!m) { m = new THREE.Mesh(this._geo, this._mats.offer); m.userData.seed = i * 2.4; this._group.add(m); this._pool[i] = m; }
       const s = sites[i];
       m.material = this._mats[s.state];
-      m.position.set(s.x, s.y, s.z); m.userData.baseY = s.y; m.userData.ref = s.ref ?? null;
+      m.position.set(s.x, s.y, s.z); m.userData.baseY = s.y; m.userData.ref = s.ref ?? null; m.userData.crown = !!s.crown;
       m.visible = true;
     }
     for (let i = sites.length; i < this._pool.length; i++) this._pool[i].visible = false;
@@ -151,15 +197,27 @@ export class QuestMarkers {
     for (let i = 0; i < this._live; i++) {
       const m = this._pool[i];
       const ref = m.userData.ref;
-      if (ref) { m.position.x = ref.x; m.position.z = ref.z; m.userData.baseY = ref.top ? ref.y : ref.y + 2.4; }   // glued to the resolved head anchor
+      if (ref) {
+        const b = ref.bone;
+        if (b) {   // live head track: the bone's world matrix is this frame's, so the glyph cannot drift off the skull
+          const e = b.matrixWorld.elements;
+          m.position.x = e[12]; m.position.z = e[14]; m.userData.baseY = e[13] + SKULL;
+        } else { m.position.x = ref.x; m.position.z = ref.z; m.userData.baseY = ref.top ? ref.y : ref.y + 2.4; }
+      }
       const dx = m.position.x - p.x, dz = m.position.z - p.z;
       const near = dx * dx + dz * dz < RANGE2;
       m.visible = near;
       if (!near) continue;
-      m.position.y = m.userData.baseY + Math.sin(t * 2.1 + m.userData.seed) * 0.12;   // the gentle bob
       m.quaternion.copy(cam.quaternion);                                              // billboard
       // shrink inside talk range so the glyph never fills the screen in a conversation (full size by 6 m)
-      m.scale.setScalar(Math.min(1, 0.3 + Math.sqrt(dx * dx + dz * dz) / 8));
+      const sc = Math.min(1, 0.3 + Math.sqrt(dx * dx + dz * dz) / 8);
+      m.scale.setScalar(sc);
+      // A HEAD ANCHOR HAS TO BE SCALE-AWARE. baseY is the CROWN, and the glyph is centre-pivoted, so
+      // parking its centre at a fixed height leaves a gap that grows as the glyph shrinks — which is
+      // the close-range half of "it's not directly above their head". Sit the glyph's BOTTOM EDGE a
+      // constant GAP over the crown at every distance instead. Steles keep their authored height.
+      const lift = m.userData.crown ? GAP + GLYPH_H * 0.5 * sc : 0;
+      m.position.y = m.userData.baseY + lift + Math.sin(t * 2.1 + m.userData.seed) * 0.12;   // the gentle bob
     }
     // villager talk prompt — same ownership rule as Props' stele prompt: whoever raises it lowers it.
     // Vendors (shop.js): quests-first-then-shop — a pending turn-in/offer takes the E press through

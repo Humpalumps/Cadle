@@ -1,0 +1,6 @@
+[
+  { "wait": 12 },
+  { "eval": "__game.teleport(118,null,-96); 'tp'" },
+  { "wait": 4 },
+  { "eval": "try { const g=__game.game; const T=g.terrain || g.world.terrain; const P=g.world.props; const rows=[]; const scan=function(name,obj){ var lo=1e9, bone=1e9; obj.updateWorldMatrix(true,true); obj.traverse(function(c){ if(c.isBone){ var y=c.matrixWorld.elements[13]; if(y<bone) bone=y; } if(c.isMesh && c.geometry){ if(!c.geometry.boundingBox) c.geometry.computeBoundingBox(); var bb=c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld); if(bb.min.y<lo) lo=bb.min.y; } }); var gy=T.heightAt(obj.position.x, obj.position.z); rows.push({id:name, rootY:+obj.position.y.toFixed(3), ground:+gy.toFixed(3), boxMin:+lo.toFixed(3), bone:+bone.toFixed(3), gapBox:+(lo-gy).toFixed(3), gapBone:+(bone-gy).toFixed(3)}); }; (P.npcs||[]).forEach(function(n){ scan(n.id, n.object); }); (P.wayfinders||[]).slice(0,2).forEach(function(w,i){ scan('wayfinder'+i, w.mesh); }); rows; } catch(e) { 'ERR ' + e.message; }" }
+]

@@ -46,6 +46,16 @@ const EMIT_RATE = { trail: 90, 'spark-trail': 45, slide: 45, aura: 30, charge: 4
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _c = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color(), _hsl2 = { h: 0, s: 0, l: 0 };
 const _c4 = new THREE.Color(), _c5 = new THREE.Color();   // impact spark pair (see elemental() / the void-amber note)
 const _PS = new THREE.Vector3();   // _plume/_preheat spawn point (px/py/pz are set explicitly right after reset)
+/**
+ * Peak of the tracer/beam fragment profile at the segment's centre line (Extras.js TR_FRAG:
+ * `mix(glow + core*0.6, core*1.4 + glow*0.3, vCore)` with glow 0.75 and core 1.0 at x = 0).
+ * The min-channel caps in tracer()/beam() are the whole reason those two bright streaks cannot go white —
+ * but they were capping the STORED colour while the shader then multiplied it by ~1.5 on the hot line, so
+ * a noon bolt landed on screen at min channel 1.08, i.e. clipped in every channel. The combat gate
+ * photographs that as a cream beam leaving the muzzle (cb-fix1 burst-cvfx-pfire-a-7, 674 px at rgb
+ * 253,247,222). Divide the cap by the gain the shader is about to apply, so the cap means what it says.
+ */
+const TR_PROF = (core) => 1.35 + 0.275 * core;
 const NOPTS = {};
 
 /**
@@ -420,15 +430,18 @@ export class VFX {
     // rgb (254,249,228) at the barrel even after both were hue-corrected. A thin bright line does not need
     // to ride the clip point to read — its dominant channel is still 7x here.
     let tr = c.r * h, tg = c.g * h, tb = c.b * h;
-    { const m = Math.min(tr, tg, tb); if (m > 0.72) { const s = 0.72 / m; tr *= s; tg *= s; tb *= s; } }
+    // 0.58, not 0.72: the tracer is born ON the muzzle flash's own pixels and the pair still summed to a
+    // 49 px cream sliver at the barrel after both were budgeted separately (cb-fix4 burst-cvfx-pfire-a-3).
+    { const m = Math.min(tr, tg, tb), cap = 0.58 / TR_PROF(o.core ?? 0.55); if (m > cap) { const s = cap / m; tr *= s; tg *= s; tb *= s; } }
     const dist = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
     const spd = Math.min(o.speed ?? 320, (dist + len) / 0.22);
     this.tracers.add(from, to, tr, tg, tb, (o.width ?? 0.05) * (1 + 1.4 * this.day), o.duration ?? 0.14, spd, len, o.alpha ?? 1, o.core ?? 0.55, false);
   }
   beam(from, to, o = NOPTS) {
-    const c = deepen(this._col(o, 0x7fd8ff)), h = o.hdr ?? 4;                       // same law as tracer()
+    const c = deepen(this._col(o, 0x7fd8ff)), h = o.hdr ?? 4;                       // same law as tracer(), TR_PROF included
     let r = c.r * h, g = c.g * h, b = c.b * h;
-    const m = Math.min(r, g, b); if (m > 0.98) { const s = 0.98 / m; r *= s; g *= s; b *= s; }
+    const cap = 0.98 / TR_PROF(o.core ?? 0.7);
+    const m = Math.min(r, g, b); if (m > cap) { const s = cap / m; r *= s; g *= s; b *= s; }
     this.tracers.add(from, to, r, g, b, o.width ?? 0.08, o.duration ?? 0.25, 0, 0, o.alpha ?? 1, o.core ?? 0.7, true);
   }
   decal(p, n, o = NOPTS) {
@@ -627,6 +640,29 @@ const elemental = (o, c, warmHot, warmCool) => {
   } else { _c4.set(warmHot); _c5.set(warmCool); }
   return _c4;
 };
+/**
+ * CO-LOCATED STACK BUDGET. Brush's BRUSH_MINCH_CAP is per PARTICLE and cannot see a stack — but a preset
+ * that lays N additive layers on the SAME pixel sums N smallest-channels, and once that sum passes clip
+ * ACES hands back white however deep each individual layer's hue is. That is the muzzle flash's barrel
+ * core (5 co-located hot layers, measured rgb 254,249,224) and the kill pop's centre (4 co-located hot
+ * layers, 248,242,223) — both flagged by the combat gate with every layer already in-hue and in-budget.
+ * Given the recipe's working colour and the SUM of the hdr values that land on one point, return the
+ * scalar that keeps that sum's smallest channel under STACK_MINCH_CAP. Zero alloc, one call per burst.
+ * The dominant channel is untouched by the ratio, so the effect stays as hot as its hue allows.
+ */
+const STACK_MINCH_CAP = 0.70;   // well under the 1.05 day bloom threshold: these stacks land ON lit grass/marble, which supplies the rest
+const stackK = (col, hdrSum) => {
+  const m = Math.min(col.r, col.g, col.b) * hdrSum;
+  return m > STACK_MINCH_CAP ? STACK_MINCH_CAP / m : 1;
+};
+/**
+ * MEASURED, DO NOT "IMPROVE" (2026-08-29). Deepening this further — (S 0.85, L 0.52) was tried, which
+ * takes a gold's smallest channel from 0.10 to 0.04 linear — makes every stackK below engage 2.5x LESS,
+ * and the energy it lets through lands on the two channels the min-channel law does not watch: the
+ * muzzle came back at rgb (254,250,226), a 229 px cream flare (tools/out/cb-s1 burst-cvfx-pfire-a-0).
+ * The min channel is the tripwire, not the budget; making the hue deeper buys headroom the real overlap
+ * immediately spends. Keep (0.7, 0.55) and spend the budget explicitly in the stackK lists instead.
+ */
 const deepen = (col) => {
   col.getHSL(_hsl2);
   if (_hsl2.s < 0.05) { col.set(0x8a5cff); col.getHSL(_hsl2); }   // a grey/white input has NO hue to deepen — clamping would invent red (hue 0); fall back to the house aether violet
@@ -651,7 +687,7 @@ const PRESETS = {
     // burst-cvfx-pfire-a-* after both were hue-corrected. The viewmodel mesh owns the first-person read;
     // this burst owns the world read (distance, other angles, reflections), so damp it — and only it —
     // where the two overlap. 0.45 floor: still clearly a flash in first person, no longer a second full stack.
-    const mk = 0.45 + 0.55 * Math.min(1, Math.max(0, (v.game.camera.position.distanceTo(p) - 0.4) / 2.2));
+    const mk0 = 0.45 + 0.55 * Math.min(1, Math.max(0, (v.game.camera.position.distanceTo(p) - 0.4) / 2.2));
     // deepen(), not offsetHSL alone. The weapon colours are PALE by authoring (kinetic is 0xffe9c4, HSL
     // lightness 0.88) and `offsetHSL(0, +0.45, -0.07)` cannot deepen a near-white — saturating at L 0.81
     // leaves (1.00, 0.87, 0.62), whose smallest channel is 0.62. At hdr 6 BRUSH_MINCH_CAP then pins that
@@ -661,6 +697,17 @@ const PRESETS = {
     // that did not. Deepened, the min channel lands near 0.10, nothing caps, and the flash blooms GOLD.
     const sat = deepen(_c2.copy(c).offsetHSL(0, 0.45, -0.07));   // saturated element hue, forced deep
     const ember = deepen(_c3.copy(c).offsetHSL(0, 0.5, -0.3));   // deeper ember of the same hue: the fringe/fade-out colour
+    // CO-LOCATED STACK (see stackK): the fringe petal, crisp petal, ember core, halo and afterglow are five
+    // additive layers on the SAME pixel at the barrel — 20.7x summed hdr at noon. Each is deep and each
+    // passes BRUSH_MINCH_CAP on its own; their SUM is what tone-mapped to the cream six-point flare the
+    // combat gate flags (burst-cvfx-pfire-a-0/3/4). Budget the recipe as a whole, then let mk damp it again
+    // for the double-drawn first-person case. Keep the hdr list below in sync with the five layers.
+    // ...and the 8 SPARKS are born at the same point too, so their first frames pile on the same pixel as
+    // the five quads (they are the residual white pinhead in cb-fix2 burst-cvfx-pfire-a-0, 174 px at rgb
+    // 254,249,223, inside an otherwise correctly gold flare). Half weight: they leave at 18-36 m/s, so only
+    // the first frame or two actually overlaps the core.
+    const hot = (2.4 + 1.4 * day) + (4.5 + 1.8 * day) + (3.8 + 1.4 * day) + (3 + 1.5 * day) * 0.7 + (1.6 + 1.2 * day) * 0.8 + (5 + 3 * day) * 0.5;
+    const mk = mk0 * stackK(sat, hot * mk0);
     // dark backing puff (alpha, 1-2 frames): gives the additive petal contrast at high sun; ~invisible at night
     if (day > 0.15) b.reset(v.alpha, p).jitter(0.06 * ds).spread(3.14).speed(0.2, 0.6).life(0.17).size(0.85 * ds, 1.1 * ds, 1.6).tex(TEX.SMOKE).color(0x241d14).vary(0.25).alpha(0.46 * day).rot().fade(0, 0.4).burst(2);
     b.reset(A, p).tex(TEX.FLARE).size(1.02 * ds, 1.22 * ds, 1.3).life(0.16).color(ember, ember).hdr((2.4 + 1.4 * day) * mk, (0.9) * mk).alpha(0.9).rot().fade(0, 0.25).burst(1);  // ember fringe petal: low HDR keeps the hue through ACES — this is the colour read
@@ -781,12 +828,24 @@ const PRESETS = {
     const near = v._recentHit.filter((x) => (x.x - p.x) ** 2 + (x.y - p.y) ** 2 + (x.z - p.z) ** 2 < 2.56).length;
     v._recentHit.push({ t: tNow, x: p.x, y: p.y, z: p.z });
     const dd = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
-    const hk = (1 / Math.sqrt(1 + near)) * (0.35 + 0.65 * Math.min(1, Math.max(0, (dd - 1.0) / 4.0))) * v._paleK(p);
+    let hk = (1 / Math.sqrt(1 + near)) * (0.35 + 0.65 * Math.min(1, Math.max(0, (dd - 1.0) / 4.0))) * v._paleK(p);
     const k0 = k;                       // the DARK backing puff is the contrast the additive reads against — never thinned
     k *= Math.max(0.4, hk);             // thin the additive counts: overlap is what sums
     // Element identity survives ACES only at MODERATE HDR: anything above ~3x clips to white. So the hue lives in big,
     // saturated, low-HDR layers (halo, ring, motes) and only a small core is allowed to go white-hot.
     const sat = deepen(_c2.copy(c).offsetHSL(0, 0.45, -0.08));
+    // CO-LOCATED STACK (see stackK): halo + tight halo + hot star + ring all start on the SAME pixel of the
+    // creature — 9.1x summed hdr at noon on top of everything hk already damps. The overlap governor above
+    // counts SEPARATE hits; this counts the layers of ONE hit, which nothing could see before (cb-fix1
+    // burst-cvfx-pfire-nade-2, a 423 px cyan-white ring core at rgb 211,239,239). Keep the list in sync.
+    // ...and the three SWARM layers below are born at p too, which nothing was counting: the 16 sparks
+    // leave at 4-11 m/s (only their first frame overlaps, weight 0.35), the 6 ember flecks at 2-6 m/s
+    // (0.6), but the 6 drifting stars crawl at 0.6-2 m/s under drag 2 and LIVE 0.5-0.9 s — they hover
+    // on the impact pixel and complete each other to white. That is the white core with white star
+    // flares inside an otherwise correct gold ring (cb-mask burst-cvfx-pfire-a-3, 139 px at rgb
+    // 228,234,233): the quads were budgeted, the swarm that sits on top of them was not.
+    hk *= stackK(sat, ((1.5 + 0.5 * day) + (2.6 + 1.0 * day) + (2.6 + 1.0 * day) + (2.4 + 1.0 * day)
+      + (4.5 + 1.5 * day) * 0.35 + (3 + 1 * day) * 0.6 + (2.6 + 0.9 * day) * 1.5) * hk);
     // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
     b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k0);
     b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr((1.5 + 0.5 * day) * hk, 0.5 * hk).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read
@@ -827,6 +886,16 @@ const PRESETS = {
     // additive layers each cover most of the frame there, so their SUM needs to fall much further. The
     // point-blank read is unchanged in kind: dark flash-front, smoke, ring sweep, PointLight, shake.
     const nf = 0.25 + 0.75 * Math.min(1, dd / 8);
+    // ...and the SAME structural fade for the ALPHA layers, which had none of any kind. `nf`/`fr` only
+    // ever reached the additive stack, so a detonation at your feet still spawned 14 smoke-ball quads +
+    // 14 dust-ring quads + 5 scorch discs + the exp-smoke column, each 2-4 m across at 1-2 m from the
+    // eye. Particles.js's coverage governor floors a single quad at 0.18 of its alpha — correct per quad,
+    // but 33 of them at 0.18 still composite to an opaque film, and an ALPHA film does not clip to white
+    // so no hue test can see it. That is a grenade repainting the world for a frame (cb-mask
+    // burst-cvfx-pfire-nade-0: grass 122,102,147 under the blast against 90,87,105 once it clears).
+    // Coverage is count x area, so thin the COUNT as well as the alpha — the aftermath still holds the
+    // site, it just cannot own the viewport. Past 6 m nothing changes.
+    const an = 0.34 + 0.66 * Math.min(1, dd / 6);
     const fr = (1 - 0.6 * Math.min(1, Math.max(0, (dd - 20) / 40))) * (o.dampen ?? 1) * nf * v._paleK(p);   // range fade × volley-overlap share × near-lens damp × pale-ground damp
     // Energy conservation for BIG detonations (icegiant throw r=3.0, skyserpent 1.5): the halo/ring quads
     // scale with r, so per-pixel additive intensity must fall as the area grows or a 5-m soft disc lands on
@@ -852,16 +921,22 @@ const PRESETS = {
     // and read as an orange curtain in dragon/infernal/celestial. Hue follows the element, value under clip,
     // and Particles.js's coverage governor now owns the near-camera case for every layer at once.
     const smk = _c3.copy(fire).offsetHSL(0, -0.15, -0.30);
-    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(smk, 0x272119).hdr(1.15, 0.8).lit(L(v)).vary(0.35).alpha(0.55).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(14 * k);
-    v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(6, 11 * v.mult), scale: r / 3 });                                              // smoke column keeps pumping from the site
+    b.reset(AL, p).jitter(0.25 * r).spread(3.14).speed(0.35 * r, 0.85 * r).life(2.2, 3.4).size(0.26 * r, 0.42 * r, 3.4).tex(TEX.SMOKE).color(smk, 0x272119).hdr(1.15, 0.8).lit(L(v)).vary(0.35).alpha(0.55 * an).rot().spin(0.6).drag(1.0).gravity(-0.7).fade(0.16, 0.55).burst(Math.max(4, Math.round(14 * k * an)));
+    v.attach('exp-smoke', v._anchor(p), { duration: 1.8, rate: Math.max(4, 11 * v.mult * an), scale: r / 3 });                                            // smoke column keeps pumping from the site
     _v3.set(p.x, p.y + (n ? 0.95 : 0), p.z);                                                                                                          // grounded ring lifts clear of 1 m meadow grass
     if (n) b.reset(A, _v3).axis(n).flat(); else b.reset(A, _v3).rot();
-    b.tex(TEX.RING).size(0.42 * r, 0.42 * r, 9).life(0.55).color(fire, c).hdr(3 * fr * er, 1.5 * fr * er).alpha(0.95).fade(0, 0.18).burst(1);                              // shockwave — SATURATED start: this ring grows to ~4r and a detonation at the lens fills the frame bottom with it; a white start (even min-channel-capped) is a large near-white sheet
+    // hdr 1.15 / alpha 0.78, not 1.8 / 0.95. This annulus GROWS 9x while its colour is fixed at spawn, so
+    // unlike every other layer here its per-pixel energy cannot fall with its area — at full extent it is a
+    // ~11 m band lying across sunlit grass, and the gate photographs it as a pale lavender stripe with a
+    // second one under it (cb-s2 burst-cvfx-pfire-nade-4, rgb 244,222,242). A shockwave reads by its SWEEP
+    // and its size; `shockwave()` and the `ring` preset both already learned this exact lesson (2.4 -> 1.5,
+    // 2.6 -> 1.7). Deep fire hue at 1.15 still blooms in its own colour over grass.
+    b.tex(TEX.RING).size(0.42 * r, 0.42 * r, 9).life(0.55).color(fire, fire).hdr(1.15 * fr * er, 0.6 * fr * er).alpha(0.78).fade(0, 0.18).burst(1);                        // shockwave — SATURATED start: this ring grows to ~4r and a detonation at the lens fills the frame bottom with it; a white start (even min-channel-capped) is a large near-white sheet
     if (n) { _v3.set(p.x, p.y + 1.05, p.z);                                                                                                            // dust ring rides above the grass tops
-      b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.4, 3.8).size(0.3 * r, 0.5 * r, 2.4).tex(TEX.SMOKE).color(0x9c8760, 0x7a6a4e).lit(L(v)).vary(0.3).alpha(0.55).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(14 * k);   // lingering TAN dust ring: light against green grass, dark against sky
+      b.reset(AL, _v3).axis(n).ring(0.35 * r, 0.6 * r, 0.2).speed(1.3, 2.4).life(2.4, 3.8).size(0.3 * r, 0.5 * r, 2.4).tex(TEX.SMOKE).color(0x9c8760, 0x7a6a4e).lit(L(v)).vary(0.3).alpha(0.55 * an).rot().spin(0.8).drag(1.0).gravity(-0.15).fade(0.05, 0.6).burst(Math.max(4, Math.round(14 * k * an)));   // lingering TAN dust ring: light against green grass, dark against sky
       _v3.set(p.x, p.y + 0.9, p.z);                                                                                                                    // scorch "haze" discs: the decal itself is buried under 1 m grass, this is the visible char
-      b.reset(AL, _v3).axis(n).flat().ring(0, 0.5 * r).tex(TEX.SMOKE).size(0.75 * r, 1.05 * r, 1.15).life(7, 10).color(0x241d16, 0x2b241b).vary(0.3).alpha(0.5).rot().fade(0.06, 0.45).burst(5); }
-    b.reset(A, p).axisUp().spread(3.14).speed(1.2 * r, 3.2 * r).life(1.4, 2.6).size(0.022, 0.05, 0.35).tex(TEX.SPARK).color(0xffb050, fire).hdr(2.0 * fr, 0.7).stretch(0.03).gravity(8).drag(1.0).floor(fl, 0.3).fade(0, 0.6).burst(Math.round(30 * k * fr));       // lingering embers (local: capped speed so they don't pile 10 m away)
+      b.reset(AL, _v3).axis(n).flat().ring(0, 0.5 * r).tex(TEX.SMOKE).size(0.75 * r, 1.05 * r, 1.15).life(7, 10).color(0x241d16, 0x2b241b).vary(0.3).alpha(0.5 * an).rot().fade(0.06, 0.45).burst(Math.max(2, Math.round(5 * an))); }
+    b.reset(A, p).axisUp().spread(3.14).speed(1.2 * r, 3.2 * r).life(1.4, 2.6).size(0.022, 0.05, 0.35).tex(TEX.SPARK).color(_c4.copy(fire).offsetHSL(0, 0, 0.1), fire).hdr(2.0 * fr, 0.7)   // was the raw literal 0xffb050 (min channel 0.078 linear, and WARM whatever the element: a void grenade threw amber embers). A lift of the detonation's own hue instead — hotter-looking, still deep, still the element.stretch(0.03).gravity(8).drag(1.0).floor(fl, 0.3).fade(0, 0.6).burst(Math.round(30 * k * fr));       // lingering embers (local: capped speed so they don't pile 10 m away)
     b.reset(A, p).jitter(0.4 * r).axisUp().spread(1.2).speed(0.4, 1.2).life(1.4, 2.4).size(0.05 * r, 0.09 * r, 0.4).tex(TEX.GLOW).color(fire, 0xff3000).hdr(1.8 * fr * er, 0.5).alpha(0.55).gravity(-0.5).drag(1.5).fade(0.1, 0.5).burst(Math.round(10 * k * fr));       // floating hot motes
     b.reset(AL, p).axisUp().spread(2.2).speed(1.2 * r, 3 * r).life(0.8, 1.5).size(0.04 * s, 0.1 * s, 0.9).tex(TEX.DIRT).color(DIRT).lit(L(v)).vary(0.5).rot().spin(15).gravity(22).drag(0.3).floor(fl, 0.3).fade(0, 0.75).burst(14 * k);    // debris
     v.flash(p, { color: fire, intensity: 1.2 * s, distance: 6 * r, duration: 0.3 });   // was 6*s: the creatures-1 bisect showed these lights co-author the wash — at 14+ they still lit a melee golem's boulder arm to cream at 1 m
@@ -883,13 +958,27 @@ const PRESETS = {
     // does nothing). Force the burst DEEP regardless of the source pastel: L clamped to <=0.55, S floored
     // at 0.7 — the frostwolf/icegiant pale-cyan dome on snow (cvfx-vfx6 tundra crop) was this survivor.
     sat.getHSL(_hsl2);
-    if (_hsl2.l > 0.55 || _hsl2.s < 0.7) sat.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55));
-    const pk = v._paleK(p), day2 = day * pk;   // pale-ground damp scales every additive layer below; the veil strengthens to carry the read
+    if (_hsl2.l > 0.55 || _hsl2.s < 0.7) sat.setHSL(_hsl2.h, Math.max(_hsl2.s, 0.7), Math.min(_hsl2.l, 0.55));   // same pair as deepen() — see its note
+    const pg = v._paleK(p), day2 = day * pg;   // pale-ground damp scales every additive layer below; the veil strengthens to carry the read
+    const mk = o.tick ? 0.3 : 1;
+    // CO-LOCATED STACK BUDGET (see stackK) — this preset was the LAST big one with none, and it is the
+    // hottest additive in the game: 90 star motes at hdr up to 3.7 and 42 glow motes at 3.0, all born
+    // inside one 0.1-0.3 m ball, on top of two halos and a ring. Each mote passes BRUSH_MINCH_CAP alone
+    // (a deepened cyan's smallest channel is 0.235 linear, and 0.235 x 3.7 = 0.87); TWO of them overlapping
+    // is already past clip, and 90 of them overlap by construction. That is the hard white core inside the
+    // otherwise-correct cyan starburst on a dying Lost sentinel (tools/out/cb-s2 burst-cvfx-lost-k-1, and
+    // the 1871 px warm one on the gold sentinel in lost-k-0). Every enemy stagger, shield break and hit
+    // react fires this, so it is in nearly every frame the gate has ever flagged. Weights = how many of a
+    // swarm actually land on one pixel: 2.5 of the 90 stars, 1.5 of the 42 glows. Keep in sync below.
+    // `pk` (additive) is the ground damp TIMES the stack budget; `pg` (the veil) stays on the raw ground
+    // damp, so damping the burst never turns the dark backing puff into an ink blob.
+    const pk = pg * stackK(sat, ((o.tick ? 0 : (1.6 + 0.6 * day2) + (1.8 + 0.6 * day2) + (2.4 + 1.0 * day2))
+      + (2.7 + 1.0 * day2) * 2.5 * mk + (2.2 + 0.8 * day2) * 1.5 * mk) * pg);
     // dark aether veil. Widened from 0.16-0.26 (cvfx-vfx4): enemies pour this preset onto PALE ground —
     // the icegiant's frost-hazard fountain re-emits it every 0.4 s on snow — and additive cyan over a white
     // base washes at ANY strength; the veil is the dark the burst reads against. Still brief and violet-dark,
     // so at noon it reads as roiled aether shadow, not an ink blob.
-    b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.3 * s, 0.44 * s, 1.8).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.42 * (2 - pk)).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
+    b.reset(v.alpha, p).jitter(0.16 * s).axisUp().spread(1.4).speed(0.5, 1.4).life(0.7, 1.2).size(0.3 * s, 0.44 * s, 1.8).tex(TEX.SMOKE).color(0x140b24, 0x1d1230).vary(0.3).alpha(0.42 * (2 - pg)).rot().spin(1.5).drag(1.5).gravity(-0.8).fade(0.06, 0.35).burst(4 * k);
     // o.tick = a PERIODIC caller (the hazard fountain re-fires this every 0.4 s at ONE spot). The big
     // halo layers have 0.3-0.45 s lives, so ticks keep 2+ of them overlapping at the same pixels forever
     // — even a deep hue stacks pale that way (combat gate r7: the tundra 7.3k / shadowfen 3.1k patches
@@ -898,7 +987,6 @@ const PRESETS = {
       b.reset(A, p).tex(TEX.GLOW).size(0.7 * s, 0.95 * s, 2.2).life(0.45).color(sat, sat).hdr((1.6 + 0.6 * day2) * pk, 0.5 * pk).alpha(0.95).fade(0, 0.3).burst(1);   // big saturated violet bloom = the magic read
       b.reset(A, p).tex(TEX.GLOW).size(0.36 * s, 0.46 * s, 2.6).life(0.3).color(sat, sat).hdr((1.8 + 0.6 * day2) * pk, 1.1 * pk).alpha(0.9).fade(0, 0.3).burst(1);   // x1.8+0.6 (was 4+2): a deep green at x5 clips ALL channels, and even deep gold at x3.6 clipped its top two into a warm-white muzzle core (probe vale1 a-8) — the big halo + ring + motes carry the pop
     }
-    const mk = o.tick ? 0.3 : 1;
     b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.2).speed(2 * s, 4 * s).life(1.0, 1.8).size(0.18 * s, 0.3 * s, 0.4).tex(TEX.STAR).color(sat, sat).hdr((2.7 + 1.0 * day2) * pk * mk, 1.8 * pk * mk).rot().spin(4).swirl(4, 7, true).gravity(-1.5).drag(1.0).fade(0.05, 0.5).burst(Math.max(3, Math.round(90 * k * mk)));   // 2x mote size, saturated; hdr 2.7 not 3.2 — swirling stars over snow were the tundra 21-cluster sparkle field
     b.reset(A, p).jitter(0.1 * s).axisUp().spread(1.3).speed(1.5 * s, 3 * s).life(0.9, 1.6).size(0.24 * s, 0.42 * s, 0.5).tex(TEX.GLOW).color(sat, sat).hdr((2.2 + 0.8 * day2) * pk * mk).alpha(0.7).swirl(3, 6, true).gravity(-1.2).drag(1.2).fade(0.05, 0.5).burst(Math.max(2, Math.round(42 * k * mk)));
     if (!o.tick) b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.42 * s, 0.42 * s, 6).life(0.6).color(sat, sat).hdr((2.4 + 1.0 * day2) * pk, 0.9 * pk).alpha(0.95).fade(0, 0.2).burst(1);
@@ -922,16 +1010,28 @@ const PRESETS = {
     // onto the same few hundred pixels and their SMALLEST channel accumulates until the sum is white —
     // BRUSH_MINCH_CAP is per particle and cannot see a stack. Same mechanism note as 'trail'/'explosion'.
     const rk = 1 - 0.55 * Math.min(1, Math.max(0, (dd - 8) / 32));
-    const fk = er * nk * rk * v._paleK(p);
+    let fk = er * nk * rk * v._paleK(p);
     const ck = Math.max(0.35, er);                                        // and thin the COUNTS too: overlap is what sums
     b.reset(v.alpha, p).jitter(0.35 * s).spread(3.14).speed(0.4, 1.2).life(1.5, 2.4).size(0.35 * s, 0.6 * s, 2.4).tex(TEX.SMOKE).color(0x0e0817, 0x1a1026).vary(0.3).alpha(0.72).rot().spin(1).drag(2).gravity(-0.6).fade(0.04, 0.45).burst(10 * k);
     const dsat0 = deepen(_c3.copy(c).offsetHSL(0, 0.4, -0.06));   // rings grow LARGE (2.7 m): pastel glowColors must go DEEP or the pop is a pale ball (gate r5 tundra)
+    // CO-LOCATED STACK (see stackK): pop glow 3 + pop star 3.5 + ring 3.5 + ring 3 all start on the SAME
+    // pixel at the corpse. Each is deep, each passes BRUSH_MINCH_CAP, and their 13x summed hdr is what the
+    // combat gate photographs as the kill-pop white core (burst-cvfx-lost-k-0 at rgb 248,242,223, and the
+    // vale sentinel kills at 219,237,234). fk already carries size/range/lens/pale damping; this closes the
+    // one thing none of those can see. Keep the 13 in sync with the four layers below.
+    // ...plus the MOTE SWARM, which is the layer the gate was actually photographing (cb-mask
+    // burst-cvfx-lost-k-1: 178 px at rgb 209,239,238, a large cyan-white cloud full of hard star
+    // flares around a dying golem — see the crop). 24 stars at hdr 2.6 and 6 glow motes at 1.2 are all
+    // born inside one 0.6-0.95*s ball and drift at 0.5-2.8 m/s for 1.6-3.0 s: ~3 of the stars and
+    // ~1.5 of the glows sit on any given pixel, and each one's smallest channel adds. The four pop
+    // quads were budgeted; the thirty particles piled on them were not. Sparks leave fast (0.4).
+    fk *= stackK(dsat0, (13 + (1.9 + 0.7 * day) * 3 + (0.9 + 0.3 * day) * 1.5 + 4 * 0.4) * fk);
     // pop in the creature's own hue, not white: at hdr 5-7 the HOT_TINTed white still landed as a pale
     // ball post-cap (combat gate r3: tundra 22k-px cluster at rgb 232,234,233 was exactly this pop over
     // a dead wisp). The punch is the SIZE + double ring + flash; the colour is the element.
-    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(dsat0, c).hdr(3 * fk, 1.5 * fk).fade(0, 0.3).burst(1);
-    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(dsat0, c).hdr(3.5 * fk, 1.8 * fk).rot().fade(0, 0.3).burst(1);
-    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(dsat0, c).hdr(3.5 * fk, 1.5 * fk).alpha(0.9).fade(0, 0.2).burst(1);
+    b.reset(A, p).tex(TEX.GLOW).size(0.42 * s, 0.55 * s, 2.2).life(0.28).color(dsat0, dsat0).hdr(3 * fk, 1.5 * fk).fade(0, 0.3).burst(1);
+    b.reset(A, p).tex(TEX.STAR).size(0.55 * s, 0.7 * s, 2).life(0.24).color(dsat0, dsat0).hdr(3.5 * fk, 1.8 * fk).rot().fade(0, 0.3).burst(1);
+    b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.3 * s, 0.3 * s, 9).life(0.55).color(dsat0, dsat0).hdr(3.5 * fk, 1.5 * fk).alpha(0.9).fade(0, 0.2).burst(1);
     b.reset(A, p).axisUp().flat().tex(TEX.RING).size(0.15 * s, 0.15 * s, 12).life(0.75).color(dsat0).hdr(3 * fk, 1.2 * fk).alpha(0.7).fade(0.1, 0.3).burst(1);
     // afterglow motes: at 8 m the old 0.11 m stars were sub-pixel and the kill tail vanished by 0.75 s. 2x size, longer life,
     // saturated at moderate HDR so the element colour holds through noon exposure — the payoff now reads for ~2.5 s.
@@ -948,7 +1048,7 @@ const PRESETS = {
     // sum that 0.10 ten times over and the cloud completes to pale cyan (measured 540 px at rgb 212,238,236
     // on a dying hound, burst-cvfx-vale-k-1). Fewer, dimmer, spread wider: overlap is the whole mechanism.
     b.reset(A, p).jitter(0.95 * s).axisUp().spread(0.9).speed(0.5, 1.6).life(1.6, 2.6).size(0.42 * ss, 0.75 * ss, 0.4).tex(TEX.GLOW).color(dsat, dsat).hdr((0.9 + 0.3 * day) * fk).alpha(0.6).gravity(-0.8).drag(1).fade(0.1, 0.55).burst(Math.max(3, Math.round(6 * k * ck)));
-    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, c).hdr(4 * fk, 2 * fk).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
+    b.reset(A, p).jitter(0.3 * s).spread(3.14).speed(3, 7).life(0.4, 0.8).size(0.02, 0.04, 0.3).tex(TEX.SPARK).color(dsat0, dsat0).hdr(4 * fk, 2 * fk).stretch(0.03).gravity(8).drag(2).fade(0, 0.5).burst(16 * k);
     v.flash(p, { color: c, intensity: 2 * Math.min(s, 1.6), distance: 10, duration: 0.4 });   // was 2*s: a treant's 6.0 lit the whole clearing to cream
   },
   // ---- rings / sigils / FF14 magic ----------------------------------------------------------------------------------

@@ -32,6 +32,25 @@ function stoneTexture(aniso, base, tint) {
   }, { aniso });
 }
 /**
+ * LIMEWASHED PLASTER. Hearthfall's walls used to borrow `stoneTexture`, and its two loudest features are a
+ * horizontal COURSING band and hairline CRACKS — i.e. the two things that make a rendered wall read as
+ * masonry. At a 1.8 m triplanar tile that gave the user's verdict verbatim: "flat grey plaster slabs with
+ * black beams painted on", with visible smear. Lime over daub has none of that: a fine float grain, a very
+ * low-contrast trowel mottle, and a warm cream cast that belongs to the same palette as the graded NPCs
+ * standing in front of it. No bands, no cracks, no rectangles — and the fine grain is what survives being
+ * tiled at 0.6 m instead of dissolving into 1.8 m blotches.
+ */
+function plasterTexture(aniso) {
+  return noiseTexture(256, 256, (u, v) => {
+    const grain = tn(u, v, 88, 61) * 0.55 + tn(u, v, 196, 62) * 0.45;        // lime float grain
+    const trowel = tfbm(u, v, 5, 63, 3);                                     // broad sweeps of the float, barely there
+    const soil = smoothstep(-0.2, 0.7, tfbm(u, v, 2.2, 64, 2)) * 0.10;       // weathering, not grime streaks
+    const t = clamp(0.55 + grain * 0.32 + trowel * 0.22, 0, 1);
+    const daub = [0.74, 0.68, 0.57], lime = [1.00, 0.97, 0.89];
+    return daub.map((c, i) => clamp(lerp(c, lime[i], t) * (1 - soil), 0, 1));
+  }, { aniso });
+}
+/**
  * LAID THATCH. The wave-3 vale major is literally "a thatched roof rendered in masonry" — every cottage
  * surface wore the one sandstone-brick map, and no tint can remove a brick joint. This is straw: fibre
  * streaks smeared ALONG the slope (average three v-offsets of the same tileable noise — cheap anisotropy
@@ -564,6 +583,156 @@ function weather(geo, amount = 1, seed = 7) {
   geo.computeVertexNormals();
   return geo;
 }
+// ---------------------------------------------------------------- NPC painterly grade
+/**
+ * THE ONE PLACE EVERY HUMAN BODY IS GRADED INTO THIS GAME'S LOOK.
+ *
+ * User, 2026-08-28, after ten minutes in the starting area: "all npcs seem to be too realistic in their
+ * graphics? they aren't coherent with the rest of the games graphics?" They are right, and the GLBs say
+ * exactly why: every villager and the Wayfinder is a Tripo body carrying a PHOTOGRAPHIC baseColor (pores,
+ * baked AO, cloth weave), a pore-scale normal map and a measured metallic-roughness map, dropped next to
+ * procedural village geometry that is flat-shaded noise. The mismatch is not "the bodies are too good" —
+ * CLAUDE.md's target IS painterly-REALISTIC — it is the micro-detail: skin that catches a tight specular
+ * highlight and an albedo whose value range was baked under a studio light.
+ *
+ * So three things, and no more (this must not become a re-lighting rig):
+ *   ALBEDO  the baked value range is compressed toward a mid — that is the pore/crease micro-contrast, and
+ *           it is what a painter leaves out — and paid back in CHROMA, then split-toned into the palette
+ *           CLAUDE.md names: warm gold in the lights, blue-violet in the darks. ALL THREE TERMS ARE GATED
+ *           ON SATURATION HEADROOM (see the shader): a texel that is already a hue is left alone, because
+ *           there is nothing left to pay it in. That is the difference between burgundy and hot magenta.
+ *   NORMAL  scaled to 0.55 (was 0.35 — at 0.35 a face lost its own modelling and read waxy, which is the
+ *           opposite failure). Big cloth folds and the brow/nose/cheek planes survive; pore-scale shading,
+ *           the single loudest "this is a photograph" cue, does not.
+ *   SPEC    roughness floored at 0.60, metalness capped at 0.04, envMapIntensity 0.55. No sky sheen on a
+ *           face, no tight highlight on a cheekbone, and nothing on a body can reach a bloom threshold.
+ *
+ * BLOB LAW: this adds no emissive term of any kind and cannot raise outgoing luminance — the albedo grade
+ * is clamped to 1.0 and every other change LOWERS specular energy. Bodies stay lit; they are never lit up.
+ *
+ * It runs on the villagers AND on the Wayfinder (the user's stated reference for "acceptable"), from the
+ * same function, so the seven and the reference cannot drift apart again.
+ */
+const NPC_MID = 0.44, NPC_CONTRAST = 0.84, NPC_CHROMA = 1.14;
+const NPC_COOL = 'vec3(0.88, 0.92, 1.07)', NPC_WARM = 'vec3(1.08, 1.00, 0.89)';
+export function paintNpcMaterial(mat) {
+  if (!mat || mat.userData.npcGraded) return mat;
+  mat.userData.npcGraded = true;
+  mat.normalScale?.multiplyScalar(0.55);
+  mat.envMapIntensity = 0.55;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, renderer) => {
+    prev?.call(mat, sh, renderer);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        { vec3 c = diffuseColor.rgb;
+          // HEADROOM GATE (2026-08-29). The grade below is right for a muddy photographic texel and WRONG
+          // for one that is already a hue: mid-compressing a deep burgundy multiplies it by ~1.8 while its
+          // green and blue stay near zero, so it arrives as pure channel — Serel's robe went from burgundy
+          // to hot magenta, the loudest thing in the Vale. Bram and the guard survived only because their
+          // greens and browns started desaturated. So every term is scaled by the texel's REMAINING
+          // saturation headroom: k=1 for a grey-brown (full grade, which is the case it was written for),
+          // k=0 past ~0.72 saturation, where a colour has nowhere to go but toward the primary.
+          float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+          float k = 1.0 - smoothstep(0.34, 0.72, (mx - mn) / max(mx, 1e-4));
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          float l2 = mix(l, mix(${NPC_MID.toFixed(3)}, l, ${NPC_CONTRAST.toFixed(3)}), k);   // compress the baked photographic range
+          c *= l2 / max(l, 1e-4);
+          c = mix(vec3(l2), c, mix(1.0, ${NPC_CHROMA.toFixed(3)}, k));             // ...and pay for it in chroma, not value
+          vec3 st = mix(${NPC_COOL}, ${NPC_WARM}, smoothstep(0.18, 0.72, l));      // split-tone into the world palette
+          c *= mix(vec3(1.0), st, mix(0.35, 1.0, k));                              // a saturated hue keeps its own hue
+          diffuseColor.rgb = clamp(c, 0.0, 1.0); }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor * 0.82 + 0.28, 0.60, 1.0);         // no tight highlight on skin or cloth`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+        metalnessFactor = min(metalnessFactor, 0.04);`);
+  };
+  mat.customProgramCacheKey = () => 'npc-paint';
+  mat.needsUpdate = true;
+  return mat;
+}
+
+/**
+ * TRIPO RETARGET REPAIR — the feet, the ankles and the half-body villager are ONE bug, and it is in the
+ * shipped clips, not in this file. Measured across all eight bodies (tools/out/vil-dev, 2026-08-28), by
+ * taking every quaternion track's furthest sample from the bone's own bind rotation:
+ *
+ *     herbwife  41 deg max      guard      38 deg max      <- healthy
+ *     scholar   90 (ankle)      merchant  109 (ankle)      mason  143 (ankle)   farmwoman 139 (ankle)
+ *     wayfinder 104 (ankle)     fisherman 105 (ankle) AND 105 on a SHOULDER
+ *
+ * One idle animation (15.38 s on every body, to the frame) was retargeted eight times onto eight Tripo
+ * auto-rigs with different joint counts, and the retarget puts the third bone of a leg chain — the ankle —
+ * through up to 143 degrees. No ankle does that. On screen it is the user's report verbatim: "the feet of
+ * all the npcs are terrible, feet pointing wrong way, ankles with no bones in" — a foot swung a hundred
+ * degrees off its shin has no readable joint in it, because there is no pose a real ankle could be in.
+ * On the fisherman the same retarget also drives the shoulder chain 105 deg + 62 deg, which folds both his
+ * arms inside his ribcage: "one of the npcs in the village is missing half his body". Same defect, same
+ * clip family, two different-looking symptoms. VERIFIED not to be ours: bind pose renders whole and
+ * correct (tools/out/vil-bind), no bone carries a bad scale, and every clip track binds to a real bone.
+ *
+ * The clips cannot be re-baked in this lane, so they get JOINT LIMITS instead — which is what a rig should
+ * have had in the first place. After the mixer writes a pose, any bone more than `cap` from its own bind
+ * rotation is slerped back to exactly `cap`. Legitimate idle motion is untouched: the healthiest bodies
+ * peak at 41 deg, so a 55 deg body cap costs nothing anywhere and only bites the 62-143 deg outliers. Feet
+ * get 16 deg, because a villager standing at a post plants them and the whole complaint is that they do not.
+ *
+ * Foot bones are found by GEOMETRY, never by name — these rigs name an arm bone `tripoHead_0` and give one
+ * leg four joints and the other three. Any bone in the bottom 15% of the bind figure is a foot.
+ */
+const NPC_BODY_CAP = 55 * Math.PI / 180, NPC_FOOT_CAP = 16 * Math.PI / 180;
+export function npcJointLimits(root) {
+  root.updateWorldMatrix(true, true);
+  const bones = [], ys = [];
+  let lo = Infinity, hi = -Infinity;
+  root.traverse((b) => { if (b.isBone) { const y = b.matrixWorld.elements[13]; bones.push(b); ys.push(y); if (y < lo) lo = y; if (y > hi) hi = y; } });
+  const ankle = lo + (hi - lo) * 0.15;
+  return bones.map((b, i) => ({ b, q: b.quaternion.clone(), cap: ys[i] <= ankle ? NPC_FOOT_CAP : NPC_BODY_CAP }));
+}
+export function applyNpcJointLimits(list) {
+  for (let i = 0; i < list.length; i++) {
+    const L = list[i], q = L.b.quaternion, r = L.q;
+    const d = Math.abs(q.x * r.x + q.y * r.y + q.z * r.z + q.w * r.w);
+    const ang = 2 * Math.acos(d < 1 ? d : 1);
+    if (ang > L.cap) q.slerp(r, 1 - L.cap / ang);
+  }
+}
+/**
+ * ...and the OTHER half of "the feet are terrible": where the sole actually is. `scale` and ground contact
+ * were both solved from `new Box3().setFromObject(glbScene)`, which for a SkinnedMesh unions the BIND-pose
+ * geometry box through the node matrices and knows nothing about the skeleton. Measured on the fisherman it
+ * returns a 1.01-unit box for a 1.75-unit figure, so every villager was scaled ~1.7x too small AND seated on
+ * a `baseY` of 0.000 that has no relation to the sole — which is why they part-sink on a slope.
+ *
+ * This measures the thing that is actually drawn: the posed, skinned vertices. Returns { lo, hi } in the
+ * mesh's own local units, so the caller can scale to a real 1.78 m and drop the sole exactly on the grade.
+ * Every 3rd vertex is plenty for an extremum on a 15 k-tri body (~5 k samples, once, at init).
+ */
+const _sv = new THREE.Vector3(), _sm = new THREE.Matrix4();
+/** @param skin the SkinnedMesh  @param root the object whose `position` the caller is about to set — the span
+ *  is returned in ROOT's local space, which is the only space the caller can act in. */
+export function npcSkinnedSpan(skin, root = null) {
+  skin.updateMatrixWorld(true); skin.skeleton.update();
+  const p = skin.geometry.attributes.position;
+  // MEASURE IN THE SPACE THE CALLER PLACES IN. `applyBoneTransform` returns a vertex in the SKIN's local
+  // space, and on a GLB the skin is usually NOT a direct child of the object we position — there is an
+  // armature/scene node in between. The Wayfinder's carries +0.4878 local units, so subtracting `span.lo`
+  // from his placement double-counted an offset the rig already had and stood all eleven of him 0.89 m
+  // (= |lo| x scale) in the air — user report, 2026-08-29, with a screenshot. The villagers happened to
+  // have their skin directly under the placed root, which is why the same formula worked there and made
+  // this look Wayfinder-specific. Composing skin->root makes the hierarchy irrelevant.
+  let m = null;
+  if (root && root !== skin) { root.updateMatrixWorld(true); m = _sm.copy(root.matrixWorld).invert().multiply(skin.matrixWorld); }
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < p.count; i += 3) {
+    skin.applyBoneTransform(i, _sv.fromBufferAttribute(p, i));
+    if (m) _sv.applyMatrix4(m);
+    if (_sv.y < lo) lo = _sv.y;
+    if (_sv.y > hi) hi = _sv.y;
+  }
+  return { lo, hi };
+}
+
 // ---------------------------------------------------------------- the Wayfinder (quest giver)
 /**
  * THE WAYFINDER — the NPC you take quests from. One shared rig, eleven instances.
@@ -1011,11 +1180,16 @@ export class Props {
     // terracotta brick — a thatched roof rendered in masonry". Four materials, because a village is four
     // materials: lime plaster over a timber frame, oak joinery, laid straw. Three extra draw calls for the
     // whole hamlet, and it is nine cottages inside one 60 m disc, so they frustum-cull together.
-    this.plasterMat = patchMaterial(new THREE.MeshStandardMaterial({ map: stoneTexture(aniso, [0.66, 0.62, 0.53], [0.95, 0.92, 0.84]), vertexColors: true, roughness: 0.95, metalness: 0.0, color: 0xffffff }),
-      mergePatch(triplanarPatch(0.55, 0.16, [0.46, 0.52, 0.34]), { key: 'plaster' }));                    // noise slate, zero coursing: the stele recipe, cream
+    // 1.7 = a 0.59 m tile. The old 0.55 (1.8 m) was the "visible tiling/smear" the user saw: fbm blotches
+    // the size of a window on a 6 m wall. Lime grain wants to be at the edge of resolution, not a pattern.
+    this.plasterMat = patchMaterial(new THREE.MeshStandardMaterial({ map: plasterTexture(aniso), vertexColors: true, roughness: 0.93, metalness: 0.0, color: 0xfff4e2 }),
+      mergePatch(triplanarPatch(1.70, 0.06, [0.46, 0.52, 0.34]), { key: 'plaster' }));                    // warm limewash, zero coursing, zero cracks
     this.thatchMat = patchMaterial(new THREE.MeshStandardMaterial({ map: thatchTexture(aniso), vertexColors: true, roughness: 0.98, metalness: 0.0, color: 0xffffff }),
       mergePatch(triplanarPatch(1.90, 0.10, [0.44, 0.50, 0.30]), { key: 'thatch' }));                      // ~0.53 m tile: straw scale. 0.87 m read as woven basketry, which is a different wrong material
-    this.timberMat = mkTri('rm-timber', 'bark_gnarled', 1.6, { rough: 0.94, color: 0x9a7c52 });             // bark IS wood grain; 0.6 m tile reads as sawn oak
+    // 0x9a7c52 x the OAK2 vertex tint x a dark bark map compounded to near-black: the frame read as "black
+    // beams painted on" (user) rather than as oak standing proud of plaster. Weathered oak in daylight is a
+    // mid brown; the relief is already in the geometry, so the material must not also supply the contrast.
+    this.timberMat = mkTri('rm-timber', 'bark_gnarled', 1.6, { rough: 0.90, color: 0xf2ddc0 });             // bark IS wood grain; 0.6 m tile reads as sawn oak
     // Wayfinder Steles get their OWN material, not stoneMat/basaltMat: stoneMat's map is the sandstone
     // brick photo (or its brick-patterned procedural fallback) — a vertex tint can darken a brick texture
     // but can never remove the brick pattern, which is why the steles read as a chimney. This is a flat
@@ -1485,6 +1659,7 @@ export class Props {
 
     const MATS = { stone: this.stoneMat, basalt: this.basaltMat, ...this.regionMat };
     let total = 0;
+    this._farClutter = [];
     for (const B of OUTER) {
       const K = KIT[B.id]; if (!K) continue;
       const parts = [], tints = [];
@@ -1594,6 +1769,15 @@ export class Props {
       m.castShadow = m.receiveShadow = true; m.name = `clutter-${B.id}`;
       m.geometry.computeBoundingSphere();                                    // tight bounds => the other eight regions cull
       scene.add(m);
+      // ...but a tight sphere only culls what is BEHIND you. Measured standing in the Vale hamlet at
+      // q=high (tools/out/vil-tris): clutter-celestial 244 k tris, clutter-sunken 107 k, clutter-dragon
+      // 96 k, clutter-infernal 60 k — over half a million triangles of knee-high rocks, snags and reeds
+      // drawn at 620-880 m because they happened to be inside the frustum. At that range one screen pixel
+      // is about half a metre, so none of it resolves to anything; it is pure tri tax on the frame budget.
+      // The nine region centres are all >= 620 m from the hamlet, so a 500 m gate empties a Vale frame of
+      // every one of them and still turns clutter on ~180 m OUTSIDE the region's own look radius
+      // (RL_EDGE 320 m) — you crest the pass into a dressed region, exactly as enemy camps already stream.
+      this._farClutter.push(m);
     }
     // shadowfen waterline reeds: clumps RINGING the peat water's edge (the kit loop rejects y < WL+0.35,
     // which is exactly where reeds live — this pass samples the shoreline band directly)
@@ -1927,8 +2111,13 @@ export class Props {
     // all of them — the door and both lit windows hung in mid-air off the gable end, facing the wrong way.
     // They are now placed on the real faces, and each opening got the joinery a 10 m inspection wants:
     // reveal, sill, lintel, jambs, shutters, a framed door, and an eaves board under the thatch.
-    const OAK = [0.72, 0.62, 0.46], OAK2 = [0.52, 0.44, 0.32], TRIM = [0.80, 0.70, 0.54], STN = [0.86, 0.84, 0.80],
-      PLA = [1.00, 0.98, 0.94], THA = [1.00, 0.96, 0.88], THA2 = [0.80, 0.76, 0.66], DARK = [0.06, 0.05, 0.045];
+    // WOOD VALUES, RE-BASED. `timberMat` multiplies its base colour by these vertex tints by a bark_gnarled
+    // map whose own mean is ~0.35, and the three compounded to a linear ~0.05: the user saw "black beams
+    // painted on", and at that value they are painted on — a stripe with no grain in it cannot read as a
+    // timber standing proud of plaster, however much relief the geometry has. Weathered oak in daylight is a
+    // mid warm brown, so the material carries the HUE and the geometry keeps the contrast.
+    const OAK = [1.00, 0.90, 0.74], OAK2 = [0.72, 0.62, 0.48], TRIM = [0.88, 0.78, 0.62], STN = [0.86, 0.84, 0.80],
+      PLA = [1.00, 0.98, 0.94], THA = [1.00, 0.96, 0.88], THA2 = [0.80, 0.76, 0.66], DARK = [0.17, 0.16, 0.18];
     const cottage = (x, z, ry, w, d, wh, form) => {
       const y = h(x, z) - 0.15;
       // WAVE-6 VALE MAJOR, and it is the STARTING ZONE: "one prism plus pyramid roof repeated". The
@@ -1998,7 +2187,7 @@ export class Props {
         R(LR(new THREE.BoxGeometry(sw + 0.75, 0.28, d * 0.62 + 0.5).rotateZ(-sd * 0.42).translate(sd * (w / 2 + sw / 2), sh + 0.22 + sw * 0.21, 0)), THA);
         K(LR(new THREE.BoxGeometry(0.16, sh, 0.16).translate(sd * (w / 2 + sw - 0.08), sh / 2, d * 0.31 - 0.08)), OAK2);
         K(LR(new THREE.BoxGeometry(0.16, sh, 0.16).translate(sd * (w / 2 + sw - 0.08), sh / 2, -d * 0.31 + 0.08)), OAK2);
-        obbCol(col, x + ex[0] * sd * (w / 2 + sw / 2), z + ex[1] * sd * (w / 2 + sw / 2), ry, sw / 2 + 0.1, d * 0.31 + 0.1, y - 0.5, y + sh + 0.4, { tile: 1.0 });
+        obbCol(col, x + ex[0] * sd * (w / 2 + sw / 2), z + ex[1] * sd * (w / 2 + sw / 2), ry, sw / 2 + 0.45, d * 0.31 + 0.3, y - 0.5, y + sh + 0.22 + sw * 0.21 + 0.2, { tile: 1.0 });   // ...to the top of the lean-to's own pitched slab, not to its wall head
       }
       // eaves board: the line where thatch meets wall. Without it the roof looks dropped on the box.
       for (const [ax, hw, off] of [[ex, w, d / 2], [ez, d, w / 2]]) for (const sd of [-1, 1]) {
@@ -2047,7 +2236,27 @@ export class Props {
       // COLLISION FIX ("I can go through buildings"): the old single AABB had half-extent max(w,d)/2 for a
       // ry-ROTATED cottage — the rotated corners reach hypot(w,d)/2, up to ~1.2 m of wall stood OUTSIDE the
       // collider (walk-through at every corner), while face middles were fenced by ~1 m of invisible air.
-      obbCol(col, x, z, ry, w / 2 + 0.18, d / 2 + 0.18, y - 1, y + wh + 1.6, { tile: 1.1 });
+      obbCol(col, x, z, ry, w / 2 + 0.18, d / 2 + 0.18, y - 1, y + wh + 0.12, { tile: 1.1 });
+      // ...AND THE ROOF (user, 2026-08-28: "the roofs of the houses in the npc village you can go through").
+      // The wall box stopped 1.6 m above the eave and nothing above that existed, so every roof — 40% of a
+      // cottage's height — was air: you could walk off the rise straight into the thatch and stand inside the
+      // loft. It cannot be one tall box either, or the eaves overhang becomes an invisible wall you bump at
+      // head height. Three stepped courses follow the real pitch: a gable keeps its full depth and loses
+      // width toward the ridge, a hip loses both (its four thatch courses are a square cone of half-side
+      // rr/sqrt2). Coarse 1.2 m tiles because this is a surface you slide off, not one you shoot along.
+      { const ov = 0.45, NC2 = 4, eaveY = y + wh - 0.05, E = gable ? w / 2 + ov : Math.hypot(w, d) * 0.60 * 0.707;
+        for (let c2 = 0; c2 < NC2; c2++) {
+          const f = 1 - c2 / NC2;                                            // half-extent fraction at this course's OUTER edge
+          // top at the band's MIDPOINT height, not its ceiling: a course whose top is the height of the
+          // course above it stands a whole step proud of the thatch and you float over the eaves. Midpoint
+          // splits the staircase error either side of the real slope (+-RH/8, ~0.4 m) instead of all above.
+          obbCol(col, x, z, ry, E * f, (gable ? d / 2 + ov : E * f),
+            eaveY - 0.15, eaveY + RH * (c2 + 0.5) / NC2, { tile: 1.4 });
+        }
+        // FLOOR probe on the thatch for tools/collidecheck.mjs, at the outer course's midpoint where the
+        // stepped collider and the real slope agree: "you can walk through the roofs" is now gated.
+        (this.colProbes ??= []).push({ kind: 'floor', name: `cottage-${this._cottages.length - 1}-roof`,
+          x: x + ex[0] * E * 0.875, z: z + ex[1] * E * 0.875, y: eaveY + RH * 0.125 }); }
       // probe site for tools/collidecheck.mjs: walk INTO the worst-case rotated corner, must not end up inside
       { const cd = Math.hypot(w, d) / 2, kx = (ex[0] * (w / 2) + ez[0] * (d / 2)) / cd, kz = (ex[1] * (w / 2) + ez[1] * (d / 2)) / cd;
         (this.colProbes ??= []).push({ kind: 'wall', name: `cottage-${this._cottages.length - 1}-corner`, sx: x + kx * (cd + 2.2), sz: z + kz * (cd + 2.2), dx: -kx, dz: -kz, maxTravel: cd + 1.4, fp: { cx: x, cz: z, ry, hw: w / 2 - 0.2, hd: d / 2 - 0.2 } }); }
@@ -2127,13 +2336,21 @@ export class Props {
         S(new THREE.BoxGeometry(3.1, 0.42, 2.5).rotateY(c.ry).translate(sx0, sy0 + 0.21, sz0), [0.64, 0.60, 0.54]);
         S(new THREE.BoxGeometry(3.34, 0.16, 2.74).rotateY(c.ry).translate(sx0, sy0 + 0.50, sz0), [0.73, 0.69, 0.62]);
         S(new THREE.BoxGeometry(3.34, 0.22, 0.62).rotateY(c.ry).translate(sx0 + ez[0] * 1.52, sy0 + 0.11, sz0 + ez[1] * 1.52), [0.60, 0.56, 0.50]); }
-      // ...and the trodden stones going out from it, small and separated: these READ as stepping stones
-      for (let i = 0; i < 6; i++) {
-        const t2 = (yardR() - 0.5) * 3.0, dd = 3.4 + yardR() * 3.4;
-        const px = c.x + ez[0] * (c.d / 2 + dd) + ex[0] * t2, pz = c.z + ez[1] * (c.d / 2 + dd) + ex[1] * t2;
-        S(new THREE.BoxGeometry(0.56 + yardR() * 0.44, 0.20, 0.56 + yardR() * 0.44).rotateY(yardR() * 3).rotateX((yardR() - 0.5) * 0.06)
-          .translate(px, h(px, pz) + 0.06, pz), [0.60, 0.56, 0.50]);
-      }
+      // ...and a trodden FLAG PATH from the stoop to the well. The wave-4 version scattered six plates into
+      // a random cone in front of the door — the user's read, verbatim: "paving slabs lie scattered flat on
+      // the meadow like dropped tiles, not a path". A path is not a scatter with fewer stones; it is a
+      // sequence that GOES somewhere. These march from the stoop toward the village centre on a fixed
+      // pitch, each one squared to the direction of travel with only a few degrees of wander, sized so
+      // consecutive flags nearly touch, and bedded to 0.07 m of proud stone instead of standing 0.16 up.
+      { const d0 = c.d / 2 + 1.9, sx1 = c.x + ez[0] * d0, sz1 = c.z + ez[1] * d0;
+        const tx = CX - sx1, tz = CZ - sz1, tl = Math.max(1e-3, Math.hypot(tx, tz)), ux = tx / tl, uz = tz / tl;
+        const lane = Math.atan2(ux, uz);
+        for (let i = 0; i < 8 && i * 0.92 < tl - 3.4; i++) {
+          const dd = 0.5 + i * 0.92, lat = (yardR() - 0.5) * 0.34;
+          const px = sx1 + ux * dd - uz * lat, pz = sz1 + uz * dd + ux * lat;
+          S(new THREE.BoxGeometry(0.92 + yardR() * 0.22, 0.18, 0.80 + yardR() * 0.20).rotateY(lane + (yardR() - 0.5) * 0.22)
+            .translate(px, h(px, pz) - 0.02, pz), [0.60 + yardR() * 0.08, 0.56 + yardR() * 0.07, 0.50 + yardR() * 0.06]);
+        } }
       // the log pile, stacked against the gable end where it stays dry under the eaves
       { const sd = yardR() < 0.5 ? 1 : -1, bx = c.x + ex[0] * sd * (c.d * 0.30) + ez[0] * (c.d / 2 - 0.4), bz = c.z + ex[1] * sd * (c.d * 0.30) + ez[1] * (c.d / 2 - 0.4);
         const by = h(bx, bz);
@@ -2170,12 +2387,34 @@ export class Props {
       S(new THREE.CylinderGeometry(3.2, 3.25, 0.20, 8).rotateY(0.78).translate(CX, wy0 + 0.08, CZ), [0.60, 0.57, 0.51]);   // the step up onto it
       S(new THREE.CylinderGeometry(2.7, 2.75, 0.40, 8).rotateY(0.39).translate(CX, wy0 + 0.20, CZ), [0.64, 0.61, 0.55]);
       S(new THREE.CylinderGeometry(2.55, 2.55, 0.12, 8).rotateY(0.39).translate(CX, wy0 + 0.44, CZ), [0.74, 0.70, 0.63]);
-      for (let i = 0; i < 10; i++) { const a2 = (i / 10) * 6.2832 + 0.3, rr = 4.4 + rng() * 2.2;
+      // THE APRON COLLAR. Was ten randomly-rotated plates thrown between r 4.4 and 6.6 — the same "dropped
+      // tiles" read as the door yards. Paving is LAID: a tight tangential ring of flags round the dais step,
+      // every stone squared to the ring, bedded so the grass meets an edge instead of growing through a
+      // floating plate. 18 flags at 20 deg, which closes the collar with a real joint between each pair.
+      for (let i = 0; i < 18; i++) { const a2 = (i / 18) * 6.2832 + 0.17, rr = 3.72 + (i % 2) * 0.06;
         const px = CX + Math.cos(a2) * rr, pz = CZ + Math.sin(a2) * rr;
-        S(new THREE.BoxGeometry(0.55 + rng() * 0.5, 0.20, 0.55 + rng() * 0.5).rotateY(rng() * 3).translate(px, h(px, pz) + 0.06, pz), [0.58, 0.55, 0.50]); }
-      K(new THREE.CylinderGeometry(0.28, 0.25, 0.62, 10).rotateZ(0.32).translate(CX + 1.9, wy0 + 0.80, CZ + 0.6), OAK);          // a bucket, set down on the dais
+        S(new THREE.BoxGeometry(1.05, 0.18, 1.42).rotateY(-a2).rotateZ((rng() - 0.5) * 0.03)
+          .translate(px, h(px, pz) - 0.01, pz), [0.60 + rng() * 0.07, 0.57 + rng() * 0.06, 0.51 + rng() * 0.05]); }
+      // ...and a bucket someone set down. It was tilted 18 deg at rim height on a flat dais, which is why it
+      // read as a floating drum rather than a bucket; it now stands on the flags and wears its iron hoops.
+      K(new THREE.CylinderGeometry(0.28, 0.25, 0.62, 10).translate(CX + 1.9, wy0 + 0.81, CZ + 0.6), OAK);
+      for (const hy of [0.60, 1.02]) K(new THREE.TorusGeometry(0.275, 0.028, 4, 12).rotateX(Math.PI / 2).translate(CX + 1.9, wy0 + hy, CZ + 0.6), [0.42, 0.40, 0.38]);
       K(new THREE.CylinderGeometry(0.045, 0.045, 1.9, 6).rotateZ(0.44).translate(CX - 1.5, wy0 + 1.40, CZ - 1.1), OAK2);         // a hayfork leaning on the kerb
-      for (const sd of [-1, 1]) K(new THREE.BoxGeometry(0.06, 0.42, 0.06).rotateZ(0.44).translate(CX - 1.5 - 0.38 + sd * 0.09, wy0 + 2.25, CZ - 1.1), OAK2); }
+      for (const sd of [-1, 1]) K(new THREE.BoxGeometry(0.06, 0.42, 0.06).rotateZ(0.44).translate(CX - 1.5 - 0.38 + sd * 0.09, wy0 + 2.25, CZ - 1.1), OAK2);
+      // THE TROUGH (terrain lane's ask, 2026-08-29: "the earth now wants a couple of objects it can't grow
+      // itself — a water trough or spill-darkened flags at the well"; it dressed the ground and cannot place
+      // the object). Coursed stone, hollowed for real so you can see into it, standing on the flag collar
+      // clear of Serel's post (-2, -3) and Harl's (+2.6, +2.4). 0.52 m tall — under the 0.6 m step-up, so
+      // like the dais and the door stoops it needs no collider. 7 boxes in the masonry bucket: 0 draw calls.
+      { const tx = CX - 3.6, tz = CZ + 2.4, ty = h(tx, tz), TA = Math.atan2(CX - tx, CZ - tz);
+        const LT = (g) => g.rotateY(TA).translate(tx, ty, tz), TS = [0.57, 0.54, 0.49], TS2 = [0.67, 0.64, 0.58];
+        S(LT(new THREE.BoxGeometry(2.10, 0.18, 0.92).translate(0, 0.09, 0)), TS);                                  // floor slab
+        for (const sd of [-1, 1]) S(LT(new THREE.BoxGeometry(2.10, 0.52, 0.16).translate(0, 0.26, sd * 0.38)), TS2);
+        for (const sd of [-1, 1]) S(LT(new THREE.BoxGeometry(0.16, 0.52, 0.60).translate(sd * 0.97, 0.26, 0)), TS2);
+        for (const sd of [-1, 1]) S(LT(new THREE.BoxGeometry(0.30, 0.30, 0.30).rotateZ(0.5).translate(sd * 0.80, 0.05, 0)), TS);   // bedding stones under the ends
+        // the water: a dark cool slab 0.10 below the kerb, on the same rough stone material, so it reads as
+        // standing water in shade and can never throw a glint. No new material, no emissive, no alpha.
+        S(LT(new THREE.BoxGeometry(1.84, 0.02, 0.62).translate(0, 0.42, 0)), [0.46, 0.56, 0.60]); } }
     // three vegetable strips between the field walls: ridge-and-furrow, which is what says "farmed" at 40 m
     for (let i = 0; i < 3; i++) {
       const a2 = 0.9 + i * 2.1, rr = 20 + rng() * 5, bx = CX + Math.cos(a2) * rr, bz = CZ + Math.sin(a2) * rr;
@@ -2219,9 +2458,47 @@ export class Props {
       K(L(new THREE.BoxGeometry(3.4, 0.12, 1.2).translate(0, 0.98, 0.45)), OAK);                    // counter
       K(L(new THREE.BoxGeometry(3.4, 0.55, 0.07).translate(0, 0.66, 1.02)), OAK2);                  // apron board
       K(L(new THREE.BoxGeometry(3.2, 0.10, 0.9).translate(0, 0.48, -0.70)), OAK);                   // back shelf
-      // canted canvas — REAL thickness and a 20° pitch: a 5 cm plate a metre above eye height reads as
-      // a floating razor line from 15 m (it did — the wave's "white beam across the lane")
-      W(L(new THREE.BoxGeometry(3.8, CTH, 2.85).rotateX(CPITCH).translate(0, CYC, CZC)), canvas);
+      // THE CANVAS. It was ONE canted box, and the user's word for the result is exact: "a FLAT UNSHADED
+      // BLUE SLAB". A single plane at a single angle takes a single sun value across 11 m^2 — there is no
+      // shading variation anywhere on it, so no amount of material work can make it read as cloth. Cloth is
+      // read from its SAG. Six spanwise panels, each rolled a little about the slope axis and dropped a
+      // little between the purlins, give the surface six slightly different normals: the sun now falls
+      // across it in bands and it reads as canvas stretched over a frame. A darker lining under it puts the
+      // underside in shade (one tint per merged geometry, so the shade has to be its own panel), and a
+      // scalloped valance along the customer edge is the silhouette cue that says "market" at 25 m.
+      // 8 extra boxes + 7 valance tabs per stall = ~180 tris, in the SAME merged bucket: zero draw calls.
+      // ONE CONTINUOUS SHEET, NOT SIX BOARDS. First attempt gave alternate panels opposite tilts, which
+      // reads as venetian blinds from the side (tools/out/vil-final2/shot-canopy-side.png) — worse than the
+      // flat slab it replaced. Cloth slung between two purlins is a CATENARY, so the panels sample one
+      // curve: droop `SAG*(1-u^2)` across the width, and each panel is rolled to that curve's own slope at
+      // its centre, so consecutive panels meet tangentially and the surface is smooth. 1.32x width overlaps
+      // each neighbour by ~0.16 m, well past the ~0.08 m the roll displaces an edge, so no daylight gets in.
+      // ...and 0.17 m of sag over a 3.8 m span is 4.5%, which is a taut sail, not a market awning. From
+      // underneath it read (tools/out/vil-final3/_canopy.png); from a standing eye OUTSIDE at 14 m — the
+      // angle it is seen from ~always — the top face is still a flat slab: neighbouring panels differ by
+      // 4 deg of normal, worth ~1% of N.L, and the back edge deflects ~13 px. 0.38 m (10%, what canvas
+      // slung between two purlins actually does) puts 21 deg between the end panels and a ~30 px curve in
+      // the silhouette, so the sun falls across it in bands and the edge reads as a hanging line.
+      // Safe: the posts sit at |x| 1.55 of a 1.61 half-span where the droop is 0.02 m, so post heights and
+      // headroom under the counter are untouched, and consecutive panels are tangent to one curve, so the
+      // worst gap between them is (1/2)y''d^2 ~ 5 mm against a 0.14 m sheet.
+      const PANW = 3.8 / 6, SAG = 0.38, HALFW = 1.9;
+      for (let p = 0; p < 6; p++) {
+        const u2 = (p - 2.5) / 2.5;                                                 // -1 at the ends, 0 in the middle
+        const roll = Math.atan(2 * SAG * u2 / HALFW);                               // d(droop)/dx at this panel's centre
+        W(L(new THREE.BoxGeometry(PANW * 1.32, CTH, 2.85).rotateZ(roll).rotateX(CPITCH)
+          .translate(u2 * HALFW * 0.845, CYC - SAG * (1 - u2 * u2), CZC)), canvas);
+      }
+      // ...and the VALANCE HANGS FROM THE CLOTH, not from a straight line. It used to sit at a constant
+      // height across the whole 3.2 m while the sheet above it curved, which from the one bearing the yard
+      // is usually approached at (looking nearly ALONG the sag, where the curve foreshortens away) put a
+      // dead-straight pale band under the canopy — a second flat plank, and the reason the stall still read
+      // as a slab after the sheet was fixed. It now carries the same catenary, so the front silhouette is a
+      // hanging line from every angle instead of only from the two where the sag is side-on.
+      for (let p = 0; p < 7; p++) {
+        const drop = 0.26 + (p % 2) * 0.10, uv = (p - 3) / 3;
+        W(L(new THREE.BoxGeometry(0.46, drop, 0.06).translate(uv * 1.59, roofY(1.40) - SAG * (1 - uv * uv) - drop / 2 + 0.04, 1.42)), canvas);
+      }
       W(L(new THREE.SphereGeometry(0.30, 7, 6).scale(1, 0.72, 1).translate(-0.9, 1.20, 0.42)), [0.80, 0.72, 0.58]);  // sacks of goods
       W(L(new THREE.SphereGeometry(0.26, 7, 6).scale(1, 0.75, 1).translate(-0.35, 1.16, 0.55)), [0.72, 0.62, 0.48]);
       K(L(new THREE.BoxGeometry(0.50, 0.50, 0.50).translate(0.95, 1.29, 0.45)), OAK);               // a crate on the counter
@@ -2238,6 +2515,15 @@ export class Props {
       K(new THREE.BoxGeometry(s + 0.06, 0.07, s + 0.06).rotateY(a2).translate(px, py + s - 0.04, pz), OAK2); };
     const gsack = (px, pz, s, t) => { const py = h(px, pz);
       W(new THREE.SphereGeometry(0.34 * s, 7, 6).scale(1, 0.72, 1).translate(px, py + 0.24 * s, pz), t ?? [0.80, 0.72, 0.58]); };
+    // A STRAW BALE — the other half of the terrain lane's ask ("a straw bale or feed sack by the stalls").
+    // Straw is the THATCH material, which is the whole point: the same laid-straw map the roofs wear, so a
+    // bale next to a stall belongs to the same village rather than being a yellow box. The two girth cords
+    // are one thin box each, sized a hair past the cross-section so only their rims show — a wrapping band
+    // in one geometry instead of six straps. 3 boxes per bale, thatch + oak buckets: 0 draw calls.
+    const bale = (bx, bz, a2, s) => { const by = h(bx, bz), LB = (g) => g.rotateY(a2).translate(bx, by, bz);
+      R(LB(new THREE.BoxGeometry(1.15 * s, 0.70 * s, 0.72 * s).translate(0, 0.35 * s, 0)), [0.92, 0.86, 0.70]);
+      for (const sd of [-1, 1]) K(LB(new THREE.BoxGeometry(0.05, 0.73 * s, 0.75 * s).translate(sd * 0.30 * s, 0.35 * s, 0)), [0.52, 0.44, 0.33]);
+      col.add({ type: 'sphere', pos: V3(bx, by + 0.35 * s, bz), r: 0.66 * s }); };
     const bench = (bx, bz, a2) => { const by = h(bx, bz), L = (g) => g.rotateY(a2).translate(bx, by, bz);
       K(L(new THREE.BoxGeometry(1.75, 0.10, 0.48).translate(0, 0.52, 0)), OAK);
       for (const q of [-1, 1]) K(L(new THREE.BoxGeometry(0.12, 0.50, 0.44).translate(q * 0.72, 0.26, 0)), OAK2);
@@ -2253,10 +2539,18 @@ export class Props {
       obbCol(col, bx, bz, a2, 1.15, 0.35, by - 0.5, by + 2.5, { tile: 1.0 });   // was an unrotated AABB for a rotated board
     };
     const aWell = (x, z) => Math.atan2(CX - x, CZ - z);                       // face the well
-    stall(CX - 4.5, CZ + 6.5, aWell(CX - 4.5, CZ + 6.5), [0.92, 0.40, 0.38]); // wine-red canvas
-    stall(CX + 7.2, CZ + 4.2, aWell(CX + 7.2, CZ + 4.2), [0.24, 0.31, 0.74]); // deep blue canvas (0.4/0.48/0.92 read as washed silver in full sun)
+    // CANVAS VALUES. Both tints multiply the PLASTER material's own light base + map, so they land far
+    // brighter than they read as numbers: 0.92/0.40/0.38 arrived as a hot salmon that out-shouted the
+    // Aetheryte against the new earth-toned ground. Madder-dyed cloth is a mid, not a light — the value
+    // comes down and the hue stays, which is the same rule the villagers' albedo grade now follows.
+    stall(CX - 4.5, CZ + 6.5, aWell(CX - 4.5, CZ + 6.5), [0.66, 0.30, 0.26]); // madder-red canvas
+    stall(CX + 7.2, CZ + 4.2, aWell(CX + 7.2, CZ + 4.2), [0.21, 0.27, 0.62]); // woad-blue canvas (0.4/0.48/0.92 read as washed silver in full sun; 0.24/0.31/0.74 still read pale)
     crate(CX - 7.6, CZ + 8.8, 0.62, 0.4); crate(CX - 8.4, CZ + 9.9, 0.55, 1.1); crate(CX - 7.2, CZ + 10.1, 0.48, 0.8);
     gsack(CX - 6.9, CZ + 9.6, 1.0); gsack(CX - 6.3, CZ + 9.0, 0.85, [0.72, 0.62, 0.48]);
+    // two bales and a feed sack stacked at the blue stall's open end (the stall is at +7.2/+4.2 facing the
+    // well, so this is behind its counter, on the ground the terrain lane already dressed for it)
+    bale(CX + 9.3, CZ + 2.7, 0.35, 1.0); bale(CX + 9.8, CZ + 3.7, 1.05, 0.92);
+    gsack(CX + 8.7, CZ + 3.5, 0.9, [0.76, 0.66, 0.50]);
     col.add({ type: 'sphere', pos: V3(CX - 7.8, h(CX - 7.8, CZ + 9.4) + 0.4, CZ + 9.4), r: 1.4 });
     board(CX - 19, CZ + 11, Math.atan2(0.866, -0.499));                       // on the plaza lane, facing back up it
     bench(CX + 2.9, CZ - 3.8, aWell(CX + 2.9, CZ - 3.8));
@@ -2266,6 +2560,21 @@ export class Props {
     lantern(CX - 6.8, CZ + 3.2); lantern(CX + 9.0, CZ + 7.8);
     for (let li = 0; li < 4; li++) { const dd = 34 + li * 18, sd = li % 2 ? 2.3 : -2.3;
       lantern(CX + DP[0] * dd + 0.499 * sd, CZ + DP[1] * dd + 0.866 * sd); }
+    // THE LANE ITSELF (user: the props "don't look finished" and the paving reads as scattered tiles). The
+    // lanterns already paced a road from the hamlet to the Aetheryte plaza and there was no road under them.
+    // Two courses of flags laid side by side, 1.0 m pitch, running the lantern bearing from the market out
+    // past the noticeboard: a lane you can follow with your feet, in the masonry bucket, zero draw calls.
+    { const lang = Math.atan2(DP[0], DP[1]), nx3 = 0.499, nz3 = 0.866, laneR = mulberry32(0x1a4e | 0);
+      const flag = (dd, sd, w2, d2) => { const px = CX + DP[0] * dd + nx3 * sd, pz = CZ + DP[1] * dd + nz3 * sd;
+        S(new THREE.BoxGeometry(w2, 0.18, d2).rotateY(lang + (laneR() - 0.5) * 0.16).rotateZ((laneR() - 0.5) * 0.03)
+          .translate(px, h(px, pz) - 0.015, pz), [0.60 + laneR() * 0.08, 0.57 + laneR() * 0.06, 0.51 + laneR() * 0.05]); };
+      for (let i = 0; i < 30; i++) for (const sd of [-0.62, 0.62]) flag(7.5 + i * 1.02, sd, 1.22, 1.10);
+      // ...and past the noticeboard the paving GIVES OUT rather than stopping dead at a square edge: one
+      // course instead of two, the pitch opening from 1.5 m to 3 m and the flags shrinking, so the lane
+      // thins into a trodden track the way a real one does. Ends around 62 m, where the plaza's own paving
+      // is close enough to pick the eye up.
+      for (let i = 0, dd = 38.5; i < 14; i++) { dd += 1.5 + i * 0.12;
+        flag(dd, (laneR() - 0.5) * 1.1, 1.10 - i * 0.035, 1.00 - i * 0.03); } }
 
     // warm windows: additive quads that only light up as the sun goes down (same trick the mushrooms use).
     // No point lights — nine cottages would be nine shadow-casting lights for one visual beat.
@@ -2318,9 +2627,10 @@ export class Props {
     for (const n of ['herbwife', 'merchant', 'mason', 'fisherman', 'farmwoman', 'guard', 'scholar']) {
       const s = this.game.assets?.model?.(n) ?? null, c = this.game.assets?.clips?.(n) ?? [];
       if (!s || !c.length) continue;
-      const bb = new THREE.Box3().setFromObject(s);
-      bodies[n] = { src: s, minY: bb.min.y, scl: 1.78 / Math.max(0.5, bb.max.y - bb.min.y),
-        idle: THREE.AnimationClip.findByName(c, 'idle') ?? c.find((k) => /idle/i.test(k.name)) ?? c[0] };
+      // NOTE: no Box3 here any more. `setFromObject` on a SkinnedMesh describes the bind-pose geometry
+      // through the node matrices, which on these rigs is 1.01 units for a 1.75-unit person — scale and
+      // ground contact are both measured off the POSED, SKINNED body instead (npcSkinnedSpan, below).
+      bodies[n] = { src: s, idle: THREE.AnimationClip.findByName(c, 'idle') ?? c.find((k) => /idle/i.test(k.name)) ?? c[0] };
     }
     if (!Object.keys(bodies).length) { console.log('[props] villagers: no villager bodies loaded, hamlet stays quiet'); return; }
     const rng = mulberry32(this.game.seed + 7707);
@@ -2332,11 +2642,9 @@ export class Props {
       let skin = null, spine = null;
       inst.traverse((obj) => { if (obj.isBone && !spine && /spine/i.test(obj.name)) spine = obj;
         if (obj.isMesh) { skin = obj; obj.castShadow = obj.receiveShadow = true;
-        if (obj.material) { obj.material = obj.material.clone(); obj.material.color?.multiply?.(_c.setRGB(T[0] * val, T[1] * val, T[2] * val)); } } });
-      const scl = B.scl * (o.scale ?? 1);
-      const y = h(x, z), baseY = -B.minY * scl;
-      inst.scale.setScalar(scl);
-      inst.position.set(x, y + baseY, z);
+        if (obj.material) { obj.material = paintNpcMaterial(obj.material.clone()); obj.material.color?.multiply?.(_c.setRGB(T[0] * val, T[1] * val, T[2] * val)); } } });
+      inst.scale.setScalar(1);
+      inst.position.set(x, h(x, z), z);
       // MEASURED, four-way, on frame (tools/out/npc-quad, 2026-08-28): these rigs are authored facing +X
       // (the same axis as every Tripo upright in GLB_CFG), so the rotation that faces a bearing
       // yaw = atan2(toward) is `yaw - PI/2`. The shipped `yaw + PI` was 90° off on top of backwards —
@@ -2344,9 +2652,20 @@ export class Props {
       inst.rotation.y = yaw - Math.PI / 2;
       inst.visible = false;
       scene.add(inst);
+      const limits = npcJointLimits(inst);                                    // bind rotations, captured BEFORE the mixer ever writes
       const mixer = new THREE.AnimationMixer(inst);
       mixer.clipAction(B.idle).play();
       mixer.update(rng() * 4);                                                // desync the loop phases
+      applyNpcJointLimits(limits);
+      // SIZE AND GROUND CONTACT, MEASURED OFF THE POSED BODY (see npcSkinnedSpan). Everyone is exactly
+      // 1.78 m x their character scale, and the SOLE — not a bind-pose box corner — is what sits on the
+      // grade. The clamp above runs first on purpose: measuring a foot that is still swung 100 deg off
+      // its shin would bake that error into the offset.
+      const span = skin ? npcSkinnedSpan(skin, inst) : { lo: 0, hi: 1 };
+      const scl = (1.78 * (o.scale ?? 1)) / Math.max(0.5, span.hi - span.lo);
+      const y = h(x, z);
+      inst.scale.setScalar(scl);
+      inst.position.y = y - span.lo * scl;
       col.add({ type: 'capsule', a: V3(x, y, z), b: V3(x, y + 1.55, z), r: 0.38 });   // you cannot walk through anyone
       // An idle with no spine channels gets a tiny breath to keep the torso alive. An idle that DOES
       // animate the spine (merchant, some of the new bodies) must be left alone — writing rotation.x
@@ -2360,17 +2679,20 @@ export class Props {
       //    Wayfinder head-track uses), so a baked spine keeps its animation and gains a breath on top.
       const clipOwnsSpine = B.idle.tracks.some((tk) => /spine/i.test(tk.name));
       const sway = spine ? { b: spine, add: clipOwnsSpine, rx: spine.rotation.x, rz: spine.rotation.z, t: rng() * 6.28 } : null;
-      const v = { mesh: inst, skin, mixer, yaw, restYaw: yaw, acc: 0, baseY, sway };
+      const v = { mesh: inst, skin, mixer, yaw, restYaw: yaw, acc: 0, limits, sway };
       this.villagers.push(v);
       if (o.id) this.npcs.push({ id: o.id, name: o.name, position: inst.position, object: inst });
       return v;
     };
     // subtle nudges — the painterly robe albedos own the colour, the tint only leans it
-    const BLU = [0.86, 0.90, 1.04], UND = [1.02, 1.00, 0.95], VIO = [0.94, 0.90, 1.03];
+    const UND = [1.02, 1.00, 0.95], VIO = [0.94, 0.90, 1.03];
     // THE KEPT THREE — ids and home positions match the town quests' giver data
     // (src/rpg/quests/meadow.js: 'npc:serel|wick|bram'), so QuestMarkers.npcAt(id) resolves every town
     // quest giver to a real body. Do not rename one side without the other. Bram + Wick are the vendors.
-    spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: BLU, scale: 0.94, body: 'herbwife' });
+    // Serel wore BLU, and a blue lean on the only RED robe in the hamlet is the other half of "hot magenta":
+    // it takes the red channel down and the blue channel up on a hue that has no headroom either way.
+    // Undyed-linen lean instead — the robe's own burgundy is the colour, the tint just seats it in the light.
+    spawn(116, -99, Math.atan2(2, 3), { id: 'serel', name: 'Serel the Well-Keeper', tint: UND, scale: 0.94, body: 'herbwife' });
     spawn(125.4, -88.4, Math.atan2(1.6, 0.2), { id: 'wick', name: 'Wick the Lamplighter', tint: VIO, body: 'merchant' });      // tending the market lantern
     spawn(110, -105, Math.atan2(-8, -9), { id: 'bram', name: 'Bram the Mason', tint: UND, scale: 1.03, body: 'mason' });       // eyeing somebody's stonework
     // THE FOUR NEW BODIES (2026-08-28 re-fill): each at the hamlet furniture it belongs to (built in
@@ -2382,6 +2704,32 @@ export class Props {
     spawn(93.5, -82.3, Math.atan2(-0.866, 0.499), { id: 'cole', name: 'Watchman Cole', tint: STL, scale: 1.05, body: 'guard' });     // the lane entrance, watching the approach from the plaza
     spawn(100.4, -85.8, Math.atan2(-1.4, 0.8), { id: 'pell', name: 'Archivist Pell', tint: VIO, scale: 0.93, body: 'scholar' });     // reading the noticeboard
     console.log(`[props] villagers: ${this.villagers.length} (one per unique body, all static)`);
+  }
+
+  /**
+   * Region clutter is knee-high dressing, and past ~500 m one screen pixel covers half a metre of it, so
+   * every triangle it spends there is spent on nothing. Assigned unconditionally on every pass (one pass in
+   * twelve — nine distance checks do not need 60 Hz) rather than edge-triggered, for the same reason the
+   * villagers are: warmScene snapshots and restores `visible`, and an edge-triggered toggle gets clobbered
+   * by the restore and the mesh never comes back. Shadow casting goes first, at
+   * 220 m — a merged 240 k-tri clutter mesh in a CSM cascade is pure tri tax with no pixels to show for it.
+   */
+  _cullFarClutter() {
+    const fc = this._farClutter; if (!fc?.length) return;
+    if ((this._fcTick = (this._fcTick | 0) + 1) % 12) return;
+    const cam = this.game.camera.position;
+    for (let i = 0; i < fc.length; i++) {
+      const m = fc[i], b = m.geometry.boundingSphere;
+      if (!b) continue;
+      const dc = b.center.distanceTo(cam);
+      // VISIBILITY off the CENTRE (a region's clutter spans ~240 m, so 500 m from the centre still leaves
+      // the nearest prop 260 m away — a 1 m rock is two pixels there and cannot pop).
+      m.visible = dc < 500;
+      // SHADOWS off the SPHERE SURFACE, not the centre. Centre distance would switch the whole region's
+      // clutter shadows off the moment you walked 220 m out from the heart — including the rocks at your
+      // feet on the far side of the same region. Surface distance is 0 anywhere inside the field.
+      m.castShadow = Math.max(0, dc - b.radius) < 220;
+    }
   }
 
   /** Distance-banded villager animation: full rate to 35 m, 1/4 to 80 m, 1/12 to SHOW, pose held beyond.
@@ -2407,6 +2755,7 @@ export class Props {
         v.yaw += dy * (1 - Math.exp(-3.5 * step)); m.rotation.y = v.yaw - Math.PI / 2;   // +X-forward rigs (see _buildVillagers)
       }
       v.mixer.update(step);
+      applyNpcJointLimits(v.limits);                     // ...then the joint limits, before anything reads a bone
       if (v.sway) {                                      // breath + weight shift, applied AFTER the mixer so it composes with whatever the clip did
         const S = v.sway; S.t += step;
         const bx = S.add ? S.b.rotation.x : S.rx, bz = S.add ? S.b.rotation.z : S.rz;   // a clip that owns the spine supplies the base; otherwise the rest pose does
@@ -4043,23 +4392,19 @@ export class Props {
     const src = this.game.assets?.model?.('wayfinder') ?? null;
     const clips = this.game.assets?.clips?.('wayfinder') ?? [];
     if (src && clips.length) {
-      const box = new THREE.Box3().setFromObject(src);
-      const scl = 1.78 / Math.max(0.5, box.max.y - box.min.y);
       const idle = THREE.AnimationClip.findByName(clips, 'idle') ?? clips.find((c) => /idle/i.test(c.name)) ?? clips[0];
       this.wayfinders = [];
       for (const st of list) {
         const inst = cloneSkinned(src);
         const T = WAYFINDER_TINT[st.id] ?? [1, 1, 1];
-        let head = null;
+        let head = null, skin = null;
         inst.traverse((o) => {
           if (o.isBone && !head && /head/i.test(o.name)) head = o;
           if (o.isMesh) {
-            o.castShadow = o.receiveShadow = true;
-            if (o.material) { o.material = o.material.clone(); o.material.color?.multiply?.(new THREE.Color(T[0], T[1], T[2])); }   // region weathering stays COLOUR-only
+            o.castShadow = o.receiveShadow = true; skin = o;
+            if (o.material) { o.material = paintNpcMaterial(o.material.clone()); o.material.color?.multiply?.(new THREE.Color(T[0], T[1], T[2])); }   // region weathering stays COLOUR-only; the grade is the same one the villagers get
           }
         });
-        inst.scale.setScalar(scl);
-        inst.position.copy(st.pos); inst.position.y -= box.min.y * scl;        // feet on the dais top
         // REST rotation stays faceAngle+PI (eye-verified: the rotation where he greets arrivals). But the
         // rig is +X-forward (measured four-way on the same body family — tools/out/npc-quad), so the
         // ROTATION that faces a world point is atan2(toward) - PI/2. `yaw` below stores the raw rotation
@@ -4067,15 +4412,22 @@ export class Props {
         // a player inside talking range his back (user report).
         inst.rotation.y = st.faceAngle + Math.PI;
         inst.visible = false;
+        inst.scale.setScalar(1); inst.position.copy(st.pos);
         scene.add(inst);
+        const limits = npcJointLimits(inst);                                   // his own idle swings an ankle 104 deg; same clamp as the villagers
         const mixer = new THREE.AnimationMixer(inst);
         mixer.clipAction(idle).play();
         const seed = (this.wayfinders.length * 2.39996) % 6.2832;
         mixer.update(seed);                                                    // desync the eleven idle phases
-        st.wf = { mesh: inst, mixer, head, baseYaw: st.faceAngle + Math.PI, yaw: st.faceAngle + Math.PI, seed, look: 0 };   // stores ROTATION (see the +Z note above)
+        applyNpcJointLimits(limits);
+        const span = skin ? npcSkinnedSpan(skin, inst) : { lo: 0, hi: 1 };     // 1.78 m, sole on the dais top — measured in INST space (see npcSkinnedSpan)
+        const scl = 1.78 / Math.max(0.5, span.hi - span.lo);
+        inst.scale.setScalar(scl);
+        inst.position.y = st.pos.y - span.lo * scl;
+        st.wf = { mesh: inst, mixer, head, limits, baseYaw: st.faceAngle + Math.PI, yaw: st.faceAngle + Math.PI, seed, look: 0 };   // stores ROTATION (see the +Z note above)
         this.wayfinders.push(st.wf);
       }
-      console.log(`[props] wayfinders: ${this.wayfinders.length} rigged GLB instances (clip '${idle?.name}', scale ${scl.toFixed(3)})`);
+      console.log(`[props] wayfinders: ${this.wayfinders.length} rigged GLB instances (clip '${idle?.name}', scale ${(this.wayfinders[0]?.mesh.scale.x ?? 0).toFixed(3)})`);
       return;
     }
     this._wfAsset = buildWayfinderRig();
@@ -4147,6 +4499,7 @@ export class Props {
       let dy2 = want2 - near.yaw; dy2 = Math.atan2(Math.sin(dy2), Math.cos(dy2));
       near.yaw += dy2 * (1 - Math.exp(-3.0 * dt)); near.mesh.rotation.y = near.yaw;   // yaw IS the rotation now (+Z-forward rig)
       near.mixer.update(dt);
+      if (near.limits) applyNpcJointLimits(near.limits); // ...then joint limits, before the head-track reads a bone
       if (near.head) {                                   // applied AFTER the mixer writes this frame's pose, so it adds on top of the clip
         let tgt = Math.sin(t * 0.33 + near.seed) * 0.22; // ambient glance
         if (p2 && d2n < 18) {
@@ -5209,6 +5562,7 @@ export class Props {
     this._updateSteles();
     this._updateWayfinders(dt, t);
     this._updateVillagers(dt);
+    this._cullFarClutter();
     // _updateQuestMarkers retired (orchestrator, 2026-08-27): src/rpg/QuestMarkers.js now owns the !/?
     // read as WORLD-SPACE billboards (occluded, night-graded, one visual language over steles AND
     // villagers). Running both stacked a double ! over every stele. The method stays for reference.

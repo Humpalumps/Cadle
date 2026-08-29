@@ -455,6 +455,17 @@ export class PostFX {
     // The blades cannot use overrideMaterial: their geometry is built in their own vertex shader, so a
     // replacement material draws nothing. Instead they render with their real shader in uMaskMode (flat
     // red), on their own layer, in a second pass over the same depth buffer.
+    // TRANSLUCENT READS ARE NOT GEOMETRY. `scene.overrideMaterial` is opaque by construction, so any
+    // see-through combat read — an enemy shield bubble is the one that caught us — is rasterised as SOLID
+    // GREEN, and every sky pixel behind it is then classified as world. combatcheck judges the world and
+    // ignores what the haze owns, so a bubble in front of a cloud turned that cloud into a "white core":
+    // 5 of 19 findings on 2026-08-29 were sky seen through a Sentinel's shield, with no VFX object within
+    // a hundred pixels. A gate that cries wolf is a gate nobody reads, so anything that a player sees
+    // THROUGH must opt out here. Contract for builders: set `mesh.userData.maskSkip = true` on a
+    // transparent overlay you own. It costs one traverse, and only in the harness (mask frames are
+    // captured by tools/inspect.mjs, never in normal play).
+    const hidden = [];
+    sc.traverse((o) => { if (o.visible && o.userData?.maskSkip) { o.visible = false; hidden.push(o); } });
     const grass = g.world?.grass, rings = grass?.rings ?? [];
     const layers = rings.map((x) => x.mesh.layers.mask);
     for (const x of rings) x.mesh.layers.set(7);
@@ -472,6 +483,7 @@ export class PostFX {
     }
     g.camera.layers.mask = camLayers;
     rings.forEach((x, i) => { x.mesh.layers.mask = layers[i]; });
+    for (const o of hidden) o.visible = true;
     sc.overrideMaterial = null;
     if (this.overlay) { r.clearDepth(); r.render(this.overlay.scene, this.overlay.camera); }   // the viewmodel is geometry too
     sc.background = bg; sc.overrideMaterial = ovr;

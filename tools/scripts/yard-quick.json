@@ -1,0 +1,136 @@
+[
+ {
+  "wait": 75
+ },
+ {
+  "hour": 12
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 40
+ },
+ {
+  "shot": "yard-14m"
+ },
+ {
+  "eval": "(()=>{const x=116,z=-99,d=3,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.22);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 25
+ },
+ {
+  "shot": "serel-3m"
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=9,a=4.4;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.55);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 25
+ },
+ {
+  "shot": "down-9m"
+ },
+ {
+  "eval": "(()=>{__game.teleport(150,null,-70);__game.look(2.35,-0.06);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 30
+ },
+ {
+  "shot": "edge-out"
+ },
+ {
+  "eval": "(()=>{__game.teleport(175,null,-50);__game.look(2.35,-0.06);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 25
+ },
+ {
+  "shot": "meadow-near"
+ },
+ {
+  "eval": "(()=>{__game.teleport(0,null,0);__game.look(-1.5708,-0.08);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 30
+ },
+ {
+  "shot": "meadow-000"
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 30
+ },
+ {
+  "burst": {
+   "name": "yard",
+   "n": 4,
+   "interval": 0.25
+  }
+ },
+ {
+  "eval": "(()=>{__game.teleport(0,null,0);__game.look(-1.5708,-0.08);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 30
+ },
+ {
+  "burst": {
+   "name": "meadow",
+   "n": 4,
+   "interval": 0.25
+  }
+ },
+ {
+  "hour": 18
+ },
+ {
+  "wait": 2
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 20
+ },
+ {
+  "shot": "yard-h18"
+ },
+ {
+  "hour": 22
+ },
+ {
+  "wait": 2
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 20
+ },
+ {
+  "shot": "yard-h22"
+ },
+ {
+  "hour": 8
+ },
+ {
+  "wait": 2
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 20
+ },
+ {
+  "shot": "yard-h08"
+ },
+ {
+  "stats": "final"
+ }
+]

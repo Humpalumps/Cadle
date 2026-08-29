@@ -1,0 +1,11 @@
+[
+  { "wait": 12 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'" },
+  { "hour": 11 },
+  { "eval": "const w=__game.game.world.props.wayfinders[0].mesh; __at(w.position.x, w.position.z, 4.5, 2.4, -0.18); 'aim'" },
+  { "wait": 3 }, { "shot": "wf-feet" },
+  { "eval": "const w=__game.game.world.props.wayfinders[0].mesh; __at(w.position.x, w.position.z, 7.0, 2.4, -0.02); 'aim'" },
+  { "wait": 1.5 }, { "shot": "wf-full" },
+  { "eval": "__at(110,-105,2.6,-2.4,-0.42)" }, { "wait": 2 }, { "shot": "bram-feet" },
+  { "eval": "__at(120.6,-93.6,2.6,-0.8,-0.42)" }, { "wait": 1.5 }, { "shot": "harl-feet" }
+]

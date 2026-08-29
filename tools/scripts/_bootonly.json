@@ -1,0 +1,1 @@
+[{"wait":32},{"eval":"JSON.stringify({prog:__game.game.assets.progress, loadMs:Math.round(__game.game.assets.loadMs)})"},{"shot":"b"}]

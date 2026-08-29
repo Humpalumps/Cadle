@@ -1,0 +1,47 @@
+[
+ {
+  "wait": 75
+ },
+ {
+  "hour": 12
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.1);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 40
+ },
+ {
+  "shot": "yard-14m"
+ },
+ {
+  "perfWindow": {
+   "secs": 4,
+   "label": "yard"
+  }
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=70,a=2.6;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),-0.06);return __game.state().pos.map(v=>Math.round(v)).join(',')})()"
+ },
+ {
+  "wait": 35
+ },
+ {
+  "shot": "halo-70m"
+ },
+ {
+  "eval": "(()=>{__game.teleport(0,null,0);__game.look(-1.5708,-0.08);return 'ok'})()"
+ },
+ {
+  "wait": 30
+ },
+ {
+  "shot": "meadow-000"
+ },
+ {
+  "perfWindow": {
+   "secs": 4,
+   "label": "meadow"
+  }
+ }
+]

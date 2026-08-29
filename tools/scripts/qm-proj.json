@@ -1,0 +1,8 @@
+[
+  { "wait": 6 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'" },
+  { "hour": 11 },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 1.5 },
+  { "shot": "serel-proj" },
+  { "eval": "const g=__game.game, cam=g.camera, qm=g.rpg.markers, props=g.world.props; const W=innerWidth,H=innerHeight; const proj=(v)=>{const p=v.clone().project(cam); return [Math.round((p.x*0.5+0.5)*W), Math.round((-p.y*0.5+0.5)*H)];}; const V=g.THREE||null; const out={cam:[+cam.position.x.toFixed(2),+cam.position.y.toFixed(2),+cam.position.z.toFixed(2)], W, H, npcs:[], markers:[]}; for(const n of props.npcs||[]){ const o=n.object; let hb=null,hy=-1e9; o.traverse(c=>{if(c.isBone&&/head/i.test(c.name)){c.updateWorldMatrix(true,false); const y=c.matrixWorld.elements[13]; if(y>hy){hy=y;hb=c;}}}); const wp=new (o.position.constructor)(); o.getWorldPosition(wp); const hv=hb?new (o.position.constructor)(hb.matrixWorld.elements[12],hb.matrixWorld.elements[13],hb.matrixWorld.elements[14]):wp; out.npcs.push({id:n.id, rec:[+n.position.x.toFixed(2),+n.position.z.toFixed(2)], world:[+wp.x.toFixed(2),+wp.z.toFixed(2)], headW:[+hv.x.toFixed(2),+hv.y.toFixed(2),+hv.z.toFixed(2)], headPx:proj(hv), dist:+cam.position.distanceTo(hv).toFixed(2)}); } qm._pool.forEach((m,i)=>{ if(!m.visible) return; out.markers.push({i, pos:[+m.position.x.toFixed(2),+m.position.y.toFixed(2),+m.position.z.toFixed(2)], scale:+m.scale.x.toFixed(2), px:proj(m.position), dist:+cam.position.distanceTo(m.position).toFixed(2)}); }); out" }
+]

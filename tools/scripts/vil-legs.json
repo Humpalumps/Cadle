@@ -1,0 +1,86 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{const x=116,z=-99,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-serel"
+ },
+ {
+  "eval": "(()=>{const x=125.4,z=-88.4,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-wick"
+ },
+ {
+  "eval": "(()=>{const x=110,z=-105,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-bram"
+ },
+ {
+  "eval": "(()=>{const x=120.6,z=-93.6,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-harl"
+ },
+ {
+  "eval": "(()=>{const x=133.5,z=-79.5,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-tessa"
+ },
+ {
+  "eval": "(()=>{const x=93.5,z=-82.3,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-cole"
+ },
+ {
+  "eval": "(()=>{const x=100.4,z=-85.8,d=2.4,a=0.9,p=-0.3;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "lo-pell"
+ },
+ {
+  "eval": "__game.teleport(0,null,-24.4);__game.look(0,-0.30);__game.setHour(11);1"
+ },
+ {
+  "wait": 1.4
+ },
+ {
+  "shot": "lo-wayfinder"
+ },
+ {
+  "eval": "__game.teleport(0,null,-25.5);__game.look(0,-0.02);__game.setHour(11);1"
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "wf-full"
+ }
+]

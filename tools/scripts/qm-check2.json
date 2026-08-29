@@ -1,0 +1,13 @@
+[
+  { "wait": 10 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'" },
+  { "hour": 11 },
+  { "eval": "__at(118,-96,20,0.9,0.0)" }, { "wait": 6 },
+  { "eval": "({fps:__game.stats().fps, running:!!__game.game._running})" },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 2.5 }, { "shot": "serel-3m" },
+  { "eval": "__at(116,-99,7.0,0.9,0.05)" }, { "wait": 1.5 }, { "shot": "serel-7m" },
+  { "eval": "__at(125.4,-88.4,3.0,2.2,0.10)" }, { "wait": 1.5 }, { "shot": "wick-3m" },
+  { "eval": "__at(110,-105,4.0,-2.4,0.08)" }, { "wait": 1.5 }, { "shot": "bram-4m" },
+  { "eval": "__at(116,-99,2.2,0.9,-0.45)" }, { "wait": 1.5 }, { "shot": "serel-feet" },
+  { "eval": "const g=__game.game,cam=g.camera,qm=g.rpg.markers,props=g.world.props; const W=innerWidth,H=innerHeight; const proj=(x,y,z)=>{const v=new cam.position.constructor(x,y,z).project(cam); return [Math.round((v.x*0.5+0.5)*W), Math.round((-v.y*0.5+0.5)*H)];}; const out=[]; for(const n of props.npcs||[]){ const o=n.object; let hy=-1e9,hb=null; o.traverse(c=>{if(c.isBone&&/head/i.test(c.name)){c.updateWorldMatrix(true,false); const y=c.matrixWorld.elements[13]; if(y>hy){hy=y;hb=c;}}}); if(!hb) continue; const hx=hb.matrixWorld.elements[12], hz=hb.matrixWorld.elements[14]; const m=qm._pool.find(p=>p.visible&&Math.abs(p.position.x-hx)<1.5&&Math.abs(p.position.z-hz)<1.5); out.push({id:n.id, headPx:proj(hx,hy,hz), marker:m?{botPx:proj(m.position.x, m.position.y-0.72*m.scale.x, m.position.z), gapM:+(m.position.y-0.72*m.scale.x-hy).toFixed(3), sc:+m.scale.x.toFixed(2)}:null, d:+cam.position.distanceTo({x:hx,y:hy,z:hz,distanceTo:null}||{}).toFixed?0:0}); } out" }
+]

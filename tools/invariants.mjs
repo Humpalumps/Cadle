@@ -5,7 +5,7 @@
 // Each rule below encodes a bug that has shipped MORE THAN ONCE. They kept coming back because a
 // later builder wrote a NEW code path that the prose rule in CLAUDE.md did not literally name.
 // Thresholds are orchestrator-owned: if a rule blocks legitimate work, say so in your report.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 let failed = false;
 const fail = (msg) => { console.error('[invariants] FAIL: ' + msg); failed = true; };
@@ -20,6 +20,53 @@ const srcFiles = [];
 const read = (p) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
 
 console.log('[invariants] checking...');
+
+// ---------------------------------------------------------------- (0) DOES IT EVEN PARSE?
+// Not a style rule — a truth rule, and it belongs FIRST because everything else in this file, and every
+// screenshot anyone takes, is meaningless if the module never loaded. A broken src/ file does not fail
+// loudly: the page throws once, `window.__game` never appears, and the harness reports "TIMEOUT waiting
+// for game to start" or simply captures the loading screen. Agents have then judged a DEAD PAGE and
+// reported success from it — three times on 2026-08-28/29 alone, twice from the same cause: a BACKTICK
+// typed inside a GLSL template literal (`// `trampleAt` thins...`), which ends the template early and
+// leaves the rest of the shader being parsed as JavaScript. The error surfaces as a bare
+// "SyntaxError: Unexpected identifier 'trampleAt'" pointing at a COMMENT, which reads like nonsense
+// unless you already know the trap. One parse pass makes it impossible to lose an hour to it again.
+{
+  const { spawn } = await import('node:child_process');
+  // Concurrency-limited pool. Firing all ~90 spawns at once took 44 s on this box (Windows process
+  // creation thrashes); a pool of 8 does the same work in ~2 s, and this tool's whole value is that
+  // people actually run it before they start and again before they report.
+  const check = (f) => new Promise((res) => {
+    const p = spawn(process.execPath, ['--check', f], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('close', (code) => res(code === 0 ? null : { f, err }));
+    p.on('error', () => res(null));                     // cannot spawn: do not invent a failure
+  });
+  // INCREMENTAL. `node --check` is one process per file and this tool is run constantly — before every
+  // task, at the end of every agent turn via the Stop hook, and inside gate.mjs. A file that has not
+  // changed since it last parsed still parses, so cache (size, mtime) and only re-check what moved.
+  // First run pays the full cost; every later run checks the two or three files someone just edited.
+  const stampPath = join('tools', 'out', '.invariants-parse.json');
+  let stamp = {};
+  try { stamp = JSON.parse(readFileSync(stampPath, 'utf8')); } catch { /* first run, or unreadable */ }
+  const key = (f) => { try { const s = statSync(f); return `${s.size}:${Math.round(s.mtimeMs)}`; } catch { return 'gone'; } };
+  const queue = srcFiles.filter((f) => stamp[f] !== key(f));
+  const bad = [];
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    for (let f = queue.pop(); f; f = queue.pop()) {
+      const r = await check(f);
+      if (r) bad.push(r); else stamp[f] = key(f);       // only a file that PARSED gets stamped
+    }
+  }));
+  try { writeFileSync(stampPath, JSON.stringify(stamp)); } catch { /* cache is an optimisation, never a gate */ }
+  for (const b of bad) {
+    const line = (b.err.split('\n').find((l) => /SyntaxError/.test(l)) ?? b.err.split('\n')[0] ?? '').trim();
+    fail(`${b.f} does not parse — the game will not boot and every capture of it is void. ${line}`
+       + '\n            If the reported line is a COMMENT, look for a ` inside a template literal: a backtick'
+       + '\n            ends the shader string and JavaScript starts parsing the GLSL after it.');
+  }
+}
 
 // ---------------------------------------------------------------- (a) POINTER LOCK: exactly one lock path.
 // Every regression of "the mouse escapes / camera stops at the screen edge" came from a builder adding

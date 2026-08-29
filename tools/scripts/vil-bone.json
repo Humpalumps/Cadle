@@ -1,0 +1,7 @@
+[
+ { "wait": 12 },
+ { "eval": "__game.setHour(11);__game.teleport(122,null,-92);1" },
+ { "wait": 1.5 },
+ { "eval": "(()=>{const P=__game.game.world.props;const out=[];for(let i=0;i<P.villagers.length;i++){const v=P.villagers[i],m=v.mesh;m.updateWorldMatrix(true,true);const o={i,x:+m.position.x.toFixed(1),z:+m.position.z.toFixed(1),far:[],nb:0};const bones=[];m.traverse((b)=>{if(b.isBone)bones.push(b);});o.nb=bones.length;const c=m.position;for(const b of bones){const e=b.matrixWorld.elements;const d=Math.hypot(e[12]-c.x,e[14]-c.z),h=e[13]-c.y;const sc=Math.hypot(e[0],e[1],e[2]);if(d>0.9||h<-0.15||h>2.1||sc<0.4||sc>2.2)o.far.push(b.name+' d'+d.toFixed(2)+' h'+h.toFixed(2)+' s'+sc.toFixed(2));}out.push(o);}return JSON.stringify(out);})()" },
+ { "eval": "(()=>{const P=__game.game.world.props;const A=__game.game.assets;const out=[];const names=['herbwife','merchant','mason','fisherman','farmwoman','guard','scholar'];for(const n of names){const src=A.model(n);const cl=A.clips(n);const idle=cl.find(c=>/idle/i.test(c.name))||cl[0];const bn=new Set();src.traverse(o=>{if(o.isBone)bn.add(o.name);});const miss=[],hit=[];for(const t of idle.tracks){const b=t.name.split('.')[0];(bn.has(b)?hit:miss).push(t.name);}out.push({n,bones:bn.size,tracks:idle.tracks.length,bound:hit.length,unbound:miss.length,missSample:miss.slice(0,6)});}return JSON.stringify(out);})()" }
+]

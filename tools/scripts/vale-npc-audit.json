@@ -1,0 +1,56 @@
+[
+  { "wait": 6 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0); return [px,pz];}; 'ok'" },
+  { "hour": 11 },
+  { "eval": "(__game.game.world.props.npcs||[]).map(n=>[n.id, n.position.x.toFixed(1), n.position.y.toFixed(2), n.position.z.toFixed(1), !!n.object.visible])" },
+
+  { "log": "SEREL herbwife" },
+  { "eval": "__at(116,-99,3.2,0.9,0.06)" }, { "wait": 1.2 }, { "shot": "serel-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "serel-feet" },
+  { "eval": "__at(116,-99,9,0.9,0)" }, { "wait": 0.8 }, { "shot": "serel-9m" },
+
+  { "log": "WICK merchant" },
+  { "eval": "__at(125.4,-88.4,3.2,2.2,0.06)" }, { "wait": 1.2 }, { "shot": "wick-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "wick-feet" },
+
+  { "log": "BRAM mason" },
+  { "eval": "__at(110,-105,3.2,-2.4,0.06)" }, { "wait": 1.2 }, { "shot": "bram-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "bram-feet" },
+
+  { "log": "HARL fisherman" },
+  { "eval": "__at(120.6,-93.6,3.2,-0.8,0.06)" }, { "wait": 1.2 }, { "shot": "harl-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "harl-feet" },
+
+  { "log": "TESSA farmwoman" },
+  { "eval": "__at(133.5,-79.5,3.2,-1.2,0.06)" }, { "wait": 1.2 }, { "shot": "tessa-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "tessa-feet" },
+
+  { "log": "COLE guard" },
+  { "eval": "__at(93.5,-82.3,3.2,2.6,0.06)" }, { "wait": 1.2 }, { "shot": "cole-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "cole-feet" },
+
+  { "log": "PELL scholar" },
+  { "eval": "__at(100.4,-85.8,3.2,1.9,0.06)" }, { "wait": 1.2 }, { "shot": "pell-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "pell-feet" },
+
+  { "log": "WAYFINDER at aetheryte" },
+  { "eval": "__at(0,-28,4.5,2.6,0.05)" }, { "wait": 1.5 }, { "shot": "wayfinder-face" },
+  { "eval": "__game.look(__game.state().yaw, -0.55)" }, { "wait": 0.4 }, { "shot": "wayfinder-feet" },
+
+  { "log": "VILLAGE wide + props" },
+  { "eval": "__at(118,-96,26,0.9,0.02)" }, { "wait": 1.2 }, { "shot": "village-wide-a" },
+  { "eval": "__at(118,-96,26,-2.1,0.02)" }, { "wait": 1.2 }, { "shot": "village-wide-b" },
+  { "eval": "__at(118,-96,10,2.6,0.05)" }, { "wait": 1.0 }, { "shot": "village-mid" },
+
+  { "log": "ROOF/COLLISION probe: try to walk into a cottage" },
+  { "eval": "__at(118,-96,14,0.9,0.0)" }, { "wait": 0.6 },
+  { "hold": "KeyW", "secs": 3.2 }, { "wait": 0.4 }, { "shot": "collide-walk-in" },
+  { "eval": "JSON.stringify(__game.state().pos||__game.state().position||null)" },
+  { "eval": "const p=__game.game.player.position; ({x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),ground:+__game.game.world.terrain.heightAt(p.x,p.z).toFixed(2)})" },
+
+  { "log": "NIGHT GRASS shimmer" },
+  { "eval": "__game.teleport(0,null,0); __game.look(0,-0.12)" }, { "hour": 22.5 }, { "wait": 2.0 },
+  { "burst": { "name": "night-grass", "n": 5, "interval": 0.22 } },
+  { "eval": "__game.look(0,-0.45)" }, { "wait": 0.5 }, { "burst": { "name": "night-grass-down", "n": 4, "interval": 0.22 } },
+  { "hour": 12 }, { "wait": 1.0 }, { "shot": "day-grass" }
+]

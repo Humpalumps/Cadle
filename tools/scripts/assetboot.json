@@ -1,0 +1,8 @@
+[
+  { "wait": 14 },
+  { "eval": "const a=__game.game.assets; ({progress:a.progress, loadMs:a.loadMs, tex:Object.keys(a.tex&&a._tex?a._tex:{}).length||null, cards:['leaf_card','card_fern','card_reed','card_moss','card_conifer_snow'].map(k=>[k, !!a.tex(k), a.tex(k)?a.tex(k).image?.width+'x'+a.tex(k).image?.height:null])})" },
+  { "eval": "(__game.errors||[]).slice(0,5)" },
+  { "eval": "__game.teleport(0,null,0); __game.look(0,-0.05); 'tp'" },
+  { "wait": 2 }, { "shot": "meadow" },
+  { "eval": "__game.goto('forest'); 'goto'" }, { "wait": 4 }, { "shot": "forest-cards" }
+]

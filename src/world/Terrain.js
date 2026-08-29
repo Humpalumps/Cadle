@@ -121,16 +121,63 @@ export class Terrain {
     return d * this.trampleAt(x, z);
   }
 
-  /** 1 out in the open, falling to ~0.12 where people actually live and walk.
-   *  Tall grass was growing THROUGH the hamlet's paving and stoops (wave-6 vale critic: "grass through
-   *  the decking"), because grass density knew nothing about the village standing on it. Props solved its
-   *  half by raising the paving; this is the other half — a settlement clears the ground it occupies, which
-   *  is also just true of villages. Kept here rather than in Props because grassAt is the ONE authority
-   *  Grass.js reads, and a clearing that only some consumers know about is the bug this file keeps hitting.
-   *  Hearthfall sits at (118, -96) — see Props._buildVillage; the fade is generous so there is no ring. */
+  /**
+   * HEARTHFALL'S WEAR FIELD — the ONE authority for "the hamlet has worn this ground down", read by
+   * `trampleAt` (grass density), by `colorAt` and FRAG_SPLAT (the ground splat) and by GroundScatter.
+   *
+   * THE BUG THIS REPLACES (orchestrator + the village lane, independently, 2026-08-28: "a wide expanse of
+   * bare brown dirt with sparse straw ... it reads as drought"). The first pass was RIGHT that a village
+   * floor is trodden and WRONG about what trodden means: it thinned cover to a flat 0.12 inside a 30 m
+   * disc and raised dirt to a flat 0.90 inside the same disc, and — the actual defect — the two were
+   * INDEPENDENT. So 12% of blades stood on 100% dirt everywhere: `colorAt` handed Grass a brown ground,
+   * Grass's `dry` term (tcol.r - tcol.g*0.62) read that as sun-scorched and turned every survivor straw
+   * yellow, and its sparse-region brightness payback (`gap`) then lifted them into pale spikes. Bare earth
+   * plus straw spikes is a drought, and no amount of grading the dirt was going to fix a flat disc.
+   *
+   * WORN EARTH IS NOT EMPTY EARTH. Wear is where feet actually fall: tracks between the doorways and the
+   * well go to packed earth, and the ground BETWEEN the tracks — against the walls, behind the well, along
+   * the fence lines — keeps its weeds. So `b` ("this is bare packed earth") is patchy, not radial, and
+   * every consumer keys off the SAME `b`: where it is 1 the blades are gone and the splat is earth, where
+   * it is 0 the blades are full height and the splat is untouched meadow underneath them. Correlating the
+   * two is what removes the straw: a blade only ever stands on ground that still grows it.
+   *
+   * The threshold slides with `w`, so the yard is a GRADIENT — bare at the well and the doorways, weedy
+   * margins mid-yard, unbroken meadow at the edge — instead of the hard circular bowl it was.
+   * out: { w, b }. Both 0 outside 42 m; allocation-free. Hearthfall is (118, -96), Props._buildVillage.
+   * `_macroNoise` is the exact CPU twin of the shader's `lyr(uv, 7.0).a`, so FRAG_SPLAT's `villB` gets the
+   * same field from the same numbers — that is what keeps the blades and the earth in register.
+   */
+  villWearAt(x, z, out = this._vw ??= { w: 0, b: 0 }) {
+    out.w = out.b = 0;
+    const dx = x - 118, dz = z + 96, d2 = dx * dx + dz * dz;
+    if (d2 > 1764) return out;                                          // 42 m: past the widest lobe
+    // lobed outline (period 97 m, so nothing tiles across the yard): the footprint wanders with the
+    // buildings instead of being a compass circle, and no ring can show at the meadow boundary.
+    const lobe = this._macroNoise(x * (1 / 97) + 0.11, z * (1 / 97) + 0.11);
+    const w = 1 - ss(14, 34, Math.sqrt(d2) + (lobe - 0.5) * 26);
+    if (w <= 0.001) return out;
+    out.w = w;
+    // ...and the tracks inside it. Threshold centre slides 0.62 -> 0.22 as the yard closes in, so the
+    // square by the well is mostly packed earth with weeds only in the quiet corners, while the outskirts
+    // are mostly meadow with paths worn through it.
+    const c = 0.62 - 0.40 * w;
+    const t = ss(c - 0.16, c + 0.16, this._macroNoise(x * (1 / 29) + 0.63, z * (1 / 29) + 0.63));
+    // ...except at the WELL, which is walked to from every side by everyone every day. Left to the noise
+    // alone it rolled a full-green pocket 9 m from the collar (tools/out/hf-low/shot-low-down-9m) — and a
+    // knee-high fern beside the village well is the one place cover must never survive. Floor, not a
+    // second disc: it only ever raises `b`, and it is gone by 13 m.
+    out.b = w * mix(t, 1, (1 - ss(5, 13, Math.sqrt(d2))) * 0.85);
+    return out;
+  }
+
+  /** 1 out in the open, falling to ~0.05 on the hamlet's worn tracks — but staying near 1 in the gaps
+   *  between them, which is the half the first pass was missing. Tall grass was growing THROUGH the
+   *  hamlet's paving and stoops (wave-6 vale critic: "grass through the decking"), because grass density
+   *  knew nothing about the village standing on it. Props solved its half by raising the paving; this is
+   *  the other half. Kept here rather than in Props because grassAt is the ONE authority Grass.js reads,
+   *  and a clearing that only some consumers know about is the bug this file keeps hitting. */
   trampleAt(x, z) {
-    const dx = x - 118, dz = z + 96;
-    return 0.12 + 0.88 * ss(15, 30, Math.sqrt(dx * dx + dz * dz));
+    return 1 - 0.95 * this.villWearAt(x, z).b;
   }
 
   /**
@@ -246,6 +293,12 @@ export class Terrain {
     let wSand = lakeM * ss(WL + 1.9, WL + 0.9, h + (macro2 - 0.5) * 0.9);
     let wStone = Math.max(ruinM, arenaM);
     let wDirt = clamp(ss(0.12, 0.26, slope + (macro2 - 0.5) * 0.06) + ss(0.64, 0.80, macro2) * 0.7 + crystalM * 0.35 + alt * 0.5 + mtn * 0.75, 0, 1);
+    // Hearthfall's worn earth — the CPU twin of FRAG_SPLAT's `villB`, off the one wear field (villWearAt).
+    // Grass.js reads colorAt for its blade tint, and this is the term that keeps the two honest: earth only
+    // where the same field took the blades away, so a surviving blade is never tinted from ground the splat
+    // is no longer drawing. (Reading it from a flat disc instead is what made every survivor straw yellow.)
+    const villB = this.villWearAt(x, z).b;
+    wDirt = Math.max(wDirt, villB * 0.92);
     let wForest = forestM * (1 - mtn);
     let wGrass = 1 - mtn;
     wGrass *= 1 - wForest;
@@ -272,6 +325,8 @@ export class Terrain {
     r *= tR; g *= tG; b *= tB;
     const fm = forestM * 0.6; r *= mix(1, 0.78, fm); g *= mix(1, 0.86, fm); b *= mix(1, 0.74, fm);
     const cm = crystalM * 0.7; r = r * mix(1, 0.92, cm) + 0.02 * cm; g = g * mix(1, 0.84, cm) + 0.01 * cm; b = b * mix(1, 1.12, cm) + 0.05 * cm;
+    const vm = villB * clamp(wDirt / sum, 0, 1) * 0.95;   // CPU twin of the village packed-earth grade (see FRAG_SPLAT)
+    r = mix(r, r * 1.10 * 0.49, vm); g = mix(g, g * 1.00 * 0.49, vm); b = mix(b, b * 1.05 * 0.49, vm);
     // the shader ramps this macro contrast in with camera distance; Grass mostly uses colorAt for FAR blades, so carry ~60% of it
     const vg = (1 - neut) * 0.55, mC = macroC * 0.62 + macro2C * 0.38;
     r *= mix(1, mix(0.60, 1.36, mC), vg); g *= mix(1, mix(0.70, 1.24, mC), vg); b *= mix(1, mix(0.50, 1.02, mC), vg);
@@ -797,6 +852,28 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   float wSand = lakeM * smoothstep(uWater + 1.9, uWater + 0.9, P.y + (macro2 - 0.5) * 0.9);
   float wStone = max(ruinM, arenaM);
   float wDirt = clamp(smoothstep(0.12, 0.26, slope + (macro2 - 0.5) * 0.06) + smoothstep(0.64, 0.80, macro2) * 0.7 + crystalM * 0.35 + alt * 0.5 + mtn * 0.75, 0.0, 1.0);
+  // HEARTHFALL WEARS ITS GROUND DOWN — the GLSL twin of Terrain.villWearAt, which is the ONE authority
+  // (read its doc comment; same centre, same 14..34 m lobed fade, same sliding track threshold, and the
+  // same noise, because lyr(uv, 7.0).a is exactly what _macroNoise reproduces on the CPU).
+  // WHY IT IS A FIELD AND NOT A DISC: the first pass raised dirt to a flat 0.90 inside a 30 m circle while
+  // grass thinned to a flat 0.12 inside the same circle, INDEPENDENTLY — so every surviving blade stood on
+  // 100% dirt, Grass's dry term read that brown ground as sun-scorched and turned it straw, and the whole
+  // hamlet photographed as drought (orchestrator + village lane, 2026-08-28). Keyed off the same b as the
+  // cover mask, earth appears only where the blades went, and the gaps between the tracks stay meadow with
+  // full-height weeds standing in them. home keeps it inside the bowl; the 42 m branch is coherent.
+  float villB = 0.0;
+  {
+    float villD = length(P.xz - vec2(118.0, -96.0));
+    if (villD < 42.0) {
+      float vLobe = lyr(P.xz * (1.0 / 97.0) + 0.11, 7.0).a;
+      float vW = (1.0 - smoothstep(14.0, 34.0, villD + (vLobe - 0.5) * 26.0)) * home;
+      float vC = 0.62 - 0.40 * vW;
+      // the sub-metre octave frays the patch borders so a track edge is scuffed, not a smooth noise blob
+      float vT = smoothstep(vC - 0.16, vC + 0.16, lyr(P.xz * (1.0 / 29.0) + 0.63, 7.0).a + (det2.b - 0.5) * 0.10);
+      villB = vW * mix(vT, 1.0, (1.0 - smoothstep(5.0, 13.0, villD)) * 0.85);   // the well is walked from every side
+    }
+  }
+  wDirt = max(wDirt, villB * 0.92);
   wSnow = max(wSnow, bW * bSnow * (1.0 - smoothstep(0.40, 0.68, slope)));    // Frostveil is snowbound at 25 m, not 120
   float wForest = forestM * (1.0 - mtn);
   float wGrass = 1.0 - mtn;
@@ -1094,10 +1171,52 @@ vec3 tN; float tRough; float tAO; vec3 tEmis = vec3(0.0);
   alb *= tint;
   alb = mix(alb, alb * vec3(0.78, 0.86, 0.74), forestM * 0.6);
   alb = mix(alb, alb * vec3(0.92, 0.84, 1.12) + vec3(0.02, 0.01, 0.05), crystalM * 0.7);
+  // Hearthfall's yard is trodden EARTH, not gravel and not dust. Layer 2 is the GENERIC dirt plate and its
+  // real job is scree and mountain skirt, so it is pale and near-neutral; dropped straight into the village
+  // it photographed first as a poured-concrete apron and then, once warmed, as drought-bleached hardpan.
+  // Packed earth someone walks on every day is DARKER and much less orange than either — a mid grey-brown,
+  // damp under the surface — so the grade lost most of its warm swing and 35% of its value. Weighted by the
+  // dirt's own share of the pixel and by the same wear field, so nothing outside the hamlet moves; every
+  // channel still ends well below 1.0 (1.12 * 0.72 = 0.81 at the very brightest), i.e. darkening only.
+  if (villB > 0.002) {
+    // FOOTFALL GRAIN. A flat multiplier over a flat plate is still a flat plate, and "one flat brown plane"
+    // was half the verdict. Both octaves are already fetched, so this is free: the 0.9 m one is the scuffing
+    // underfoot (windowed out by detFade so nothing aliases at distance) and the 4.3 m one is the broad
+    // packed/loose mottling that survives to the far side of the yard.
+    float scuff = mix(0.5, smoothstep(0.30, 0.70, det.a), detFade) * 0.5 + smoothstep(0.32, 0.68, det2.a) * 0.5;
+    // MEASURED on shot-bram-4m, and both halves of the hue matter: the first grade sat at r/b 1.56 (drought
+    // hardpan), a fully neutral one measured 1.27 and photographed as grey khaki cement. 1.10/1.00/1.05
+    // lands at ~1.45 — brown, not orange. The value swing is deliberately WIDE (2x, not the 1.6x it was):
+    // mottling is what a flat plate needs most, and it is the cheapest thing on this line.
+    vec3 earth = alb * vec3(1.10, 1.00, 1.05) * mix(0.32, 0.66, scuff);
+    // ...and the MARGIN of a track is damp and mossy, not dust: it peaks where villB is mid, i.e. exactly
+    // the band where the earth is handing back over to the weeds. This is the low-spot mud, and it is the
+    // thing that stops the bare/green boundary reading as a cut-out. Diffuse albedo only — nothing here
+    // touches emissive or roughness (BLOB LAW: ground cover never glows, and neither does the ground).
+    earth *= mix(vec3(1.0), vec3(0.80, 0.95, 0.78), clamp(villB * (1.0 - villB) * 4.0, 0.0, 1.0) * 0.45);
+    alb = mix(alb, earth, villB * clamp(sD / sum, 0.0, 1.0) * 0.95);
+  }
   // far-field macro contrast on the VEGETATED ground only (rock/stone/snow keep their own): the aerial and every midground
   // beyond the detail fade used to collapse to one flat green + one flat brown. Value AND hue swing, ~140 m and ~60 m scales.
   float veg = clamp((sG + sF + sD) / sum, 0.0, 1.0);
   alb = mix(alb, alb * mix(vec3(0.60, 0.70, 0.50), vec3(1.36, 1.24, 1.02), macroC * 0.62 + macro2C * 0.38), farC * veg * 0.9);
+  // ...and the NEAR-FIELD counterpart, which did not exist. Every macro variation on the vegetated floor —
+  // the 43 m patch mix, the macroC value swing, the line right above — is gated on farC =
+  // smoothstep(50, 280, camD). Inside 50 m all of them are exactly zero, so the ground the player is
+  // actually standing on was flat by construction: MEASURED on the hamlet floor, saturation 0.61 with a
+  // standard deviation of 0.07 and hue 89 +- 16 deg across the whole surface. That is the "flat painted
+  // ground" in the 2026-08-28 report, and it is also why the trampled band read as a shaved lawn.
+  // Reuses the two octaves already fetched (4.3 m det2, 61 m macro2) so it costs no taps: a modest value
+  // swing plus a luminance-preserving CHROMA spread — bleached patches and lush patches — which is the same
+  // lever the blades in it just got, and for the same reason (constant chroma is what reads as plastic).
+  float nearV = (1.0 - farC) * veg;
+  if (nearV > 0.002) {
+    float gv = smoothstep(0.34, 0.66, det2.a) * 0.62 + macro2C * 0.38;
+    vec3 nAlb = alb * mix(vec3(0.74, 0.82, 0.66), vec3(1.16, 1.09, 0.95), gv);
+    float nl = dot(nAlb, vec3(0.2126, 0.7152, 0.0722));
+    nAlb = nl + (nAlb - nl) * mix(0.68, 1.0, gv);   // 0.58 read chalky underfoot in gv1; the blades standing in it carry the wider half of the spread
+    alb = mix(alb, nAlb, nearV * 0.85);
+  }
   // Underwater CAUSTICS. The Sunken Kingdom's whole identity is being under the sea, and below the surface
   // the only thing that changed was the fog colour. Two counter-drifting sine lattices sharpened with a
   // power curve give the moving light net; it MULTIPLIES the albedo (never emissive), so it respects the

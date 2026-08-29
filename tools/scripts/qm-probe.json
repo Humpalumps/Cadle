@@ -1,0 +1,9 @@
+[
+  { "wait": 6 },
+  { "eval": "__game.teleport(118,null,-96); 'tp'" },
+  { "wait": 2 },
+  { "eval": "const THREE=__game.game.THREE||null; const props=__game.game.world.props; const out=[]; for(const n of props.npcs||[]){ const o=n.object; const b=new (o.constructor.prototype.constructor?window.__B__:0)||0; out.push(n.id); } out" },
+  { "eval": "const props=__game.game.world.props; const res=[]; for(const n of props.npcs||[]){ const o=n.object; let headY=null, minY=1e9, maxY=-1e9; o.traverse(c=>{ if(c.isBone && /head|neck/i.test(c.name)){ c.updateWorldMatrix(true,false); const y=c.matrixWorld.elements[13]; if(headY===null||y>headY) headY=y; } }); o.traverse(c=>{ if(c.isMesh && c.geometry){ if(!c.geometry.boundingBox) c.geometry.computeBoundingBox(); const bb=c.geometry.boundingBox.clone().applyMatrix4(c.matrixWorld); minY=Math.min(minY,bb.min.y); maxY=Math.max(maxY,bb.max.y);} }); res.push({id:n.id, root:+o.position.y.toFixed(2), boxMin:+minY.toFixed(2), boxMax:+maxY.toFixed(2), head:headY==null?null:+headY.toFixed(2), overHead:headY==null?null:+(maxY-headY).toFixed(2)}); } res" },
+  { "eval": "const qm=__game.game.rpg?.markers||__game.game.questMarkers||null; qm? qm._pool.filter(m=>m.visible).map(m=>({y:+m.position.y.toFixed(2), x:+m.position.x.toFixed(1), z:+m.position.z.toFixed(1), s:+m.scale.x.toFixed(2)})) : 'no markers ref'" },
+  { "eval": "Object.keys(__game.game.rpg||{})" }
+]

@@ -1,0 +1,10 @@
+[
+ { "wait": 3.0 },
+ { "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})" },
+ { "wait": 2.0 },
+ { "hour": 11 },
+ { "eval": "const g=__game.game; __game.god(true); __game.passive(true); __game.clearEnemies(); __game.teleport(0,null,0); const d=__game.spawn('drake',0,-45); d.home.copy(d.position); d.idleDur=99999; __game.look(0,0.21); window.__W=[]; const wtip=()=>{const ids=d.ga.wings[0].ids; return d.boneList[ids[ids.length-1]];}; const b=wtip(); const step=()=>{ b.updateWorldMatrix(true,false); const m=b.matrixWorld.elements, r=d.root.position; window.__W.push([m[12]-r.x, m[13]-r.y, m[14]-r.z]); requestAnimationFrame(step);}; step(); JSON.stringify({fov:g.camera.fov, wingBones:d.ga.wings[0].ids.length})" },
+ { "wait": 6.0 },
+ { "eval": "const g=__game.game, W=window.__W.slice(30), dist=45.9, H=1080, fov=g.camera.fov*Math.PI/180; const px=(m)=>m/dist/(2*Math.tan(fov/2))*H; const jump=(N)=>{const out=[]; for(let i=N;i<W.length;i++){const dx=W[i][0]-W[i-N][0],dy=W[i][1]-W[i-N][1],dz=W[i][2]-W[i-N][2]; out.push(Math.hypot(dx,dy,dz));} out.sort((a,b)=>a-b); return {p50:+px(out[Math.floor(out.length*0.5)]).toFixed(2), p95:+px(out[Math.floor(out.length*0.95)]).toFixed(2), max:+px(out[out.length-1]).toFixed(2)};}; JSON.stringify({n:W.length, fov:g.camera.fov, at45m:{every1:jump(1), every2:jump(2), every3:jump(3), every5:jump(5), every6:jump(6), every9:jump(9)}})" },
+ { "eval": "const g=__game.game, W=window.__W.slice(30), H=1080, fov=g.camera.fov*Math.PI/180; const at=(dist)=>{const px=(m)=>m/dist/(2*Math.tan(fov/2))*H; const jump=(N)=>{const out=[]; for(let i=N;i<W.length;i++){const dx=W[i][0]-W[i-N][0],dy=W[i][1]-W[i-N][1],dz=W[i][2]-W[i-N][2]; out.push(Math.hypot(dx,dy,dz));} out.sort((a,b)=>a-b); return +px(out[Math.floor(out.length*0.95)]).toFixed(2);}; return {e1:jump(1),e2:jump(2),e3:jump(3),e5:jump(5),e6:jump(6),e9:jump(9)};}; JSON.stringify({p95_px_by_dist:{'45m':at(45),'65m':at(65),'120m':at(120),'200m':at(200)}})" }
+]

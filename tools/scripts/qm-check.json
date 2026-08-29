@@ -1,0 +1,12 @@
+[
+  { "wait": 6 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'" },
+  { "hour": 11 },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 1.5 }, { "shot": "serel-3m" },
+  { "eval": "__at(116,-99,6.0,0.9,0.06)" }, { "wait": 1.0 }, { "shot": "serel-6m" },
+  { "eval": "__at(116,-99,14.0,0.9,0.03)" }, { "wait": 1.0 }, { "shot": "serel-14m" },
+  { "eval": "__at(125.4,-88.4,3.0,2.2,0.10)" }, { "wait": 1.2 }, { "shot": "wick-3m" },
+  { "eval": "__at(110,-105,5.0,-2.4,0.06)" }, { "wait": 1.2 }, { "shot": "bram-5m" },
+  { "eval": "__at(0,-28,7.0,2.6,0.06)" }, { "wait": 1.5 }, { "shot": "stele-7m" },
+  { "eval": "const props=__game.game.world.props; const qm=__game.game.rpg.markers; const res=[]; for(const n of props.npcs||[]){ const o=n.object; let hy=-1e9; o.traverse(c=>{ if(c.isBone && /head/i.test(c.name)){ c.updateWorldMatrix(true,false); hy=Math.max(hy, c.matrixWorld.elements[13]); } }); res.push([n.id, +hy.toFixed(2)]); } ({heads:res, markers:qm._pool.filter(m=>m.visible).map(m=>[+m.position.x.toFixed(1), +m.position.y.toFixed(2), +m.position.z.toFixed(1), +m.scale.x.toFixed(2)])})" }
+]

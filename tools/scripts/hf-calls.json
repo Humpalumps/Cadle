@@ -1,0 +1,7 @@
+[{"wait": 35},
+ {"eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'"},
+ {"hour": 12}, {"eval": "__at(118,-96,14,2.6,-0.10)"}, {"wait": 14},
+ {"eval": "(()=>{const g=__game.game, cam=g.camera, fr=new g.world.props.constructor.THREE_FRUSTUM_PLACEHOLDER;return 'skip';})()"},
+ {"eval": "(()=>{const g=__game.game; const acc={}; g.scene.traverse(o=>{ if(!o.isMesh&&!o.isPoints&&!o.isLine) return; if(!o.visible) return; let p=o; let vis=true; while(p){ if(!p.visible){vis=false;break;} p=p.parent; } if(!vis) return; const n=(o.name||o.type||'?').replace(/[0-9]+$/,''); const t=(o.geometry?.index? o.geometry.index.count : o.geometry?.attributes?.position?.count||0)/3; const k=acc[n]||(acc[n]={c:0,t:0}); k.c++; k.t+=t; }); return JSON.stringify(Object.entries(acc).sort((a,b)=>b[1].t-a[1].t).slice(0,22).map(([k,v])=>[k,v.c,Math.round(v.t)]));})()"},
+ {"eval": "JSON.stringify(__game.stats())"},
+ {"eval": "JSON.stringify({enemies: __game.game.enemies?.alive?.length ?? __game.game.enemies?.list?.length ?? -1})"}]

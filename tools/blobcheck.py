@@ -74,6 +74,11 @@ FLASH_FLOOR = 100     # the DIMMER of the two frames must still be this lit. A b
                       # floor keeps the former and drops the latter.
 DEAD_LUM    = 8       # mean frame luminance below this = render failure, fail loudly
 SKY_FRAC    = 0.55    # a cluster more than this fraction sky (per mask-*.png) is the sky, not a blob
+# --selftest paint. Both are the two historical flavours of the bug — a washed white and a violet that has
+# clipped toward white — and both must sit clear of LUM_BRIGHT so the test measures the DETECTOR and not
+# how bright the frame it was handed happened to be. Asserted in selftest(); see the note there.
+WHITE_BALL  = (255, 252, 245)
+VIOLET_BALL = (252, 240, 255)
 SKY_DILATE  = 3       # px: grow the sky mask, so foliage EDGES against the sky are ambiguous, not blobs
 GRASS_ERODE = 2       # px: shrink the ground-cover mask. A blade SILHOUETTE pixel is part blade and part
                       # whatever is behind it, so at dawn the bright ground bleeding through the edge of the
@@ -258,8 +263,21 @@ def selftest(frame):
               'and two dense patches). The test would be measuring the capture, not the detector - '
               'pick a frame with real ground cover in it.')
         return 0
-    ball(spots[0][0], spots[0][1], 10, (255, 252, 245))
-    ball(spots[1][0], spots[1][1], 11, (238, 214, 255))
+    # THE PAINT MUST CLEAR THE RULE ON A DARK FRAME TOO. The ball is alpha-blended onto the capture, so
+    # the luminance the detector sees is a mix of the paint and the ground under it — which means a paint
+    # colour only just above LUM_BRIGHT forms a cluster over BRIGHT ground and shrinks to nothing over dark
+    # ground. Measured on a 23:00 meadow frame: the old violet (238,214,255) is luminance 222 against a
+    # threshold of 212, so at a night background of ~40 only its 7-pixel core cleared the bar — under
+    # MIN_AREA — and the selftest reported "a painted ground blob was swallowed" on an UNMODIFIED detector.
+    # Frame-dependent guards are worse than no guard: this one would have been explained away.
+    # Both balls now sit a clear margin over the rule (asserted below), which is also what the bug looks
+    # like in the wild — a violet that trips a LUMINANCE rule has already clipped toward white; a genuinely
+    # saturated violet is legal under the decree and must NOT be what this test paints.
+    for c in (WHITE_BALL, VIOLET_BALL):
+        cl = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        assert cl >= LUM_BRIGHT + 25, f'selftest paint {c} is luminance {cl:.0f}; needs >= {LUM_BRIGHT + 25} to survive a dark background'
+    ball(spots[0][0], spots[0][1], 10, WHITE_BALL)
+    ball(spots[1][0], spots[1][1], 11, VIOLET_BALL)
     print(f'[selftest] painted at {spots[0]} and {spots[1]}')
     L2, _, _ = lum_map(im)
     found = clusters(bm(L2), w, h, MIN_AREA, im, MAX_ASPECT, sky, L2)
@@ -295,12 +313,22 @@ def main():
         json.dump({'inconclusive': unmasked}, open(os.path.join(d, 'blobcheck.json'), 'w'), indent=1)
         return 2                      # 2 = could not judge; 1 stays "found a blob"
     fails, report = [], {}
+    truncated = []                    # frames PIL cannot decode — see the guard below
     prev_l = None; prev_name = None; prev_group = None
     for f in files:
         name = os.path.basename(f)
         group = re.sub(r'-\d+\.png$', '', name)
-        im = load(f); L, w, h = lum_map(im)
-        sky, grass = load_mask(mask_path_for(d, name), w, h)
+        # A HALF-WRITTEN PNG IS A HARNESS FAULT, NOT A BLOB. The missing-mask path above already refuses
+        # to judge a truncated run, but a capture killed mid-write leaves the COLOUR frame short instead:
+        # its mask exists, so the pre-scan passes, and PIL then raises a raw traceback out of main().
+        # A gate that dies with a stack trace teaches people to re-run until it is quiet, which is exactly
+        # how a real finding gets explained away. Same verdict as a missing mask: INCONCLUSIVE, exit 2.
+        try:
+            im = load(f); L, w, h = lum_map(im)
+            sky, grass = load_mask(mask_path_for(d, name), w, h)
+        except (OSError, ValueError) as e:
+            truncated.append(f'{name}: {type(e).__name__}: {e}')
+            continue
         if sum(L) / len(L) < DEAD_LUM:
             fails.append(f'DEAD FRAME: {name} — mean luminance < {DEAD_LUM}, renderer produced black (GPU/WebGL failure?)')
             prev_l, prev_name, prev_group = None, None, None
@@ -323,6 +351,21 @@ def main():
                 top = spike[0]
                 fails.append(f"FLASHING BLOB: {name} vs {prev_name} — {len(spike)} cluster(s) spiked to glowing, largest {top['px']} px at {top['bbox']}, mean rgb {top['rgb']}")
         prev_l, prev_name, prev_group = L, name, group
+    # A truncated run cannot be judged, and a PARTIAL pass is the dangerous outcome: the frames that were
+    # never written are exactly the ones the capture was heading toward. Report it as the harness fault it
+    # is, before any verdict — findings from the frames that did decode are kept in blobcheck.json so the
+    # run is not wasted, but the exit code says "could not judge" (2), never "clean" (0).
+    if truncated:
+        json.dump({'inconclusive': truncated, 'fails': fails, 'report': report},
+                  open(os.path.join(d, 'blobcheck.json'), 'w'), indent=1)
+        print('BLOBCHECK INCONCLUSIVE (harness, not the game)')
+        print(f' - {len(truncated)} of {len(files)} frame(s) could not be decoded — the capture was cut mid-write.')
+        for x in truncated[:6]: print('   ', x)
+        print('   Check for orphaned chrome-headless-shell processes and re-run (HANDOVER 4b).')
+        if fails:
+            print(f' - NOTE: {len(fails)} finding(s) in the frames that DID decode — listed in blobcheck.json.')
+            for x in fails[:4]: print('   ', x)
+        return 2                      # 2 = could not judge; 1 stays "found a blob"
     json.dump({'fails': fails, 'report': report}, open(os.path.join(d, 'blobcheck.json'), 'w'), indent=1)
     if fails:
         print('BLOBCHECK FAIL')

@@ -1,0 +1,29 @@
+[{"wait":22},
+ {"eval":"(()=>{const G=window.__game;G.god(true);G.clearEnemies();G.passive(true);G.look(-1.5708,0);return 'ok';})()"},
+ {"wait":1},
+
+ {"log":"--- sky flyers held in the 30-50 m band (the animEvery step this fix moves) ---"},
+ {"eval":"(()=>{const G=window.__game,p=G.game.player.position;G.clearEnemies();G._s=G.spawn('skyserpent',p.x+38,p.z);G._d=G.spawn('drake',p.x+38,p.z+16);return 'spawned';})()"},
+ {"wait":2.5},
+ {"eval":"(()=>{const G=window.__game,c=G.game.camera.position,d=e=>e?Math.hypot(c.x-e.position.x,c.y-e.position.y,c.z-e.position.z).toFixed(1):'-';return `serpent ${d(G._s)} m lod ${G._s?._lod} | drake ${d(G._d)} m lod ${G._d?._lod}`;})()"},
+ {"look":[-1.5708,0.2]},{"shot":"aim-up"},
+ {"look":[-1.5708,-0.2]},{"shot":"aim-down"},
+ {"burst":{"name":"sky-band","n":8,"interval":0.1}},
+
+ {"log":"--- sentinel: ranged opener on a melee role, then it CLOSES ---"},
+ {"eval":"(()=>{const G=window.__game,p=G.game.player.position;G.clearEnemies();G.passive(true);const e=G.spawn('sentinel',p.x+26,p.z);G._r={kinds:{},minD:999,maxD:0,states:{}};G._rt=setInterval(()=>{if(!e||!e.alive)return;const pp=G.game.player.position,dd=Math.hypot(pp.x-e.position.x,pp.z-e.position.z);G._r.minD=Math.min(G._r.minD,dd);G._r.maxD=Math.max(G._r.maxD,dd);G._r.states[e.state]=(G._r.states[e.state]||0)+1;if(e.state==='attack'&&e.attackKind)G._r.kinds[e.attackKind]=(G._r.kinds[e.attackKind]||0)+1;},50);G.passive(false);e.alert=true;e.seen=true;return 'engaged';})()"},
+ {"wait":16},
+ {"shot":"sentinel-close"},
+ {"eval":"(()=>{clearInterval(window.__game._rt);const r=window.__game._r;return `sentinel minD ${r.minD.toFixed(1)} maxD ${r.maxD.toFixed(1)} kinds ${JSON.stringify(r.kinds)} states ${JSON.stringify(r.states)}`;})()"},
+
+ {"log":"--- golem: throw at range, slam up close ---"},
+ {"eval":"(()=>{const G=window.__game,p=G.game.player.position;G.clearEnemies();G.passive(true);const e=G.spawn('golem',p.x+24,p.z);G._r={kinds:{},minD:999,maxD:0,states:{}};G._rt=setInterval(()=>{if(!e||!e.alive)return;const pp=G.game.player.position,dd=Math.hypot(pp.x-e.position.x,pp.z-e.position.z);G._r.minD=Math.min(G._r.minD,dd);G._r.maxD=Math.max(G._r.maxD,dd);G._r.states[e.state]=(G._r.states[e.state]||0)+1;if(e.state==='attack'&&e.attackKind)G._r.kinds[e.attackKind]=(G._r.kinds[e.attackKind]||0)+1;},50);G.passive(false);e.alert=true;e.seen=true;return 'engaged';})()"},
+ {"wait":18},
+ {"shot":"golem-close"},
+ {"eval":"(()=>{clearInterval(window.__game._rt);const r=window.__game._r;return `golem minD ${r.minD.toFixed(1)} maxD ${r.maxD.toFixed(1)} kinds ${JSON.stringify(r.kinds)} states ${JSON.stringify(r.states)}`;})()"},
+
+ {"log":"--- warden: volley from 13+, hammer inside ---"},
+ {"eval":"(()=>{const G=window.__game,p=G.game.player.position;G.clearEnemies();G.passive(true);const e=G.spawn('warden',p.x+26,p.z);G._r={kinds:{},minD:999,maxD:0,states:{}};G._rt=setInterval(()=>{if(!e||!e.alive)return;const pp=G.game.player.position,dd=Math.hypot(pp.x-e.position.x,pp.z-e.position.z);G._r.minD=Math.min(G._r.minD,dd);G._r.maxD=Math.max(G._r.maxD,dd);G._r.states[e.state]=(G._r.states[e.state]||0)+1;if(e.state==='attack'&&e.attackKind)G._r.kinds[e.attackKind]=(G._r.kinds[e.attackKind]||0)+1;},50);G.passive(false);e.alert=true;e.seen=true;return 'engaged';})()"},
+ {"wait":18},
+ {"shot":"warden-close"},
+ {"eval":"(()=>{clearInterval(window.__game._rt);const r=window.__game._r;return `warden minD ${r.minD.toFixed(1)} maxD ${r.maxD.toFixed(1)} kinds ${JSON.stringify(r.kinds)} states ${JSON.stringify(r.states)}`;})()"}]

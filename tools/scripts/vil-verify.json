@@ -1,0 +1,89 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{const x=116,z=-99,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "serel-feet"
+ },
+ {
+  "eval": "(()=>{const x=125.4,z=-88.4,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "wick-feet"
+ },
+ {
+  "eval": "(()=>{const x=110,z=-105,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "bram-feet"
+ },
+ {
+  "eval": "(()=>{const x=120.6,z=-93.6,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "harl-feet"
+ },
+ {
+  "eval": "(()=>{const x=133.5,z=-79.5,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "tessa-feet"
+ },
+ {
+  "eval": "(()=>{const x=93.5,z=-82.3,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "cole-feet"
+ },
+ {
+  "eval": "(()=>{const x=100.4,z=-85.8,d=1.55,a=0.9,p=-0.72;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "pell-feet"
+ },
+ {
+  "eval": "(()=>{const x=120.6,z=-93.6,d=2.6,a=0.35,p=0.02;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "harl-front"
+ },
+ {
+  "eval": "(()=>{const x=120.6,z=-93.6,d=2.6,a=3.5,p=0.02;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "harl-back"
+ },
+ {
+  "eval": "(()=>{const P=__game.game.world.props,T=__game.game.terrain;return JSON.stringify(P.villagers.map(v=>{const m=v.mesh;let sk=null;m.traverse(o=>{if(o.isSkinnedMesh)sk=o;});m.updateMatrixWorld(true);sk.skeleton.update();const p=sk.geometry.attributes.position;const V3=new (Object.getPrototypeOf(m.position).constructor)();let lo=1e9,hi=-1e9;for(let i=0;i<p.count;i+=7){sk.applyBoneTransform(i,V3.fromBufferAttribute(p,i));if(V3.y<lo)lo=V3.y;if(V3.y>hi)hi=V3.y;}const s=m.scale.x;return {h:+((hi-lo)*s).toFixed(2),sole:+(m.position.y+lo*s-T.heightAt(m.position.x,m.position.z)).toFixed(3)};}));})()"
+ }
+]

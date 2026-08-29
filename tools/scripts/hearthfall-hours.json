@@ -1,0 +1,17 @@
+[
+  { "wait": 10 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'" },
+  { "hour": 12 },
+  { "eval": "__at(118,-96,14,2.6,-0.10)" }, { "wait": 12 },
+  { "eval": "__game.game.world.grass?.stats?.() ?? 'n/a'" },
+  { "shot": "h12" },
+  { "hour": 8 },  { "wait": 5 }, { "shot": "h08" },
+  { "hour": 18 }, { "wait": 5 }, { "shot": "h18" },
+  { "hour": 22 }, { "wait": 5 }, { "shot": "h22" },
+  { "hour": 12 }, { "wait": 5 },
+  { "eval": "__at(118,-96,26,2.6,-0.10)" }, { "wait": 5 }, { "shot": "edge-26m" },
+  { "eval": "__at(118,-96,40,2.6,-0.06)" }, { "wait": 5 }, { "shot": "edge-40m" },
+  { "eval": "__at(118,-96,70,2.6,0.0)" }, { "wait": 5 }, { "shot": "approach-70m" },
+  { "burst": { "name": "yard", "n": 5, "interval": 0.14 } },
+  { "stats": "final" }
+]

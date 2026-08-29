@@ -1,0 +1,14 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "__game.setHour(11);__game.teleport(122,null,-92);1"
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "eval": "(()=>{const P=__game.game.world.props;const v=P.villagers[3];const m=v.mesh;const rows=()=>{m.updateWorldMatrix(true,true);const o=[];m.traverse(b=>{if(!b.isBone)return;const e=b.matrixWorld.elements;o.push(b.name+'@'+((e[12]-m.position.x)/1.767).toFixed(2)+','+((e[13]-m.position.y)/1.767).toFixed(2)+','+((e[14]-m.position.z)/1.767).toFixed(2));});return o.join('|');};const a=rows();v.mixer.stopAllAction();m.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.pose();});m.updateMatrixWorld(true);const b=rows();return a+'##'+b;})()"
+ }
+]

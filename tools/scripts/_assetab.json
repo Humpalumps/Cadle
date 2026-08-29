@@ -1,0 +1,62 @@
+[{"wait":30},
+ {"eval":"window.__game.god(true);window.__game.passive(true);window.__game.setHour(13);'ok'"},
+ {"wait":4},
+
+ {"log":"VALE: grass_albedo close + mid + vista"},
+ {"tp":[0,null,0]},{"look":[0,-1.15]},{"wait":2.5},{"shot":"a1-grass-down-2m"},
+ {"look":[0,-0.35]},{"wait":1.2},{"shot":"a2-grass-mid"},
+ {"tp":[60,null,-120]},{"look":[-0.7,0.03]},{"wait":2},{"shot":"a3-vale-vista-40m"},
+
+ {"log":"RUINS: ruins_stone + granite close"},
+ {"tp":[140,null,60]},{"look":[1.2,-0.1]},{"wait":2.5},{"shot":"a4-ruins-stone"},
+
+ {"log":"AETHERYTE: glyph rings"},
+ {"tp":[0,null,-14]},{"look":[0,0.12]},{"wait":2},{"shot":"a5-aetheryte-glyphs"},
+
+ {"log":"FOREST: card_fern floor + leaf_card canopy"},
+ {"eval":"window.__game.goto('forest',40);'ok'"},{"wait":7},
+ {"look":[0,-0.75]},{"wait":1.5},{"shot":"a6-forest-fern-floor"},
+ {"look":[0,0.35]},{"wait":1.2},{"shot":"a7-forest-canopy-leafcard"},
+ {"look":[0,0.0]},{"wait":1.0},{"shot":"a8-forest-eye"},
+
+ {"log":"TUNDRA: card_conifer_snow + snow_sastrugi"},
+ {"eval":"window.__game.goto('tundra',60);'ok'"},{"wait":7},
+ {"look":[0,0.05]},{"wait":1.5},{"shot":"a9-tundra-conifer"},
+ {"look":[0,-0.9]},{"wait":1.2},{"shot":"a10-tundra-snow-ground"},
+
+ {"log":"FEN: card_reed + card_moss + peat_muck"},
+ {"eval":"window.__game.goto('shadowfen',50);'ok'"},{"wait":7},
+ {"look":[0,-0.15]},{"wait":1.5},{"shot":"a11-fen-reed-moss"},
+ {"look":[0,-1.0]},{"wait":1.2},{"shot":"a12-fen-peat-ground"},
+
+ {"log":"INFERNAL: ash_basalt luma calibration (glow bands key off its luma)"},
+ {"eval":"window.__game.goto('infernal',60);'ok'"},{"wait":7},
+ {"look":[0,-0.55]},{"wait":1.5},{"shot":"a13-infernal-ash-ground"},
+ {"look":[0,0.0]},{"wait":1.2},{"shot":"a14-infernal-eye"},
+
+ {"log":"VOID: voidstone"},
+ {"eval":"window.__game.goto('void',60);'ok'"},{"wait":7},
+ {"look":[0,-0.5]},{"wait":1.5},{"shot":"a15-void-stone"},
+
+ {"log":"CELESTIAL: marble_strata / celestial_marble"},
+ {"eval":"window.__game.goto('celestial',60);'ok'"},{"wait":7},
+ {"look":[0,-0.4]},{"wait":1.5},{"shot":"a16-celestial-marble"},
+
+ {"log":"CREATURES: GLB skins at 3 m and 20 m"},
+ {"tp":[0,null,0]},{"wait":3},
+ {"eval":"window.__game.clearEnemies();window.__game.passive(true);'ok'"},
+ {"eval":"window.__game.spawnNear('treant',3.5);window.__game.spawnNear('golem',5);'ok'"},
+ {"wait":3},{"look":[0,0.0]},{"wait":1.5},{"shot":"a17-creature-3m"},
+ {"eval":"window.__game.clearEnemies();'ok'"},
+ {"eval":"window.__game.spawnNear('sentinel',20);window.__game.spawnNear('hound',18);window.__game.spawnNear('wraith',22);'ok'"},
+ {"wait":3},{"look":[0,0.0]},{"wait":1.5},{"shot":"a18-creature-20m"},
+ {"eval":"window.__game.clearEnemies();'ok'"},
+ {"eval":"window.__game.spawnNear('wayfinder',3.5);'ok'"},
+ {"wait":3},{"shot":"a19-npc-3m"},
+ {"burst":{"name":"anim","n":6,"interval":0.35}},
+
+ {"log":"VIEWMODEL: glove_leather"},
+ {"eval":"window.__game.clearEnemies();window.__game.give('handcannon',0);window.__game.swap(0);'ok'"},
+ {"wait":2},{"look":[0,-0.15]},{"wait":1},{"shot":"a20-viewmodel-gloves"},
+ {"eval":"JSON.stringify({loadMs:window.__game.game.assets.loadMs, prog:window.__game.game.assets.progress})"},
+ {"stats":"final"}]

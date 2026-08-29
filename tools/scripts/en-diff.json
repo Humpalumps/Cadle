@@ -1,0 +1,13 @@
+[
+ { "wait": 3.0 },
+ { "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})" },
+ { "wait": 2.0 },
+ { "hour": 11 },
+ { "eval": "const g=__game.game; const S=g.enemies.types.sentinel; window.__NEW={...S}; window.__OLD={...S, role:'ranged', damage:7, speed:3.6, turn:3.5, accel:10, attackRange:30, band:[13,24], attackWindup:0.75, attackCooldown:2.6, attackRecover:0.4, standoff:2.2, strafe:1, volleyRange:undefined, lungeSpeed:undefined}; const G=g.enemies.types.golem; window.__GN={...G}; window.__GO={...G, speed:2.4, accel:6, throwRange:[9,24]}; window.__setup=(sd,gd)=>{ Object.assign(S,sd); Object.assign(G,gd); g.enemies.clear(); g.enemies.passive=false; __game.god(false); __game.teleport(140,null,66); __game.look(3.1416,0.02); const es=[__game.spawn('sentinel',138,58,{level:3}),__game.spawn('sentinel',144,58,{level:3}),__game.spawn('hound',140,54,{level:3}),__game.spawn('hound',134,56,{level:3}),__game.spawn('golem',146,54,{level:3})]; for(const e of es) if(e){e.alert=true; e.lastSeenT=g.time; e.lastSeen.copy(g.player.position); e.home.copy(e.position);} return es.filter(Boolean).length; }; window.__meas=(label)=>{ const P=g.player; window.__M={label, dmg:0, deaths:0, last:P.health, t0:g.time}; const step=()=>{ const h=P.health; if(h<window.__M.last) window.__M.dmg += (window.__M.last-h); window.__M.last=h; if(h<=0){window.__M.deaths++; __game.respawn(); __game.teleport(140,null,66); window.__M.last=P.health;} if(g.time-window.__M.t0<12) requestAnimationFrame(step); else window.__M.done=1; }; step(); }; 'armed'" },
+ { "eval": "window.__setup(window.__NEW, window.__GN); window.__meas('NEW'); 'A'" },
+ { "wait": 14.0 },
+ { "eval": "window.__R1=JSON.stringify(window.__M); window.__setup(window.__OLD, window.__GO); window.__meas('OLD'); 'B'" },
+ { "wait": 14.0 },
+ { "eval": "const a=JSON.parse(window.__R1), b=window.__M; JSON.stringify({NEW:{dps:+(a.dmg/12).toFixed(1), total:+a.dmg.toFixed(0), deaths:a.deaths}, OLD:{dps:+(b.dmg/12).toFixed(1), total:+b.dmg.toFixed(0), deaths:b.deaths}})" },
+ { "eval": "const g=__game.game; Object.assign(g.enemies.types.sentinel, window.__NEW); Object.assign(g.enemies.types.golem, window.__GN); 'restored'" }
+]

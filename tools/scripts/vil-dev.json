@@ -1,0 +1,8 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{const A=__game.game.assets;const out=[];for(const n of ['herbwife','merchant','mason','fisherman','farmwoman','guard','scholar','wayfinder']){const src=A.model(n);const bq={};src.traverse(b=>{if(b.isBone)bq[b.name]=b.quaternion.toArray();});const cl=A.clips(n);const idle=cl.find(c=>/idle/i.test(c.name))||cl[0];const rows=[];for(const t of idle.tracks){if(t.name.indexOf('.quaternion')<0)continue;const bn=t.name.split('.')[0];const q0=bq[bn];if(!q0)continue;let mx=0;for(let i=0;i+3<t.values.length;i+=4){const d=Math.abs(t.values[i]*q0[0]+t.values[i+1]*q0[1]+t.values[i+2]*q0[2]+t.values[i+3]*q0[3]);const a=2*Math.acos(Math.min(1,d))*57.2958;if(a>mx)mx=a;}rows.push([bn,Math.round(mx)]);}rows.sort((a,b)=>b[1]-a[1]);out.push(n+': '+rows.slice(0,6).map(r=>r[0]+'='+r[1]).join(' ')+'  (median '+rows[Math.floor(rows.length/2)][1]+')');}return out.join('|');})()"
+ }
+]

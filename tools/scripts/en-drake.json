@@ -1,0 +1,23 @@
+[
+ {
+  "wait": 3.0
+ },
+ {
+  "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})"
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "hour": 11
+ },
+ {
+  "eval": "const g=__game.game; __game.god(true); __game.passive(true); __game.clearEnemies(); __game.teleport(0,null,0); const d=__game.spawn('drake',0,-45); d.home.copy(d.position); d.idleDur=999; window.__meta=JSON.stringify({bones:d.boneList.length, bs:+d.mesh.boundingSphere.radius.toFixed(3), bsc:d.mesh.boundingSphere.center.toArray().map(v=>+v.toFixed(2)), bbox:[d.asset.geometry.boundingBox.min.toArray().map(v=>+v.toFixed(2)),d.asset.geometry.boundingBox.max.toArray().map(v=>+v.toFixed(2))], wings:!!d.ga.wings, glb:!!d.rigged, y:+d.position.y.toFixed(1)}); window.__dg=[]; window.__rn=0; window.__ph='near21'; d.mesh.onBeforeRender=()=>{window.__rn++;}; __game.teleport(0,null,-24); __game.look(0,0.36); setTimeout(()=>{window.__ph='far45'; __game.teleport(0,null,0); __game.look(0,0.21);},3200); setTimeout(()=>{window.__ph='far65'; __game.teleport(0,null,20); __game.look(0,0.13);},6400); setTimeout(()=>{window.__ph='far120'; __game.teleport(0,null,75); __game.look(0,0.07);},9600); const q=(e)=>{let s=0;for(const b of e.boneList)s+=Math.abs(b.quaternion.x)+Math.abs(b.quaternion.y)+Math.abs(b.quaternion.z);return s;}; const step=()=>{const e=g.enemies.list.find(x=>x.type==='drake'); if(e){const c=g.camera.position,dx=e.position.x-c.x,dy=e.position.y-c.y,dz=e.position.z-c.z; window.__dg.push([window.__ph,+(dx*dx+dy*dy+dz*dz).toFixed(0),e.root.visible?1:0,+q(e).toFixed(5),window.__rn,e.mesh.castShadow?1:0]); window.__rn=0;} requestAnimationFrame(step);}; step(); 'armed'"
+ },
+ {
+  "wait": 13.0
+ },
+ {
+  "eval": "const a=window.__dg; const out={meta:JSON.parse(window.__meta), phases:{}}; for(const ph of ['near21','far45','far65','far120']){const s=a.filter(x=>x[0]===ph).slice(8); if(!s.length) continue; const dq=[]; for(let i=1;i<s.length;i++) dq.push(+Math.abs(s[i][3]-s[i-1][3]).toFixed(5)); out.phases[ph]={n:s.length, dist:+Math.sqrt(s[0][1]).toFixed(1), heldFrames:dq.filter(x=>x<1e-5).length, tot:dq.length, heldFrac:+(dq.filter(x=>x<1e-5).length/dq.length).toFixed(3), dq:dq.slice(0,26), notVisible:s.filter(x=>!x[2]).length, render:s.slice(1,45).map(x=>x[4]).join(''), shadow:s.slice(1,45).map(x=>x[5]).join('')};} JSON.stringify(out)"
+ }
+]

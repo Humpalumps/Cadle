@@ -1,0 +1,17 @@
+[
+ {
+  "wait": 3.0
+ },
+ {
+  "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})"
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "eval": "const g=__game.game; JSON.stringify({pools:Object.keys(g.enemies.pools), maxAlive:g.enemies.maxAlive, alive:g.enemies.list.length})"
+ },
+ {
+  "eval": "const s=__game.stats(); JSON.stringify({sysKeys:Object.keys(s.systems||{}), sys:s.systems})"
+ }
+]

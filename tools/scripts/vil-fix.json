@@ -1,0 +1,32 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{const x=120.6,z=-93.6,d=2.6,a=0.35;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),0.02);return 'ok';})()"
+ },
+ {
+  "wait": 2
+ },
+ {
+  "shot": "before"
+ },
+ {
+  "eval": "(()=>{const A=__game.game.assets,P=__game.game.world.props;const v=P.villagers[3];const bones={};v.mesh.traverse(b=>{if(b.isBone)bones[b.name]=b;});const cl=A.clips('fisherman');const idle=cl.find(c=>/idle/i.test(c.name));const rows=[];for(const t of idle.tracks){if(t.name.indexOf('.position')<0)continue;const bn=t.name.split('.')[0];const b=bones[bn];if(!b)continue;const dx=t.values[0]-b.position.x,dy=t.values[1]-b.position.y,dz=t.values[2]-b.position.z;const bl=b.position.length();rows.push(bn+' bindLen'+bl.toFixed(3)+' delta'+Math.hypot(dx,dy,dz).toFixed(3));}return JSON.stringify(rows);})()"
+ },
+ {
+  "eval": "(()=>{const A=__game.game.assets,P=__game.game.world.props;const v=P.villagers[3];const roots=new Set();v.mesh.traverse(b=>{if(b.isBone&&!(b.parent&&b.parent.isBone))roots.add(b.name);});const cl=A.clips('fisherman');const idle=cl.find(c=>/idle/i.test(c.name));const tr=idle.tracks.filter(t=>t.name.indexOf('.position')<0||roots.has(t.name.split('.')[0]));const T=Object.getPrototypeOf(idle).constructor;const c2=new T(idle.name+'-ip',idle.duration,tr,idle.blendMode);v.mixer.stopAllAction();v.mixer.uncacheRoot(v.mesh);const M=Object.getPrototypeOf(v.mixer).constructor;v.mixer=new M(v.mesh);v.mixer.clipAction(c2).play();v.mixer.update(0.5);return 'roots='+[...roots].join(',')+' kept '+tr.length+'/'+idle.tracks.length;})()"
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "shot": "after"
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "after2"
+ }
+]

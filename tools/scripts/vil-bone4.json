@@ -1,0 +1,14 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "__game.setHour(11);__game.teleport(122,null,-92);1"
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "eval": "(()=>{const v=__game.game.world.props.villagers[3];const m=v.mesh;const o=[];m.traverse(b=>{if(!b.isBone)return;o.push(b.name+'@p'+b.position.toArray().map(x=>x.toFixed(3)).join(',')+'@s'+b.scale.toArray().map(x=>x.toFixed(3)).join(',')+'@q'+b.quaternion.toArray().map(x=>x.toFixed(2)).join(','));});let sk=null;m.traverse(x=>{if(x.isSkinnedMesh)sk=x;});return 'meshScale='+m.scale.x.toFixed(3)+' skNodeScale='+sk.scale.toArray().map(x=>x.toFixed(3)).join(',')+' bindMode='+sk.bindMode+'|'+o.join('|');})()"
+ }
+]

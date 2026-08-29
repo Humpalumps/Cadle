@@ -1,0 +1,21 @@
+[
+  { "wait": 4.5 },
+  { "hour": 10 },
+  { "eval": "__game.god(true); __game.passive(true); __game.teleport(0,null,0); __game.look(0,0); 'ok'" },
+  { "wait": 0.6 },
+  { "eval": "__game.lineup(['sentinel','golem']).map(e=>e.type+'@'+e.position.x.toFixed(1)+','+e.position.z.toFixed(1)).join(' | ')" },
+  { "wait": 1.6 },
+  { "shot": "pair-13m" },
+  { "eval": "const s=__game.game.enemies.list.find(e=>e.type==='sentinel'); __game.teleport(s.position.x, null, s.position.z+5.5); __game.look(0,0.05); 'sent'" },
+  { "wait": 1.2 },
+  { "shot": "sentinel-front" },
+  { "eval": "const s=__game.game.enemies.list.find(e=>e.type==='sentinel'); __game.teleport(s.position.x+5.0, null, s.position.z+2.5); __game.look(-0.9,0.05); 'sent2'" },
+  { "wait": 1.2 },
+  { "shot": "sentinel-3q" },
+  { "eval": "const s=__game.game.enemies.list.find(e=>e.type==='golem'); __game.teleport(s.position.x, null, s.position.z+6.5); __game.look(0,0.10); 'gol'" },
+  { "wait": 1.2 },
+  { "shot": "golem-front" },
+  { "eval": "const s=__game.game.enemies.list.find(e=>e.type==='golem'); __game.teleport(s.position.x+6.0, null, s.position.z+3.0); __game.look(-0.9,0.10); 'gol2'" },
+  { "wait": 1.2 },
+  { "shot": "golem-3q" }
+]

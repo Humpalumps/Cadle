@@ -1,0 +1,35 @@
+[
+  { "wait": 40 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d,pz=z+Math.cos(ang)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),pitch||0);};'ok'" },
+  { "resetStats": true },
+
+  { "log": "== hour 12 ==" }, { "hour": 12 },
+  { "eval": "__at(118,-96,14,2.6,-0.10);'ok'" }, { "wait": 40 }, { "shot": "yard-14m-h12" },
+  { "eval": "__at(116,-99,3,2.6,-0.22);'ok'" }, { "wait": 22 }, { "shot": "serel-3m-h12" },
+  { "eval": "__at(118,-96,9,4.4,-0.55);'ok'" }, { "wait": 22 }, { "shot": "yard-down-9m" },
+  { "log": "yard edge -> open meadow (transition)" },
+  { "eval": "__game.teleport(150,null,-70);__game.look(2.35,-0.06);'ok'" }, { "wait": 26 }, { "shot": "edge-out-h12" },
+  { "eval": "__game.teleport(175,null,-50);__game.look(2.35,-0.06);'ok'" }, { "wait": 26 }, { "shot": "meadow-near-h12" },
+  { "eval": "__game.teleport(0,null,0);__game.look(-1.5708,-0.08);'ok'" }, { "wait": 30 }, { "shot": "meadow-000-h12" },
+
+  { "log": "== hour 8 ==" }, { "hour": 8 },
+  { "eval": "__at(118,-96,14,2.6,-0.10);'ok'" }, { "wait": 30 }, { "shot": "yard-14m-h08" },
+  { "eval": "__game.teleport(0,null,0);__game.look(-1.5708,-0.08);'ok'" }, { "wait": 30 }, { "shot": "meadow-000-h08" },
+
+  { "log": "== hour 18 ==" }, { "hour": 18 },
+  { "eval": "__at(118,-96,14,2.6,-0.10);'ok'" }, { "wait": 30 }, { "shot": "yard-14m-h18" },
+  { "eval": "__at(116,-99,3,2.6,-0.22);'ok'" }, { "wait": 22 }, { "shot": "serel-3m-h18" },
+  { "eval": "__game.teleport(0,null,0);__game.look(-1.5708,-0.08);'ok'" }, { "wait": 30 }, { "shot": "meadow-000-h18" },
+
+  { "log": "== hour 22 ==" }, { "hour": 22 },
+  { "eval": "__at(118,-96,14,2.6,-0.10);'ok'" }, { "wait": 30 }, { "shot": "yard-14m-h22" },
+  { "eval": "__game.teleport(0,null,0);__game.look(-1.5708,-0.08);'ok'" }, { "wait": 30 }, { "shot": "meadow-000-h22" },
+
+  { "hour": 13 },
+  { "eval": "__at(118,-96,14,2.6,-0.10);'ok'" }, { "wait": 30 },
+  { "burst": { "name": "yard", "n": 4, "interval": 0.25 } },
+  { "eval": "__game.teleport(0,null,0);__game.look(-1.5708,-0.08);'ok'" }, { "wait": 30 },
+  { "burst": { "name": "meadow", "n": 4, "interval": 0.25 } },
+  { "eval": "JSON.stringify(__game.stats())" },
+  { "stats": "final" }
+]

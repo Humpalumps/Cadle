@@ -111,6 +111,9 @@ export class Enemy {
     // between two string literals, which is how it catches a hardcoded model URL. It cannot tell that from a
     // boolean flag named `glb`, and the flag name is fixed by the glbBody contract — so read it as a key.
     this.rigged = !!asset['glb'];
+    // "a winged thing seen against the sky" — the one class whose pose tick rate is clamped in update().
+    // Read once here rather than two property loads deep in the hot path.
+    this._sky = !!(this.def.flying && this.def.role === 'dive');
     // One body entry, two animators: the procedural one, and (when Enemies.init resolved a rigged GLB for this
     // body) the rotation-only GLB animator that drives the Tripo skeleton. Same { setup, animate } contract, so
     // nothing else in this class branches on it.
@@ -161,6 +164,10 @@ export class Enemy {
       this.shieldMesh = new THREE.Mesh(SHIELD_GEO, this.shieldMat);
       this.shieldMesh.scale.set(def.shieldRadius, def.shieldRadius * 1.3, def.shieldRadius); this.shieldMesh.position.y = def.center; // body-hugging ellipsoid, not a beach ball
       this.shieldMesh.renderOrder = 5; this.shieldMesh.visible = false; this.root.add(this.shieldMesh);
+      // The bubble is a see-through read, so it must not paint the sky-mask green — PostFX._renderSkyMask
+      // draws every mesh through an OPAQUE override material, which made the sky behind a shield read as
+      // world geometry and produced 5 phantom "white core" findings on clouds (2026-08-29).
+      this.shieldMesh.userData.maskSkip = true;
       this._shellR = def.shieldRadius * 1.3;   // world half-height of the ellipsoid; rescaled per spawn (elites)
     }
     // ---- combat target ----
@@ -449,7 +456,10 @@ export class Enemy {
     // These bands were chosen when the rigs were Tripo's originals (hound 101 joints, wraith 94);
     // the conversion-time prune cut those to 40 and 37, so a wider full-rate band costs ~60% less
     // than it did when 12 m was picked. Full rate to 30 m, every 2nd to 50 m, 3rd to 110, 6th to 220.
-    let animEvery = lod === 0 ? (d2cam < 900 ? 1 : 2) : lod === 1 ? 3 : lod === 2 ? 6 : 0;
+    // `|| this._sky`: a dive flyer holds full rate across the WHOLE near band, not just to 30 m — see the
+    // measurement in the _sky block below. Written into the ladder itself rather than as another clamp
+    // underneath it so the crowd scale below (which only touches animEvery > 1) cannot take it back.
+    let animEvery = lod === 0 ? (d2cam < 900 || this._sky ? 1 : 2) : lod === 1 ? 3 : lod === 2 ? 6 : 0;
     // THE FULL-RATE BAND IS NOT CROWD-SCALABLE. `Math.ceil(1 * 1.5)` is 2, so the 1.5x crowd tier
     // (>16 alive — a single camp) silently halved the pose rate of every creature in the world,
     // INCLUDING one 3 m from the camera, and reintroduced the exact bug the bands above were widened
@@ -459,6 +469,56 @@ export class Enemy {
     // POSE test was failing on (hound/sprite/skyserpent/wraith/voidhorror), NOT the flyer path.
     // Crowd scaling still applies wherever the pose is already stepped (>= 30 m), where it is free.
     if (cm > 1 && animEvery > 1) animEvery = Math.ceil(animEvery * cm);
+    // A SKY FLYER POSES ON A TIGHTER LADDER (user report, 2026-08-28: "the dragon in the sky's animation
+    // is flickery"). MEASURED on a hovering Ember Drake, per-frame bone-rotation delta (tools/out/en-drake,
+    // 200 rAF samples per distance):
+    //     24 m   0% of frames held      46 m  50% held, pattern 0,x,0,x
+    //     66 m  66% held, x,0,0        120 m  84% held, x,0,0,0,0,0
+    // and the snap when it finally does update GROWS with the hold — 0.34 rad of skeleton in a single
+    // frame at 120 m, against 0.03-0.09 at 24 m. That is the flicker: wings teleporting ~20 deg every
+    // sixth frame under a root that keeps gliding every frame.
+    // It is NOT frustum culling, which was the other candidate and the expensive one to "fix": the bind
+    // sphere is r 2.146 against a body whose bind box half-diagonal is 1.55 m, and an onBeforeRender
+    // counter fired on 100.0% of frames at 24/46/66/120 m. Nothing here inflates a bound or disables
+    // culling — draw calls and shadow tris are untouched.
+    // THE CLAMP IS 2, NOT 1, AND THAT IS MEASURED, NOT ROUNDED. What decides whether a held pose reads
+    // is the size of the SNAP in screen pixels, so that is what was measured: the drake's wing-tip
+    // position in root space, per frame, converted to pixels at 1080p / 67.7 deg vertical fov
+    // (tools/out/en-wing). p95 jump, by hold length and distance:
+    //             45 m   65 m  120 m  200 m
+    //   every-2    0.92   0.64   0.35   0.21   <- sub-pixel from 45 m out
+    //   every-3    1.39   0.96   0.52   0.31
+    //   every-5    2.30   1.59   0.86   0.52   <- lod 1 + one camp's crowd scale used to give this
+    //   every-9    4.07   2.82   1.53   0.92   <- lod 2 + a full field used to give this
+    // A 2-4 px teleport of a high-contrast wing edge against flat sky, twelve to twenty times a second,
+    // IS the flicker. Under a pixel it cannot be resolved as a jump at all — so every-2 buys the whole
+    // read and every-1 would buy nothing visible for twice the CPU (measured back-to-back in one page
+    // load by toggling this flag: full rate cost +0.10-0.20 ms of the enemies slice in a 6-drake scene,
+    // every-2 costs +0.05-0.10, and the Vale's actual 2 drakes cost ~+0.02).
+    // Scoped to `role === 'dive'` (drake, wyvern, skyserpent, leviathan) and NOT to flyers generally.
+    // A grounded creature loses its legs to distance and nobody minds, and a wisp is a glowing orb whose
+    // pose says nothing at 100 m — but a winged flyer IS its wingbeat, it is silhouetted against flat sky
+    // where nothing masks a jump, and it is essentially never near: the 40-200 m band is the only place
+    // you ever see one. Beyond 220 m (lod 3) animEvery is 0 and stays 0 — still frozen, still free, and
+    // out there even every-9 is already sub-pixel.
+    //
+    // THE 30 m STEP IS THE OTHER HALF OF THE SAME BUG, and the clamp below never saw it: inside lod 0 the
+    // ladder ALREADY steps 1 -> 2 at d2cam 900, so `animEvery > 2` is false there and a dive flyer between
+    // 30 and 50 m posed every OTHER frame with the clamp doing nothing at all. MEASURED on a hovering Sky
+    // Serpent, 599 rAF frames, per-frame bone-rotation delta split by the ring it was inside on that frame:
+    //     inside 30 m (430 frames)   heldFrac 0.009, alternation 0.009
+    //     beyond 30 m (169 frames)   heldFrac 0.497, alternation 1.000   <- a perfect every-other-frame hold
+    // and the held frames are a TRUE hold, not a slow phase: per-bone pose rate on them is 0.005-0.04 rad/s
+    // against 0.5-2.7 rad/s on the moving frames (60-3000x). That is what animcheck's STEPPED POSE test was
+    // failing on (tools/out/gate-anim: skyserpent idle 37% held, alternating 28%, "at 20 m"), and the "20 m"
+    // is why it read as a paradox — camDist is sampled at the END of the window, after the serpent had
+    // wandered back inside the ring it spent a third of the window outside. It is also why hound and
+    // skyserpent traded places between runs: it is a coin flip on whether the creature crossed 30 m during
+    // its 1.6 s sample, and a dive flyer (hover 6-13 m, speed 15) is the only body that reliably does.
+    // The 30 m ring is far too close to freeze a 200 m-visible sky creature, and the pixel table above says
+    // exactly where every-2 becomes honest: 0.92 px p95 at 45 m. lod 0 ends at 50 m. So full rate through
+    // lod 0, every-2 past it — the two numbers already agree, the ladder just was not asked.
+    if (this._sky && animEvery > 2) animEvery = 2;
     if (animEvery && (frame + this.id) % animEvery === 0) { this._animate(this.animDt, t); this.animDt = 0; }
     // uniform upkeep (uTime/uGlow/weak-point/shield) is invisible-stale at distance: crowd-scale it too, free.
     if (lod < 2 ? (cm === 1 || (frame + this.id) % 2 === 0) : (frame + this.id) % Math.ceil(3 * cm) === 0) this._sync(dt, t, lod);
@@ -582,10 +642,21 @@ export class Enemy {
     const role = def.role;
     if (role === 'melee') {
       _v.subVectors(pf, this.position); _v.y = 0; const dh = _v.length() || 1; _v.multiplyScalar(1 / dh);
-      this.facePlayer = dh < 7;
+      // a melee unit that also shoots has to LOOK at you from shooting range, not just from arm's length
+      this.facePlayer = dh < (def.volleyRange ? def.volleyRange[1] : 7);
       const ring = def.standoff ?? 1.8;
       // attack entry covers the whole dance band (ring..ring+1.6): the lunge closes the gap, the standoff ring stops it
       if (dh < Math.max(def.attackRange, ring + 1.6) && this.attackCd <= 0 && los && this.sys.meleeToken(t)) { this._startAttack('bite'); return; }
+      // RANGED OPENER ON A MELEE ROLE (def.volleyRange) — the same seam the 'slam' role has always had,
+      // moved to where both roles can use it. It exists because of a READ bug the user reported live: the
+      // Spire Sentinel carries a two-handed sword on screen (tools/out/en-look/shot-pair-13m.png) and was
+      // role 'ranged' with band [13,24], so it stood at 20 m for the whole fight and shot — "a golem with a
+      // sword and he's only ranged". The fix is not to hide the sword (the silhouette is good) but to make
+      // the creature do what the silhouette promises: it CLOSES. The bolts stay, as the opener it fires
+      // while it marches and as the punish for a player who backs off, which is the Destiny sword-carrier
+      // read (Hive Knight: shoots you at range, cleaves you up close). Ordered AFTER the bite check on
+      // purpose — inside melee range the sword always wins over the gun.
+      if (def.volleyRange && this.attackCd <= 0 && los && dh > def.volleyRange[0] && dh < def.volleyRange[1]) { this._startAttack(def.volley ? 'volley' : 'bolt'); return; }
       if (dh < ring + 2.0) {
         // Destiny melee dance: hold just outside the standoff ring between strikes, circling the player
         this.strafeT -= dt; if (this.strafeT <= 0) { this.strafeT = 1.1 + this.sys.rnd() * 1.5; this.strafeDir = this.sys.rnd() < 0.5 ? -1 : 1; }

@@ -1,0 +1,6 @@
+[
+  { "wait": 12 },
+  { "eval": "__game.teleport(0,null,-34); __game.look(0,0); 'tp'" },
+  { "wait": 4 },
+  { "eval": "try { const g=__game.game, P=g.world.props, T=g.terrain; const w=P.wayfinders[0]; const inst=w.mesh; let skin=null; inst.traverse(c=>{ if(c.isSkinnedMesh && !skin) skin=c; }); inst.updateMatrixWorld(true); skin.skeleton.update(); const pos=skin.geometry.attributes.position; const V=new (inst.position.constructor)(); let loL=1e9,hiL=-1e9, loW=1e9; for(let i=0;i<pos.count;i+=7){ V.fromBufferAttribute(pos,i); skin.applyBoneTransform(i,V); if(V.y<loL)loL=V.y; if(V.y>hiL)hiL=V.y; const W=V.clone().applyMatrix4(skin.matrixWorld); if(W.y<loW)loW=W.y; } ({instY:+inst.position.y.toFixed(3), scl:+inst.scale.x.toFixed(4), spanLo:+loL.toFixed(4), spanHi:+hiL.toFixed(4), lowestWorldY:+loW.toFixed(3), ground:+T.heightAt(inst.position.x,inst.position.z).toFixed(3), skinLocalY:+skin.position.y.toFixed(3), skinParentIsInst: skin.parent===inst, skinWorldTy:+skin.matrixWorld.elements[13].toFixed(3), predicted:+(inst.position.y + loL*inst.scale.x).toFixed(3)}); } catch(e){ 'ERR '+e.message } " }
+]

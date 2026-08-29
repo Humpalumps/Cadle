@@ -32,24 +32,55 @@ export const DEFS = {
     palette: [[0x66d9ff, 0xffffff], [0x7fd8ff, 0xdfe6f0], [0xb070ff, 0xe8dcff]], glow: 1.9, rim: 0.65, bump: 0.045,
     deathTime: 1.4, xp: 20,
   },
+  // IT CARRIES A TWO-HANDED SWORD, SO IT HAS TO USE IT (user report, 2026-08-28: "there is a golem with a
+  // sword and he's only ranged"). Looked at the model first — tools/out/en-look/shot-pair-13m.png: the
+  // sentinel GLB holds a large curved greatsword across its body, unmistakably, at every distance the
+  // lineup shows. It was role 'ranged' with band [13,24] and attackRange 30, i.e. an AI whose entire job
+  // was to STAY at 20 m, so the sword was never swung once in a fight and the creature read as a liar.
+  // The silhouette is good; the behaviour was wrong. So: it is a MELEE closer now — it marches at you,
+  // stops on its standoff ring, telegraphs and cleaves, circles out, comes back — with the arc volley
+  // demoted to what a Destiny sword-carrier's gun is for: the opener it fires on the way in, and the
+  // punish for a player who breaks away (volleyRange 11-30, handled by the melee branch in Enemy._think).
+  // Everything else follows from "it must actually arrive within one engagement": speed 3.6 -> 5.0 and
+  // accel 10 -> 16 (a player walks ~5.5 and sprints faster, so kiting still works — that is the intended
+  // counterplay — but standing and trading no longer means it never gets there), turn 3.5 -> 4.2 so it
+  // can track a strafing player, cooldown 2.6 -> 1.9 and windup 0.75 -> 0.6 for a strike cadence rather
+  // than an artillery cadence, and damage 7 -> 14 because a greatsword that chips for the same as a bolt
+  // teaches nobody to respect it. attackRange is now the sword's REACH (3.6 from a 2.6 m standoff), not
+  // 30 m of gun. The pack-wide melee token in Enemies.meleeToken still caps how often the ruins camp
+  // can commit, so two sentinels plus two hounds cannot all swing at once.
   sentinel: {
-    name: 'Spire Sentinel', element: 'arc', role: 'ranged', flying: false, scale: 1.12,
-    health: 260, shield: 140, shieldElement: 'arc', damage: 7, speed: 3.6, turn: 3.5, accel: 10,
-    perception: 45, fov: 2.6, attackRange: 30, band: [13, 24], attackWindup: 0.75, attackCooldown: 2.6, attackRecover: 0.4, volley: 3, volleyGap: 0.16, standoff: 2.2,
+    name: 'Spire Sentinel', element: 'arc', role: 'melee', flying: false, scale: 1.12,
+    health: 260, shield: 140, shieldElement: 'arc', damage: 14, speed: 5.0, turn: 4.2, accel: 16,
+    perception: 45, fov: 2.6, attackRange: 3.6, attackWindup: 0.6, attackCooldown: 1.9, attackRecover: 0.4, lungeSpeed: 6, standoff: 2.6,
+    volleyRange: [11, 30], volley: 3, volleyGap: 0.16,
     projectile: { speed: 32, radius: 0.22, element: 'arc', life: 4 },
     // shieldRadius 1.05 -> 0.96 (and the same ~9% trim on every other sentinel-body humanoid): the wave-6
     // verdict called the bubbles "twice the body width". The model's shoulders are ~0.55 m half-width at this
     // scale, so 0.96 still stands the shell well clear of the body and the weapon.
-    strafe: 1, stagger: 0.22, staggerTime: 0.5, shieldRadius: 0.96,
+    stagger: 0.22, staggerTime: 0.5, shieldRadius: 0.96,
     radius: 0.55, height: 2.7, center: 1.74, weakPoints: [{ bone: 'head', radius: 0.3, mult: 2.0, off: [0, 0.17, 0] }],
     palette: [[0x7fd8ff, 0xffffff], [0xffd27a, 0xfff1d6]], glow: 1.9, rim: 0.55, bump: 0.05,
     deathTime: 1.6, xp: 45,
   },
+  // "the other golem without the sword has the same issue" — same user report, same class of bug, different
+  // mechanism. Looked at it too (tools/out/en-look/shot-golem-front.png): a hunched rock brawler with two
+  // enormous fists and no weapon. It reads as pure melee and it played as artillery, and the reason is a
+  // DUTY CYCLE, not the throw itself. Measured from the code path: a slam-role creature is frozen for
+  // attackWindup + attackRecover (1.5 s) with wantSpeed 0 for the whole attack, then walks for one cooldown
+  // (2.8 s). At the old speed 2.4 that is 6.7 m of closing per 4.3 s = 1.56 m/s of effective approach — and
+  // throwRange started at 9 m, so the golem re-entered that loop the instant it got anywhere, and from 24 m
+  // it needed ~13 s of standing-and-lobbing to reach slam range. A player who moves at all never let it.
+  // Two numbers, both about arrival: the throw is now a LONG-range punish (15-28 m) so that inside 15 m the
+  // golem does nothing but walk at you, and speed 2.4 -> 3.4 / accel 6 -> 9 so that walk covers 11 m in
+  // ~3.2 s — about one cooldown, so it slams roughly as it arrives. Still far slower than a player: kiting
+  // a golem remains correct play, it just no longer turns the golem into a mortar. Slam damage, radius,
+  // knockback and cooldown are all untouched — this changes where it fights, not how hard.
   golem: {
     name: 'Stone Golem', element: 'void', role: 'slam', flying: false,
-    health: 620, shield: 0, damage: 24, speed: 2.4, turn: 2.2, accel: 6,
+    health: 620, shield: 0, damage: 24, speed: 3.4, turn: 2.2, accel: 9,
     perception: 40, fov: 2.4, attackRange: 4.2, attackWindup: 0.9, attackCooldown: 2.8, attackRecover: 0.6, slamRadius: 5, knockback: 9, standoff: 3.9,
-    throwRange: [9, 24], throw: { speed: 22, radius: 0.45, gravity: 14, element: 'kinetic', life: 5, damage: 14, explodeRadius: 2.5 },
+    throwRange: [15, 28], throw: { speed: 22, radius: 0.45, gravity: 14, element: 'kinetic', life: 5, damage: 14, explodeRadius: 2.5 },
     stagger: 0.3, staggerTime: 0.6,
     radius: 0.95, height: 3.3, center: 1.8, weakPoints: [{ bone: 'core', radius: 0.36, mult: 3.0, off: [0, 0, 0.07] }],
     palette: [[0xb070ff, 0xffffff], [0x66d9ff, 0xffffff]], glow: 2.4, rim: 0.45, bump: 0.075,
@@ -76,7 +107,12 @@ export const DEFS = {
     name: 'Warden of the Spire', element: 'void', role: 'slam', flying: false, boss: true,
     health: 1800, shield: 500, shieldElement: 'void', damage: 32, speed: 3.4, turn: 2.8, accel: 8,
     perception: 60, fov: 6.3, attackRange: 4.6, attackWindup: 0.8, attackCooldown: 2.4, attackRecover: 0.6, slamRadius: 6, knockback: 11, standoff: 4.1,
-    volleyRange: [8, 30], volley: 5, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 30, radius: 0.28, element: 'void', life: 4, damage: 11 },
+    // volleyRange 8 -> 13 for the same duty-cycle reason as the golem above: the Warden wears the same
+    // heavy-brawler silhouette and a fan of bolts starting at 8 m meant the Vale's mini-boss spent the
+    // approach standing still shooting instead of walking into hammer range. Its melee ring is 4.1-4.6 m,
+    // so 13 leaves a genuine ~8 m stretch that it can only cross on foot. Volley count/spread/damage and
+    // every phase number are untouched.
+    volleyRange: [13, 30], volley: 5, volleyGap: 0.1, volleySpread: 0.35, projectile: { speed: 30, radius: 0.28, element: 'void', life: 4, damage: 11 },
     stagger: 0.4, staggerTime: 0.5, shieldRadius: 1.85, phases: [0.66, 0.33],
     radius: 1.1, height: 3.9, center: 2.1, weakPoints: [{ bone: 'head', radius: 0.42, mult: 1.6, off: [0, 0.26, 0] }, { bone: 'torso', radius: 0.38, mult: 2.2, off: [0, 0.67, 0.39] }],
     palette: [[0xb070ff, 0xffffff]], glow: 2.4, rim: 0.55, bump: 0.055,

@@ -5,6 +5,14 @@ const _c = new THREE.Color();
 const _c2 = new THREE.Color();
 // how far a pure-white hot core is pulled toward its element hue (see color()). 0 = white, 1 = fully tinted.
 const HOT_TINT = 0.55;
+// ...and how much FURTHER the colour's DARK channels are pulled (see color()). A uniform lerp keeps the
+// white's neutrality: HOT_TINT 0.55 toward a deep gold still leaves the start's smallest channel at ~0.48,
+// and at hdr >= 2.2 BRUSH_MINCH_CAP then pins that to 0.98 while the other two ride 1.3-1.7. That is a
+// bright CREAM — the cap can stop a value CLIPPING, it cannot invent chroma the start never had, and every
+// `color(0xffffff, hue)` caller in VFX.js was producing one (muzzle spark spikes at rgb 254,249,224,
+// combat gate burst-cvfx-pfire-a-0). 0 = uniform lerp (the old behaviour), 1 = the dark channels land
+// exactly on the hue.
+const HOT_DEEP = 0.85;
 // Hue-preserving ceiling on every particle's resolved colour×hdr (see burst()). A hue survives ACES iff its
 // SMALLEST channel stays under clip: if min(r,g,b) exceeds this, the whole colour is rescaled so the min
 // channel lands here (just under the 1.05 day bloom threshold). White/near-white can then NEVER clip to a
@@ -47,12 +55,22 @@ export class Brush {
    * HOT_TINT of the way toward the element hue: the core still reads as the hottest part of the effect
    * (it keeps its full hdr multiplier) but it now reads as white-hot ARC or white-hot SOLAR rather than
    * as an anonymous white blob. Presets that genuinely want neutral white pass a near-white like 0xfffefe.
+   *
+   * The tint is DEEPER on the dark channels than on the bright one (HOT_DEEP): the tint colour's dominant
+   * channel keeps the full white heat, while the channels the hue leaves dark follow the hue nearly all the
+   * way down. Same law as everywhere else here — saturate the COLOUR, cap the INTENSITY — but applied where
+   * the colour is actually born, so it fixes every `color(0xffffff, hue)` caller at once instead of one
+   * preset at a time (a uniform lerp's ~0.48 min channel is what BRUSH_MINCH_CAP kept pinning to cream).
    */
   color(c0, c1 = c0) {
     _c.set(c0);
     if (c0 === 0xffffff && c1 !== 0xffffff) {
-      const t = _c2.set(c1);
-      this.c0r = 1 + (t.r - 1) * HOT_TINT; this.c0g = 1 + (t.g - 1) * HOT_TINT; this.c0b = 1 + (t.b - 1) * HOT_TINT;
+      const t = _c2.set(c1), mx = Math.max(t.r, t.g, t.b) || 1, dk = (1 - HOT_TINT) * HOT_DEEP / mx;
+      // per-channel tint weight (inlined, no closure — this runs per burst in the hot path): HOT_TINT on the
+      // hue's brightest channel -> up to HOT_TINT + (1-HOT_TINT)*HOT_DEEP on its darkest
+      this.c0r = 1 + (t.r - 1) * (HOT_TINT + dk * (mx - t.r));
+      this.c0g = 1 + (t.g - 1) * (HOT_TINT + dk * (mx - t.g));
+      this.c0b = 1 + (t.b - 1) * (HOT_TINT + dk * (mx - t.b));
     } else { this.c0r = _c.r; this.c0g = _c.g; this.c0b = _c.b; }
     _c.set(c1); this.c1r = _c.r; this.c1g = _c.g; this.c1b = _c.b; return this;
   }

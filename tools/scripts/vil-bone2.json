@@ -1,0 +1,17 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "__game.setHour(11);__game.teleport(122,null,-92);1"
+ },
+ {
+  "wait": 2
+ },
+ {
+  "eval": "(()=>{const P=__game.game.world.props;const N=['serel','wick','bram','harl','tessa','cole','pell'];const out=[];for(let i=0;i<P.villagers.length;i++){const v=P.villagers[i];const bad=[];v.mesh.traverse(b=>{if(!b.isBone)return;const s=b.scale;const mn=Math.min(s.x,s.y,s.z),mx=Math.max(s.x,s.y,s.z);if(mn<0.62||mx>1.6||!isFinite(mn))bad.push(b.name+'('+s.x.toFixed(2)+','+s.y.toFixed(2)+','+s.z.toFixed(2)+')');});out.push({n:N[i],bad});}return JSON.stringify(out);})()"
+ },
+ {
+  "eval": "(()=>{const A=__game.game.assets;const out=[];for(const n of ['herbwife','merchant','mason','fisherman','farmwoman','guard','scholar','wayfinder']){const cl=A.clips(n);const idle=cl.find(c=>/idle/i.test(c.name))||cl[0];const sc=[];let nsc=0;for(const t of idle.tracks){if(t.name.indexOf('.scale')<0)continue;nsc++;const v=t.values;let mn=9,mx=-9;for(let i=0;i<v.length;i++){if(v[i]<mn)mn=v[i];if(v[i]>mx)mx=v[i];}if(mn<0.62||mx>1.6)sc.push(t.name.split('.')[0]+'['+mn.toFixed(2)+','+mx.toFixed(2)+']');}out.push({n,nsc,bad:sc});}return JSON.stringify(out);})()"
+ }
+]

@@ -1,0 +1,34 @@
+[
+  { "wait": 10 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; window.__out=(d,ang,pitch)=>{__game.teleport(118+Math.sin(ang)*d,null,-96+Math.cos(ang)*d); __game.look(ang+Math.PI, pitch||0);}; 'ok'" },
+  { "hour": 12 },
+  { "eval": "__at(118,-96,20,0.9,0.0)" }, { "wait": 6 },
+
+  { "eval": "__at(118,-96,6,0.9,0.02)" }, { "wait": 2.5 }, { "shot": "well-6m" },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 1.5 }, { "shot": "serel-3m" },
+  { "eval": "__at(110,-105,4.0,-2.4,0.08)" }, { "wait": 1.5 }, { "shot": "bram-4m" },
+
+  { "eval": "__out(9,0.9,-0.55)" }, { "wait": 1.5 }, { "shot": "down-9m-a" },
+  { "eval": "__out(9,2.6,-0.55)" }, { "wait": 1.5 }, { "shot": "down-9m-b" },
+  { "eval": "__out(9,4.4,-0.55)" }, { "wait": 1.5 }, { "shot": "down-9m-c" },
+  { "eval": "__out(18,2.6,-0.42)" }, { "wait": 1.5 }, { "shot": "down-18m" },
+
+  { "eval": "__at(118,-96,14,2.6,0.02)" }, { "wait": 1.5 }, { "shot": "yard-14m-in" },
+  { "eval": "__out(14,2.6,-0.06)" }, { "wait": 1.5 }, { "shot": "walkout-14m" },
+  { "eval": "__out(24,2.6,-0.06)" }, { "wait": 1.5 }, { "shot": "walkout-24m" },
+  { "eval": "__out(34,2.6,-0.06)" }, { "wait": 1.5 }, { "shot": "walkout-34m" },
+  { "eval": "__out(48,2.6,-0.06)" }, { "wait": 1.5 }, { "shot": "walkout-48m" },
+
+  { "eval": "__at(118,-96,55,2.6,0.02)" }, { "wait": 1.5 }, { "shot": "approach-55m" },
+  { "eval": "__at(118,-96,110,2.6,0.03)" }, { "wait": 1.5 }, { "shot": "approach-110m" },
+
+  { "eval": "__at(118,-96,14,2.6,-0.10)" }, { "wait": 1.2 },
+  { "burst": { "name": "yard", "n": 5, "interval": 0.14 } },
+  { "hour": 8 }, { "wait": 1.2 }, { "shot": "h08" },
+  { "hour": 18 }, { "wait": 1.2 }, { "shot": "h18" },
+  { "hour": 22 }, { "wait": 1.2 }, { "shot": "h22" },
+  { "hour": 12 }, { "wait": 1.2 },
+  { "eval": "({scatter:__game.game.world.vegetation?.scatter?.stats?.() ?? __game.game.world.scatter?.stats?.()})" },
+  { "burst": { "name": "yard-noon", "n": 4, "interval": 0.14 } },
+  { "stats": "final" }
+]

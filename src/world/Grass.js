@@ -108,6 +108,28 @@ vec3 transformed; vec3 objectNormal;
   //    through the bands over ~a metre — that reads as damp sedge at the waterline, which is fine.
   float reedW = smoothstep(0.085, 0.105, hm.y) * (1.0 - smoothstep(0.13, 0.20, hm.y));   // upper edge 0.20: the Sundered Spire ruins sit at d = 0.2 and must NOT read as a reed bed
   float forestW = smoothstep(0.28, 0.38, hm.y) * (1.0 - smoothstep(0.55, 0.75, hm.y));
+  // ...but the profiles above read DENSITY as a proxy for "which region this is", and that proxy is only
+  // true when the density IS the region's design. Hearthfall's trample field (Terrain.villWearAt ->
+  // trampleAt, the hamlet at 118,-96) drags the Vale's mask from 1.0 down through 0.42 and 0.15 to 0.09 —
+  // i.e. straight through the Whisperwood band (forestW = 1.00 at mask 0.42) and then the FEN band
+  // (reedW = 0.80 at mask 0.15). So the yard was being handed the Shadowfen REED profile: +110% height,
+  // dead straw-olive albedo and dry forced to 0.55 — which is exactly the "field of big pale reeds"
+  // the yard photographs as, with stray Whisperwood teal blades mixed through it.
+  // WORN GROUND IS NOT ARID GROUND. A blade surviving on a village path is fed, watered and half-shaded:
+  // ordinary meadow grass, cropped short by feet — never a drought reed. vill is the ONLY scope: 1 over
+  // the hamlet, 0 by 47 m (villWearAt's widest lobe is r - 13 < 34), so the meadow's own dry patches, the
+  // real fen and the real forest are untouched BY CONSTRUCTION. It only ever REMOVES a profile; the size
+  // and colour corrections below ride on gap, which the wear field already fades to 0 at the yard's
+  // edge, so no ring can appear where the disc ends.
+  float vill = 0.0 * (1.0 - smoothstep(30.0, 47.0, length(rootXZ - vec2(118.0, -96.0))));  // AB-TOGGLE
+  // The fern CARDS are the one part of the forest profile the hamlet should keep: a clump of bracken
+  // against a fence is exactly the weed that survives where feet do not fall, and they are the only
+  // saturated green left in the yard once the reeds are gone. So the card gate keeps the un-zeroed
+  // weight and only the reed/shade-blade profile (height, width, albedo lean, sway) is dropped.
+  float fernW = forestW;
+  reedW *= 1.0 - vill;
+  forestW *= 1.0 - vill;
+  float worn = vill * gap;                                       // 0 in the weedy corners, ~1 on the tracks
   float sx = (t10.r - t00.r + t11.r - t01.r) * 0.5 * uMapInfo.z;
   float sz = (t01.r - t00.r + t11.r - t10.r) * 0.5 * uMapInfo.z;
   vec3 terrainN = normalize(vec3(-sx, 1.0, -sz));
@@ -170,7 +192,7 @@ vec3 transformed; vec3 objectNormal;
   #endif
   #if RING == 0
   float under = flower ? 0.0 : step(r7, 0.38);   // short wide filler blades: dense understory so bare splat never shows at the feet
-  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.4 * under * (1.0 - 0.6 * forestW);   // 1.4, not 2.1: any wider and these short flat-lit cards read as plastic shards lying in the turf; forest keeps them narrow (the wide flat cards were interpenetrating at the feet)
+  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.4 * under * (1.0 - 0.6 * forestW - 0.95 * worn);   // 1.4, not 2.1: any wider and these short flat-lit cards read as plastic shards lying in the turf; forest keeps them narrow (the wide flat cards were interpenetrating at the feet)
   #else
   float under = 0.0;
   #endif
@@ -178,7 +200,7 @@ vec3 transformed; vec3 objectNormal;
   // reads as fern-and-litter instead of a lawn, and they pay back the coverage the narrower blades give up.
   float fern = 0.0;
   #if defined(USE_FERN) && RING < 2
-  fern = step(r9, 0.42 * forestW) * (1.0 - float(flower)) * (1.0 - under);
+  fern = step(r9, 0.42 * fernW) * (1.0 - float(flower)) * (1.0 - under);
   #endif
   // forest near-camera density trim: fewer blades at the feet cuts card interpenetration (H/W already
   // carry sc, so trim them directly; a trimmed blade collapses to zero area and rasterises nothing)
@@ -191,9 +213,13 @@ vec3 transformed; vec3 objectNormal;
   // moves. Height rides along at a third of the width so the aspect stays a blade -- width alone turned
   // the fen into flat leaf-shards lying in the peat -- and the (1 - under) excludes the short filler
   // cards, which are the ones that read as plastic shards the moment they get any wider (see above).
-  float wideGap = gap * (1.0 - reedW) * (1.0 - forestW);   // generic payback only OUTSIDE the profiled regions
+  // ...and NOT in the hamlet either. The payback exists because a thin REGION reads as unfinished; a
+  // trodden yard is thin on purpose and its survivors are cropped, so paying it back in size is what made
+  // them the biggest, palest shapes in the frame. Here the correction runs the other way: shorter.
+  float wideGap = gap * (1.0 - reedW) * (1.0 - forestW) * (1.0 - vill);   // generic payback only OUTSIDE the profiled regions and the hamlet
   W *= 1.0 + 1.05 * wideGap * (1.0 - under);
   H *= 1.0 + 0.35 * wideGap;
+  H *= 1.0 - 0.12 * worn;                                        // grazed/trodden turf is cropped short. 0.12, not 0.38: losing the wideGap payback above already takes 26% of the height off, and past that the survivors stop reading as turf and start reading as straw litter lying on the path
   // fen: REEDS — tall thin stiff spears; no wide filler cards lying in the peat
   under *= 1.0 - reedW;
   H *= 1.0 + 1.1 * reedW;
@@ -269,6 +295,13 @@ vec3 transformed; vec3 objectNormal;
     // Deepened to straw: same hue, less value. Saturate the colour, cap the value.
     vec3 petalC = ty < 1.0 ? vec3(0.86, 0.52, 0.14) : ty < 2.0 ? vec3(0.66, 0.60, 0.34) : ty < 3.0 ? vec3(0.46, 0.24, 0.66) : ty < 4.0 ? vec3(0.80, 0.34, 0.46) : vec3(0.30, 0.42, 0.70);
     headCol = mix(petalC * 0.42 + vec3(0.24, 0.19, 0.02), petalC, smoothstep(0.5, 0.78, v));   // warm center -> petal tips: two-tone bloom
+    // ...and the head takes the SAME value ceiling the blades do. headCol is mixed into col far below the
+    // 0.52 max-channel cap and the 1.05 hue-safety clamp, so a bloom's albedo was reaching 0.86 in one
+    // channel — 1.6x anything a blade is allowed — on a card whose normal is blended toward UP, i.e. flat to
+    // the sun while every blade around it is edge-on. That is the whole reason the flowers photograph as
+    // pale paper scraps lying on the field (user 2026-08-28, and the night bursts) rather than as blooms.
+    // Hue-preserving and value-only, exactly as the decree words it: saturate the colour, cap the intensity.
+    headCol *= min(1.0, 0.55 / max(max(headCol.r, max(headCol.g, headCol.b)), 1e-4));
     vGrassEmissive = vec3(0.0);  // user decree: flowers stay matte — no glowing/sparkling heads (they bloomed into white blobs)
   } else vGrassEmissive = vec3(0.0);
   vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), terrainN, 0.35));
@@ -297,13 +330,18 @@ vec3 transformed; vec3 objectNormal;
   float mac = gNoise(rootXZ * 0.019, 13u);                         // macro tone patches ~50 m: dry-gold drifts break the golf-course monotony
   float mac2 = gNoise(rootXZ * 0.047, 17u);                        // meso brightness patchiness ~20 m
   dry = clamp(dry + smoothstep(0.47, 0.82, mac) * 0.95, 0.0, 1.0);
+  // dry infers "sun-scorched" from brown ground, which is right in a summer meadow and wrong on a
+  // hamlet's packed earth — that brown is FEET, and the grass beside a well is the greenest in the Vale.
+  // Scoped to vill so the meadow's dry-gold drifts are bit-identical outside the disc; 15% is left so
+  // the straw by the stalls and the bale still reads.
+  dry *= 1.0 - 0.85 * vill;
   dry = max(dry, 0.55 * reedW);                                    // fen reeds lean dead-straw, never lawn-green
   // Central Shroud retune (coherence pass 2026-08-27): the old base pair (0.11,0.27,0.045)/(0.32,0.30,0.06)
   // sat 0.83/0.81 read as neon chroma-green against the pale sky and mountains. Same hues, chroma pulled to
   // ~0.64/0.68 by lifting the QUIET channels (soft sage green / warm straw); luminance goes DOWN on both ends
   // (0.220->0.213 wet, 0.287->0.266 dry), so every downstream cap and the blob-gate calibration only relax.
   vec3 tipC = mix(vec3(0.150, 0.245, 0.088), vec3(0.295, 0.275, 0.095), dry * 0.7 + r4 * r4 * 0.2);
-  tipC = mix(tipC, tcol * 1.35, 0.3);
+  tipC = mix(tipC, tcol * 1.35, 0.3 * (1.0 - 0.8 * vill));   // ...and the same reason it must not take a third of its colour from the path it stands on
   // Biome hue coupling. tcol is terrain.colorAt, which is biome-tinted, so dividing its hue by the Vale's
   // reference hue gives EXACTLY 1.0 in the meadow (the tuned look is untouched) and swings the blades olive
   // in the fen / sage on the isles / rust in the wastes everywhere else. Value range stays the meadow's.
@@ -314,7 +352,13 @@ vec3 transformed; vec3 objectNormal;
     // ...but back the coupling off where the cover is thin. Full coupling paints fen blades the peat's own
     // olive, so the few that exist vanish into the ground (the "invisible in the fen" read). Separation has
     // to come from HUE, never from brightness -- and the max-channel + luminance caps right below still run.
-    tipC *= mix(vec3(1.0), tHue, 0.78 - 0.26 * gap);
+    // ...and OFF entirely on the hamlet's packed earth. This is the term that actually paints the yard tan:
+    // the earth's hue ratio is (1.60, 0.83, 1.60) against the meadow reference, i.e. +60% in both warm
+    // channels, which is a far bigger straw lever than dry ever was. The coupling exists to make a blade
+    // belong to its REGION; Hearthfall's region is the Vale, and the brown under it is a footpath, not a
+    // biome. Village grass is meadow grass — the value coupling below still darkens it, which is the part
+    // that is true (trodden turf is duller), while the hue stays the Vale's.
+    tipC *= mix(vec3(1.0), tHue, max(0.0, 0.78 - 0.26 * gap - 0.62 * vill));
     // ...and the VALUE follows the floor too. Hue-only coupling gave every region the Vale's brightness, so
     // the Whisperwood floor and the Shadowfen peat both came out as a mown lawn in full sun — the single
     // loudest "these are all the same place with a filter on" cue in the world. 0.133 is the measured mean
@@ -370,7 +414,12 @@ vec3 transformed; vec3 objectNormal;
   // (was 0.30,1.00,1.48 <-> 1.55,0.94,0.26): the extreme ends flickered as acid-teal / acid-gold specks
   // against the softer base. Every channel move is strictly INSIDE the shipped envelope, so the measured
   // max-channel/luminance bounds the caps were calibrated against only shrink.
-  tipC *= mix(vec3(0.55, 1.00, 1.30), vec3(1.42, 0.95, 0.42), r8);
+  // ...pulled toward the cool end on the hamlet's tracks. The axis is a POPULATION spread: in the meadow the
+  // gold blades are one in three of a dense green field and read as variation, but on a thinned yard they
+  // are half of what is left and the whole floor reads gold. Interpolating r8 (not the endpoints) keeps this
+  // strictly inside the shipped segment, so the max-channel/luminance bounds the blob gate is calibrated
+  // against only shrink.
+  tipC *= mix(vec3(0.55, 1.00, 1.30), vec3(1.42, 0.95, 0.42), r8 * (1.0 - 0.45 * worn));
   // ...and the same axis at ~20 m patch scale, which is the one that still reads at distance. Deliberately
   // mild: three broad axes that could all land on "warm" at once is how a hue term turns into a value term.
   tipC *= mix(vec3(0.88, 1.00, 1.14), vec3(1.12, 0.99, 0.74), mac2);
@@ -397,6 +446,29 @@ vec3 transformed; vec3 objectNormal;
   // channels scale together, so an over-range blade flattens toward its OWN colour, never toward white.
   // Meadow greens peak at 0.73 here and never touch it — this only ever binds on exotic-albedo regions.
   col *= min(1.0, 1.05 / max(max(col.r, max(col.g, col.b)), 1e-4));
+  // CHROMA SPREAD (user 2026-08-28: at noon the meadow "reads as uniform saturated plastic green").
+  // MEASURED on the shipped build: the lit field sits at saturation 0.61-0.64 with a standard deviation of
+  // 0.07 — hue and value already vary (three axes above do that), CHROMA does not vary at all, and a
+  // constant-chroma surface is exactly what reads as moulded plastic. A real meadow's blades differ in how
+  // WASHED OUT they are as much as in hue: bleached crowns, dusty leeward faces, wet lush tufts.
+  // The blob law leaves this lever open for the same reason it leaves hue open, only more so: desaturating
+  // toward a fragment's OWN luminance holds luminance exactly constant and can only LOWER the max channel,
+  // so both quantities every cap and the blob gate are calibrated against move DOWN or stay put. Nothing
+  // here can walk a blade toward the bloom threshold.
+  // clump is the existing ~1.8 m tuft noise, so the patch scale is free — and coupling chroma to tuft
+  // height is also just true: the tall lush tufts are the green ones, the short scrubby patches are the
+  // bleached ones. r8 gives the per-blade spread, mac2 the ~20 m drift that still reads at distance.
+  {
+    float lush = clamp((clump - 0.65) * 1.82, 0.0, 1.0);
+    float chroma = mix(0.54, 1.0, 0.50 * lush + 0.32 * r8 + 0.18 * mac2);
+    float cMx = max(col.r, max(col.g, col.b));
+    float cSat = (cMx - min(col.r, min(col.g, col.b))) / max(cMx, 1e-4);
+    float cLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    // ...but only where there is chroma to spare. The saturation FLOOR above exists because a NEUTRAL blade
+    // is what tone-maps to a white spike over pale ground (marble, snow); handing this term a blade that is
+    // already near the floor would undo it. Full strength above 0.55 saturation, zero at 0.30.
+    col = cLum + (col - cLum) * mix(1.0, chroma, smoothstep(0.30, 0.55, cSat));
+  }
   col *= 1.0 - 0.20 * smoothstep(0.76, 1.0, v);                    // soft tip: a blade must not end in a hard bright edge. Pure subtraction.
   col *= min(1.0 + (g - 0.45) * 0.5 * uWind.z * smoothstep(8.0, 30.0, d), 1.22);   // gust silvering, clamped: never blows to white
   float lowS = clamp(uSun.w * 0.833, 0.0, 1.0);
@@ -495,6 +567,36 @@ const GRASS_MASK = /* glsl */`
 const GRASS_LUM_CAP = /* glsl */`
 	float grassLum = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
 	outgoingLight *= 0.50 / max(grassLum, 0.50);
+	// NIGHT TIGHTENING (user report 2026-08-28: "when it went dark the grass had shimmery silver on it").
+	// The cap above is ABSOLUTE and was calibrated against DAY, where the lit field means ~123 sRGB, so a
+	// fragment pinned at 0.50 sits just above its neighbours. MEASURED at hour 22.5 in the spawn meadow
+	// (tools/out/vale-npc/burst-night-grass*, ground-cover mask): the field means 49.6 sRGB while 600-700
+	// px/frame sit at 150-208 with saturation 0.16-0.19 — near-NEUTRAL specks four times brighter than the
+	// grass around them, all pinned at exactly 207-208 (i.e. clamped BY the cap and still silver). blobcheck
+	// passes them because they are scattered singles, not clusters, and under its 212 bar: the gate is honest,
+	// the ceiling was simply in the wrong place after dark. This is a SECOND, night-only ceiling stacked on
+	// the pinned one — it only ever darkens, and it recomputes so the two compose correctly.
+	float grassLumN = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+	outgoingLight *= mix(1.0, min(1.0, 0.17 / max(grassLumN, 1e-4)), uNight);
+`;
+
+// THE ROOT CAUSE OF THE NIGHT SILVER (user report 2026-08-28), and the sixth way ground cover found to glow.
+// three sets `material.specularF90 = 1.0` for every MeshStandardMaterial: F0 is the dielectric 0.04, but the
+// Schlick ramp climbs to a FULL WHITE 1.0 at grazing incidence. A grass blade is a thin strip, so its two
+// silhouette edges are grazing BY CONSTRUCTION at every camera angle — every blade in the field carries a
+// white hairline down each side, on top of a saturated green albedo the whole palette was tuned to keep
+// non-neutral. By day the field is bright enough to hide it; under the cool moon key it is the "shimmery
+// silver". Measured in the burst frames: those pixels are the only near-NEUTRAL ones on the ground (sat 0.16
+// against the field's 0.61) and they are all pinned at the luminance cap, i.e. the cap was clamping a white
+// term instead of preventing one.
+// The three pinned knobs cannot reach this: the emissive ceiling never sees a lighting term, the 0.6 tip
+// roughness widens the lobe but does not touch Fresnel (F90 is angle-driven, not roughness-driven), and the
+// final luminance cap is hue-preserving, so it caps silver AS SILVER.
+// 0.10 keeps the F0 = 0.04 sheen the decree explicitly allows ("subtle sheen, never point-glints") and
+// removes only the grazing-angle ramp to white. Cost: one assignment per fragment.
+const SPEC_F90_GRASS = /* glsl */`
+#include <lights_physical_fragment>
+	material.specularF90 = 0.10;
 `;
 
 // resolved at compile time (after other systems' ShaderChunk patches): wrapped diffuse + back-light translucency
@@ -699,6 +801,7 @@ export class Grass {
         .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix( 0.82, 0.62, vGrassV.x * vGrassV.x );') // user decree: tips at 0.35 roughness threw drifting white specular blobs across the meadow — keep grass sheen subtle, never point-glints
         .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += vGrassEmissive;')
         .replace('#include <normal_fragment_begin>', NORMAL_BEGIN_GRASS)
+        .replace('#include <lights_physical_fragment>', SPEC_F90_GRASS)
         .replace('#include <lights_fragment_maps>', LIGHTS_MAPS_GRASS)
         .replace('#include <lights_physical_pars_fragment>', lightsPhysicalGrass())
         .replace('#include <opaque_fragment>', `${GRASS_LUM_CAP}#include <opaque_fragment>${GRASS_MASK}`)

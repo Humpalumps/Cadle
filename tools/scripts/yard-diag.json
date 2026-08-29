@@ -1,0 +1,11 @@
+[
+  { "wait": 35 },
+  { "hour": 12 },
+  { "eval": "__game.teleport(125.2,null,-108);__game.look(2.6,-0.10);'ok'" },
+  { "wait": 12 },
+  { "shot": "diag-yard" },
+  { "eval": "const t=__game.game.terrain;const o=[];for(const p of [[118,-96],[122,-100],[112,-92],[126,-104],[130,-108],[118,-80],[100,-96],[150,-70],[0,0]]){const w=t.villWearAt(p[0],p[1]);const c=t.colorAt(p[0],p[1],new (__game.game.terrain.constructor.name?Object:Object)());o.push({p,w:+w.w.toFixed(3),b:+w.b.toFixed(3),g:+t.grassAt(p[0],p[1]).toFixed(3)});}JSON.stringify(o)" },
+  { "eval": "const t=__game.game.terrain;const C=__game.game.world.grass._c.constructor;const o=[];for(const p of [[118,-96],[126,-104],[130,-108],[150,-70],[0,0]]){const c=t.colorAt(p[0],p[1],new C());o.push({p,rgb:[+c.r.toFixed(3),+c.g.toFixed(3),+c.b.toFixed(3)]});}JSON.stringify(o)" },
+  { "eval": "JSON.stringify(__game.game.world.grass.stats())" },
+  { "eval": "const g=__game.game.world.grass;JSON.stringify({cx:g._cx,cz:g._cz,job:!!g._job,N:g.N,step:g.step,m126:g._cacheAt(126,-104,1),m130:g._cacheAt(130,-108,1),m118:g._cacheAt(118,-96,1),m0:g._cacheAt(0,0,1)})" }
+]

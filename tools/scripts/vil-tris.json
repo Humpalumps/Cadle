@@ -1,0 +1,39 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "tp": [
+   118,
+   null,
+   -96
+  ]
+ },
+ {
+  "wait": 3
+ },
+ {
+  "look": [
+   3.93,
+   0
+  ]
+ },
+ {
+  "wait": 2
+ },
+ {
+  "resetStats": true
+ },
+ {
+  "wait": 3
+ },
+ {
+  "eval": "JSON.stringify((()=>{const g=__game.game;const out=[];g.scene.traverse(o=>{if(!o.isMesh)return;const gm=o.geometry;const t=Math.round((gm.index?gm.index.count:gm.attributes.position.count)/3)*(o.isInstancedMesh?o.count:1);if(/village|hamlet/.test(o.name))out.push([o.name,t]);});return out;})())"
+ },
+ {
+  "eval": "JSON.stringify((()=>{const g=__game.game;const rows=[];g.scene.traverse(o=>{if(!o.isMesh||!o.visible)return;const gm=o.geometry;const t=Math.round((gm.index?gm.index.count:gm.attributes.position.count)/3)*(o.isInstancedMesh?o.count:1);if(t>60000)rows.push([o.name||o.type,t]);});rows.sort((a,b)=>b[1]-a[1]);return rows.slice(0,14);})())"
+ },
+ {
+  "eval": "JSON.stringify(__game.stats().systems)"
+ }
+]

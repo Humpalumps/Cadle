@@ -1,0 +1,6 @@
+[
+  { "wait": 12 },
+  { "eval": "__game.teleport(118,null,-96); 'tp'" },
+  { "wait": 4 },
+  { "eval": "try { const g=__game.game, P=g.world.props, T=g.terrain; const V=new (g.camera.position.constructor)(); const rows=[]; const sole=function(name,inst,refY){ let skin=null; inst.traverse(c=>{ if(c.isSkinnedMesh&&!skin) skin=c; }); if(!skin) return; inst.updateMatrixWorld(true); skin.skeleton.update(); const p=skin.geometry.attributes.position; let lo=1e9; for(let i=0;i<p.count;i+=7){ V.fromBufferAttribute(p,i); skin.applyBoneTransform(i,V); V.applyMatrix4(skin.matrixWorld); if(V.y<lo) lo=V.y; } rows.push({id:name, sole:+lo.toFixed(3), ref:+refY.toFixed(3), gap:+(lo-refY).toFixed(3)}); }; (P.npcs||[]).forEach(function(n){ sole(n.id, n.object, T.heightAt(n.object.position.x, n.object.position.z)); }); (P.wayfinders||[]).slice(0,2).forEach(function(w,i){ sole('wayfinder'+i, w.mesh, w.mesh.position.y); }); rows; } catch(e){ 'ERR '+e.message } " }
+]

@@ -11,7 +11,8 @@ import { OUTER } from '../world/Biomes.js';
  * procedural legged creatures with IK-ish gait). Everything procedural (no downloads). FF14-mystical bestiary + Destiny combat roles.
  *
  * Types: 'wisp' (floating, fragile, swarm, ranged bolt, flees when hurt), 'hound' (fast quadruped melee, pack, planted-foot gait),
- *   'sentinel' (tall biped, arc shield bubble, 3-bolt volleys, strafes), 'golem' (slow heavy, shockwave slam, rock throw, weak point crystal core),
+ *   'sentinel' (tall greatsword biped, arc shield bubble: closes to sword range and cleaves, 3-bolt arc volley as the opener/punish from 11-30 m),
+ *   'golem' (heavy, shockwave slam, rock throw only from 15 m+ so it closes instead of shelling, weak point crystal core),
  *   'drake' (elite flyer, orbits + dives with solar volley), 'warden' (mini-boss: void shield phases at 66/33 %, hammer slam, 5-bolt fan).
  * Each enemy (src/enemies/Enemy.js): { id, type, def, name, level, position:Vector3 (feet; flyers: body centre), center:Vector3, velocity, yaw,
  *   health, maxHealth, shield, maxShield, alive, state:'idle'|'patrol'|'chase'|'attack'|'flee'|'stagger'|'dead', root:Object3D, update(dt,t,lod),

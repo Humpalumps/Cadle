@@ -1,0 +1,135 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "tp": [
+   118,
+   null,
+   -96
+  ]
+ },
+ {
+  "wait": 3
+ },
+ {
+  "resetStats": true
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   0.7854,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   2.3562,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   3.1416,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   3.927,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   4.7124,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   5.4978,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify([\"a\",__game.stats().calls,__game.stats().tris])"
+ },
+ {
+  "look": [
+   3.93,
+   0
+  ]
+ },
+ {
+  "perfWindow": {
+   "secs": 8,
+   "label": "hamlet"
+  }
+ },
+ {
+  "eval": "JSON.stringify((()=>{const o=[];let t=0,n=0;__game.game.scene.traverse(m=>{if(!m.isMesh)return;if(!/village/.test(m.name))return;const g=m.geometry;const c=Math.round((g.index?g.index.count:g.attributes.position.count)/3);o.push(m.name+'='+c);t+=c;n++;});return ['VILLAGE',n+' meshes',t+' tris',o.join(' ')];})())"
+ },
+ {
+  "wait": 20
+ },
+ {
+  "eval": "JSON.stringify([\"mem30\",+__game.stats().memMB.toFixed(0)])"
+ }
+]

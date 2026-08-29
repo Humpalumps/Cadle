@@ -1,0 +1,8 @@
+[
+  { "wait": 10 },
+  { "eval": "__game.teleport(120,null,-94); __game.look(0,0); 'tp'" },
+  { "wait": 4 },
+  { "eval": "const g=__game.game, props=g.world.props, qm=g.rpg.markers; const THREE=Object.getPrototypeOf(g.scene).constructor; const rec=[...qm._npcs.entries()].map(([k,r])=>({key:k, id:r.id})); const ent=props.npcs.find(n=>n.id==='serel'); const o=ent&&ent.object; let box=null; if(o){ const B=new (g.camera.position.constructor===undefined?Object:Object)(); } ({hasNpcAt: typeof props.npcAt, recs:rec, entFound: !!ent, objIs3D: !!(o&&o.isObject3D), objVisible: o?o.visible:null, objType: o?o.type:null, childKinds: o?o.children.map(c=>c.type):null})" },
+  { "eval": "const g=__game.game, props=g.world.props; const o=props.npcs.find(n=>n.id==='serel').object; const Box3=g.scene.constructor===undefined?null:null; const b=new (Object.getPrototypeOf(g.camera.position).constructor.prototype.constructor.prototype?Object:Object)(); 'skip'" },
+  { "eval": "const g=__game.game, props=g.world.props, qm=g.rpg.markers; const states=g.rpg.quest.giverStates?g.rpg.quest.giverStates():{}; ({states, npcKeys:[...qm._npcs.keys()], npcIds:props.npcs.map(n=>n.id)})" }
+]

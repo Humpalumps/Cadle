@@ -3,7 +3,33 @@
 AI-generated (Magnific MCP), committed locally, loaded at runtime with relative paths only.
 Policy: see CLAUDE.md "Non-negotiable conventions". Need something? Put `ASSET ASK: <what>` in your report.
 
-## Textures — `public/assets/tex/` (all 2048×2048 JPG, seamless-tileable, verified by wrap-shift test)
+## Payload — 45.0 MB (compression pass 2026-08-29; was 69.9 MB)
+
+| category | before | after | what was done |
+|---|---|---|---|
+| `tex/` | 30.11 | 17.21 | terrain-only albedos → 512 (Terrain resamples to `_R`=512 anyway); props/vegetation → 1024 q92; other JPG mozjpeg q90 4:2:0; alpha cards alpha-bled + **lossless** PNG; 3 dead files deleted |
+| `creatures/` | 17.27 | 13.39 | `WEIGHTS_0` float32→normalized ubyte, `NORMAL` int16→int8, ORM maps 1024→512, redundant keyframes resampled. **No re-mesh, no re-rig, no decimation** |
+| `music/` | 18.55 | 12.37 | 192 → 128 kbps CBR, 48 kHz joint stereo (unchanged sample rate/channels/length) |
+| `ui/` | 0.92 | 0.86 | alpha-bled + lossless PNG (bit-exact) |
+| `sfx/` | 0.94 | 0.94 | untouched — short transient-critical takes, already 128 kbps |
+| `intro/` | 0.28 | 0.28 | untouched — it is on the critical path before `game.assets` exists |
+| `concepts/` | 1.86 | 0 | **moved to `docs/concepts/`** — source concept art, no runtime consumer; it was shipping to every player |
+
+Everything above is either bit-exact or measured: alpha cards and UI icons are byte-identical in every
+pixel with `alpha > 0`; terrain albedos preserve mean luma to <0.05/255 and their dark-decile luma (which
+`Terrain.js` glow bands key off) to <0.002; JPEG re-encodes sit at 42–53 dB PSNR.
+
+**The `_R` rule — do not "restore" the terrain albedos to 2k.** `Terrain.js` does
+`createImageBitmap(blob, {resizeWidth: R, resizeHeight: R})` with `R = this._R` (512 at q≥medium, 256 at
+q=low) on every `ASSET_LAYERS` entry, so anything above 512 in those files is decoded and thrown away
+before it reaches the GPU. If `_R` is ever raised, re-export those eight files at the new `_R` first.
+
+Deleted 2026-08-29 (no code path anywhere in `src/` or `index.html`, and not in `Assets.js` `TEX`):
+`tex/ash.jpg`, `tex/fen_muck.jpg`, `tex/glacier_ice.jpg` — all three were superseded by
+`ash_basalt` / `peat_muck` / `ice_glacial` and left behind. `tex/vale_portrait.jpg` is deliberately kept
+(see the Voice cast section).
+
+## Textures — `public/assets/tex/` (seamless-tileable, verified by wrap-shift test)
 
 | file | for | notes |
 |---|---|---|
@@ -34,10 +60,96 @@ Policy: see CLAUDE.md "Non-negotiable conventions". Need something? Put `ASSET A
 | `ash_basalt.jpg` | infernal ground splat (Terrain layer 8 replacement) | black cracked basalt plates + grey ash; mean luma 39/255 — re-tune the cB.a glow bands |
 | `egg_speckle.jpg` | dragon nest eggs (Props) | cream + dark speckle |
 | `glove_leather.jpg` | first-person viewmodel hands/sleeves (Weapons) | quilted charcoal leather, gold stitch |
-| `card_conifer_snow.png` | tundra snow-laden needle cards (Vegetation) | RGBA cutout, snow on boughs |
-| `card_fern.png` | forest floor fern clumps (Grass/Vegetation) | RGBA cutout |
-| `card_reed.png` | shadowfen reed clumps (Props/Grass) | RGBA cutout, 2:3 |
-| `card_moss.png` | hanging moss drapes on fen snags (Props) | RGBA cutout, 2:3 |
+| `card_conifer_snow.png` | tundra snow-laden needle cards (Vegetation) | RGBA cutout 1536², snow on boughs |
+| `card_fern.png` | forest floor fern clumps (Grass/Vegetation) | RGBA cutout 1536² |
+| `card_reed.png` | shadowfen reed clumps (Props/Grass) | RGBA cutout 1248×1872, 2:3 |
+| `card_moss.png` | hanging moss drapes on fen snags (Props) | RGBA cutout 1248×1872, 2:3 |
+
+**The alpha cards are alpha-BLED**: every fully-transparent pixel carries the colour of the nearest opaque
+one instead of black. This is what stops bilinear filtering and mipmapping from pulling black in around a
+cutout edge (dark fringing), and it compresses better for free. Regenerate it with
+`alphaBleed()` in `tools/out/assetgen/lib.mjs` after any edit — a card whose transparent region is flat
+black will fringe.
+
+**They are LOSSLESS PNG on purpose, and that is why they are 9.4 MB of the 17.2 MB `tex/` budget.**
+`sharp`'s `png({effort})`, `png({colours})` and `png({dither})` all silently imply `palette: true`, i.e.
+a lossy 256-colour quantisation — that trap cost these cards a real quality regression once already
+(33 dB RGB, 44 dB alpha, visible banding + edge fringing on foliage). Lossless PNG here means
+`png({compressionLevel: 9, adaptiveFiltering: true})` and nothing else. See the OPEN ASK below for the
+fix that makes them both smaller *and* higher quality.
+
+## ~~OPEN ASK~~ — APPLIED 2026-08-29 by the orchestrator. **Payload is 38.05 MB, under the 40 MB budget.**
+
+Both changes are in. Measured after, by walking the tree in bytes (not `du`, which rounds per directory
+and reported 44):
+
+| category | MB |
+|---|---|
+| creatures | 13.39 |
+| music | 12.37 |
+| tex | 10.22 |
+| sfx | 0.94 |
+| ui | 0.86 |
+| intro | 0.28 |
+| **total** | **38.05** |
+
+(a) The five foliage cards now load `.webp` — **9.37 MB of PNG → 2.40 MB**, and quality goes UP (lossless
+alpha at 38-41 dB, against 33-39 dB for the palette PNG that was the best same-format option). Keys are
+unchanged, so no consumer in Grass/Vegetation/EZTrees/Props/Water was touched. The replaced PNGs are
+deleted; originals for reverting are in `tools/out/assetgen/tex-orig/`.
+(b) `forest_soil`, `glyph1` and `glyph2` are out of `TEX` — fetched, decoded and GPU-uploaded on every
+boot with `assets.tex()` never called for any of them anywhere in `src/` (verified by grep before the
+edit). The FILES stay on disk: the rune rings and sigils below still want them, so wiring one up is
+re-adding a key, not re-generating art.
+
+VERIFIED after applying, on the running game: `progress 1.0`, `loadMs 5610`, **zero** missing-asset
+warnings in the console, zero page errors, and all five cards decode at full resolution
+(leaf_card 1024², card_fern 1536², card_reed 1248x1872, card_moss 1248x1872, card_conifer_snow 1536²).
+Forest foliage inspected on screen at close range: clean alpha edges, no fringing
+(`tools/out/assetboot/shot-forest-cards.png`).
+
+STILL AVAILABLE, NOT TAKEN — a real decision rather than a free win: `EXT_meshopt_compression` would take
+`creatures/` from 13.4 MB to ~6 MB, but it needs `setMeshoptDecoder`, which contradicts the standing
+"do not add a meshopt decoder or a KTX2Loader" comment in Assets.js. Worth revisiting only if the payload
+budget tightens.
+
+**(a) Serve the five alpha cards as WebP — smaller AND better than the PNGs they replace.**
+Measured against the originals: WebP q92/alphaQuality 100 gives 38–41 dB RGB PSNR with a *lossless*
+alpha channel, where 256-colour PNG gives 33–39 dB with a lossy one. It is 2.38 MB against 9.38 MB
+(**−7.0 MB**). Three r185's `TextureLoader` decodes WebP through the normal `<img>` path — no new loader,
+no decoder, and the creature GLBs already ship `EXT_texture_webp`, so WebP support is assumed here anyway.
+
+Files are ready in `tools/out/assetgen/cards-webp/`. To apply:
+`cp tools/out/assetgen/cards-webp/*.webp public/assets/tex/ && rm public/assets/tex/card_*.png public/assets/tex/leaf_card.png`
+then change five URLs (the KEYS do not change, so no consumer in `Grass.js`/`Vegetation.js`/`EZTrees.js`/`Props.js`/`Water.js` needs touching):
+
+```
+-  leaf_card:         { url: '/assets/tex/leaf_card.png',         repeat: false },
++  leaf_card:         { url: '/assets/tex/leaf_card.webp',        repeat: false },
+-  card_conifer_snow: { url: '/assets/tex/card_conifer_snow.png', repeat: false },
++  card_conifer_snow: { url: '/assets/tex/card_conifer_snow.webp',repeat: false },
+-  card_fern:         { url: '/assets/tex/card_fern.png',         repeat: false },
++  card_fern:         { url: '/assets/tex/card_fern.webp',        repeat: false },
+-  card_reed:         { url: '/assets/tex/card_reed.png',         repeat: false },
++  card_reed:         { url: '/assets/tex/card_reed.webp',        repeat: false },
+-  card_moss:         { url: '/assets/tex/card_moss.png',         repeat: false },
++  card_moss:         { url: '/assets/tex/card_moss.webp',        repeat: false },
+```
+
+**(b) Drop three preloaded textures that nothing renders (−2.3 MB).** `forest_soil` (0.95 MB),
+`glyph1` (0.68 MB) and `glyph2` (0.63 MB) are fetched, decoded and GPU-uploaded on every boot, and
+`game.assets.tex()` is never called with any of those three keys anywhere in `src/` or `index.html`
+(`forest_soil` was superseded when the forest floor became a procedural splat layer; the glyph rings were
+generated for Props rune rings / VFX sigils and never wired up). They were NOT deleted, because deleting
+them while they are still in `TEX` would print `[assets] tex missing:` warnings — remove the three lines
+from `TEX` first, then `rm public/assets/tex/{forest_soil.jpg,glyph-ring-1.jpg,glyph-ring-2.jpg}`.
+Keep the source art if the rune rings are still wanted; move it to `docs/concepts/` like the rest.
+
+**Not asked for, but the biggest single lever left (−7 MB):** `EXT_meshopt_compression` on the creature
+GLBs. Mesh + animation buffers are 9 MB of the 13.4 MB and are currently raw; meshopt would take
+`creatures/` to roughly 6 MB. It needs one line — `gltfLoader.setMeshoptDecoder(MeshoptDecoder)` from
+`three/addons/libs/meshopt_decoder.module.js` — which contradicts the "do not add a meshopt decoder"
+comment in `Assets.js`, so it is a deliberate orchestrator decision, not a builder's call.
 
 **Usage: `game.assets.tex('<key>')`** (keys = filename without extension; glyphs = `glyph1`/`glyph2`). Preloaded + GPU-uploaded before any system init — never load asset files yourself. sRGB, repeat-wrap, aniso 8 already set (leaf_card/glyphs are clamped). Derive normal/roughness procedurally (height-from-luma or noise) — only albedo is generated. Blend with your procedural detail/macro variation; do not drop macro variation.
 
@@ -126,17 +238,25 @@ plays its own piece at every hour; only the home bowl still swaps day/night. Cro
 | `deep-theme.mp3` | The Sunken Kingdom | muffled strings, harp, soprano, heard through water |
 | `void-theme.mp3` | The Void | detuned cello drone, reversed harp, no pulse |
 
-All 192 kbps CBR, 1.44 MB each (~13 MB total). **They put `public/assets/` at ~41 MB, just over the 40 MB
-target** — re-encoding to 128 kbps would recover ~4 MB but there is no mp3 encoder on this machine (no ffmpeg;
-Pillow only does images). Flagged rather than hidden.
+**All music is now 128 kbps CBR, 48 kHz joint stereo** (was 192 kbps): 0.94 MB per 60 s theme,
+12.37 MB total. Sample rate, channel count and duration are unchanged — only the bitrate moved.
+
+There is still no ffmpeg/lame on this machine. The re-encode runs through
+`tools/out/assetgen/mp3reenc.mjs`, which uses what *is* installed: Playwright's Chromium decodes the mp3
+with `OfflineAudioContext.decodeAudioData` and posts Int16 PCM back to a tiny local node server, and
+`@breezystack/lamejs` (pure-JS LAME, a dev-only `--no-save` install) re-encodes it. Use that script rather
+than re-deriving the trick; run it against the originals in git, never against an already-re-encoded file
+(mp3→mp3 generation loss compounds).
 
 Loop with a short crossfade; duck under combat.
 
 ## Batch 3 ground albedos (2026-08-22) — the five procedural floors
 
 `Terrain.ASSET_LAYERS` maps these onto the splat layers that used to be procedural noise, which is why the Isles
-read as flat tan with a lattice in it and the Void and the fen read as coloured mud. 1024², JPG q88, and each one
-had its low-frequency lighting divided out (Pillow) so the tile repeat does not read as a checkerboard of light.
+read as flat tan with a lattice in it and the Void and the fen read as coloured mud. Each one had its
+low-frequency lighting divided out (Pillow) so the tile repeat does not read as a checkerboard of light.
+Terrain-only layers now ship at **512² JPG q94** — see "the `_R` rule" at the top: `Terrain.js` resamples
+every one of them to `_R` (512) on load, so a bigger file is decoded and discarded.
 
 | file | layer | region |
 |---|---|---|
@@ -151,15 +271,46 @@ the FLOOR TEXTURE'S LUMA. Ash and voidstone sit at median 0.11, so the old 0.30.
 Wastes rendered as one flat orange sheet. The bands are now 0.075..0.025 and 0.085..0.032 (the darkest ~10%, i.e.
 the cracks between plates). **Re-measure if either texture is replaced.**
 
+## Creature / NPC GLBs — `public/assets/creatures/` (22 files, 13.39 MB)
+
+Rigged GLBs from the Tripo pipeline (`docs/CREATURE-PIPELINE.md`), consumed by `src/enemies/glbBody.js`
+and `Props.js` via `game.assets.model(name)` / `game.assets.clips(name)`. One mesh, one material, one
+primitive each. Extensions: `EXT_texture_webp` + `KHR_mesh_quantization`, both native to three r185.
+
+Vertex layout after the 2026-08-29 compression pass — **geometry, topology and rigs are untouched**
+(same tri counts, same joints, same clips); only attribute *precision* and the ORM map changed:
+
+| attribute | was | now | why it is safe |
+|---|---|---|---|
+| `POSITION` | int16 norm | unchanged | already quantised |
+| `NORMAL` | int16 norm (6 B) | **int8 norm (3 B)** | ~0.4° max angular error; 8-bit normals are the engine default |
+| `TEXCOORD_0` / `JOINTS_0` | uint16 / uint8 | unchanged | already quantised |
+| `WEIGHTS_0` | **float32 ×4 (16 B)** | **uint8 norm ×4 (4 B)** | core glTF 2.0 allows it, no extension needed. Largest-remainder rounding keeps each vertex's four weights summing to exactly 255 — an unnormalised set is what makes a skin visibly deflate at a joint, so `tools/out/assetgen/integrity.mjs` asserts the sum |
+| ORM map | webp 1024² | webp 512² | occlusion/roughness/metalness is low-frequency and these are seen from ≥3 m. Colour and normal maps stay 1024² |
+
+`WEIGHTS_0` alone was 3.4 MB — 22% of the whole creature payload — because it was the one attribute the
+original export left unquantised. Animations were also keyframe-resampled at tolerance 1e-4 (drops keys
+that already lie on the interpolation line).
+
+Scripts: `tools/out/assetgen/glb-pass.mjs` (weights + resample), `glb-orm.mjs` (ORM), `glb-normals.mjs`.
+**They are three separate processes on purpose** — importing `@gltf-transform/functions` pulls in
+`ndarray-pixels`, which reconfigures libvips so that every later `sharp` decode in the same process dies
+with `colourspace: parameter space not set`. Do not merge them.
+
 ## Batch 2 — vegetation / glyphs / concepts
 
 | file | for | notes |
 |---|---|---|
 | `tex/bark.jpg` | Vegetation trunk material | 2k seamless, vertical ridges + moss |
 | `tex/leaf_card.png` | Vegetation canopy leaf cards | 1024 RGBA alpha cutout, lush painterly cluster |
-| `tex/glyph-ring-1.jpg`, `tex/glyph-ring-2.jpg` | Props rune rings, VFX sigils, abilities rift | pale-gold line art on black — load as additive map (black = transparent with AdditiveBlending) |
+| `tex/glyph-ring-1.jpg`, `tex/glyph-ring-2.jpg` | Props rune rings, VFX sigils, abilities rift | pale-gold line art on black — load as additive map (black = transparent with AdditiveBlending). **Preloaded but never consumed — see OPEN ASK (b)** |
 
-## Models — none. The game is 100% procedural geometry.
+Concept art for this batch (`aetheryte.jpg`, `column.jpg`, `handcannon.jpg`, `leaf-card-raw.jpg`) moved
+from `public/assets/concepts/` to **`docs/concepts/`** on 2026-08-29. It is pipeline reference, nothing
+loads it, and `public/` ships verbatim — it was 1.9 MB of concept art downloaded by every player.
+Same rule as `docs/intro-ref/`: art references live in `docs/`, never in `public/`.
+
+## Models — the only mesh assets are the rigged creature GLBs above; world geometry is 100% procedural.
 
 Three GLBs (`aetheryte` 38k tris / `column` 31k / `handcannon` 57k, 7.9 MB) were generated in the first
 asset batch and **never wired up** — every system had already built the same object procedurally

@@ -170,6 +170,54 @@ try {
     }
   }
 
+  // ---- NPCs STAND ON THE GROUND ---------------------------------------------------------------
+  // This shipped TWICE in one day (2026-08-29): every villager and all eleven Wayfinders hovering,
+  // reported by the user from a screenshot both times. The cause was subtle enough that my own first
+  // probe missed it — I measured the BIND-POSE bounding box, which sits at the right height while the
+  // POSED body floats, so the numbers said "planted" and the picture said otherwise. Measure what is
+  // actually drawn: the lowest skinned vertex, in world space. `applyBoneTransform` returns the skin's
+  // LOCAL space and the skin is not a direct child of the placed root on these GLBs, so the composition
+  // through matrixWorld is the whole point of the check — leaving it out reproduces the original bug.
+  {
+    const soles = await ev(() => {
+      const g = window.__game?.game, P = g?.world?.props, T = g?.terrain;
+      if (!P || !T) return null;
+      const THREE_V = g.camera.position.constructor, v = new THREE_V();
+      const out = [];
+      const measure = (name, inst, refY) => {
+        let skin = null;
+        inst.traverse((c) => { if (c.isSkinnedMesh && !skin) skin = c; });
+        if (!skin) return;
+        inst.updateMatrixWorld(true); skin.skeleton.update();
+        const p = skin.geometry.attributes.position;
+        let lo = Infinity;
+        for (let i = 0; i < p.count; i += 7) {          // every 7th vertex is ample for an extremum
+          v.fromBufferAttribute(p, i);
+          skin.applyBoneTransform(i, v);
+          v.applyMatrix4(skin.matrixWorld);
+          if (v.y < lo) lo = v.y;
+        }
+        out.push({ name, gap: +(lo - refY).toFixed(3) });
+      };
+      for (const n of P.npcs || []) measure(n.id, n.object, T.heightAt(n.object.position.x, n.object.position.z));
+      // a Wayfinder stands on his dais, not on the terrain — his own placement Y is the reference
+      (P.wayfinders || []).slice(0, 3).forEach((w, i) => measure('wayfinder' + i, w.mesh, w.mesh.position.y));
+      return out;
+    });
+    if (!soles) fail('NPC ground contact: props/terrain unavailable, could not check');
+    else if (!soles.length) fail('NPC ground contact: no skinned NPCs found — the roster is empty or the bodies failed to load');
+    else {
+      // +0.10 m of air is already visible at conversation range; sinking is bounded looser because a
+      // sole legitimately beds into soft ground and the grade under a 0.4 m stance is not flat.
+      for (const s of soles) {
+        if (s.gap > 0.10) fail(`${s.name}: FLOATING — lowest posed vertex is ${s.gap.toFixed(2)} m above the ground it stands on`);
+        else if (s.gap < -0.18) fail(`${s.name}: SUNK — lowest posed vertex is ${(-s.gap).toFixed(2)} m below the ground`);
+      }
+      const worst = soles.reduce((a, b) => (Math.abs(b.gap) > Math.abs(a.gap) ? b : a));
+      if (!failed) ok(`NPC ground contact: ${soles.length} bodies planted (worst ${worst.name} ${worst.gap >= 0 ? '+' : ''}${worst.gap} m)`);
+    }
+  }
+
   const errs = await ev(() => (window.__game.errors || []).length);
   if (errs) fail(`${errs} uncaught page error(s) during the run: ` + JSON.stringify(await ev(() => (window.__game.errors || []).slice(0, 3))));
 } catch (e) {

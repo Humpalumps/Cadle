@@ -1,0 +1,10 @@
+[
+  { "wait": 35 },
+  { "hour": 12 },
+  { "eval": "__game.teleport(125.2,null,-108);__game.look(2.6,-0.10);'ok'" },
+  { "wait": 12 }, { "shot": "w12" },
+  { "wait": 20 }, { "shot": "w32" },
+  { "wait": 30 }, { "shot": "w62" },
+  { "eval": "const g=__game.game.world.grass;JSON.stringify({job:!!g._job,cx:g._cx,cz:g._cz,st:g.stats()})" },
+  { "eval": "const s=__game.game.world.groundScatter||__game.game.world.scatter;s?JSON.stringify(s.stats?s.stats():Object.keys(s)):'none'" }
+]

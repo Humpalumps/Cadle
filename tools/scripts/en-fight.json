@@ -1,0 +1,46 @@
+[
+ {
+  "wait": 3.0
+ },
+ {
+  "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})"
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "hour": 11
+ },
+ {
+  "eval": "const g=__game.game; __game.god(true); __game.clearEnemies(); g.enemies.passive=false; __game.teleport(0,null,0); __game.look(3.1416,0.02); const s=__game.spawn('sentinel',0,28,{level:3}); const go=__game.spawn('golem',17,30,{level:3}); for(const e of [s,go]){e.alert=true; e.lastSeenT=g.time; e.lastSeen.copy(g.player.position); e.home.copy(e.position);} window.__ev=[]; g.events.on('enemy:attack',(d)=>{const e=d.enemy,p=g.player.position; window.__ev.push([+g.time.toFixed(2),e.type,d.kind,+Math.hypot(e.position.x-p.x,e.position.z-p.z).toFixed(1)]);}); window.__tr=[]; const step=()=>{const p=g.player.position; const row=[+g.time.toFixed(2)]; for(const ty of ['sentinel','golem']){const e=g.enemies.list.find(x=>x.type===ty); row.push(e?+Math.hypot(e.position.x-p.x,e.position.z-p.z).toFixed(1):-1, e?e.state:'-', e?+(e.wantSpeed||0).toFixed(2):0, e?+Math.hypot(e.velocity.x,e.velocity.z).toFixed(2):0, e?(e.seen?1:0):0);} window.__tr.push(row); requestAnimationFrame(step);}; step(); 'fight'"
+ },
+ {
+  "wait": 5.0
+ },
+ {
+  "shot": "t5"
+ },
+ {
+  "wait": 5.0
+ },
+ {
+  "burst": {
+   "name": "melee",
+   "n": 8,
+   "interval": 0.14
+  }
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "burst": {
+   "name": "melee2",
+   "n": 6,
+   "interval": 0.14
+  }
+ },
+ {
+  "eval": "const tr=window.__tr,ev=window.__ev; const pick=(i)=>{const a=tr.map(r=>r[i]); return a.filter((_,k)=>k%Math.ceil(a.length/24)===0);}; const gsp=tr.map(r=>r[8]).filter(v=>v>0.05); const gst={}; for(const r of tr) gst[r[6]]=(gst[r[6]]||0)+1; const sst={}; for(const r of tr) sst[r[2]]=(sst[r[2]]||0)+1; JSON.stringify({secs:+(tr[tr.length-1][0]-tr[0][0]).toFixed(1), sMin:Math.min(...tr.map(r=>r[1])), gMin:Math.min(...tr.map(r=>r[5])), sDist:pick(1), gDist:pick(5), gState:gst, sState:sst, gSeen:tr.filter(r=>r[9]).length+'/'+tr.length, gVelMedian:+gsp.sort((a,b)=>a-b)[Math.floor(gsp.length/2)], attacks:ev})"
+ }
+]

@@ -1,0 +1,198 @@
+[
+ {
+  "wait": 12
+ },
+ {
+  "hour": 11
+ },
+ {
+  "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d,pz=z+Math.cos(ang)*d;__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),pitch||0);};'ok'"
+ },
+ {
+  "tp": [
+   118,
+   null,
+   -96
+  ]
+ },
+ {
+  "wait": 2
+ },
+ {
+  "resetStats": true
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:0,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   0.7854,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:1,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:2,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   2.3562,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:3,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   3.1416,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:4,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   3.927,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:5,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   4.7124,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:6,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "look": [
+   5.4978,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.7
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return{a:7,calls:s.calls,tris:s.tris,frameMs:+s.frameMs.toFixed(2),cpu:+s.cpuMs.toFixed(2),gpu:+(s.gpuMs||0).toFixed(2),veg:+((s.systems&&s.systems.vegetation)||0).toFixed(2),props:+((s.systems&&s.systems.props)||0).toFixed(2)};})())"
+ },
+ {
+  "perfWindow": {
+   "secs": 5,
+   "label": "hamlet-high"
+  }
+ },
+ {
+  "eval": "__at(116,-99,3,3.93,-0.05)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-serel-3m"
+ },
+ {
+  "eval": "__at(116,-99,8,3.93,-0.03)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-serel-8m"
+ },
+ {
+  "eval": "__at(116,-99,20,3.93,0)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-serel-20m"
+ },
+ {
+  "eval": "__at(120.6,-93.6,4.0,2.6,-0.05)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-harl-well"
+ },
+ {
+  "eval": "__at(125.4,-88.4,4.0,4.2,-0.05)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-wick-stall"
+ },
+ {
+  "eval": "__at(0,-28,3,2.0,-0.05)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-wayfinder-3m"
+ },
+ {
+  "eval": "__at(0,-28,8,2.0,-0.05)"
+ },
+ {
+  "wait": 0.6
+ },
+ {
+  "shot": "coh-wayfinder-8m"
+ },
+ {
+  "eval": "__at(118,-96,34,3.93,0.02)"
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "coh-village-40m"
+ }
+]

@@ -1,0 +1,22 @@
+[
+ { "wait": 7.0 },
+ { "eval": "__game.god(true)" },
+ { "eval": "(()=>{ for (const el of document.body.children) if (el.tagName !== 'CANVAS') el.style.visibility = 'hidden'; return 'hud hidden' })()" },
+ { "eval": "(()=>{ __game.game.player.weapons.setHidden(true); return 'viewmodel hidden' })()" },
+ { "hour": 13 },
+ { "tp": [2, null, -2] },
+ { "look": [0, -0.05] },
+ { "eval": "window.__DISC=()=>{const G=__game.game,cam=G.camera,out=[];const V=cam.position.constructor;cam.updateMatrixWorld();G.scene.traverse(o=>{if(!o.visible||!o.isMesh)return;const g=o.geometry;if(!g)return;if(!g.boundingSphere&&g.computeBoundingSphere)g.computeBoundingSphere();const bs=g.boundingSphere;if(!bs)return;const s=o.getWorldScale(new V());const r=bs.radius*Math.max(s.x,s.y,s.z);const c=bs.center.clone().applyMatrix4(o.matrixWorld);const d=c.distanceTo(cam.position);if(d<=0)return;const ang=Math.atan2(r,d)*57.3;if(ang<12||ang>80)return;const p=c.clone().project(cam);out.push((o.name||o.type)+'|ang'+ang.toFixed(0)+'|d'+d.toFixed(1)+'|ndc'+p.x.toFixed(2)+','+p.y.toFixed(2)+'|'+g.type);});return out.join(' , ')||'none'};'ok'" },
+ { "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;const T=['wisp','wisp','wisp','hound','hound','sentinel'];T.forEach((t,i)=>{const a=-0.55+1.1*i/(T.length-1),d=8+10*(i%3)/2;g.spawn(t,p.x+Math.sin(a)*d,p.z-Math.cos(a)*d);});for(const e of g.game.enemies.list){e.alert=true;e.lastSeenT=g.game.time;e.lastSeen&&e.lastSeen.copy(p);}return T.length+' spawned'})()" },
+ { "wait": 1.4 },
+ { "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive){e.takeDamage({amount:6});n++}}return n+' hit'})()" },
+ { "wait": 2.6 },
+ { "eval": "__DISC()" },
+ { "burst": { "name": "cvfx-vale-c", "n": 1, "interval": 0.15 } },
+ { "eval": "__DISC()" },
+ { "wait": 0.3 },
+ { "eval": "__DISC()" },
+ { "burst": { "name": "cvfx-vale-d", "n": 1, "interval": 0.15 } },
+ { "eval": "__DISC()" },
+ { "eval": "(()=>__game.game.enemies.list.map(e=>(e.def&&e.def.id||'?')+':shield'+(e.shieldMesh?(e.shieldMesh.visible?'ON':'off'):'-')).join(','))()" }
+]

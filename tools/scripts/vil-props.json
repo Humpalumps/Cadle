@@ -1,0 +1,41 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{const x=110.4,z=-86.4,d=5,a=2.2,p=-0.2;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1.1
+ },
+ {
+  "shot": "crates"
+ },
+ {
+  "eval": "(()=>{const x=104,z=-104,d=9,a=1,p=-0.12;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1.1
+ },
+ {
+  "shot": "yard-a"
+ },
+ {
+  "eval": "(()=>{const x=131,z=-107,d=9,a=4,p=-0.12;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1.1
+ },
+ {
+  "shot": "yard-b"
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=14,a=0.5,p=-0.1;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1.1
+ },
+ {
+  "shot": "plaza"
+ }
+]

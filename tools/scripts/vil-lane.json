@@ -1,0 +1,32 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "(()=>{__game.setHour(11);__game.teleport(118-0.866*10+0.5,null,-96+0.499*10);__game.look(Math.atan2(0.866,-0.499),-0.10);return 1;})()"
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "lane-a"
+ },
+ {
+  "eval": "(()=>{__game.setHour(11);__game.teleport(118-0.866*46,null,-96+0.499*46);__game.look(Math.atan2(-0.866,0.499)+3.1416,-0.12);return 1;})()"
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "lane-b"
+ },
+ {
+  "eval": "(()=>{__game.setHour(11);__game.teleport(118-0.866*34,null,-96+0.499*34);__game.look(Math.atan2(0.866,-0.499),-0.06);return 1;})()"
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "lane-c"
+ }
+]

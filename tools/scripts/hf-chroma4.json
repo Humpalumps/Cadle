@@ -1,0 +1,10 @@
+[{"wait": 35},
+ {"eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'"},
+ {"hour": 12},
+ {"eval": "__at(116,-99,8.0,-1.5,0.02)"}, {"wait": 14}, {"shot": "serel-8m"},
+ {"eval": "__at(114.4,-93.6,4.5,-0.885,-0.26)"}, {"wait": 6}, {"shot": "trough-4m"},
+ {"eval": "__at(116,-99,20.0,0.9,-0.02)"}, {"wait": 6}, {"shot": "stall-bales-20m"},
+ {"eval": "__at(118,-96,14,2.6,-0.10)"}, {"wait": 6}, {"shot": "yard-14m"},
+ {"resetStats": true}, {"wait": 5}, {"stats": "hamlet"},
+ {"burst": {"name": "yard", "n": 5, "interval": 0.14}},
+ {"hour": 18}, {"wait": 5}, {"eval": "__at(116,-99,4.0,-1.5,0.06)"}, {"wait": 4}, {"shot": "serel-h18"}]

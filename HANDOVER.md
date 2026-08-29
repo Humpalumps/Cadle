@@ -22,6 +22,43 @@ HEAD `913ed1c` on branch `claude/session-e5730b`, 31 commits, **deliberately NOT
 
 ## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
+### ★★ 2026-08-29 — THE GO-LIVE PLAN. TWO ITEMS, THEN WE SHIP. ★★
+
+The user played the starting area, found "hundreds of problems within 10 mins", and set a new standing
+rule: **one biome at a time, and nothing is signed off unless every critic seat agrees there is nothing
+wrong** (charter: `docs/VALE-SIGNOFF.md`). They then asked for a time estimate to a public launch, were
+given one, and chose an explicit two-item scope:
+
+> "do these 2 in addition to the stuff you just did and then we go live: Assets 67 MB → 40 MB … Vale to
+> unanimous sign-off … ill put the other 4 in afterwards"
+
+**SO THE SHIP LIST IS EXACTLY:**
+1. **Asset payload 71 MB → ≤ 40 MB** (measured 71, not 67: tex 31 / music 19 / creatures 18 / sfx 2 /
+   concepts 2 / ui 1 / intro 1). Compression only — no visible or audible loss, no design decisions.
+2. **The Vale to a unanimous five-seat sign-off** per `docs/VALE-SIGNOFF.md`.
+
+Deferred BY THE USER to after launch ("the other 4"): the nine outer biomes to the same standard, the
+three creatures wearing another creature's body (celestial seraph = forgeknight, sunken courtier =
+tinted sentinel, Lost Archon = dark golem), the animation re-bakes (`USE_CLIPS` is all-false because one
+15.38 s idle retargeted across eight rigs drives ankles through 143° — the runtime joint clamp in
+Props.js is a guard, not a rig), and the dedicated performance pass (8.1–8.5 ms uncapped vs a 7 ms budget).
+
+**WORKTREE HAS MOVED.** This session works in
+`.claude/worktrees/performance-improvement-check-b88dd0`, fast-forwarded to `origin/main` (26b0b9e),
+with its own dev server on **http://127.0.0.1:5185/**. Ports 5173 / 5179 / 5181 serve OTHER worktrees —
+measuring them tests the wrong build, and 5181 currently serves a *marketing site* whose index.html is
+not the game at all. The clean `origin/main` tree at `cadle-character-load-perf-ee5b7b` on **:5179** is
+kept deliberately as the A/B baseline for the performance seat.
+
+**THE ONE THING THAT MUST BE TRUE BEFORE THE PERF SEAT RUNS: the machine must be quiet.** Every timing
+number produced on 2026-08-28/29 is void — 4 to 24 concurrent `chrome-headless-shell` processes, and
+identical code measuring 11.98 → 169 ms. Counts (draw calls, triangles) survive contention; clocks do
+not. Reap with `Get-Process chrome-headless-shell | Stop-Process -Force`, and note the user games on
+this box, which is what caused the TDR driver resets in 2j. Known open breach to re-measure: **370 draw
+calls at the hamlet camera against a 350 budget**, traced to 31 live enemy meshes (203k tris) from the
+enemy streamer — not the village.
+
+
 > **Written 2026-08-27 as a deliberate HANDOVER at the end of a session. Wave 5 is BUILT, COMMITTED,
 > PUSHED and JUDGED — and it went BACKWARDS (4.9/10, was 5.8, with 5 blob violations).**
 > **YOU ARE THE ORCHESTRATOR.** That matters: it means you own `tools/`, `progress.html`, git and

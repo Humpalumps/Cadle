@@ -1,0 +1,16 @@
+[
+  { "wait": 10 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; window.__sc=()=>{const g=__game.game; for(const k of ['scatter','groundScatter']){ if(g.world?.vegetation?.[k]?.stats) return g.world.vegetation[k].stats(); if(g.world?.[k]?.stats) return g.world[k].stats(); } const v=g.world.vegetation; return Object.keys(v).filter(k=>v[k]&&v[k].stats).join(','); }; 'ok'" },
+  { "hour": 12 },
+  { "eval": "__at(118,-96,14,2.6,-0.10)" }, { "wait": 14 },
+  { "shot": "low-yard-14m" },
+  { "eval": "__sc()" },
+  { "eval": "__game.stats()" },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 8 }, { "shot": "low-serel-3m" },
+  { "eval": "__at(118,-96,9,4.4,-0.55)" }, { "wait": 8 }, { "shot": "low-down-9m" },
+  { "resetStats": true }, { "wait": 4 }, { "stats": "village" },
+  { "eval": "__game.teleport(60,null,-40)" }, { "wait": 14 },
+  { "eval": "__sc()" }, { "shot": "low-meadow" },
+  { "resetStats": true }, { "wait": 4 }, { "stats": "meadow" },
+  { "burst": { "name": "yard", "n": 4, "interval": 0.14 } }
+]

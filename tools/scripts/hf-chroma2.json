@@ -1,0 +1,11 @@
+[{"wait": 35},
+ {"eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'"},
+ {"hour": 12},
+ {"eval": "__at(114.4,-93.6,5,-0.885,-0.22)"}, {"wait": 14}, {"shot": "trough-5m"},
+ {"eval": "__at(114.4,-93.6,10,-0.885,-0.14)"}, {"wait": 6}, {"shot": "trough-10m"},
+ {"eval": "__at(128.1,-93.0,6.5,0.896,-0.18)"}, {"wait": 6}, {"shot": "bales-6m"},
+ {"eval": "__at(125.2,-91.8,12,2.35,-0.05)"}, {"wait": 6}, {"shot": "bluestall-se12m"},
+ {"eval": "__at(125.2,-91.8,17,1.35,-0.04)"}, {"wait": 6}, {"shot": "bluestall-e17m"},
+ {"eval": "__at(113.5,-89.5,12,3.0,-0.05)"}, {"wait": 6}, {"shot": "redstall-12m"},
+ {"eval": "__at(116,-99,20.0,0.9,-0.03)"}, {"wait": 6}, {"shot": "serel-20m"},
+ {"eval": "__at(0,-28,5.0,0.9,0.04)"}, {"wait": 8}, {"shot": "wayfinder-5m"}]

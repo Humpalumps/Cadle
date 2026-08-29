@@ -1,0 +1,7 @@
+[{"wait":32},
+ {"eval":"__game.god(true);__game.passive(true);__game.setHour(13);'ok'"},{"wait":4},
+ {"tp":[-197,null,734]},{"wait":12},{"look":[0,0.05]},{"wait":3},{"shot":"s1-lost-monolith"},
+ {"look":[1.6,0.05]},{"wait":2},{"shot":"s2-lost-e"},
+ {"tp":[-537,null,-537]},{"wait":12},{"look":[0,0.0]},{"wait":3},{"shot":"s3-void"},
+ {"look":[0,-0.5]},{"wait":2},{"shot":"s4-void-ground"},
+ {"tp":[689,null,321]},{"wait":12},{"look":[0,0.05]},{"wait":3},{"shot":"s5-dragon-gate"}]

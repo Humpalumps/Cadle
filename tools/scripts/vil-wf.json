@@ -1,0 +1,38 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "eval": "__game.teleport(0,null,-28);1"
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "eval": "(()=>{const T=(()=>{const P=__game.game.world.props;let b=null,bd=1e18;const c=__game.game.camera.position;for(const w of P.wayfinders){const d=w.mesh.position.distanceToSquared(c);if(d<bd){bd=d;b=w;}}return [b.mesh.position.x,b.mesh.position.z];})();const x=T[0],z=T[1],d=3.4,a=0,p=-0.1;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return JSON.stringify(T.map(v=>+v.toFixed(1)));})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "wf-a"
+ },
+ {
+  "eval": "(()=>{const T=(()=>{const P=__game.game.world.props;let b=null,bd=1e18;const c=__game.game.camera.position;for(const w of P.wayfinders){const d=w.mesh.position.distanceToSquared(c);if(d<bd){bd=d;b=w;}}return [b.mesh.position.x,b.mesh.position.z];})();const x=T[0],z=T[1],d=3.4,a=3.1416,p=-0.1;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return JSON.stringify(T.map(v=>+v.toFixed(1)));})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "wf-b"
+ },
+ {
+  "eval": "(()=>{const T=(()=>{const P=__game.game.world.props;let b=null,bd=1e18;const c=__game.game.camera.position;for(const w of P.wayfinders){const d=w.mesh.position.distanceToSquared(c);if(d<bd){bd=d;b=w;}}return [b.mesh.position.x,b.mesh.position.z];})();const x=T[0],z=T[1],d=2.2,a=0.7,p=-0.42;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return JSON.stringify(T.map(v=>+v.toFixed(1)));})()"
+ },
+ {
+  "wait": 1
+ },
+ {
+  "shot": "wf-feet"
+ }
+]

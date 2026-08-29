@@ -34,6 +34,31 @@ if (!process.env.CADLE_GATE_FORCE) {
   }
 }
 
+// --- 0: IS THE THING WE ARE JUDGING EVEN THERE? -----------------------------------------------------
+// A dead dev server made every visual check fail and the gate printed "GATE FAILED", which reads as
+// "your change is broken" and costs a builder a full investigation before they think to curl the port.
+// It is worse in worktrees: 5173 is the MAIN checkout, so a worktree agent who forgets CADLE_URL either
+// judges the WRONG BUILD (server up, different tree) or gets a phantom failure (server down). Fail here,
+// loudly, with the URL we are about to use — a gate that cannot reach the game has not judged anything.
+{
+  let ok = false, why = '';
+  try {
+    const res = await fetch(BASE, { signal: AbortSignal.timeout(4000) });
+    ok = res.ok; why = `HTTP ${res.status}`;
+  } catch (e) { why = e?.cause?.code ?? e?.name ?? String(e); }
+  if (!ok) {
+    console.error(`[gate] cannot reach the game at ${BASE} (${why}).`);
+    console.error('[gate] The gate judges a RUNNING game; with no server it would report failures it did not earn.');
+    console.error('[gate] Start the dev server for THIS worktree and point the gate at it, e.g.');
+    console.error('[gate]   npx vite --port 5185 --strictPort --host 127.0.0.1 &');
+    console.error('[gate]   CADLE_URL=http://127.0.0.1:5185/ node tools/gate.mjs');
+    console.error('[gate] (CADLE_URL defaults to 5173, which serves the MAIN checkout — in a worktree that is');
+    console.error('[gate]  the wrong build even when it answers.)');
+    process.exit(3);
+  }
+  console.log(`[gate] target ${BASE} is up.`);
+}
+
 console.log('[gate] source invariants...');
 {
   const r0 = spawnSync('node', ['tools/invariants.mjs'], { stdio: 'inherit' });

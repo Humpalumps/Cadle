@@ -412,7 +412,19 @@ export function glbAnimator(profile, tuning) {
         // old horizontal S-curve read as a rigid glider AND collapsed the skeleton's vertical extent
         // to ~0.38x of def.height (animcheck SIZE fail on both). The arch is what gives the body its
         // authored dragon-glide posture — head high, body cresting — independent of the wave phase.
-        if (profile === 'serpent') wave(G, G.tail, tt + ph * 0.4, T.tailAmp * (0.6 + sp * 0.8) * (T.undulate ?? 1), T.tailHz + sp * 2, 'x', 0.7, T.arch ?? 0.22);
+        // A SERPENT IS THE ONE BODY IN THE BESTIARY WITH NO SPINE (measured: chains spine=0, neck=5, tail=9,
+        // legs=0, arms=0), so the breath loop above iterates zero times on it — and it has no wings either.
+        // Its whole idle read was therefore this one call, whose amplitude AND frequency both rode speedN:
+        // (0.6+0.8sp)(1.8+2sp) is a 4.9x swing from hover to full pelt, i.e. a hovering serpent was very
+        // nearly frozen. Measured at 20 m: pose rate p05 0.6 rad/s against p50 6.3 — and animcheck's held
+        // test is RELATIVE to the window mean, so those hover frames sat close enough to the 0.15x line for
+        // frame-time jitter to flip them across it repeatedly (idle alternation 0.154 of a 0.25 limit, the
+        // worst in the bestiary by a wide margin). Move the split from speed into the constant: the two
+        // curves are chosen so sp=1 is byte-identical to the old numbers (1.40 amp, 3.80 freq — the dive
+        // read is untouched), while hover goes 1.05/2.70 and the rest-to-pelt swing drops 4.9x -> 1.9x.
+        // Same op count, so it is free; and a serpent that HOLDS STATION IN THE AIR coiling continuously is
+        // the more honest read anyway — it is not resting on anything.
+        if (profile === 'serpent') wave(G, G.tail, tt + ph * 0.4, T.tailAmp * (1.05 + sp * 0.35) * (T.undulate ?? 1), T.tailHz + 0.9 + sp * 1.1, 'x', 0.7, T.arch ?? 0.22);
         else wave(G, G.tail, tt + ph * 0.5, T.tailAmp * (0.7 + sp * 0.6), T.tailHz + sp * 3, 'y', 0.8, 0.16 - sp * 0.10 + (e.state === 'flee' ? -0.3 : 0));
       }
 

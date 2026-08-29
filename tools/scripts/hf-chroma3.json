@@ -1,0 +1,11 @@
+[{"wait": 35},
+ {"eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; 'ok'"},
+ {"hour": 12},
+ {"eval": "JSON.stringify(__game.game.world.props.wayfinders.map(w=>[w.mesh.name, +w.mesh.position.x.toFixed(1), +w.mesh.position.z.toFixed(1)]).slice(0,3))"},
+ {"eval": "__at(116,-99,8.0,-1.5,0.02)"}, {"wait": 14}, {"shot": "serel-8m"},
+ {"eval": "__at(116,-99,20.0,-1.5,-0.03)"}, {"wait": 6}, {"shot": "serel-20m"},
+ {"eval": "__at(116,-99,3.0,-1.5,0.10)"}, {"wait": 6}, {"shot": "serel-3m-w"},
+ {"eval": "const w=__game.game.world.props.wayfinders.find(w=>/vale|meadow/i.test(w.mesh.name))||__game.game.world.props.wayfinders[0]; window.__wf=[w.mesh.position.x,w.mesh.position.z]; __at(__wf[0],__wf[1],4.5,0.9,0.04); JSON.stringify(__wf)"},
+ {"wait": 8}, {"shot": "wayfinder-4m"},
+ {"eval": "__at(__wf[0],__wf[1],4.5,2.6,0.04)"}, {"wait": 6}, {"shot": "wayfinder-4m-b"},
+ {"hour": 18}, {"wait": 5}, {"eval": "__at(116,-99,4.0,-1.5,0.06)"}, {"wait": 4}, {"shot": "serel-h18"}]

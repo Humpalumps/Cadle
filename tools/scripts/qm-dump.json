@@ -1,0 +1,7 @@
+[
+  { "wait": 10 },
+  { "eval": "__game.teleport(120,null,-94); __game.look(0,0); 'tp'" },
+  { "wait": 5 },
+  { "eval": "const g=__game.game,qm=g.rpg.markers; const rows=[]; qm._pool.forEach((m,i)=>{ if(!m.visible) return; const ref=m.userData.ref; const b=ref&&ref.bone; rows.push({i, crown:!!m.userData.crown, boneName:b?b.name:null, boneY:b?+b.matrixWorld.elements[13].toFixed(3):null, baseY:+m.userData.baseY.toFixed(3), posY:+m.position.y.toFixed(3), sc:+m.scale.x.toFixed(3), bot:+(m.position.y-0.72*m.scale.x).toFixed(3)}); }); rows" },
+  { "eval": "const g=__game.game; const out=[]; for(const n of g.world.props.npcs||[]){ const o=n.object; const bs=[]; o.traverse(c=>{ if(c.isBone&&/head|neck/i.test(c.name)){ c.updateWorldMatrix(true,false); bs.push([c.name, +c.matrixWorld.elements[13].toFixed(3)]); } }); out.push({id:n.id, bones:bs.sort((a,b)=>b[1]-a[1]).slice(0,4)}); } out" }
+]

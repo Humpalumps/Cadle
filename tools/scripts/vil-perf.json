@@ -1,0 +1,151 @@
+[
+ {
+  "wait": 14
+ },
+ {
+  "tp": [
+   118,
+   null,
+   -96
+  ]
+ },
+ {
+  "wait": 3
+ },
+ {
+  "resetStats": true
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a0\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   0.7854,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a1\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a2\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   2.3562,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a3\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   3.1416,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a4\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   3.927,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a5\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   4.7124,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a6\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   5.4978,
+   -0.05
+  ]
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "eval": "JSON.stringify((()=>{const s=__game.stats();return[\"a7\",s.calls,s.tris,+(s.memMB||0).toFixed(0)];})())"
+ },
+ {
+  "look": [
+   3.93,
+   0
+  ]
+ },
+ {
+  "perfWindow": {
+   "secs": 8,
+   "label": "hamlet"
+  }
+ },
+ {
+  "eval": "(()=>{const x=118,z=-96,d=40,a=3.93,p=0.03;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),p);return 1;})()"
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "perfWindow": {
+   "secs": 6,
+   "label": "hamlet-40m"
+  }
+ },
+ {
+  "tp": [
+   118,
+   null,
+   -96
+  ]
+ },
+ {
+  "wait": 20
+ },
+ {
+  "eval": "JSON.stringify([\"mem30\",+__game.stats().memMB.toFixed(0)])"
+ }
+]

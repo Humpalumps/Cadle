@@ -1,0 +1,356 @@
+[
+ {
+  "wait": 5.0
+ },
+ {
+  "resetStats": true
+ },
+ {
+  "log": "spawn meadow: full day cycle"
+ },
+ {
+  "tp": [
+   0,
+   null,
+   0
+  ]
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.3
+  ]
+ },
+ {
+  "hour": 12
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-12"
+ },
+ {
+  "burst": {
+   "name": "meadow-12",
+   "n": 4,
+   "interval": 0.2
+  }
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.95
+  ]
+ },
+ {
+  "wait": 0.4
+ },
+ {
+  "shot": "meadow-12-down"
+ },
+ {
+  "burst": {
+   "name": "meadow-12-down",
+   "n": 4,
+   "interval": 0.2
+  }
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.3
+  ]
+ },
+ {
+  "hour": 6
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-06"
+ },
+ {
+  "burst": {
+   "name": "meadow-06",
+   "n": 4,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 18
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-18"
+ },
+ {
+  "burst": {
+   "name": "meadow-18",
+   "n": 4,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 21
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-21"
+ },
+ {
+  "burst": {
+   "name": "meadow-21",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 23
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-23"
+ },
+ {
+  "burst": {
+   "name": "meadow-23",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.95
+  ]
+ },
+ {
+  "wait": 0.4
+ },
+ {
+  "shot": "meadow-23-down"
+ },
+ {
+  "burst": {
+   "name": "meadow-23-down",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 2
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "meadow-02-down"
+ },
+ {
+  "burst": {
+   "name": "meadow-02-down",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.3
+  ]
+ },
+ {
+  "shot": "meadow-02"
+ },
+ {
+  "log": "village edge (Hearthfall 118,-96)"
+ },
+ {
+  "hour": 12
+ },
+ {
+  "tp": [
+   140,
+   null,
+   -70
+  ]
+ },
+ {
+  "look": [
+   0.7,
+   -0.25
+  ]
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "village-12-approach"
+ },
+ {
+  "burst": {
+   "name": "village-12",
+   "n": 4,
+   "interval": 0.2
+  }
+ },
+ {
+  "tp": [
+   134,
+   null,
+   -78
+  ]
+ },
+ {
+  "look": [
+   0.7,
+   -0.55
+  ]
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "village-12-close"
+ },
+ {
+  "look": [
+   0.7,
+   -1.1
+  ]
+ },
+ {
+  "wait": 0.4
+ },
+ {
+  "shot": "village-12-feet"
+ },
+ {
+  "hour": 23
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "look": [
+   0.7,
+   -0.55
+  ]
+ },
+ {
+  "shot": "village-23-close"
+ },
+ {
+  "burst": {
+   "name": "village-23",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "log": "sub-pixel distance (blades 100 m+)"
+ },
+ {
+  "hour": 12
+ },
+ {
+  "tp": [
+   0,
+   null,
+   140
+  ]
+ },
+ {
+  "look": [
+   0,
+   -0.1
+  ]
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "shot": "far-12"
+ },
+ {
+  "burst": {
+   "name": "far-12",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 17.5
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "far-1730"
+ },
+ {
+  "burst": {
+   "name": "far-1730",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "hour": 23
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "far-23"
+ },
+ {
+  "burst": {
+   "name": "far-23",
+   "n": 5,
+   "interval": 0.2
+  }
+ },
+ {
+  "log": "perf"
+ },
+ {
+  "hour": 12
+ },
+ {
+  "tp": [
+   0,
+   null,
+   0
+  ]
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.2
+  ]
+ },
+ {
+  "wait": 1.0
+ },
+ {
+  "perfWindow": {
+   "secs": 4,
+   "label": "meadow"
+  }
+ },
+ {
+  "eval": "JSON.stringify(__game.stats().systems)"
+ },
+ {
+  "stats": "final"
+ }
+]

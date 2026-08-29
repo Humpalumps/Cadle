@@ -1,0 +1,19 @@
+[
+  { "wait": 35 },
+  { "eval": "window.__at=(x,z,d,ang,pitch)=>{const px=x+Math.sin(ang)*d, pz=z+Math.cos(ang)*d; __game.teleport(px,null,pz); __game.look(Math.atan2(-(x-px),-(z-pz)), pitch||0);}; window.__sc=()=>__game.game.world.vegetation.scatter.stats(); 'ok'" },
+  { "hour": 12 },
+  { "eval": "__at(118,-96,14,2.6,-0.10)" }, { "wait": 14 }, { "shot": "yard-14m" },
+  { "eval": "__at(118,-96,9,4.4,-0.55)" }, { "wait": 7 }, { "shot": "down-9m-sw" },
+  { "eval": "__at(118,-96,9,0.9,-0.55)" }, { "wait": 7 }, { "shot": "down-9m-ne" },
+  { "eval": "__at(118,-96,6,0.9,0.02)" }, { "wait": 7 }, { "shot": "well-6m" },
+  { "eval": "__at(116,-99,3.0,0.9,0.10)" }, { "wait": 7 }, { "shot": "serel-3m" },
+  { "eval": "__at(110,-105,4.0,-2.4,0.08)" }, { "wait": 7 }, { "shot": "bram-4m" },
+  { "eval": "__at(118,-96,24,2.6,-0.08)" }, { "wait": 7 }, { "shot": "edge-24m" },
+  { "eval": "__at(118,-96,40,2.6,-0.06)" }, { "wait": 7 }, { "shot": "edge-40m" },
+  { "eval": "__at(118,-96,14,2.6,-0.10)" }, { "wait": 8 },
+  { "eval": "__sc()" },
+  { "resetStats": true }, { "wait": 5 }, { "stats": "village" },
+  { "burst": { "name": "yard", "n": 5, "interval": 0.14 } },
+  { "hour": 18 }, { "wait": 4 }, { "shot": "h18" },
+  { "hour": 8 }, { "wait": 4 }, { "shot": "h08" }
+]

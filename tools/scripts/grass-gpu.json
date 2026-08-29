@@ -1,0 +1,7 @@
+[
+  { "wait": 6.0 },
+  { "hour": 12 }, { "tp": [0, null, 0] }, { "look": [-1.5708, -0.20] }, { "wait": 2.5 },
+  { "perfWindow": { "secs": 6, "label": "meadow-noon" } },
+  { "hour": 23 }, { "wait": 1.5 },
+  { "perfWindow": { "secs": 6, "label": "meadow-night" } }
+]

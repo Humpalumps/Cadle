@@ -1,0 +1,32 @@
+[
+ {
+  "wait": 3.0
+ },
+ {
+  "eval": "new Promise(r=>{let n=0;const t=setInterval(()=>{n++;const g=window.__game&&window.__game.game;if((g&&g.enemies&&Object.keys(g.enemies.pools).length&&g.terrain)||n>300){clearInterval(t);r('ready@'+(n*0.2).toFixed(1)+'s');}},200);})"
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "hour": 11
+ },
+ {
+  "eval": "const g=__game.game; __game.god(true); __game.passive(true); __game.clearEnemies(); __game.teleport(0,null,0); const P=[]; for(let i=0;i<6;i++) P.push(__game.spawn('drake', -30+i*12, -40-i*22)); for(let i=0;i<20;i++) P.push(__game.spawn('wisp', -60+i*6, -35-i*8)); for(let i=0;i<8;i++) P.push(__game.spawn('hound', -40+i*10, -25-i*10)); for(let i=0;i<4;i++) P.push(__game.spawn('sentinel', -20+i*10, -30-i*18)); for(let i=0;i<3;i++) P.push(__game.spawn('golem', 20+i*8, -45-i*20)); for(const e of P) if(e){e.home.copy(e.position); e.idleDur=99999;} __game.look(0,0.10); JSON.stringify({alive:g.enemies.list.length, crowd:g.enemies.crowd, drakeDists:g.enemies.list.filter(e=>e.type==='drake').map(e=>+e.position.distanceTo(g.camera.position).toFixed(0))})"
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "eval": "const g=__game.game; window.__ab={ON:[],OFF:[]}; const set=(v)=>{for(const e of g.enemies.all) if(e.def.flying&&e.def.role==='dive') e._sky=v;}; let phase=0; const T=[[1,'ON'],[0,'OFF'],[1,'ON'],[0,'OFF']]; let i=0, t0=performance.now(); set(T[0][0]); const step=()=>{ const now=performance.now(); if(now-t0>2000){ i++; if(i>=T.length){window.__abDone=1; return;} set(T[i][0]); t0=now; requestAnimationFrame(step); return;} if(now-t0>400) window.__ab[T[i][1]].push(g.enemies.ms); requestAnimationFrame(step);}; step(); 'ab'"
+ },
+ {
+  "wait": 9.0
+ },
+ {
+  "eval": "const med=(a)=>{const b=a.slice().sort((x,y)=>x-y); return +b[Math.floor(b.length/2)].toFixed(4);}; const mean=(a)=>+(a.reduce((s,x)=>s+x,0)/a.length).toFixed(4); const A=window.__ab; JSON.stringify({done:!!window.__abDone, nON:A.ON.length, nOFF:A.OFF.length, medON:med(A.ON), medOFF:med(A.OFF), meanON:mean(A.ON), meanOFF:mean(A.OFF), deltaMedian:+(med(A.ON)-med(A.OFF)).toFixed(4)})"
+ },
+ {
+  "eval": "const g=__game.game; const set=(v)=>{for(const e of g.enemies.all) if(e.def.flying&&e.def.role==='dive') e._sky=v;}; const snap=()=>{const s=__game.stats(); return {calls:s.calls, tris:s.tris, memMB:s.memMB};}; set(1); const on=snap(); set(0); const off=snap(); set(1); const d2=g.enemies.list.find(e=>e.type==='drake'); const bench=(e)=>{for(let i=0;i<300;i++) e._animate(0.016,g.time); const t0=performance.now(); for(let i=0;i<3000;i++) e._animate(0.016,g.time+i*0.016); return +(((performance.now()-t0)/3000)*1000).toFixed(2);}; JSON.stringify({callsON:on.calls, callsOFF:off.calls, trisON:on.tris, trisOFF:off.tris, memMB:on.memMB, usPerDrakeAnimate:bench(d2)})"
+ }
+]

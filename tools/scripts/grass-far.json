@@ -1,0 +1,10 @@
+[
+  { "wait": 6.0 },
+  { "tp": [0, null, 140] }, { "look": [0, -0.10] },
+  { "hour": 12 }, { "wait": 2.0 },
+  { "burst": { "name": "far-12", "n": 6, "interval": 0.2 } },
+  { "hour": 17.5 }, { "wait": 1.0 },
+  { "burst": { "name": "far-1730", "n": 6, "interval": 0.2 } },
+  { "hour": 23 }, { "wait": 1.0 },
+  { "burst": { "name": "far-23", "n": 6, "interval": 0.2 } }
+]

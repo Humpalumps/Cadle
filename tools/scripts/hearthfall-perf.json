@@ -1,0 +1,15 @@
+[
+  { "wait": 12 },
+  { "eval": "window.__sc=()=>__game.game.world.vegetation.groundScatter.stats(); 'ok'" },
+  { "hour": 12 },
+  { "tp": [118, null, -84] }, { "wait": 14 },
+  { "look": [2.6, -0.10] }, { "wait": 3 },
+  { "eval": "__sc()" },
+  { "resetStats": true }, { "wait": 6 }, { "stats": "village-idle" },
+  { "eval": "__game.game.world.grass.stats?.() ?? 'n/a'" },
+  { "eval": "__game.stats().systems" },
+  { "tp": [60, null, -40] }, { "wait": 14 },
+  { "eval": "__sc()" },
+  { "resetStats": true }, { "wait": 6 }, { "stats": "meadow-idle" },
+  { "eval": "__game.stats().systems" }
+]

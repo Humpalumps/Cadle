@@ -1,0 +1,8 @@
+[
+ { "wait": 12 },
+ { "eval": "(()=>{const x=120.6,z=-93.6,d=2.6,a=0.35;const px=x+Math.sin(a)*d,pz=z+Math.cos(a)*d;__game.setHour(11);__game.teleport(px,null,pz);__game.look(Math.atan2(-(x-px),-(z-pz)),0.02);return 'ok';})()" },
+ { "wait": 1.2 }, { "shot": "harl-anim" },
+ { "eval": "(()=>{const P=__game.game.world.props;const v=P.villagers[3];v.mixer.stopAllAction();v.mixer={update(){}};v.sway=null;v.mesh.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.pose();});return 'posed';})()" },
+ { "wait": 1.2 }, { "shot": "harl-bind" },
+ { "eval": "(()=>{const P=__game.game.world.props;const v=P.villagers[3];let sk=null;v.mesh.traverse(o=>{if(o.isSkinnedMesh)sk=o;});const g=sk.geometry,p=g.attributes.position,si=g.attributes.skinIndex;const nb=sk.skeleton.bones.length;const cnt=new Array(nb).fill(0);const bx=[];for(let b=0;b<nb;b++)bx.push([9e9,-9e9,9e9,-9e9,9e9,-9e9]);const sw=g.attributes.skinWeight;for(let i=0;i<p.count;i++){for(let k=0;k<4;k++){const w=sw.getComponent(i,k);if(w<0.25)continue;const b=si.getComponent(i,k);cnt[b]++;const q=bx[b];const X=p.getX(i),Y=p.getY(i),Z=p.getZ(i);if(X<q[0])q[0]=X;if(X>q[1])q[1]=X;if(Y<q[2])q[2]=Y;if(Y>q[3])q[3]=Y;if(Z<q[4])q[4]=Z;if(Z>q[5])q[5]=Z;}}return JSON.stringify(sk.skeleton.bones.map((b,i)=>({n:b.name,v:cnt[i],x:cnt[i]?[+bx[i][0].toFixed(2),+bx[i][1].toFixed(2)]:null,y:cnt[i]?[+bx[i][2].toFixed(2),+bx[i][3].toFixed(2)]:null})));})()" }
+]

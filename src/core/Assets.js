@@ -14,7 +14,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  *   game.assets.deferred[name]       -> Promise, resolved when a DEFERRED (region-theme) fetch has landed in this.audio
  *   game.assets.progress             -> 0..1;  event 'assets:progress' {loaded, total, item} for the HUD load bar
  *   game.assets.loadMs               -> total preload wall time
- * Texture keys: grass_albedo cliff_strata forest_soil beach_sand snow ruins_stone bark leaf_card glyph1 glyph2
+ * Texture keys: grass_albedo cliff_strata beach_sand snow ruins_stone bark leaf_card (+ the batch-4
+ *   region albedos and foliage cards below). Foliage cards are WEBP: lossless alpha at a third of the
+ *   PNG bytes (38-41 dB vs 33-39 dB for palette PNG). three's TextureLoader decodes it natively.
  * Model keys (rigged creature GLBs, see docs/CREATURE-PIPELINE.md): hound frostwolf drake treant golem
  *   sentinel sprite wraith riftling warden serpent giant   — src/enemies/glbBody.js consumes these.
  * SFX keys: shot-handcannon-1..4 shot-autorifle-1..4 shot-sniper-1..4 shot-shotgun-1..4 shot-pulse-1..4 shot-fusion-1..4 explosion-1..4
@@ -24,14 +26,16 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const TEX = {
   grass_albedo: { url: '/assets/tex/grass_albedo.jpg', repeat: true },
   cliff_strata: { url: '/assets/tex/cliff_strata.jpg', repeat: true },
-  forest_soil: { url: '/assets/tex/forest_soil.jpg', repeat: true },
+  // forest_soil / glyph1 / glyph2 removed 2026-08-29: preloaded, decoded and GPU-uploaded on every boot,
+  // and `assets.tex()` is never called with any of the three anywhere in src/ (verified by grep). 2.3 MB
+  // and three texture uploads that no material has ever sampled. The FILES stay on disk — Props' rune
+  // rings and the VFX sigils are still described in ASSETS.md as wanting them, so the next person to wire
+  // one up re-adds the key rather than re-generating the art.
   beach_sand: { url: '/assets/tex/beach_sand.jpg', repeat: true },
   snow: { url: '/assets/tex/snow.jpg', repeat: true },
   ruins_stone: { url: '/assets/tex/ruins_stone.jpg', repeat: true },
   bark: { url: '/assets/tex/bark.jpg', repeat: true },
-  leaf_card: { url: '/assets/tex/leaf_card.png', repeat: false },
-  glyph1: { url: '/assets/tex/glyph-ring-1.jpg', repeat: false },
-  glyph2: { url: '/assets/tex/glyph-ring-2.jpg', repeat: false },
+  leaf_card: { url: '/assets/tex/leaf_card.webp', repeat: false },
   // Destiny-2-polish wave batch (2026-08-25): per-region architecture/ground albedos + foliage cards.
   // All seamless (Moisan periodic decomposition, wrap-shift verified). See ASSETS.md batch 4.
   bark_gnarled: { url: '/assets/tex/bark_gnarled.jpg', repeat: true },
@@ -50,10 +54,10 @@ const TEX = {
   ash_basalt: { url: '/assets/tex/ash_basalt.jpg', repeat: true },
   egg_speckle: { url: '/assets/tex/egg_speckle.jpg', repeat: true },
   glove_leather: { url: '/assets/tex/glove_leather.jpg', repeat: true },
-  card_conifer_snow: { url: '/assets/tex/card_conifer_snow.png', repeat: false },
-  card_fern: { url: '/assets/tex/card_fern.png', repeat: false },
-  card_reed: { url: '/assets/tex/card_reed.png', repeat: false },
-  card_moss: { url: '/assets/tex/card_moss.png', repeat: false },
+  card_conifer_snow: { url: '/assets/tex/card_conifer_snow.webp', repeat: false },
+  card_fern: { url: '/assets/tex/card_fern.webp', repeat: false },
+  card_reed: { url: '/assets/tex/card_reed.webp', repeat: false },
+  card_moss: { url: '/assets/tex/card_moss.webp', repeat: false },
   granite_detail: { url: '/assets/tex/granite_detail.jpg', repeat: true },
 };
 // Rigged creature GLBs (concept -> Tripo generate+animate_rig -> local gltf-transform meshopt/webp -> here;

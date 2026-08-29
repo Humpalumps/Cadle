@@ -199,8 +199,13 @@ void main() {
   // it can never bloom at all — a blooming green lobe in front of the fen's pale noon haze was the last
   // 90 px white cluster (cvfx-final4 shadowfen a-5/6, rgb 211,242,207: the haze supplies the low channels
   // and bloom lifts the rest). Same decree as everywhere: the hue may be bright, only a pin may CLIP.
+  // 0.88, not 1.05. The ceiling is on the halo's OWN value, but the halo is ADDITIVE: over noon grass or a
+  // pale creature body the base is already 0.3-0.5 linear, so a lobe sitting exactly at the 1.05 bloom
+  // threshold sums past clip in every channel and the dart wears a white-pink ball (combat gate cb-fix2
+  // burst-cvfx-pfire-a-3, 437 px at rgb 237,233,231 over a frostwolf). Under 0.88 a non-pin halo cannot
+  // reach the threshold even with a bright surface underneath; the pin core keeps its full 1.3 sizzle.
   float cm = max(col.r, max(col.g, col.b));
-  float cap = mix(1.05, 1.3, vHot);
+  float cap = mix(0.88, 1.3, vHot);
   if (cm > cap) col *= cap / cm;
   #ifdef USE_FOG
     #ifdef FOG_EXP2

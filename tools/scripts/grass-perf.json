@@ -1,0 +1,12 @@
+[
+  { "wait": 6.0 },
+  { "hour": 12 }, { "tp": [0, null, 0] }, { "look": [-1.5708, -0.20] }, { "wait": 2.5 },
+  { "perfWindow": { "secs": 5, "label": "meadow" } },
+  { "tp": [140, null, -70] }, { "look": [0.70, -0.25] }, { "wait": 3.0 },
+  { "perfWindow": { "secs": 5, "label": "hamlet" } },
+  { "hour": 23 }, { "wait": 2.0 },
+  { "perfWindow": { "secs": 5, "label": "hamlet-night" } },
+  { "eval": "JSON.stringify(__game.stats().systems)" },
+  { "wait": 22 },
+  { "stats": "leak" }
+]

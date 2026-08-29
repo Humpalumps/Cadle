@@ -1,0 +1,7 @@
+[{"wait":32},
+ {"eval":"JSON.stringify({prog:__game.game.assets.progress, loadMs:Math.round(__game.game.assets.loadMs), tex:Object.keys(__game.game.assets.textures).length, models:Object.keys(__game.game.assets.models).length, audio:Object.keys(__game.game.assets.audio).length})"},
+ {"tp":[0,null,0]},{"look":[0,-1.15]},{"wait":2},{"shot":"b1-ground"},
+ {"look":[0,-0.2]},{"wait":1.5},{"shot":"b2-meadow"},
+ {"eval":"__game.god(true);__game.passive(true);__game.lineup(['treant','golem','sentinel']);'ok'"},
+ {"wait":5},{"look":[0,0]},{"wait":2},{"shot":"b3-creatures"},
+ {"stats":"final"}]
