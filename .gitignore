@@ -7,3 +7,4 @@ err.tmp
 *.tmp
 probe-*-tmp.mjs
 tools_out_dist/
+__pycache__/
