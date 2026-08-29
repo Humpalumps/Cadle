@@ -31,7 +31,9 @@ export class Game {
     this.canvas = canvas;
     this.params = new URLSearchParams(location.search);
     this.auto = this.params.get('auto') === '1';      // automation harness: no click-to-start, synthetic input allowed
-    this.quality = ['low', 'medium', 'high'].includes(this.params.get('q')) ? this.params.get('q') : 'high';   // ultra removed (2026-08-21): high IS the top preset
+    // ultra removed (2026-08-21): high IS the top preset. opts.quality is what main.js already built the
+    // renderer with (?q= if given, else the menu's saved preset) — taking it here keeps the two in step.
+    this.quality = opts.quality || (['low', 'medium', 'high'].includes(this.params.get('q')) ? this.params.get('q') : 'high');
     this.seed = Number(this.params.get('seed') || 1337);
     this.debug = this.params.get('debug') === '1';
 
@@ -75,7 +77,7 @@ export class Game {
 
   async _init() {
     // yield a frame between systems: terrain/grass/vegetation builds are long synchronous blocks, and the
-    // intro loading screen (src/ui/Intro.js) is animating on the same thread. Costs ~1 frame per system.
+    // loading screen (src/ui/Menu.js) is animating on the same thread. Costs ~1 frame per system.
     const bootT = [];                                  // ?debug=1 prints how long each system BLOCKED for
     for (let i = 0; i < this.systems.length; i++) {
       const s = this.systems[i];

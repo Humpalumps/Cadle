@@ -2,7 +2,7 @@
 #
 # Measured on cadle.gg 2026-08-22: assets came back with NO Cache-Control header at all and
 # `x-hcdn-cache-status: DYNAMIC` — so the CDN never held them, and every visit re-validated
-# every file against origin. guy.glb also arrived as `content-type: text/plain`.
+# every file against origin, and .glb arrived as `content-type: text/plain`.
 
 <IfModule mod_headers.c>
   # Vite build output: content-hashed name, so the bytes behind a URL can never change.
@@ -10,14 +10,15 @@
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 
-  # The asset pack is NOT content-hashed (guy.glb, grass_albedo.jpg, ...), so it cannot be
+  # The asset pack is NOT content-hashed (grass_albedo.jpg, menu_vista.jpg, ...), so it cannot be
   # immutable — a day is enough to kill the per-visit revalidation storm while still letting
   # a re-generated asset reach returning players the next day.
   <FilesMatch "\.(glb|jpg|jpeg|png|webp|mp3|ogg|ktx2)$">
     Header set Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
   </FilesMatch>
 
-  # The only mutable entry point. Never hold it, or a deploy is invisible.
+  # The only mutable entry points — / and /play/. FilesMatch tests the basename, so this covers
+  # both index.html files. Never hold them, or a deploy is invisible.
   <FilesMatch "^index\.html$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
@@ -28,8 +29,17 @@
   AddType image/ktx2 .ktx2
 </IfModule>
 
-# GLB (meshopt geometry + WebP textures inside), mp3 and jpg are already compressed —
-# re-compressing them costs CPU at both ends for ~5% (guy.glb: 484 KB -> 453 KB).
+# mp3, jpg and friends are already compressed — re-compressing them costs CPU at both ends for ~5%.
 <IfModule mod_deflate.c>
   SetEnvIfNoCase Request_URI \.(glb|jpg|jpeg|png|webp|mp3|ogg|ktx2)$ no-gzip dont-vary
+</IfModule>
+
+# /play (no trailing slash) must serve the GAME, not a redirect and not the landing page.
+#
+# The site is two pages: `/` is cadle.gg and `/play/` is the game. Apache's mod_dir would answer a bare
+# `/play` with a 301 to `/play/`, which works but costs a round trip on the one navigation that matters
+# — and the landing page's Play button links to `/play?start`. Serve it directly instead.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^play/?$ /play/index.html [L]
 </IfModule>

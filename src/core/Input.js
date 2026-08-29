@@ -57,6 +57,14 @@ export class Input {
       if (e.repeat) return;
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
       this.keys.add(e.code);
+      // These keys are swallowed so the PAGE does not act on them while you are playing - Space
+      // scrolls, Tab walks the browser's focus ring, arrows scroll. But only while you are playing.
+      // Unconditionally, this line killed keyboard navigation across the entire product: with a screen
+      // or the settings modal open, Tab moved focus nowhere at all (measured - `document.activeElement`
+      // stayed on <body> after ten real Tab presses in the inventory), so every focus ring in the game
+      // was unreachable by the people who need it most. If the pointer is not locked, the player is in
+      // a menu and the keys belong to the browser.
+      if (!this.locked && !this.synthetic) return;
       if (['Space', 'Tab', 'KeyF', 'KeyR', 'KeyE'].includes(e.code) || e.code.startsWith('Arrow')) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => { this.keys.delete(e.code); this.released.add(e.code); });

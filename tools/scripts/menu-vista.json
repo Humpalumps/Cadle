@@ -1,0 +1,10 @@
+[
+ {"wait":30},
+ {"eval":"window.__game.menu.hold(); window.__game.menu._shipFrame=()=>{}; clearInterval(window.__game.menu._liveTimer); window.__game.menu.prewarm(); document.getElementById('menucanvas').style.display='none'; document.getElementById('menu').style.display='none'; 'ok'"},
+ {"eval":"window.__game.menu.shot(0,{dx:5.5,dz:11,eye:2.35,yaw:0.140,pitch:0.012,fov:55})"},{"shot":"P1"},
+ {"eval":"window.__game.menu.shot(0,{dx:5.5,dz:11,eye:6.0,yaw:0.140,pitch:-0.05,fov:55})"},{"shot":"P2"},
+ {"eval":"window.__game.menu.shot(0,{dx:-14,dz:8,eye:1.9,yaw:-0.371,pitch:0.012,fov:55})"},{"shot":"P3"},
+ {"eval":"window.__game.menu.shot(0,{dx:12,dz:-4,eye:2.2,yaw:1.05,pitch:0.012,fov:55})"},{"shot":"P4"},
+ {"eval":"window.__game.menu.shot(0,{dx:-6,dz:16,eye:1.7,yaw:0.100,pitch:0.030,fov:55})"},{"shot":"P5"},
+ {"eval":"window.__game.menu.shot(0,{dx:16,dz:6,eye:2.6,yaw:-0.55,pitch:0.012,fov:55})"},{"shot":"P6"}
+]

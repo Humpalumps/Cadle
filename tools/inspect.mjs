@@ -31,13 +31,14 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { gameUrl } from './gameurl.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, arr) => { if (v.startsWith('--')) a.push([v.slice(2), arr[i + 1]?.startsWith('--') || arr[i + 1] === undefined ? true : arr[i + 1]]); return a; }, []));
 const name = args.name || 'run';
 const W = +(args.w || 1920), H = +(args.h || 1080);
 const q = args.q || 'high';
 const seed = args.seed || 1337;
-const base = args.url || process.env.CADLE_URL || 'http://127.0.0.1:5173/';   // CADLE_URL: run a second dev server (e.g. a worktree on another port)
+const base = gameUrl(args.url || process.env.CADLE_URL);   // CADLE_URL: run a second dev server (e.g. a worktree on another port). The game is at /play/; gameurl.mjs appends it.
 const outDir = path.resolve('tools/out', name);
 fs.rmSync(outDir, { recursive: true, force: true }); fs.mkdirSync(outDir, { recursive: true });
 
@@ -137,8 +138,12 @@ async function verifyServedTree() {
   // TREE at a server that is serving exactly the right code. A guard that false-positives is worse
   // than no guard - this one taught an agent to run with CADLE_SKIP_TREECHECK, after which none of
   // its captures could be trusted. Strip query and hash here, once; page navigation still uses `base`.
+  // The TRUE origin, not base's directory: the game moved to /play/ on 2026-08-28, and `src/...` is
+  // still served from the server root. Probing `${base}/src/main.js` asks for /play/src/main.js, the
+  // dev server answers with the app shell, and every probe "mismatches" — the exact false positive the
+  // paragraph above is about, one directory level later.
   const u = new URL(base);
-  const origin = u.origin + u.pathname.replace(/\/$/, '');
+  const origin = u.origin;
   const bad = [];
   for (const rel of probes) {
     let local;

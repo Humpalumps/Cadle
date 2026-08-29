@@ -6,7 +6,9 @@
 import { spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const BASE = process.env.CADLE_URL || 'http://127.0.0.1:5173/';
+import { gameUrl } from './gameurl.mjs';
+
+const BASE = gameUrl(process.env.CADLE_URL);
 const URL = BASE.replace(/\/$/, '') + '/?q=low&seed=1337'; // NO auto: test the real click-to-start + pointer lock path
 let failed = false;
 
