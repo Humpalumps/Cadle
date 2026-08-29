@@ -8,10 +8,11 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { gameUrl } from './gameurl.mjs';
 
 const a = Object.fromEntries(process.argv.slice(2).reduce((o, v, i, r) => { if (v.startsWith('--')) o.push([v.slice(2), r[i + 1]?.startsWith('--') || r[i + 1] === undefined ? true : r[i + 1]]); return o; }, []));
 const secs = +(a.secs || 8), q = a.q || 'high';
-const base = a.url || process.env.CADLE_URL || 'http://127.0.0.1:5173/';
+const base = gameUrl(a.url || process.env.CADLE_URL);
 const out = path.resolve('tools/out/hitchprobe'); fs.mkdirSync(out, { recursive: true });
 const cats = (typeof a.cats === 'string' ? a.cats : 'disabled-by-default-gpu.service,disabled-by-default-gpu.device,gpu,viz,toplevel,cc,blink,latency');
 

@@ -20,9 +20,10 @@
 //      processes starve the GPU (HANDOVER §4b). If this errors rather than fails, check for orphans
 //      before you believe it.
 import { chromium } from 'playwright';
+import { gameUrl } from './gameurl.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
-const BASE = (arg('--url', process.env.CADLE_URL || 'http://127.0.0.1:5173/')).replace(/\/$/, '');
+const BASE = gameUrl(arg('--url', process.env.CADLE_URL)).replace(/\/$/, '');
 const URL = BASE + '/?auto=1&q=low&seed=1337';
 
 let failed = false;

@@ -8,10 +8,11 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { gameUrl } from './gameurl.mjs';
 
 const a = Object.fromEntries(process.argv.slice(2).reduce((o, v, i, r) => { if (v.startsWith('--')) o.push([v.slice(2), r[i + 1]?.startsWith('--') || r[i + 1] === undefined ? true : r[i + 1]]); return o; }, []));
 const name = a.name || 'intro';
-const base = a.url || process.env.CADLE_URL || 'http://127.0.0.1:5199/';
+const base = gameUrl(a.url || process.env.CADLE_URL || 'http://127.0.0.1:5199/');
 const out = path.resolve('tools/out', name);
 fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
 

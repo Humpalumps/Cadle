@@ -9,6 +9,106 @@ Repo: `https://github.com/Humpalumps/Cadle` · branch `main` · everything below
 
 ---
 
+## 0. WHERE IT STANDS (2026-08-29) - read this before anything else
+
+Working tree: the `shader-compilation-worker-7299da` worktree, on `6579628`. **Nothing is committed** -
+43 changed files. The orchestrator commits; builders and critics never touch git.
+
+**The game itself is unchanged and verified.** Only three game files were touched this pass:
+`src/core/Input.js` (the Tab guard, §6.0i), `src/ui/ui.css` and `src/ui/screencss.js` (chrome tokens,
+chamfer removed). `invariants` OK, `curvecheck` OK, **`questgate` all OK** - both weapons fire and
+reload, ammo returns after running dry, all five quest objective types accept/tick/turn in, no page
+errors, memory flat. `tools/gate.mjs` has NOT been run since those edits: it refuses to start with other
+harness Chromes alive and will not accept a starved capture. **Run it first on a quiet machine.**
+
+The work of this pass is the front door:
+
+* the old cinematic intro is **deleted**. The game lives at **`/play/`** behind a title screen
+  (`src/ui/Menu.js`) that loads instantly and boots nothing until Play is pressed.
+* **`/` is a real marketing site** (`index.html` + `src/site/*`), a second Vite entry, shipping no engine
+  code. Every link is `/play/?start` WITH the slash - the slashless form needs a rewrite that only the
+  dev server and `public/.htaccess` provide. Region cards deep-link `/play/?start&at=<biome id>`.
+* the hero feature is **the range** (§6.0c/§6.0d): one unchanging reticle, a left click is a shot,
+  everything reacts, six creatures fall off the page when shot.
+* the brand mark is **new** (§6.0k below): an engraved gold ring with a cut amethyst, generated in
+  Magnific and split into three layers so it counter-rotates. Assets in `public/assets/ui/mark/`.
+
+### What is left before it can go live
+
+**Blocking:**
+1. ~~The loading screen.~~ **DONE.** All ten audit items closed - see §6.0h. The rendered bar now
+   reverses 3x per load with a worst reversal of 3.6 points (was 13-26x, worst 42.7); the fix was to
+   stop driving it with a CSS transition at all, because a transition has a *from-value* to revert to,
+   so a stale commit replays the whole move. It is a time-driven Web Animation seeked by `currentTime`,
+   which has only a stale *time*. Failure shows an error and a Reload button, `role="progressbar"` is
+   real, and the hand-off is a 2.6 s luma ramp instead of a single-frame 23 -> 136 slam.
+   **The phase budget is wired in `main.js`:** `menu.phases([...16 ids])`, then `menu.phase(id, label)`
+   on `boot:progress` - which Game.js emits AFTER a system's `init()` resolved, so main.js opens the
+   *next* phase, not the one named. `Menu` times each phase, persists to `localStorage` under
+   `cadle.loadms`, and spends the bar by the last load's milliseconds. Proved end to end by
+   `tools/out/phase2.mjs` (boots twice in one browser context): all 16 phases recorded both times, and
+   the second load spent 52% of the bar on `Player` because that is what `Player` actually cost. First
+   ever load has no record and falls back to equal weights.
+2. **`tools/gate.mjs` on a quiet machine.** It refuses to start with other harness Chromes alive
+   (`Get-Process chrome-headless-shell | Stop-Process -Force` first) and it defaults to `5173`, which is
+   the MAIN repo - **pass `CADLE_URL=http://127.0.0.1:5181`** or it fails with `WRONG TREE`.
+3. **One clean critic round.** Art direction, game feel and front-end have all returned DO NOT SIGN OFF;
+   the last two rounds of fixes have not been re-reviewed. Twice now a fix has re-opened the same defect
+   on the adjacent code path, so do not skip this.
+4. **Commit.**
+5. ~~The mark on `/play/`.~~ **DONE.** `play/index.html` carries the same favicon set as `index.html`,
+   `#brand .sig` is the three-layer `.mark3` build at 72px, and the loading screen's wheel is the same
+   mark with its `playbackRate` driven 1x -> 5x by the bar's own position (`playbackRate`, not
+   `animation-duration` - changing a duration reinterprets local time and the ring jumps on every write).
+   Nothing was added to the in-game HUD deliberately: an FPS reticle-and-ammo HUD does not carry a
+   wordmark, and putting one there is a design decision, not a wiring gap.
+
+**Done in the pre-launch cleanup (§6.0j):** no-JS content for the rail and weapon strip, the initial long
+task 205 ms -> 107 ms, above the fold 439 KB.
+
+**The gallery is done too:** re-shot so three frames carry no viewmodel and the other three use three
+different guns at three different angles (all six used to carry the same hand cannon in the same
+corner), `-sm.jpg` 800x450 variants wired through `srcset`, and captions rewritten to match what is
+actually in each frame. Both phone and desktop now fetch the small cut - about 1.4 MB down to 362 KB -
+while `src` stays the full-size file, because main.js reads it to build the lightbox.
+**Watch `sizes`:** at `100vw` a 430 px phone at DPR 2 asks for 860 device px and pulls the 1600 anyway,
+which defeats the whole exercise. It is `92vw`, and `tools/out/srcsetcheck.mjs` proves which cut each
+viewport actually fetches.
+
+**Nothing follows the cursor any more** (user, 2026-08-29). `magnetic()` is deleted: it listened on the
+*window* and translated a button toward the pointer from 120 px away, so the three Play buttons drifted
+about as you approached them. `tilt()` lost its rotation for the same reason - the `.tiltcard` panes are
+shootable, so the thing you were aiming at rolled away from the shot - and kept only the cursor-tracked
+glare, which let `transform-style:preserve-3d` and `will-change:transform` come off the card too. The
+reticle, the rail's drag and the backdrop's camera parallax are the only pointer-driven motion left, and
+all three are deliberate. `tools/out/jiggle.mjs` sweeps the pointer past every control from four sides at
+110/80/55/35/20 px and asserts 0 px of drift; run it if you touch `src/site/ui.js`.
+
+So the non-blocking list is closed. What remains is items 2, 3 and 4 above.
+
+### Servers and checks
+
+This worktree needs **its own** dev server - 5173 serves the MAIN repo and 5179 has been seen serving a
+different worktree entirely, so a run against either measures the wrong build.
+
+```
+node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js --port 5181 --strictPort --host 127.0.0.1
+node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js build
+node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js preview --port 5182 --strictPort --host 127.0.0.1
+$env:CADLE_URL='http://127.0.0.1:5181'; node tools/gate.mjs      # needs the GPU to itself
+```
+
+Site checks live in `tools/out/` (gitignored scratch, all take a base URL):
+`cssguard` (the inline sheet still parses to its last rule - one unterminated string once silently
+dropped every rule after it), `rangecheck`, `shootcheck`, `linkcheck` (every Play link, real mouse),
+`copyguard` (shoot a paragraph, read it back), `railhit`, `misscheck`, `a11y`, `nojs`, `clscheck`,
+`longtask`, `abovefold`, `siteperf`, `perfab2` (A/B a visual change against frame time), `loadbar`,
+`tabcheck`, `ingamesmoke`, `sitepage`, `beastshots`, `mark` + `markshot`.
+
+**Two traps that have each cost hours:** PowerShell's `Get-Content`/`Set-Content` mojibakes any BOM-less
+UTF-8 file - edit with Python or the Edit tool, never a PS round trip. And a harness run is only honest
+if the machine is quiet; a contended run reports failures it did not earn.
+
 ## 1. The job
 
 Build a browser FPS-RPG in Three.js at **Destiny 2** level for game feel and **Final Fantasy XIV** level for
@@ -87,7 +187,7 @@ after dark.
 - gap: the canopy still lets a lot of sky through, so there are no real light shafts (godrays need the
   canopy to occlude); the floor is still fairly bright green in full sun.
 
-**❄️ Frostveil Tundra — the frozen forest.** Reference: **Winterspring**. Not an empty steppe: it is a CONIFER
+**�?��? Frostveil Tundra — the frozen forest.** Reference: **Winterspring**. Not an empty steppe: it is a CONIFER
 FOREST buried in snow. Blue-white everything, pines with snow on the boughs, frozen lakes with cracked ice you
 can walk out onto, ice formations, icicles, a permanent aurora at night.
 - trees: **YES — frosted pines**, dense [p 0.34, gv 0.36, needles tinted 0.74/0.88/1.06, never summer green].
@@ -146,7 +246,7 @@ stone and light; nothing here is woodland.
   the middle: the colonnade kit is scattered, and it wants to be clustered into a plaza you walk to. Night
   not re-checked this pass.
 
-**🏔️ Dragon Peaks — the high mountain.** 200 m fangs of rock, ledges with dragon nests, a dwarven gate cut
+**�?��? Dragon Peaks — the high mountain.** 200 m fangs of rock, ledges with dragon nests, a dwarven gate cut
 into the mountain, the bones of whatever the dragons ate, wind and drums. Alpine, not forested.
 - trees: **a few dark alpine pines on the LOWER ledges only** [p 0.10, tint 0.70/0.78/0.68].
 - ground: bare strata rock [layer 3], almost no grass [0.07]. Crystals: **none** — broken mountain quartz at
@@ -160,7 +260,7 @@ into the mountain, the bones of whatever the dragons ate, wind and drums. Alpine
   (the accent that catches the eye) and **nests with eggs in them**.
 - gap: the nests are scenery, not an encounter, and there is still no loot for climbing.
 
-**🏰 The Lost Realm — where every magic meets.** Endgame. A violet flagstone plain, a rampart ring, sixteen
+**�?� The Lost Realm — where every magic meets.** Endgame. A violet flagstone plain, a rampart ring, sixteen
 monoliths, standing-stone circles, arcane shards, ceremonial light. Ruined and deliberate, not natural.
 - trees: **NONE** [p 0] — standing stones instead. Crystals: **YES, arcane shards** [BSPIRE 0.055]. One of the
   only four regions where a crystal is the honest answer, because this is where magic collects.
@@ -203,7 +303,7 @@ the throne room, kelp, anemones, the ribs of wrecks in the sand, whale-song and 
   chests and the crown at the foot of the throne.
 - gap: none measured this pass. The caustics were added late and only checked in the region-heart shots.
 
-**🕳️ The Void — reality gave up.** Shelves of dark violet stone over an abyss, islands hanging with nothing
+**🕳�? The Void — reality gave up.** Shelves of dark violet stone over an abyss, islands hanging with nothing
 holding them up, rubble that never landed, snapped pillars of something older, 0.55 gravity, no horizon.
 - trees: **NONE** [p 0] — nothing grows. Crystals: **YES, void shards** [BSPIRE 0.120] — jagged and violet,
   the densest spires in the world.
@@ -1001,44 +1101,520 @@ user decided 2026-08-23 that quests are written. See `CLAUDE.md` and invariant (
 
 ---
 
-## 6. The cinematic loading screen (do not undo these)
+## 6. The site and the title screen (do not undo these)
 
-A young man at his computer in a dark bedroom; **his monitor shows the game's own start screen** composited
-over the live world. On click he is pulled head-first into the monitor and the game starts. Files:
-`src/ui/Intro.js` + `src/ui/intro/{stage,room,character}.js`, `intro.html` (dev-only preview),
-`public/assets/intro/` (1.6 MB), `docs/intro-ref/` (art references, not shipped).
+### 6.0 Two pages, and the game is at /play/
 
-- It **shares the game's renderer and canvas** — that is what lets the monitor show a real render. So:
-  `Lighting.js` sets `shadowMap.autoUpdate = false` and the intro must set `needsUpdate = true` every frame
-  or the room goes black; and it must restore `toneMapping` / `shadowMap.enabled` / `setRenderTarget(null)`.
-- The transition runs on **wall clock**, not accumulated `dt` — impostor baking can still be hogging the
-  thread when the player clicks, and a dt-driven timeline turns a 2 s dive into 5 s of slow motion.
-- `#introui` is `pointer-events: none` with its listener on `window`, so the canvas's own
-  `mousedown → Input.lock` path still runs. A full-screen div that swallowed the click broke the gate's
-  pointer-lock re-acquire leg.
-- **`main.js` does NOT statically import `Game.js`** — it builds the renderer, puts the intro up with it, and
-  only then `await import('./core/Game.js')`. Importing it at the top meant a dark page until the whole game
-  chunk had downloaded.
-- **First frame is compile-bound, not download-bound**: the composer is built two frames after the room is on
-  screen, and `stage.setLightsFull(false)` paints the first frame against a cheap rig. 7.2 s → 2.0 s. If you
-  add lights or effects, re-measure — marks are logged as `[intro] boot ms:`.
-- Preload hints only work if the credentials mode matches (three's `TextureLoader` sets
-  `crossOrigin='anonymous'`); get it wrong and every asset downloads twice.
-- The character is **fully procedural** (`character.js`) — no model file, no loader, no placement constants.
-  The generated `guy.glb` was removed 2026-08-24; with it went `GUY_FIT`/`GUY_CHAIR`/`fitGuy`/`setChair` in
-  `stage.js`, the `<head>` preload in `index.html` and the `guyBuf` hand-off through `IntroHost` ->
-  `introWorker` -> `Intro`. There is nothing to tune live any more: the body is authored directly in the
-  room's coordinates, which is precisely what the GLB could not be (one rigid mesh, fitted by eye).
-  It also restores the animation — the GLB had `skinCount 0`, so the two-bone IK arms, the breathing idle
-  and the `setSuck()` reach were all dead while it was on screen.
-  `intro.html` gained two dev-only handles for this work and they are worth knowing about:
-  `__intro.renderer` / `__intro.composer`, and `__intro.post(on)` which toggles the effect stack **and**
-  promotes `RenderPass` to `renderToScreen` — without that promotion the composer blits nothing and the
-  preview silently freezes on the previous frame, which will quietly ruin any diagnostic capture.
-- `?auto=1` skips the intro entirely, so the harness sees what it always saw. `?auto=1&intro=1` runs it and
-  auto-plays; `&introhold=1` holds it for screenshots (needs `--noready`). `__game.intro.seek(t)` freezes the
-  transition at an absolute time. **The gate must wait for the game to be running before its click** — the
-  intro owns the screen for the first seconds, and a click at 4 s lands on the intro.
+`/` is **cadle.gg, a real marketing site**. `/play/` is the game (`play/index.html` -> `src/main.js`).
+`vite.config.js` lists both as build inputs. The landing page's Play button goes to **`/play?start`**,
+which is exactly "open /play and press Play": `play/index.html` puts the screen into its loading state
+during parse (so the menu never flashes) and `Menu.init()` calls `play()`. Both pages draw the same vista
+on the same shader and the landing page fades only its TYPE out before navigating, so the hand-over reads
+as a dissolve rather than a page load.
+
+**`/play` with no trailing slash needs help in two places** and both are done: a tiny dev-server
+middleware in `vite.config.js` (without it Vite 404s and the SPA fallback serves the LANDING page back —
+the Play button looped to itself, measured) and a `RewriteRule` in `public/.htaccess` for Apache.
+
+### 6.0b cadle.gg itself
+
+One document (`index.html`, inline CSS, no framework, no webfont), plus four small modules under
+`src/site/`. It never constructs a renderer, never imports three, never preloads a game asset.
+
+**The world behind the page.** ONE fixed full-viewport canvas (`scene.js`) running the SAME shader the
+title screen uses (`ui/menu/backdrop.js`, same worker), and every section carries a `data-place`. As a
+section takes the middle of the viewport the canvas CROSS-FADES to that place's frame — scrolling the
+site is flying across the map, and the region rail steers it directly. `Backdrop.crossTo()` is the whole
+trick: upload into whichever of the two textures is currently hidden and send the mix to it, so an
+arbitrarily long chain of images costs two textures and one uniform. The worker does the fetch and the
+decode (`{type:'layer', url}`), because decoding a JPEG on the main thread is a dropped frame at exactly
+the moment the user is scrolling. It pauses when scrolled past and on tab hide.
+
+**The component set is the game's** — see `src/site/ui.js`. Same `--spring` token as `ui.css`'s UI KIT,
+same beUI vocabulary: the segmented control in "What you do" is a FLIP (motion's `layoutId` by hand), the
+gallery opens the game's own centre-morph modal, gold corner studs and all.
+
+**The page is about the GAME, not the engine (user note, 2026-08-28).** The first version of it led with
+draw calls, triangle counts, an fps target and a list of rendering techniques. Nobody choosing a game
+cares. It now leads with what you do — 8 weapon archetypes with their real names, the four abilities with
+their real cooldowns, five loot tiers, 65 quests, 25 named creatures by region, and two bosses. Every one
+of those facts was read out of the running game (`__game` on the newest dev server), not written from
+memory. The only tech claim left is the one that is a player benefit: free, in the browser, no install.
+If you add a section, ask whose problem it solves — the player's or the author's.
+
+**Immersion pass.** A reticle replaces the cursor (fine pointers only, off under reduced motion — the
+`has-reticle` class is what hides the native one, and it is only ever added when the replacement is
+actually running). The game's own menu blips fire on hover and click. A sound toggle in the bar streams
+the REAL region theme and follows the backdrop as it travels — hero plays `night`, the Infernal section
+plays `forge`, dragging the rail to Frostveil plays `frost` — nothing fetched until the visitor asks.
+Images fade in off `load` instead of popping. The gallery arrows and keyboard through six frames. A
+hairline under the top bar tracks scroll. Both pages finally have a favicon (inline SVG, no request).
+
+**The rail** (`rail.js`) is ten cards on a shallow cylinder with drag, flick inertia, wheel, arrows and
+dots. It WRAPS (`wrap()` folds the index distance into [-n/2, n/2)) — without that the first card sits in
+the middle with an empty half-screen beside it. One float of state; every card is one transform write.
+
+Three things that cost real time and are now commented in place:
+* `body` must stay TRANSPARENT. `#ground` and `#scene` are its children at negative z-index, so an opaque
+  background on `body` paints straight over both and the page goes flat black.
+* the rail needs a `.railclip` WRAPPER with `overflow:hidden`. `overflow-x: clip` on the root does not
+  stop a fullPage capture reaching 4565 px, and `overflow` on the element that has `preserve-3d` flattens
+  the 3D.
+* `.rail`'s chrome (name, band, dots, arrows) lives OUTSIDE `.rail`, so `rail.js` looks it up on the
+  section. Querying the rail returned null for all of it and the arrows silently did nothing.
+
+Measured on the production build: FCP **376 ms** on throttled 3G, **318 KB above the fold** (296 KB of
+that is the hero, shared with /play/), 15 KB of JS, scroll at mean 16.7 ms / p99 18.5 ms with 2 frames
+over 33 ms in 3115. Screenshots live in `public/assets/site/` at three sizes — see ASSETS.md.
+
+**Every harness tool appends `/play/` itself** (`tools/gameurl.mjs`), so `--url` / `CADLE_URL` still take
+a bare origin. `inspect.mjs`'s served-tree guard probes the true ORIGIN, not the base's directory —
+`${base}/src/main.js` would ask for `/play/src/main.js`, get the app shell, and cry WRONG TREE.
+
+### 6.0d THE RANGE, v2 — EVERYTHING is shootable, and the reticle never changes (user, 2026-08-28)
+
+Two user decisions tightened the toy into the site's hero feature:
+
+* **"everything should be able to be shot".** `range.js` no longer needs a `.shootable` opt-in. A shot
+  resolves in three steps: a `.beast` (it flinches / falls), else a control (it spins, then does its job),
+  else the smallest SURFACE that owns the pixel — `figure, .tiltcard, .rail-card, .plate, .pane, .stat,
+  .railclip, .card, #bar, footer, section`. `section` is the backstop, which is why a shot into the sky
+  leaves a hole in the sky and why no pixel on the page swallows a click. A line of type additionally
+  takes the shock (`.struck`, transform only — a filter on a paragraph repaints the text under it).
+* **"the cursor shouldn't change just cause it goes over a model".** The reticle's hover/hot state is
+  gone from `ui.js` entirely, and `html.has-reticle *{cursor:none}` replaced the four-selector list. Two
+  DIRECT rules (`.beast{cursor:crosshair}`, `#gallery figure{cursor:zoom-in}`) had been beating the
+  INHERITED `cursor:none`, so the native pointer reappeared on top of the custom reticle over the two
+  things you most want to shoot. One universal selector cannot be out-specified by the next rule someone
+  adds.
+
+Costs that had to be paid for "anything":
+
+* **A global decal cap.** Per-target `MAX_HOLES` 8 was enough when eight elements were shootable; with
+  the whole page shootable a held trigger is unbounded. `MAX_TOTAL` 48, oldest-on-the-page first.
+  Measured: 90 rapid shots into empty art -> 8 holes, +135 DOM nodes, flat.
+* **`layerFor` promotes a static host to `position:relative`.** A hole is positioned against its host, so
+  a static section would fling every decal out to whatever ancestor was not static.
+* **No `.jolt` on a `section` / `#bar` / `footer`.** Shaking a viewport of content because someone clicked
+  the background is nausea, not feedback. (`.rail` was already excluded — rail.js writes a transform to
+  those cards every frame and the two together snap a card out of the cylinder.)
+* **The gallery lightbox is held 260 ms** (`src/site/main.js`). It used to open in the same frame as the
+  shot and land on top of the hole you had just made. Now the shot reads, then the picture expands.
+
+Also in this pass, from the UX review (all measured, all verified):
+
+* the lightbox is a real dialog — `role`/`aria-modal`, a visible ✕, and Tab cycling inside it. Before, six
+  Tabs from an open lightbox all landed in the top bar behind the scrim, and touch had no way out at all.
+* the segmented control implements the tab contract (`aria-selected`, `aria-controls`, `role=tabpanel`,
+  Arrow/Home/End) instead of just claiming `role="tab"`.
+* rail dots are real `<button aria-label>`s; rail cards that have rotated to `opacity:0` leave the tab
+  order; the rail has an INSET focus ring (an outline would be clipped by `.railclip{overflow:hidden}`).
+* **every region card deep-links into its own region** — `href="/play?start&at=<id>"`. All ten used to
+  point at `/play?start`, i.e. the Vale at level 1, under a label that said "Enter The Void, levels
+  34-44". Verified: `/play?start&at=void` lands at (-431, -431), `biomeAt() === 'void'`.
+* **reduced motion gets the art, not a gradient.** `scene.js` gated BOTH the worker and the in-thread
+  backdrop on `!reduced()`, so that visitor saw a flat purple gradient in place of all ten region vistas.
+  It now paints the same `-b.jpg` the canvas would have drawn onto `#ground` as a still. Reduced motion
+  is a vestibular setting, not "ship me less product".
+* mobile: the nav is a scrolling row instead of `display:none` with no replacement; `height:auto` on the
+  weapon and bestiary strips, because the HTML `height` attribute makes height definite and a definite
+  height makes `aspect-ratio` a no-op (measured 323x428 from a 1.78 source — the gun cropped out of a
+  photograph captioned about the gun).
+* `.shot` was two unrelated classes — the reticle's hit-flash and the bestiary image's layout wrapper — so
+  the bestiary screenshot played a brightness-1.75 flash once on load. The hit-flash is `.hitflash` now.
+
+Checks: `tools/out/cssguard.mjs` (277 rules, last rule still the reduced-motion block),
+`tools/out/rangecheck.mjs`, `tools/out/shootcheck.mjs` (headline flinches, sky takes a hole, one cursor
+value `none` on all eight probes, 10 distinct rail hrefs, cap holds), `tools/out/a11y.mjs`,
+`tools/out/siteperf.mjs` (mean 16.74 ms, p99 19.0, 5 frames > 33 ms in 3473 — unchanged),
+`tools/out/beastshots.mjs`, `tools/out/playat.mjs`.
+
+### 6.0k The brand mark (user ask, 2026-08-29)
+
+New emblem, generated in Magnific and split into three counter-rotating layers - see ASSETS.md for the
+pipeline and the files. Two decisions worth keeping:
+
+* **The favicon is the mark, downscaled.** A hand-drawn "simplified sibling" for 16 px was built and
+  rejected on sight: it was the flat clip-art look the new mark exists to replace. If the emblem ever
+  changes, re-cut the PNGs from the master, do not redraw it in shapes.
+* **The animated build goes where the mark is large.** The site's top bar uses the flat 96 px PNG; the
+  three layers are 91 KB and at 24 px nobody can see them turn.
+
+Still to do: `/play/`'s title screen sigil and the loading screen's spinner (whose comment has always
+claimed it speeds up with progress and never did - drive its ring off `_shown`), and the in-game HUD.
+
+### 6.0j The pre-launch cleanup, and two measurements that changed the answer (2026-08-29)
+
+**With JavaScript off, the rail and the weapon strip were empty.** The ten region cards were built by an
+inline script from a `REGIONS` array, so that visitor got an 840 px empty band and a dot list with no
+dots; the eight weapon frames ship `data-src` with no `src`, so they were eight hollow outlines under a
+headline about eight archetypes.
+
+The obvious fix - ship the markup with a real `src` - is WRONG, and the measurement says so: above the
+fold went **376 KB -> 1249 KB**. Chrome's lazy heuristic pulls in a transformed, stacked carousel card
+and an image inside a `display:none` pane whatever `loading="lazy"` says, which is the entire reason
+`data-src` exists on this page. So the rail cards are now real markup (they are content, and `rail.js`
+reads everything off their data attributes) but keep `data-src`, and the no-JS case gets a `<noscript>`
+carrying the ten regions and the eight archetypes as plain readable lists. `<noscript>` is only parsed
+when scripting is off, so it costs a normal visitor nothing. Above the fold: **439 KB**.
+
+**The long tasks were the browser, not the JavaScript.** Two on a static page, 205 ms at t=124 ms and
+~123 ms later. Profiled: script self-time is 6.7% and `(program)` - parse, style, layout, paint - is
+46%. So the lever is not code, it is how much document the browser has to style at once.
+`content-visibility:auto` on `#gallery` took the initial task to **107 ms**.
+
+**But `contain-intrinsic-size` has to be MEASURED, and CLS will not tell you when it is wrong.** Guessed
+values (1398/1488 against a real 1158/560) made the document 1654 px taller than it is until you
+scrolled far enough to lay those sections out, so the scrollbar thumb resized under the reader's hand -
+with **CLS 0.000 throughout**, because nothing visible moved. Real value on `#gallery` alone: 198 px of
+7069 settle, still CLS 0. Applied to `#end` too it was 486 px for no further gain, so `#end` does not
+get it.
+
+**The second long task is the feature.** Measured with the canvas on and off: 327 ms vs 77 ms - it is
+the WebGL backdrop initialising, ~3.4 s after load, when the page is already readable and interactive.
+Not chased.
+
+### 6.0i The shape of the chrome, and the line that killed keyboard nav (2026-08-29)
+
+**USER DECISION: no cut corners.** A chamfer was rolled across both the site and the game as the "house
+geometry" and the verdict was that the buttons and panels "are too tryhard with the cut off top left and
+bottom right corners". It is out of `index.html`, `src/ui/ui.css` (11 clips) and `src/ui/screencss.js`
+(19 clips), and the `--chamfer` token is retired so nobody reaches for it again. **The house shape is a
+radius from the scale, and a full pill on anything that behaves like a button.**
+
+**The buttons are beUI's** (beui.dev/components/motion/button), in this palette, because the user named
+that reference: a full pill, a metallic fill whose reflection drifts on a slow cycle, a rim and inner
+surface, a highlight swept on hover, and spring states - scale 1.02 up on hover, a real press down. The
+icon buttons are the same family at 40/52/34 px. Do not reintroduce a bespoke silhouette here; the ask
+was explicitly for this component, not an interpretation of it.
+
+**No em dashes anywhere a reader can see one.** 74 of them across `index.html` and the five
+`src/site/*.js` modules are hyphens now. The reason is not typographic: an em dash nobody typed is one of
+the clearest tells that copy was machine-written, and this page is selling a game made by people. If you
+add copy, use a hyphen. (Watch the replacement itself - doing it with `\s*—\s*` eats the NEWLINE when a
+dash ends a line and welds the next comment line onto the previous one. Replace the character, never the
+whitespace around it.)
+
+**`Input.js` was preventing Tab's default unconditionally, and that killed keyboard navigation across the
+entire product.** One line swallowed Space, Tab, F, R, E and the arrows on every keydown at all times -
+including with a full-screen RPG screen or the settings modal open. Measured: `document.activeElement`
+stayed on `<body>` after ten real Tab presses in the inventory, so every focus ring in the game was
+unreachable by exactly the people who need one. It is gated on `this.locked || this.synthetic` now: the
+pointer lock IS the signal, because `Screens.js` calls `exitPointerLock()` whenever a screen opens. After
+the fix, eight Tabs walk three distinct stops and cycle. `tools/out/tabcheck.mjs` is the check - note it
+has to clear `synthetic` by hand, because under `?auto=1` the harness is legitimately driving the keys.
+
+**Two things the site's shape work also fixed:** the hero's `text-indent:-.06em` was pushing the C of
+CADLE off the left of the viewport at display size (an optical correction larger than the overhang it
+caused), and the golem "floating" over the world section's bottom edge was already geometrically exact -
+its seat and the section boundary both measured y=529 - but the boundary was a 35 px tonal GRADIENT.
+Nothing can sit on a gradient. The scrim now holds flat and steps at the very bottom, with a two-tone
+engraved rule on top, so there is an edge to sit on.
+
+### 6.0h The loading bar, and the button that looked like a framework default (2026-08-28)
+
+**The bar ran backwards.** `Menu.setProgress` took whatever it was handed, and FOUR independent sources
+feed it: `assets:progress`, `boot:progress` (emitted per system by `Game.js` AND separately by
+`Assets.js`, `World.js` and `Player.js` for their own sub-steps), then `warmScene` and `warmFrames`. Any
+ordering that delivered a lower number after a higher one ran the bar the wrong way — and because the
+fill is a linear CSS transition, that is not a flicker, it is a full second of the bar travelling
+backwards. It is **monotonic** now: `if (p < this._progress) p = this._progress`. Add a fifth source
+later and it still cannot reverse.
+
+**And it froze.** Instrumented across a real load, the bar stood still five times, worst **3.3 s** —
+which reads as a hang exactly the way a reversal reads as a fault. So the target written to the DOM is
+now a little AHEAD of the truth: `_paint()` approaches a ceiling (`min(.985, p + .09)`) by 22% of the
+remaining gap per tick, driven by a 400 ms interval, and the real update overtakes it. It is a crawl, so
+it never arrives and never promises anything that has not happened; and it is written as a transform with
+a long linear transition, so the compositor keeps it moving through a main-thread stall that would freeze
+any rAF-driven version. Measured after: **zero backward steps** at both the call level and the rendered
+level, longest still 2.3 s and that is up at 98%.
+`tools/out/loadbar.mjs` is the check — it hooks `setProgress` AND samples the rendered transform every
+150 ms, because the two can disagree and only the second one is what a player sees.
+
+**The gold Play button read as a framework default, because it was one.** A rounded gold gradient with a
+chevron built from a square with two borders rotated 45 degrees is the shape any CSS starter hands you.
+It is drawn now: a cut corner top-left and bottom-right so the silhouette is not a rectangle, a struck
+hairline rule set inside the fill the way a metal plate carries one, a brushed grain under the ramp
+rather than a three-stop gradient, a sheen that sweeps once on hover (a transform, so it is free), a
+pressed state that SINKS — the highlight moves from the top edge to the bottom and the lift goes — rather
+than the usual scale-down, and a drawn arrow with a tail. `/play`'s loading track carries the same cut, so
+the two pages read as the same object.
+
+**The rule this establishes:** anything on either page whose shape is the shape CSS gives you for free —
+a plain rectangle, a uniform radius, a 1px solid border with no inner rule, a rotated square standing in
+for a glyph — is a thing nobody drew. The house geometry is the cut corner, the inset rule, and the gold
+corner stud.
+
+### 6.0g The sign-off loop, and the four traps it kept finding (2026-08-28)
+
+Three senior critics — art direction, game feel, front-end — reviewed the running page in rounds, each
+told not to sign off unless it beat a shipped AAA studio site. Nobody has signed off yet. What is worth
+keeping is not the list of fixes, it is the four MECHANISMS underneath them, because each one produced a
+fresh defect in a fresh place every round:
+
+**1. A broad `#section img` rule eats the next prop that lands in that section.** It ate the wraith
+(`#gallery img`, 1601 px wide), then the moth (`#foes .shot img`, stretched to 591x104), and the mobile
+copy of the second rule still had to be fixed separately. Every image rule scoped to a section now reads
+`img:not(.beast)`. **Write it that way the first time.**
+
+**2. A state class on `.beast` must out-specify every idle it can collide with.** `.beast.grounded.idle`
+is (0,3,0); `.beast.flinch`, `.beast.dead` and `.beast.respawn` were all (0,2,0), so three creatures
+could not flinch, could not die, and — once the flinch was raised — never stopped flinching, because the
+class was never removed. Both halves are the same trap.
+
+**3. An HTML `height` attribute makes `aspect-ratio` a no-op.** This was found once, fixed inside
+`@media (max-width:600px)`, and shipped broken at every desktop width for another two rounds: 129x428
+from a 1.78 source, guns cropped out of a section arguing the guns are different. `height:auto` belongs
+on the base rule.
+
+**4. A protective WHITELIST always loses.** Bullet holes were kept off `.plate/.pane/.card` — three
+elements, while 37 of 72 readable text blocks sat outside them, and the hero's own pitch measurably lost
+four characters. It is inverted now: `section > .wrap,.plate,.pane,.card{position:relative;z-index:1}`
+over `section > .holes{z-index:0}`, so a section's decals are behind its content by default and art opts
+back out. Verified by shooting the pitch three times and reading it back.
+
+Three more that are worth naming on their own:
+
+* **`.rail-track` was occluding its own cards.** `inset:0` with `pointer-events:auto` at z=0 inside the
+  `preserve-3d` space meant every card pushed back to `translateZ(-90/-180px)` was unclickable: a
+  228-point grid found the middle card 100% hittable and both neighbours **0%** — seven region links
+  keyboard-activatable, one mouse-activatable. `.rail-track{pointer-events:none}`; the drag binds to
+  `.rail`, so the track never needed to be a target.
+* **`.rail-card` must NOT be in range.js's `CONTROL`.** `.spun` animates a transform and rail.js writes
+  an inline transform to every card every frame; the spin threw "The Void" **885 px** out of the cylinder
+  before it snapped back. It takes a hole instead, like the art it is.
+* **On the production artifact every Play link returned the landing page.** The `/play` rewrite lived
+  only in `configureServer`. Links point at `/play/?start` now (the form that needs no rewrite anywhere)
+  and `vite.config.js` has a `configurePreviewServer` so `npm run preview` can prove it.
+
+**And the page must survive with JavaScript off.** `.reveal` shipped at `opacity:0` — 49 of 49 elements
+invisible, including the h1 and both CTAs — which was also why LCP was gated on a 0.9 s transition
+rather than on bytes. An inline `html.js` set before first paint does the hiding now; the reduced-motion
+block has to match `.js .reveal` too, or arming it leaves 43 of them invisible for that visitor.
+
+New checks in `tools/out/`: `linkcheck.mjs` (every Play link, real mouse, fresh page each),
+`copyguard.mjs` (shoot a paragraph, read it back), `railhit.mjs` (per-card hit-test grid + spin
+excursion), `misscheck.mjs` (a miss must look like a miss), `beasthit.mjs`, `hitfeel.mjs`,
+`killflash.mjs`, `nojs.mjs`, `perfab2.mjs` (A/B a visual change against frame time — the lit band's
+first version cost 139 dropped frames per scroll and this is how that was found).
+
+### 6.0f The creature props, and why a hit did not read (2026-08-28)
+
+Two user reports, both correct, and both with a single mechanical cause underneath.
+
+**"These ones don't get shot."** They did — every click decremented hit points. What did not happen was
+the FLINCH, on exactly the three creatures carrying `.grounded`:
+`.beast.grounded.idle{animation:breathe}` is specificity (0,3,0) and `.beast.flinch` was (0,2,0), so the
+idle won the `animation` property and the hit animation never ran. Measured: hound, golem and sentinel
+moved **0.7-0.8 px** when shot (that is the ambient idle) and did not change brightness at all. `.dead`
+and `.respawn` were (0,2,0) too, so the death was suppressed by the same rule — shoot a hound three
+times and it does nothing, then stops responding to clicks for 26 s. The state classes are
+`.beast.flinch,.beast.idle.flinch,.beast.grounded.idle.flinch` now, and the same for `.dead`/`.respawn`.
+**Any state class on `.beast` must out-specify every idle it can collide with, or it silently loses.**
+The other half of the trap: `.flinch` then has to come OFF again (`animationend`), or the creature that
+just won the specificity fight never animates again.
+
+**"They aren't positioned right — the one sitting down should be sitting ON the seam, not with its feet
+on it and its backside in the air."** Also exactly right. A creature is placed by the part of it that
+TOUCHES, and that is not the bottom of its box: a sitting golem's lower legs hang below its seat, and a
+sprite carries 4-14% transparent padding under its last solid pixel because its baked shadow needs room.
+So each perched creature now carries `--contact`, the fraction of its height where it meets the world,
+measured off the artwork — golem `.74` (the seat), hound `.87`, sentinel `.935`, drake `.74` (claws, not
+tail tip). `.beast.perched` turns that into `margin-bottom:calc((var(--contact) - 1) * var(--bh))`, so
+`bottom` positions the EDGE and the margin drops the overhang past it. Verified: the sentinel's boots and
+the hound's paws both land on y=970-972 at 1600x900, the same line.
+
+**A cut-out prop must never straddle a hard edge between two backgrounds.** The sentinel was half on the
+bestiary plate and half on lit grass with a 1px gold rule bisecting its chest. There are exactly three
+coordinates that guarantee this by construction — a section boundary, a plate border, and a scrim
+terminator — and anchoring a creature to any of them is the bug. One coherent field, and it has to touch
+something.
+
+**What a hit does now** (`range.js`): body flinch away from the shot side with a 55 ms colour blowout,
+an expanding shockwave, a floating damage number offset up-left of the impact (the reticle sits ON the
+impact, so a number there is a number nobody reads), a health-pip row over the creature that STAYS up
+while it is wounded, 60 ms of hit-stop (120 on a kill), and a synthesized blip. Shots are alpha-tested
+against the sprite — 39-56% of every creature's box is transparent air, and a click into it used to be a
+free hit; it is a miss that puts a hole in whatever is behind it.
+
+**Two things the range must not do to the site:** `.plate`, `.pane` and `.card` are NOT in `SURFACE`, so
+a shot into a reading panel falls through to the section behind it — permanent 56 px decals over 15 px
+body copy made three paragraphs unreadable for the rest of the visit. And `jolt` never shakes a reading
+panel.
+
+**A perf trap worth remembering:** the lit band's first version gave `#world`'s head and meta row a
+2400 px-wide radial gradient each, and repainting those every scroll frame took the page from p99 16.8 ms
+with zero frames over 33 to **p99 116.8 with 139 of them** — A/B measured with `tools/out/perfab2.mjs`,
+which is the pattern to copy whenever a visual change might cost frames. It is two gradient layers on the
+section's existing `::before` now. Same class of trap: `rail.js` writes `--veil` on ten cards every frame,
+and as an `rgba()` background-colour that repainted all ten (p99 24.5); as `opacity` it is free.
+
+### 6.0e What the second art-direction pass found (2026-08-28)
+
+A fresh critic drove the whole site at 1600 and at 430 and came back with twelve. The five that mattered:
+
+* **`.plate` had no background at all.** `background:rgba(9,7,20,.62),var(--glass)` is INVALID CSS — a
+  `<color>` is only legal in the LAST background layer, so the entire shorthand was dropped and every
+  plated section on the site was body copy sitting straight on a blurred screenshot at about 2.8:1. The
+  browser does not warn; the plate still had its border and its `backdrop-filter`, so it still looked like
+  a plate. **Any time a plate looks washed out, check that its `background` shorthand is legal before
+  anything else.** It is one valid gradient layer now.
+* **The drake was floating.** It was positioned against `#end`, which has no relationship to where the
+  `.flourish` rule actually renders, so it perched on nothing. A creature that perches has to be a CHILD
+  of the thing it perches on (`#end .flourish .beast.drake{bottom:100%;margin-bottom:-16px}`) — measured
+  13 px of overlap with the rule at 1600.
+* **The rail told you the wrong bestiary for nine regions of ten.** `rail.js` had lookups for
+  `.rail-name` (an element that no longer exists), `.rail-blurb` and `.rail-band`, and none for
+  `.rail-foe` — so the Vale's creature line stayed under every other region's name. The string was
+  already in `REGIONS`; it just was not carried onto the card. Fixed via `data-foe` + a `foeEl` write.
+* **The rail card was the only navigation control that took a hole instead of spinning** — it is an
+  `<a href>`, and the primary conversion in that section. It is in `CONTROL` now.
+* **The moth and the wraith had no colour** — median HSV saturation 0.03 and 0.05 against 0.23-0.50 for
+  the other four, so on a gold-and-violet page they read as grey cut-outs, and the moth was the brightest
+  non-type object in the hero. Both are tinted 62% toward `--aether` at bake time (a blend, not a flat
+  multiply — a full multiply throws the painting away) and darkened. Now 0.38-0.42.
+
+Also: the spin opened on `brightness(1.9)`, so a gold control read as a white bar for the first ~100 ms
+(1.35 now); phone tap targets were 23 px (44 now); the gallery lightbox hold went 260 -> 520 ms because
+260 was still opening the scrim while the decal was scaling in.
+
+**Two of its findings were wrong, and are worth writing down so nobody re-fixes them:** the creature
+sprites DO carry baked shadows (compositing all six over a light plate shows them; the critic sampled the
+last few rows of a Gaussian tail and found alpha ~0), and the mobile nav was already fixed before the
+review finished — the selector had been `#bar .wrap`, which matches nothing because `#bar` has no `.wrap`
+child, and is `#bar{flex-wrap:wrap}` now.
+
+**The weapon strip was six photographs of the same place** � identical aetheryte, identical grass,
+identical hour in all six, one muzzle flash between them, under copy that says each gun is "in hand and
+firing". Re-shot: six regions, six hours, six camera angles, HUD hidden and viewmodel kept, the shot
+actually landing (`god(true)`/`passive(true)`, a spawned target, and a burst of frames around the trigger
+because a muzzle flash lives 0.03 s and a tracer 0.14-0.25 s). 531 KB -> 354 KB. Script: `tools/out/wshots.json`.
+
+**A standing decision, so it stops being re-raised:** the six 1600 px GALLERY frames keep their HUD on
+purpose — their heading is "All of this is the game running" and their caption says screenshots from the
+live build, so a HUD-less capture there would be the dishonest version. The region cards, the backdrops
+and the weapon strip are all captured clean.
+
+### 6.0c THE RANGE — the page is the shooter (user ask, 2026-08-28)
+
+`src/site/range.js` + the THE RANGE block in `index.html`. The cursor is a reticle, a left click is a
+shot, and everything on the page knows what being hit looks like:
+
+* **controls** spin a full 360 (no back face to build, nothing can land backwards) and still do their job
+* **pictures** keep the bullet hole, permanently, where you clicked — capped at 8 per target, oldest
+  recycled
+* **six creatures** sit around the page; hits flinch them, enough hits and they fall out of the document
+  and come back 26 s later. A `N / 6 cleared` tally appears after the first kill.
+
+**THE RULE: not one line of range.js calls preventDefault.** The listener is `capture: true, passive:
+true` — it cannot delay anything. The only delay on the page is the 240 ms leave-fade main.js already had
+before /play, and the spin plays inside it. A visitor who never notices the toy clicks a link and it works
+at the speed it always did.
+
+Four things this cost, all now commented in place:
+
+* **No `filter` on an animating element.** `drop-shadow` on the six idling creatures re-ran every frame:
+  scroll p99 18.5 ms -> 112 ms. The shadow is baked into the sprite and `.idle` is removed by an
+  IntersectionObserver when a creature scrolls out of view.
+* **`.jolt` must not touch a rail card.** The shake is a `transform` animation and rail.js writes a
+  transform to those cards every frame; both together snap the card out of the cylinder for 300 ms.
+  `punch()` skips the shake inside `.rail` — the hole still lands.
+* **`#gallery img` was an ID selector** and claimed the creature standing in that section, stretching it
+  to 1601 px across the heading. It is `#gallery figure img` now. Any broad `#section img` rule will do
+  the same to the next prop that lands there.
+* **The hole has to carry its own darkening AND its own bright rim.** A dark-only decal vanishes into the
+  Void's night shots, a bright-only one vanishes into the meadow. The first version was 34 px with
+  hairline cracks and read as dust — it is 56 px now, checked on the actual page.
+
+`tools/out/rangecheck.mjs` drives all of it (hole lands, tab spins AND switches, creature dies, tally
+counts, link still navigates) and `tools/out/cssguard.mjs` asserts the inline stylesheet still parses to
+its last rule — one unterminated string in it silently dropped every rule after it and the page still
+rendered, just wrong.
+
+### 6.1 NOTHING LOADS UNTIL PLAY (user decision 2026-08-28)
+
+Landing on `/play/` builds **no renderer, no `Game`, no 29 MB asset preload, no terrain**. Verified:
+6 s after load, `window.__game.game` is undefined and the game canvas is still 300 px wide.
+
+`main.js` has one `boot()` and exactly three callers: `menu.onPlay` (Play), `menu.finished` (skip or the
+hand-off — this is how `tools/gate.mjs` and `questgate.mjs` get a game after calling
+`__game.intro.skip()`), and an immediate call when there is no menu (`?auto=1`). It is idempotent.
+
+Two traps this cost, both now commented in `main.js`:
+* `menu.onPlay` must be wired **before** `menu.init()` — `?start` makes init() call play() synchronously.
+* the `let game, booting` declarations must sit **above** the menu block, or that same path hits a
+  temporal dead zone (`Cannot access 'booting' before initialization`).
+
+What it costs: time-to-play is now the full ~13 s build after the click instead of overlapping with
+menu browsing. What it buys is the thing that was asked for — a page that is idle until you ask it for
+something. The engine's *code* is still fetched on landing (`import()` at the top of `main.js`, never
+awaited), which is a download, not a boot.
+
+### 6.2 The title screen
+
+
+
+Replaced the cinematic bedroom intro on 2026-08-28. Menu on the left, the Vale on the right, Play sweeps
+the items out and the loading bar takes their place. Files: `index.html` (the markup AND every style it
+needs, inline), `src/ui/Menu.js`, `src/ui/menu/{backdrop,backdropWorker}.js`. Deleted with the old one:
+`src/ui/Intro.js`, `src/ui/IntroHost.js`, `src/ui/intro/*`, `intro.html`, `public/assets/intro/` (304 KB).
+
+**The two rules, and everything below is one of them:**
+
+**(1) It must be on screen before JavaScript runs.** The finished title screen is markup + inline CSS in
+`index.html`, so the browser paints it during HTML parse. `main.js`'s only static import is `Menu.js`,
+which imports only `menu/backdrop.js` — **no three, no engine**. three, `Renderer.js` and `Game.js` are all
+`await import(...)`ed *after* `menu.init()`. Put a static `import ... from 'three'` back at the top of
+`main.js` and you have undone the whole thing: nothing in that file can run until the engine has parsed.
+`ui.css` (40 KB, HUD-only) is loaded `media="print"` and flipped to `all` on load so it cannot block either.
+
+**(2) Nothing it shows can be frozen by the world build.**
+- The backdrop is raw WebGL2 (one program, one full-screen triangle) on an **OffscreenCanvas in a Worker**.
+  `?worker=0` or no OffscreenCanvas falls back in-thread, then to the CSS gradient already on the canvas.
+- Its `push` / `dim` / `warp` / `calm` ramps run **on the worker's own clock** (`RATE` in `backdrop.js`).
+  The menu sends a target once and never has to be alive again. Driving them per-frame from the main
+  thread would stutter them through exactly the stalls the worker exists to survive.
+- The loading bar's fill is `transform: scaleX()` with a **1.1 s linear CSS transition**, and the leading
+  spark is a full-width box translated by `p * 100%`. The compositor keeps interpolating both through a
+  multi-second main-thread stall. Never animate that bar's `width` or `left`.
+
+**The backdrop has three lives, cross-faded:** procedural sky (instant, no asset) -> `menu_vista.jpg`
+(a still of the real game, fetched inside the worker) -> the LIVE game once the world exists. The still
+was captured through the SAME camera the live backdrop uses, so the swap reads as the picture waking up.
+
+**The live backdrop draws through PostFX, using the GAME's camera.** Not a private camera into a render
+target: the composer's `RenderPass` and every effect are bound to `game.camera` at `PostFX.init`, so bloom,
+godrays, AO, the ACES grade and SMAA are only reachable by moving that camera. A menu backdrop without them
+measurably reads as an asset viewer, not as the game. `Menu.prewarm()` writes down what it borrows —
+camera pose + fov, `sky.hour` + `sky.dayLength`, the viewmodel scene's visibility — and `_teardown()`
+puts all of it back, on the hand-off path AND on `skip()`.
+
+- **`CAM` is an OFFSET FROM THE PLAYER, and a small one (5.5 m across, 11 m back).** Terrain and Vegetation
+  LOD follow `game.camera`, but **Grass builds its rings around `game.player.position`** and the player does
+  not move while the menu is up. The first capture pass parked the camera 100 m out and the meadow rendered
+  as a flat green lawn. Inside the 18 m near ring it is a field of blades.
+- **The menu pins the clock** (`MENU_HOUR`, golden hour) and freezes `dayLength`. Without that an unattended
+  title screen drifts into night in about four minutes — the day cycle is 20 real minutes.
+- The player system is deliberately NOT stepped (its update drives the camera from the player's head), nor
+  are rpg/audio/hud/enemies/combat.
+
+**Pointer lock.** The lock is taken in `play()`, inside the Play click's transient activation — anywhere
+later the gesture is gone and Chrome refuses. `#menu` is `pointer-events: none` except the nav and the
+open panel, so a click on the art still reaches the canvas's own `mousedown -> Input.lock` path. At
+hand-off, if the lock did succeed, the menu dispatches a `pointerlockchange` so the HUD (which did not
+exist when it was taken) flips out of its start state.
+
+**Harness.** `?auto=1` removes the menu entirely — the harness sees what it always saw. `?auto=1&menu=1`
+runs it anyway and auto-plays 4 s after arming; `&hold=1` (or `__game.menu.hold()`) holds it for
+screenshots (needs `--noready`). `__game.intro` is kept as an alias of `__game.menu` because
+`tools/gate.mjs` and `tools/questgate.mjs` call `__game.intro.skip()`. `__game.menu.shot(t, over)` draws one
+menu-camera frame straight to the canvas — that is how `menu_vista.jpg` is re-captured
+(`tools/scripts/menu-vista.json`, see ASSETS.md).
+
+**Graphics preset is chosen in the menu** and stored as `localStorage['cadle.q']`. `?q=` still wins.
+`main.js` passes it to both `createRenderer` and `new Game(canvas, { renderer, quality })` — `Game.js`
+takes `opts.quality` so the renderer and the systems can never disagree.
 
 ---
 
@@ -1055,3 +1631,4 @@ commit message explains the why. Revert points: `v0.1.0-stable`, `v0.1.1-stable`
 
 **Git is the orchestrator's.** Builders and critics never commit, push, checkout or reset — edit your files
 and report; the orchestrator commits between waves.
+

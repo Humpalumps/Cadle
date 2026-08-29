@@ -1,7 +1,4 @@
-import { WebGLRenderTarget } from 'three';   // scratch target for the boot warm frames
-import { createRenderer, compileForComposer, renderForComposer } from './render/Renderer.js';
-import { Intro } from './ui/Intro.js';
-import { IntroHost, canUseIntroWorker } from './ui/IntroHost.js';
+import { Menu } from './ui/Menu.js';   // ~9 KB and imports NOTHING but its own backdrop — see below
 
 // ?fresh=1: clean slate for demo recording — new character, quest from the top
 if (new URLSearchParams(location.search).get('fresh')) {
@@ -10,33 +7,68 @@ if (new URLSearchParams(location.search).get('fresh')) {
 
 const canvas = document.getElementById('game');
 
-// LOAD ORDER IS THE WHOLE POINT HERE.
-// `Game.js` statically imports the entire game (~530 KB gzipped); importing it at the top of this file
-// meant nothing could paint until all of it had downloaded and parsed — on a real connection that is the
-// page sitting dark for seconds while the tab title counts to 40%. So: build the renderer here, put the
-// intro on screen with it, and only THEN dynamically import Game so its chunk downloads behind the
-// loading screen it is supposed to be loading behind.
+// LOAD ORDER IS THE WHOLE POINT HERE, AND IT IS STRICTER THAN IT LOOKS.
+//
+// `Game.js` statically imports the entire game and three itself is ~600 KB to parse. Anything this file
+// imports STATICALLY has to be downloaded and parsed before a single line of it runs. The old boot
+// imported three and Renderer.js at the top — so even though the intro was "first", it could not start
+// until the whole engine had parsed, and the intro then needed its own scene, its own textures and its
+// own composer before it drew anything at all.
+//
+// Now: index.html paints the finished title screen during HTML parse (markup + inline CSS, no JS at
+// all), this file's only static import is the menu, which imports nothing heavier than a 200-line
+// WebGL2 backdrop, and the engine is pulled in dynamically AFTER the menu is live. The player sees the
+// menu essentially at first paint; three, the renderer and the world download behind it.
 const PARAMS = new URLSearchParams(location.search);
-const USE_INTRO = PARAMS.get('auto') !== '1' || PARAMS.get('intro') === '1';
-const QUALITY = ['low', 'medium', 'high'].includes(PARAMS.get('q')) ? PARAMS.get('q') : 'high';
+const USE_MENU = PARAMS.get('auto') !== '1' || PARAMS.get('menu') === '1' || PARAMS.get('intro') === '1';
+// ?q= wins; otherwise whatever the player chose in the menu's Settings panel last time.
+const QUALITY = ['low', 'medium', 'high'].includes(PARAMS.get('q')) ? PARAMS.get('q')
+  : (() => { try { const q = localStorage.getItem('cadle.q'); return ['low', 'medium', 'high'].includes(q) ? q : 'high'; } catch (e) { return 'high'; } })();
 
 window.__game = { errors: [] };          // exists from the first line so early failures are still reported
 window.addEventListener('error', (e) => window.__game.errors.push(String(e.error?.stack || e.message)));
 window.addEventListener('unhandledrejection', (e) => window.__game.errors.push(String(e.reason)));
 
-const renderer = createRenderer(canvas, QUALITY);
-// The intro runs OFF the main thread when the browser allows it (IntroHost -> intro/introWorker.js), so
-// the world build below — seconds of blocking work — cannot stutter the loading screen. Same public API
-// either way; ?worker=0 (or a browser without OffscreenCanvas) falls back to the in-thread Intro.
-const introOpts = {
-  canvas, renderer, params: PARAMS,
-  introCanvas: document.getElementById('introcanvas'),
+// --- 0. start the engine CODE downloading, and do NOT build anything with it -----------------------
+// These fetches begin the moment this line runs, on the network thread, while the menu below is wired
+// up — so having the code ready costs nothing in wall time and makes Play snappier. It is a download,
+// not a boot: no renderer, no Game, no asset preload, no world. (User decision 2026-08-28: landing on
+// the page must not start the game loading. Nothing but Play does that — see boot().)
+// It also must not be a STATIC import: that would make the engine's parse a precondition for this file
+// running at all, which is exactly what used to leave the page dark.
+const engine = Promise.all([import('three'), import('./render/Renderer.js'), import('./core/Game.js')]);
+engine.catch(() => {});                  // the real handling is inside boot(); this only stops a spurious unhandledrejection
+
+// The engine bindings boot() fills in, and the two things it owns. DECLARED HERE, above the menu:
+// `?start` makes menu.init() call play() -> boot() synchronously, and a `let` further down the file is
+// still in its temporal dead zone at that point ("Cannot access 'booting' before initialization").
+let WebGLRenderTarget, compileForComposer, renderForComposer;
+let game = null, booting = null;
+
+// --- 1. the title screen, before the engine exists ------------------------------------------------
+// Its backdrop runs in a Web Worker on an OffscreenCanvas, so the world build below — seconds of
+// blocking main-thread work — cannot stutter it. ?worker=0 or no OffscreenCanvas falls back in-thread.
+const menu = USE_MENU ? new Menu({
+  canvas, params: PARAMS,
   seed: Number(PARAMS.get('seed') || 1337),
   auto: PARAMS.get('auto') === '1',
-};
-const USE_WORKER = USE_INTRO && !!introOpts.introCanvas && canUseIntroWorker(PARAMS);
-const intro = USE_INTRO ? (USE_WORKER ? new IntroHost(introOpts) : new Intro(introOpts)) : null;
-if (!USE_WORKER) introOpts.introCanvas?.remove();
+}) : null;
+// published here rather than with the rest of the automation API below, which cannot exist until the
+// engine has been constructed: tools/gate.mjs calls __game.intro.skip() as soon as the page has a canvas
+window.__game.menu = menu;
+window.__game.intro = menu;              // alias: the harness has always called it `intro`
+if (menu) {
+  // BEFORE init(), not after: ?start makes init() call play() synchronously, and play() is what boots.
+  // Wiring this afterwards left that path with no handler at all — the loading bar came up and nothing
+  // behind it ever started.
+  menu.onPlay = () => boot();
+  try { await menu.init(); }
+  catch (e) { console.warn('[menu] disabled:', e?.message || e); menu.skip(); }
+} else {
+  document.getElementById('menu')?.remove();          // the harness sees exactly what it always saw
+  document.getElementById('menucanvas')?.remove();
+}
+
 
 // Compile the world's shader programs a few objects at a time, with a frame between chunks.
 //
@@ -91,13 +123,13 @@ async function warmScene(renderer, scene, camera, perChunk = 6, onProgress = nul
 
 // Render a few REAL game frames into a scratch target while the loading bar is still moving.
 //
-// Only the intro path needs this, and it needs it badly. With the intro, game.start() does not run until
-// intro.finished, so NOTHING has ever rendered the world when _arm() finally calls stepInto -- and that one
+// Only the menu path needs this, and it needs it badly. With the menu, game.start() does not run until
+// the hand-off, so NOTHING has ever rendered the world when arm() finally calls stepInto -- and that one
 // call linked 35 programs in a MEASURED 6.95 s (introprobe: prog 99 -> 134, arm:enter -> arm:done), with the
 // bar sitting pinned at 100% the whole time. That is the "swap happens too late and looks clunky".
 // It has to be stepInto and not renderer.compile(): Lighting drives its own shadow cascades from update(),
 // so the depth programs only exist once something has actually rendered a shadowed frame (Renderer.js says
-// why compile() can never build them). ?auto=1 without the intro does not need this -- there the loop starts
+// why compile() can never build them). ?auto=1 without the menu does not need this -- there the loop starts
 // immediately and ordinary frames do the same work.
 async function warmFrames(game, n, onProgress) {
   const rt = new WebGLRenderTarget(320, 180, { depthBuffer: true });
@@ -112,15 +144,25 @@ async function warmFrames(game, n, onProgress) {
   } finally { rt.dispose(); }
 }
 
-if (intro) {
-  intro.init().catch((e) => { console.warn('[intro] disabled:', e?.message || e); intro.skip(); });
-  // 8 s cap so a broken intro can never hold the game hostage
-  await Promise.race([intro.firstFrame, new Promise((r) => setTimeout(r, 8000))]);
-}
-
-const { Game } = await import('./core/Game.js');
-const game = new Game(canvas, { renderer });
-intro?.attach(game);
+// ---------------------------------------------------------------------------------------------
+// BOOT — the only thing that builds the world, and the only thing that may.
+//
+// USER DECISION 2026-08-28: landing on the page must not start the game loading. The title screen is
+// idle: no renderer, no Game, no 29 MB asset preload, no terrain bake. All of that begins here, and
+// this runs on exactly three triggers:
+//   - the player presses Play               (menu.onPlay, below)
+//   - the menu is skipped or fails          (menu.finished, below — this is the harness's path)
+//   - there is no menu at all (?auto=1)     (called immediately, below)
+// Idempotent: every caller gets the same promise.
+async function boot() {
+  if (booting) return booting;
+  booting = (async () => {
+  const [THREE, RENDER, GAME] = await engine;
+  WebGLRenderTarget = THREE.WebGLRenderTarget;                        // scratch target for the warm frames
+  ({ compileForComposer, renderForComposer } = RENDER);
+  const renderer = RENDER.createRenderer(canvas, QUALITY);
+  game = new GAME.Game(canvas, { renderer, quality: QUALITY });
+  menu?.attach(game);
 
 // Automation / debug API used by tools/inspect.mjs and critics. Keep stable.
 const P = () => game.player;
@@ -197,30 +239,42 @@ Object.assign(window.__game, {
   audioSelfTest: () => game.audio.selfTest?.(),
 });
 
-// ---------------------------------------------------------------------------------------------
-// Boot. Two paths:
-//   players  -> the cinematic intro (src/ui/Intro.js): a guy at his computer, the game on his monitor
-//               with the load bar on it, and he gets pulled into the screen when you click.
-//   ?auto=1  -> no intro at all (the harness and critics must see exactly what they saw before).
-//               ?auto=1&intro=1 runs it anyway and auto-plays the transition 4 s after load, so the
-//               intro itself can be inspected; __game.intro.hold() freezes it for screenshots.
-window.__game.intro = intro;
-
-if (intro) {
+if (menu) {
   // the bar: assets fill the first 55 %, the world build the rest. Labels name what is actually happening.
+  // One label per system, all thirteen distinct. Two pairs used to share a line (Player/Combat, RPG/HUD),
+  // so the phase text stood still through two whole systems and read as a stall. And PostFX no longer
+  // says THE VALE AWAITS: that was set at 0.88 and then held through the entire shader warm — a measured
+  // 11.6 s of a 36.6 s load, 45 s of 156 s at 4x CPU — so the screen announced the destination during the
+  // single longest wait of the load. The warm has its own labels now, below.
   const BOOT_LABEL = {
     Assets: 'GATHERING AETHER', Sky: 'HANGING THE SKY', Lighting: 'KINDLING THE SUN', Terrain: 'RAISING THE VALE',
-    World: 'SEEDING THE MEADOW', Player: 'FORGING YOUR ARMS', Combat: 'FORGING YOUR ARMS', Enemies: 'STIRRING THE WILDS',
-    VFX: 'BINDING THE AETHER', Audio: 'TUNING THE WINDS', RPG: 'WRITING YOUR TALE', HUD: 'WRITING YOUR TALE', PostFX: 'THE VALE AWAITS',
+    World: 'SEEDING THE MEADOW', Player: 'FORGING YOUR ARMS', Combat: 'SIGHTING THE IRONS', Enemies: 'STIRRING THE WILDS',
+    VFX: 'BINDING THE AETHER', Audio: 'TUNING THE WINDS', RPG: 'WRITING YOUR TALE', HUD: 'DRAWING THE GLASS',
+    PostFX: 'GRADING THE LIGHT',
   };
-  let boot = 0;
-  // The bar's last slice is the SHADER WARM, not the system build. It used to read 100% the moment the
-  // systems were up and then sit there for a measured 9.6 s while warmScene and _arm() linked 79 more
-  // programs. A bar that finishes and then does nothing for ten seconds is the clunk.
-  game.events.on('assets:progress', (e) => intro.setProgress(Math.max(boot, 0.50 * (e.loaded ?? e.done ?? 0) / (e.total || 1))));
+  // WEIGHTED, NOT EVENLY DIVIDED. The old split was three fixed slabs -- assets 0..0.50, the thirteen
+  // systems 0.50..0.88, the shader warm 0.88..1.0 -- so every system was worth the same 2.9 points
+  // whatever it cost. Measured, that made 10%->20% take 1 ms and 60%->70% take 12.8 s: half the bar was
+  // 15% of the wait. Menu.phases() spends the bar by what each phase cost on the LAST load (persisted to
+  // localStorage), so the second launch onwards the bar moves at something close to a constant rate.
+  // First-ever load has no record and falls back to equal weights, i.e. exactly where we started.
+  // The warm is three phases of its own, not a tail: it is a measured third of the load.
+  const SYS = Object.keys(BOOT_LABEL);                      // declaration order IS the boot order
+  const PHASES = [...SYS, 'warm', 'prewarm', 'frames'];
+  menu.phases(PHASES);
+  const WARM_LABEL = { warm: 'COMPILING THE VALE', prewarm: 'COMPILING THE VALE', frames: 'THE VALE AWAITS' };
+  const label = (id) => BOOT_LABEL[id] || WARM_LABEL[id] || null;
+
+  game.events.on('assets:progress', (e) =>
+    menu.phase('Assets', BOOT_LABEL.Assets, (e.loaded ?? e.done ?? 0) / (e.total || 1)));
+  // Game.js emits this AFTER a system's init() resolved, so `e.system` names what just FINISHED. Open the
+  // next phase rather than that one: the label then says what is building now instead of what already
+  // built, and the phase clock starts at the instant the work does, which is what makes the timings the
+  // next load spends the bar by honest.
   game.events.on('boot:progress', (e) => {
-    boot = 0.50 + 0.38 * (e.done / e.total);          // systems end at 0.88; 0.88-1.0 is the warm
-    intro.setProgress(boot, BOOT_LABEL[e.system] || null);
+    const i = SYS.indexOf(e.system);
+    const id = PHASES[i < 0 ? e.done : i + 1] || 'warm';
+    menu.phase(id, label(id), 0);
   });
   // NO compileAsync warmup here. It was tried and measured WORSE, twice: three's compileAsync calls the
   // SYNCHRONOUS compile() internally and only defers the link-completion poll, so it blocks for the whole
@@ -229,7 +283,7 @@ if (intro) {
   game.ready.then(async () => {
     if (PARAMS.get('nowarm') !== '1') {
       const t0 = performance.now();
-      // ORDER MATTERS. warmScene FIRST, then intro.prewarm(): prewarm renders one frame through the menu
+      // ORDER MATTERS. warmScene FIRST, then menu.prewarm(): prewarm renders one frame through the menu
       // lens and is the FIRST time the world is ever drawn (nothing draws it before game.start(), which
       // waits for the hand-off), so running it cold links everything itself -- MEASURED 9.5 s cold versus
       // 6.3 s after warmScene, i.e. ~8 s added to the whole boot for nothing. It is a single render, so it
@@ -239,19 +293,24 @@ if (intro) {
       // prewarm draws to the CANVAS (target null), so it needs the `srgb` program variants -- a different
       // set from the composer's `srgb-linear` ones, which is why warming the game's own path never covered
       // it. See Renderer.js. arm() afterwards costs ~10 ms.
-      try { const n = await warmScene(game.renderer, game.scene, game.camera, 6, (f) => intro.setProgress(0.88 + 0.06 * f, 'THE VALE AWAITS'));
+      // the warm is a THIRD of the load; it says what it is doing rather than announcing the destination
+      try { const n = await warmScene(game.renderer, game.scene, game.camera, 6, (f) => menu.phase('warm', WARM_LABEL.warm, f));
         if (game.debug) console.info(`[boot] warmScene ${n} objects in ${Math.round(performance.now() - t0)} ms`); }
       catch (e) { console.warn('[boot] warmScene skipped:', e?.message); }
       await new Promise((r) => requestAnimationFrame(r));
-      try { intro.prewarm?.(); } catch (e) { console.warn('[boot] intro prewarm skipped:', e?.message); }
-      await warmFrames(game, 2, (f) => intro.setProgress(0.95 + 0.05 * f, 'THE VALE AWAITS'));
+      // its own phase because it is one synchronous render that measured 6.3 s even after warmScene --
+      // announced BEFORE it runs, since nothing can report progress from inside a single draw call
+      menu.phase('prewarm', WARM_LABEL.prewarm, 0);
+      await new Promise((r) => requestAnimationFrame(r));
+      try { menu.prewarm?.(); } catch (e) { console.warn('[boot] menu prewarm skipped:', e?.message); }
+      await warmFrames(game, 2, (f) => menu.phase('frames', WARM_LABEL.frames, f));   // now it is true
     }
-    intro.arm();
-  }).catch((e) => { console.error('[boot] world build failed:', e); intro.skip(); });
-  // the intro hands the canvas over itself; this only covers the skip/failure path (start() is idempotent)
-  intro.finished.then(() => game.ready.then(() => game.start()));
+    menu.arm();
+  // fail(), not skip(). A world build that threw leaves nothing to skip INTO -- the old path dropped the
+  // player into a dead canvas with no explanation. fail() says so and offers a reload.
+  }).catch((e) => { console.error('[boot] world build failed:', e); menu.fail(e); });
 } else {
-  // No intro: the boot splash (fed above) stays up until the frame time settles, then fades.
+  // No menu (?auto=1): the boot splash stays up until the frame time settles, then fades.
   const splash = document.getElementById('splash');
   game.ready.then(async () => {
     if (PARAMS.get('nowarm') !== '1') {
@@ -295,8 +354,30 @@ function spawnParam() {
 }
 
 
-// Runs off `ready`, not off `start`: with the cinematic intro the game starts later (intro.finished), and a
-// ?at= link should already be standing in the right region by the time the monitor hands over.
+// Runs off `ready`, not off `start`: with the title screen the game starts later (at the hand-off), and
+// a ?at= link should already be standing in the right region by the time the screen swaps.
 game.ready.then(() => { try { spawnParam(); } catch (e) { console.warn('[main] ?at failed', e); } })
   .catch((e) => { console.error(e); window.__game.errors.push(String(e?.stack || e)); });
-if (!intro) game.ready.then(() => game.start());
+if (!menu) game.ready.then(() => game.start());
+    return game;
+  })();
+  return booting;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The three triggers.
+//   players  -> the title screen (src/ui/Menu.js). Play builds the world; nothing before it does.
+//   ?auto=1  -> no menu at all (the harness and critics must see exactly what they saw before), so boot
+//               immediately. ?auto=1&menu=1 runs the menu anyway and auto-plays 4 s in, so the menu
+//               itself can be inspected; &hold=1 (or __game.menu.hold()) freezes it for screenshots.
+//               ?intro=1 and __game.intro are kept as aliases: tools/gate.mjs and tools/questgate.mjs
+//               call __game.intro.skip(), which lands on menu.finished below and boots.
+if (menu) {
+  // menu.onPlay is wired far above, before init() — see the note there.
+  // skip() and the hand-off both resolve `finished`. On the hand-off the menu has already called
+  // start(); on skip nothing has, so cover both here — boot() and start() are each idempotent.
+  menu.finished.then(() => boot().then((g) => g.ready.then(() => g.start())))
+    .catch((e) => console.error('[boot] failed:', e));
+} else {
+  boot().catch((e) => { console.error('[boot] failed:', e); window.__game.errors.push(String(e?.stack || e)); });
+}

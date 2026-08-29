@@ -6,19 +6,54 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   --aether: #8fd8ff; --aether-glow: rgba(127,200,255,0.55);
   --ivory: #f2ead6; --panel: linear-gradient(160deg, rgba(16,20,38,0.62), rgba(8,10,22,0.38));
   --serif: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+
+  /* ==========================================================================================
+     THE HOUSE GEOMETRY — the same token set index.html declares for cadle.gg, and the same values
+     for every one of them except --cut, which is 8px here against the site's 11px because game
+     chrome is denser (the site's own .btn.sm drops to 8 for the same reason).
+     Audited before this block existed: across this sheet and screencss.js, 14 distinct
+     corner radii, 34 distinct edge shorthands and 24 distinct gold hairline alphas — none of it a
+     decision, each one whatever was nearest, which is why the HUD and the full-screen menus never
+     read as parts of one object.
+
+     THE SHAPE is a cut corner, top-left and bottom-right. The site's Play button and /play's
+     loading track already wear it, so anything rectangular in here wears it too — a radius is
+     kept only where a chamfer would be wrong (circles, pills, the reticle, meter tracks, and
+     the two big glass panels, whose corner studs sit OUTSIDE the box and would be clipped away
+     by a clip-path). Small controls take a smaller cut the way the site's .btn.sm does; that is
+     the size of one shape, not a second shape.
+     ========================================================================================== */
+  /* NO --chamfer. The cut corner was tried across both the site and the game and read as
+     effortful rather than designed (user, 2026-08-29). The house shape is a radius from the
+     scale below, and a full pill on anything that behaves like a button. */
+  /* the struck hairline that rides just inside the cut — the second half of the site's plate.
+     A box-shadow, not a pseudo-element: half the things in here have both pseudos spoken for. */
+  --struck: inset 0 0 0 1px rgba(216,189,122,.10), inset 0 1px 0 rgba(255,246,220,.14);
+  --struck-down: inset 0 0 0 1px rgba(216,189,122,.10), inset 0 -1px 0 rgba(255,246,220,.12);
+
+  /* THREE hairlines, not twenty-four. faint = a division INSIDE a panel, rule = an edge,
+     lit = an edge that is doing something (focused, active, held). A border that wants a fourth
+     alpha is a border that is wrong. Semantic edges — warn red, gain green, aether preview,
+     rarity colour-mix — are signals, not chrome, and keep their own colours. */
+  --rule-faint: rgba(216,189,122,.12);
+  --rule: rgba(216,189,122,.24);
+  --rule-lit: rgba(253,243,205,.62);
+
+  /* THREE radii, plus 0 and fully-round. Pill and 50% are the same "round it off" step. */
+  --r-sm: 2px; --r-md: 4px; --r-lg: 8px; --r-pill: 999px;
 }
 #ui * { box-sizing: border-box; }
 .scaps { font-family: var(--serif); font-variant: small-caps; letter-spacing: 0.14em; }
 .hidden { display: none !important; }
 
 /* ---------- perf overlay (debug) ---------- */
-#perf { position: absolute; top: 8px; left: 50%; transform: translateX(calc(-50% + 330px)); font: 12px/1.4 ui-monospace, Consolas, monospace; color: #9fd; background: rgba(0,0,0,0.45); padding: 6px 8px; border-radius: 4px; white-space: pre; }
+#perf { position: absolute; top: 8px; left: 50%; transform: translateX(calc(-50% + 330px)); font: 12px/1.4 ui-monospace, Consolas, monospace; color: #9fd; background: rgba(0,0,0,0.45); padding: 6px 8px; --cut: var(--cut-sm); white-space: pre; }
 
 /* ---------- crosshair ---------- */
 #ch { position: absolute; left: 50%; top: 50%; width: 0; height: 0; color: rgba(250,250,246,0.95); filter: drop-shadow(0 0 1.5px rgba(0,0,0,0.95)) drop-shadow(0 0 3px rgba(0,0,0,0.5)); }
 #ch .dot { position: absolute; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: currentColor; }
 #ch .ring { position: absolute; width: 44px; height: 44px; margin: -22px; border-radius: 50%; border: 1.4px solid currentColor; opacity: 0.85; will-change: transform; }
-#ch .tk { position: absolute; background: currentColor; border-radius: 1px; opacity: 0.92; will-change: transform; }
+#ch .tk { position: absolute; background: currentColor; border-radius: var(--r-sm); opacity: 0.92; will-change: transform; }
 #ch .tv { width: 2px; height: 10px; left: -1px; top: 0; }
 #ch .th { width: 10px; height: 2px; left: 0; top: -1px; }
 #ch[data-arch="handcannon"] .tk { display: none; }
@@ -30,10 +65,10 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #ch[data-arch="beam"] .th { width: 16px; }
 #ch[data-arch="fusion"] .th { width: 14px; }
 #ch:not([data-arch="handcannon"]):not([data-arch="shotgun"]) .ring { display: none; }
-#chargebar { position: absolute; left: -31px; top: 26px; width: 62px; height: 5px; padding: 1px; background: rgba(6,8,16,0.55); border: 1px solid rgba(216,189,122,0.4); border-radius: 3px; opacity: 0; }
-#chargebar i { display: block; height: 100%; width: 100%; background: var(--aether); box-shadow: 0 0 8px var(--aether-glow); border-radius: 2px; transform-origin: left; transform: scaleX(0); will-change: transform; }
+#chargebar { position: absolute; left: -31px; top: 26px; width: 62px; height: 5px; padding: 1px; background: rgba(6,8,16,0.55); border: 1px solid var(--rule); border-radius: var(--r-sm); opacity: 0; }
+#chargebar i { display: block; height: 100%; width: 100%; background: var(--aether); box-shadow: 0 0 8px var(--aether-glow); border-radius: var(--r-sm); transform-origin: left; transform: scaleX(0); will-change: transform; }
 #hitmark { position: absolute; left: 0; top: 0; opacity: 0; color: #fff; }
-#hitmark i { position: absolute; width: 2px; height: 11px; left: -1px; top: -5.5px; background: currentColor; border-radius: 1px; box-shadow: 0 0 3px rgba(0,0,0,0.7); }
+#hitmark i { position: absolute; width: 2px; height: 11px; left: -1px; top: -5.5px; background: currentColor; border-radius: var(--r-sm); box-shadow: 0 0 3px rgba(0,0,0,0.7); }
 #hitmark.crit { color: #ffd24a; } #hitmark.kill { color: #ffe9a0; }
 
 /* directional damage arcs */
@@ -42,18 +77,18 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* sniper scope */
 #scope { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.08s; }
-#scope .lens { position: absolute; width: 62vh; height: 62vh; left: -31vh; top: -31vh; border-radius: 50%; box-shadow: 0 0 0 4000px rgba(2,3,8,0.985), inset 0 0 60px rgba(0,0,0,0.9), inset 0 0 6px var(--gold-dim); border: 2px solid var(--gold-dim); }
+#scope .lens { position: absolute; width: 62vh; height: 62vh; left: -31vh; top: -31vh; border-radius: 50%; box-shadow: 0 0 0 4000px rgba(2,3,8,0.985), inset 0 0 60px rgba(0,0,0,0.9), inset 0 0 6px var(--gold-dim); border: 2px solid var(--rule); }
 #scope .lh { position: absolute; left: -31vh; top: -0.5px; width: 62vh; height: 1px; background: rgba(220,230,240,0.65); }
 #scope .lv { position: absolute; top: -31vh; left: -0.5px; height: 62vh; width: 1px; background: rgba(220,230,240,0.65); }
 #scope .ld { position: absolute; width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); }
 
 /* ---------- vitals (top-left) ---------- */
 #vitals { position: absolute; top: 26px; left: 28px; display: flex; align-items: center; gap: 12px; }
-#lvl { width: 34px; height: 34px; transform: rotate(45deg); border: 1.5px solid var(--gold); background: var(--panel); box-shadow: 0 0 10px rgba(0,0,0,0.5), inset 0 0 8px rgba(216,189,122,0.15); display: flex; align-items: center; justify-content: center; }
+#lvl { width: 34px; height: 34px; transform: rotate(45deg); border: 1px solid var(--rule-lit); background: var(--panel); box-shadow: 0 0 10px rgba(0,0,0,0.5), inset 0 0 8px rgba(216,189,122,0.15); display: flex; align-items: center; justify-content: center; }
 #lvl b { transform: rotate(-45deg); color: var(--gold-hi); font: 600 15px var(--serif); }
 #vitals .bars { display: flex; flex-direction: column; gap: 4px; }
-.bar { position: relative; background: rgba(6,8,16,0.6); border: 1px solid rgba(216,189,122,0.35); border-radius: 2px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.5); }
-.bar i { position: absolute; inset: 0; transform-origin: left; will-change: transform; border-radius: 1px; }
+.bar { position: relative; background: rgba(6,8,16,0.6); border: 1px solid var(--rule); border-radius: var(--r-sm); overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.5); }
+.bar i { position: absolute; inset: 0; transform-origin: left; will-change: transform; border-radius: var(--r-sm); }
 #sbar { width: 240px; height: 7px; }
 #hbar { width: 240px; height: 10px; }
 #bbar { width: 240px; height: 5px; }
@@ -82,15 +117,15 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #mag.empty { color: #ff5f42; }
 #res { font: 500 19px 'Segoe UI', system-ui, sans-serif; color: rgba(240,236,222,0.72); }
 #res::before { content: '·'; margin-right: 8px; color: var(--gold-dim); }
-#rline { position: relative; height: 3px; width: 176px; margin: 3px 0 6px auto; background: rgba(216,189,122,0.18); border-radius: 2px; }
-#rline i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); border-radius: 2px; will-change: transform; }
+#rline { position: relative; height: 3px; width: 176px; margin: 3px 0 6px auto; background: rgba(216,189,122,0.18); border-radius: var(--r-sm); }
+#rline i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); border-radius: var(--r-sm); will-change: transform; }
 
 /* ---------- abilities (bottom-left) ---------- */
 #abil { position: absolute; left: 30px; bottom: 30px; }
 #abrow { display: flex; align-items: flex-end; gap: 18px; }
 .ab { position: relative; width: 44px; height: 44px; }
 .ab.sup { width: 62px; height: 62px; }
-.ab .dia { position: absolute; inset: 0; transform: rotate(45deg); overflow: hidden; border: 1.5px solid var(--gold); background: var(--panel); box-shadow: 0 0 12px rgba(0,0,0,0.55), inset 0 0 10px rgba(140,190,255,0.10); border-radius: 3px; }
+.ab .dia { position: absolute; inset: 0; transform: rotate(45deg); overflow: hidden; border: 1px solid var(--rule-lit); background: var(--panel); box-shadow: 0 0 12px rgba(0,0,0,0.55), inset 0 0 10px rgba(140,190,255,0.10); border-radius: var(--r-sm); }
 .ab .in { position: absolute; inset: -30%; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; }
 .ab svg { width: 58%; height: 58%; color: var(--aether); filter: drop-shadow(0 0 5px var(--aether-glow)); }
 .ab.sup svg { color: var(--gold-hi); filter: drop-shadow(0 0 7px rgba(246,227,172,0.7)); }
@@ -101,8 +136,8 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .ab b { position: absolute; left: 50%; bottom: -18px; transform: translateX(-50%); font: 600 11px var(--serif); color: rgba(240,230,205,0.9); letter-spacing: 0.1em; text-shadow: 0 1px 3px #000; }
 .ab.sup.active .dia { animation: suppulse 0.7s ease-in-out infinite; }
 @keyframes suppulse { 0%,100% { box-shadow: 0 0 14px rgba(246,227,172,0.5); } 50% { box-shadow: 0 0 26px rgba(246,227,172,0.95); } }
-#smeter { position: relative; margin-top: 26px; width: 226px; height: 5px; background: rgba(6,8,16,0.6); border: 1px solid rgba(216,189,122,0.35); border-radius: 3px; }
-#smeter i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: linear-gradient(90deg, #b590ff, var(--aether), var(--gold-hi)); border-radius: 3px; will-change: transform; }
+#smeter { position: relative; margin-top: 26px; width: 226px; height: 5px; background: rgba(6,8,16,0.6); border: 1px solid var(--rule); border-radius: var(--r-sm); }
+#smeter i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: linear-gradient(90deg, #b590ff, var(--aether), var(--gold-hi)); border-radius: var(--r-sm); will-change: transform; }
 #smeter.full { box-shadow: 0 0 12px rgba(246,227,172,0.45); }
 #smeter.full i { animation: lowpulse 1s ease-in-out infinite; }
 
@@ -122,7 +157,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---------- boss bar ---------- */
 #boss { position: absolute; left: 50%; top: 6.5%; transform: translateX(-50%); width: 560px; opacity: 0; transition: opacity 0.3s; text-align: center; }
 #boss .bname { font: 500 21px var(--serif); font-variant: small-caps; letter-spacing: 0.2em; color: var(--gold-hi); text-shadow: 0 0 12px rgba(216,189,122,0.5), 0 1px 4px rgba(0,0,0,0.95); margin-bottom: 5px; }
-#boss .bar { height: 9px; border-color: var(--gold-dim); }
+#boss .bar { height: 9px; border-color: var(--rule); }
 #boss .bfill { background: linear-gradient(180deg, #ff8f7a, #c02f18 60%, #8e1f0d); }
 #boss .bsh { background: linear-gradient(180deg, #d5f0ff, #6fc4f2); opacity: 0.9; }
 #boss s { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--gold-dim); text-decoration: none; }
@@ -146,12 +181,14 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #notify .fl::after { content: '◆'; position: absolute; left: 50%; top: -7px; transform: translateX(-50%); color: var(--gold); font-size: 10px; }
 
 #toasts { position: absolute; left: 50%; bottom: 21%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.toast { padding: 6px 22px; background: var(--panel); border: 1px solid var(--gold-dim); border-left: none; border-right: none; color: var(--ivory); font: 400 15px var(--serif); font-variant: small-caps; letter-spacing: 0.16em; text-shadow: 0 1px 3px #000; box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
-.toast.super { color: var(--gold-hi); border-color: var(--gold); }
+.toast { padding: 6px 22px; background: var(--panel); border: 1px solid var(--rule); border-left: none; border-right: none; color: var(--ivory); font: 400 15px var(--serif); font-variant: small-caps; letter-spacing: 0.16em; text-shadow: 0 1px 3px #000; box-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+.toast.super { color: var(--gold-hi); border-color: var(--rule-lit); }
 .toast.ability { color: var(--aether); }
 
 #iprompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); opacity: 0; transition: opacity 0.15s; font: 400 16px var(--serif); font-variant: small-caps; letter-spacing: 0.12em; color: var(--ivory); text-shadow: 0 1px 4px #000; }
-#iprompt kbd { display: inline-block; min-width: 22px; padding: 1px 5px; margin-right: 8px; text-align: center; border: 1px solid var(--gold); border-radius: 3px; background: rgba(10,12,24,0.7); color: var(--gold-hi); font: 600 13px 'Segoe UI', sans-serif; box-shadow: 0 0 8px rgba(216,189,122,0.25); }
+#iprompt kbd { display: inline-block; min-width: 22px; padding: 1px 5px; margin-right: 8px; text-align: center; border: 1px solid var(--rule-lit); border-radius: var(--r-sm); background: rgba(10,12,24,0.7); color: var(--gold-hi); font: 600 13px 'Segoe UI', sans-serif;
+  /* a drop-shadow, not a box-shadow: the cut below is a clip-path and would eat an outer shadow */
+  filter: drop-shadow(0 0 4px rgba(216,189,122,0.3)); }
 
 #pickups { position: absolute; left: 30px; bottom: 148px; display: flex; flex-direction: column-reverse; gap: 4px; }
 #pickups div { font: 400 14px var(--serif); font-variant: small-caps; letter-spacing: 0.1em; color: var(--ivory); text-shadow: 0 1px 3px #000; }
@@ -170,15 +207,15 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #quest .qo-line.done { opacity: 0.6; }
 #quest .qo-line.done .qmark { color: var(--aether); }
 #quest .qo-line.done .qtx { text-decoration: line-through; color: rgba(220,228,205,0.7); }
-#quest .qothers { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(216,189,122,0.16); font: 400 10.5px var(--serif); letter-spacing: 0.03em; color: rgba(210,200,175,0.58); text-shadow: 0 1px 3px #000; }
+#quest .qothers { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--rule-faint); font: 400 10.5px var(--serif); letter-spacing: 0.03em; color: rgba(210,200,175,0.58); text-shadow: 0 1px 3px #000; }
 
 /* ---------- minimap (top-right) ---------- */
 #minimap { position: absolute; right: 26px; top: 26px; width: 164px; height: 164px; }
 #minimap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; display: block;
   box-shadow: inset 0 0 26px rgba(12,8,4,0.55), 0 6px 22px rgba(0,0,0,0.55); }
-#minimap .rim { position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid var(--gold);
+#minimap .rim { position: absolute; inset: -5px; border-radius: 50%; border: 1px solid var(--rule-lit);
   box-shadow: 0 0 14px rgba(216,189,122,0.22), inset 0 0 10px rgba(0,0,0,0.55); }
-#minimap .rim::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid rgba(216,189,122,0.28); }
+#minimap .rim::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid var(--rule); }
 #minimap .np { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font: 600 10px var(--serif);
   letter-spacing: 0.16em; color: #6b5424; text-shadow: 0 1px 0 rgba(255,244,214,0.5); }
 #minimap .zone { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap;
@@ -189,15 +226,14 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---------- carried loadout (bottom-centre) ---------- */
 #wslots { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; gap: 10px; }
 .wslot { position: relative; display: flex; align-items: center; gap: 9px; min-width: 178px; padding: 7px 12px 7px 9px;
-  background: linear-gradient(150deg, rgba(14,17,34,0.62), rgba(7,9,20,0.72)); border: 1px solid rgba(216,189,122,0.26);
-  border-radius: 3px; box-shadow: 0 3px 14px rgba(0,0,0,0.45); opacity: 0.62;
+  background: linear-gradient(150deg, rgba(14,17,34,0.62), rgba(7,9,20,0.72)); border: 1px solid var(--rule); filter: var(--lift); opacity: 0.62;
   transition: opacity 0.16s var(--ease), border-color 0.16s var(--ease), transform 0.18s var(--spring); }
 .wslot::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--el, #fff); opacity: 0.7; }
-.wslot.on { opacity: 1; border-color: var(--gold); transform: translateY(-3px);
-  box-shadow: 0 4px 18px rgba(0,0,0,0.55), 0 0 14px rgba(216,189,122,0.16), inset 0 0 12px rgba(140,190,255,0.06); }
+.wslot.on { opacity: 1; border-color: var(--rule-lit); transform: translateY(-3px);
+  filter: var(--lift) var(--lit); box-shadow: inset 0 0 12px rgba(140,190,255,0.06); }
 .wslot .k { width: 17px; height: 17px; flex: none; display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--gold-dim); border-radius: 2px; font: 600 10px 'Segoe UI', sans-serif; color: var(--gold-hi); background: rgba(6,8,16,0.7); }
-.wslot.on .k { border-color: var(--gold); background: rgba(216,189,122,0.16); }
+  border: 1px solid var(--rule); border-radius: var(--r-sm); font: 600 10px 'Segoe UI', sans-serif; color: var(--gold-hi); background: rgba(6,8,16,0.7); }
+.wslot.on .k { border-color: var(--rule-lit); background: rgba(216,189,122,0.16); }
 .wslot .wel { flex: none; display: flex; }
 .wslot .wel svg { width: 13px; height: 13px; filter: drop-shadow(0 0 4px currentColor); opacity: 0.9; }
 .wslot .wn { flex: 1; font: 500 13px var(--serif); font-variant: small-caps; letter-spacing: 0.09em; color: var(--ivory);
@@ -230,13 +266,13 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* ===== vitals v2: single ornate health vessel (shield removed) ===== */
 #vitals { gap: 12px; align-items: center; }
-#hbar { width: 320px; height: 20px; position: relative; border: 1px solid rgba(211,165,72,0.8); border-radius: 3px;
+#hbar { width: 320px; height: 20px; position: relative; border: 1px solid var(--rule-lit); border-radius: var(--r-sm);
   background: linear-gradient(180deg, rgba(8,6,14,0.94), rgba(22,15,30,0.9));
   box-shadow: 0 2px 12px rgba(0,0,0,0.55), inset 0 2px 5px rgba(0,0,0,0.85), 0 0 16px rgba(211,165,72,0.14); }
 #hbar .fill { background: linear-gradient(180deg, #ffb15c 0%, #e05534 40%, #9c2718 100%);
-  border-radius: 2px; box-shadow: inset 0 1px 2px rgba(255,224,170,0.45), 0 0 10px rgba(224,85,52,0.35); }
+  border-radius: var(--r-sm); box-shadow: inset 0 1px 2px rgba(255,224,170,0.45), 0 0 10px rgba(224,85,52,0.35); }
 #hbar .ghost { background: rgba(255,130,95,0.30); }
-#hbar::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 2px;
+#hbar::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: var(--r-sm);
   background: repeating-linear-gradient(90deg, transparent 0 24.8%, rgba(0,0,0,0.38) 24.8% 25.2%),
               linear-gradient(180deg, rgba(255,255,255,0.10), transparent 45%); }
 #hbar .hpnum { font: 600 12.5px var(--serif); letter-spacing: 0.12em; color: #f8efd8; text-shadow: 0 1px 3px rgba(0,0,0,0.95); z-index: 1; }
@@ -255,10 +291,63 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --ink: #07060f;
   --glass: linear-gradient(150deg, rgba(20,17,42,.90), rgba(9,8,20,.92));
-  --line: rgba(216,189,122,.26);
+  /* the old name, now pointing at the scale: sixteen `1px solid var(--line)` edges in
+     screencss.js join the three-hairline vocabulary without touching one of them. */
+  --line: var(--rule);
   --text: #ece2c8;
   --textdim: rgba(232,222,196,.62);
 }
+
+/* ==========================================================================================
+   ONE FOCUS RING — promoted out of screencss.js, which had the only correct one in the product
+   (ui.css had NONE: .ui-btn, .ui-seg button and .ui-switch all fell back to Chrome's default,
+   so the ESC settings modal was keyboard-navigable in a different visual language than the
+   screens behind it). Two things kept from that rule verbatim:
+     - plain :focus carries the ring too. Arrow-key roving moves focus programmatically and
+       Chrome does not reliably classify that as :focus-visible. A menu with an invisible ring
+       is not a menu.
+     - it is loud: a hairline nobody can see is the same as no ring.
+   One thing changed: an `outline` is painted by the element and is therefore CLIPPED AWAY by
+   the chamfer, and so is any outer box-shadow. So the ring is struck INSIDE the silhouette,
+   which is also what makes it trace whatever shape the element wears — cut, rounded or round —
+   with zero per-element ring geometry. screencss.js had already reached this conclusion for
+   .pbody (outline-offset:-2px); this is that, generalised.
+   ========================================================================================== */
+#ui {
+  --fring: inset 0 0 0 1.5px var(--gold-hi), inset 0 0 0 4px rgba(216,189,122,.30),
+           0 0 20px rgba(216,189,122,.42);
+  /* a gold ring on a gold surface is not a ring — on those it becomes the dark one */
+  --fring-dark: inset 0 0 0 1.5px rgba(28,16,2,.92), inset 0 0 0 4px rgba(28,16,2,.34),
+                0 0 18px rgba(0,0,0,.5);
+}
+/* the :is(:focus,:focus-visible) is repeated on purpose. screencss.js is injected as a <style> AFTER
+   this sheet, so any state rule of equal specificity there wins on order — measured: `.tile.sel`'s
+   1px inset ate the ring off the selected item completely. The ring outranks every resting state. */
+#ui :is(button, a, input, select, textarea, [tabindex], .ui-btn, .ui-switch):is(:focus, :focus-visible):is(:focus, :focus-visible) {
+  outline: none; box-shadow: var(--fring);
+}
+#ui :is(.ui-btn.primary, .ui-seg button.on, .scr .btn.gold, .scr .btn.on,
+        .stabs button.on, .seg button.on):is(:focus, :focus-visible):is(:focus, :focus-visible) { box-shadow: var(--fring-dark); }
+
+/* ==========================================================================================
+   ONE PRESS — the site's plates SINK: down 2px, the lift shadow collapses, and the struck
+   highlight moves from the top edge to the bottom. Everything in these two sheets used to
+   shrink instead (scale(.95), scale(.985)), and one gesture with two physics is how a product
+   ends up feeling like two products. Uses the `translate` property, not `transform`, so it
+   composes with the transforms these elements already carry (rotated diamonds, the paper
+   doll's anchor offsets) instead of overwriting them.
+   ========================================================================================== */
+/* A chamfer is a clip-path, and a clip-path eats every OUTER box-shadow the element casts — so
+   lift and glow are drop-shadow filters, which are applied to the clipped result and therefore
+   trace the cut. They are also the two things a press takes away. */
+#ui { --lift: drop-shadow(0 3px 6px rgba(0,0,0,.5));
+      --lit:  drop-shadow(0 0 9px rgba(216,189,122,.42)); }
+#ui :is(.ui-btn, .ui-switch, .scr .btn, .sclose):active {
+  translate: 0 2px; box-shadow: var(--struck-down); filter: drop-shadow(0 1px 2px rgba(0,0,0,.45));
+}
+/* a segment button has no plate of its own — the pill behind it is the plate — so it sinks
+   without a struck edge, which would otherwise draw a box that is not there when at rest */
+#ui :is(.ui-seg button, .stabs button, .seg button):active { translate: 0 2px; }
 
 /* ---- scrim + centre-morph modal ---- */
 .ui-scrim { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
@@ -266,13 +355,16 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   opacity: 0; transition: opacity .22s var(--ease); backdrop-filter: blur(3px); }
 .ui-scrim.on { opacity: 1; }
 .ui-modal { position: relative; width: min(620px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
-  background: var(--glass); border: 1px solid var(--line); border-radius: 10px; color: var(--text);
+  /* the one shape the panels DON'T wear: the gold corner studs below live outside the box, and a
+     clip-path clips its own pseudo-elements — the studs are the older ornament, so they win and
+     the cut lives on every control that sits on the panel instead. Same call in screencss's .parch. */
+  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--text);
   box-shadow: 0 30px 90px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,240,205,.10), 0 0 60px rgba(124,91,214,.10);
   transform: scale(.93); opacity: 0; filter: blur(8px);
   transition: transform .42s var(--spring), opacity .2s var(--ease), filter .28s var(--ease); }
 .ui-scrim.on .ui-modal { transform: scale(1); opacity: 1; filter: blur(0); }
 /* gold corner studs, the same ornament the HUD frames use */
-.ui-modal::before, .ui-modal::after { content: ""; position: absolute; width: 9px; height: 9px; border: 1.5px solid var(--gold); transform: rotate(45deg); background: #0b0a1a; }
+.ui-modal::before, .ui-modal::after { content: ""; position: absolute; width: 9px; height: 9px; border: 1px solid var(--rule-lit); transform: rotate(45deg); background: #0b0a1a; }
 .ui-modal::before { top: -5px; left: 50%; margin-left: -5px; }
 .ui-modal::after { bottom: -5px; left: 50%; margin-left: -5px; }
 .ui-modal .mhead { padding: 22px 26px 0; text-align: center; }
@@ -284,7 +376,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .ui-modal .mflourish::after { content: "\2756"; position: absolute; left: 50%; top: -8px; transform: translateX(-50%); color: var(--gold); font-size: 10px; }
 .ui-modal .mtabs { padding: 16px 26px 4px; }
 .ui-modal .mbody { padding: 10px 26px 4px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--gold-dim) transparent; }
-.ui-modal .mfoot { display: flex; align-items: center; gap: 8px; padding: 14px 26px 20px; border-top: 1px solid rgba(216,189,122,.14); margin-top: 12px; }
+.ui-modal .mfoot { display: flex; align-items: center; gap: 8px; padding: 14px 26px 20px; border-top: 1px solid var(--rule-faint); margin-top: 12px; }
 .ui-modal .mhint { flex: 1; margin: 0; font: 400 11px var(--serif); letter-spacing: .07em; color: var(--textdim); }
 
 /* ---- panes: blur cross-fade between tabs (beUI morphing modal body) ---- */
@@ -293,7 +385,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 @keyframes paneIn { from { opacity: 0; transform: translateY(6px); filter: blur(5px); } to { opacity: 1; transform: none; filter: blur(0); } }
 
 /* ---- rows ---- */
-.ui-row { display: grid; grid-template-columns: 1fr 236px; align-items: center; gap: 18px; padding: 11px 0; border-bottom: 1px solid rgba(216,189,122,.08); }
+.ui-row { display: grid; grid-template-columns: 1fr 236px; align-items: center; gap: 18px; padding: 11px 0; border-bottom: 1px solid var(--rule-faint); }
 .ui-row:last-child { border-bottom: none; }
 .ui-row > label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font: 400 14.5px var(--serif); font-variant: small-caps; letter-spacing: .1em; color: var(--text); }
 .ui-row > label em { flex-basis: 100%; font: italic 400 11.5px var(--serif); letter-spacing: .04em; color: var(--textdim); }
@@ -302,16 +394,16 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 /* ---- Range: filled track, tick dots, bar thumb that bounces on change ---- */
 .ui-range { position: relative; height: 26px; display: flex; align-items: center; }
 .ui-range input { -webkit-appearance: none; appearance: none; width: 100%; height: 26px; background: none; cursor: pointer; margin: 0; }
-.ui-range input::-webkit-slider-runnable-track { height: 5px; border-radius: 3px;
+.ui-range input::-webkit-slider-runnable-track { height: 5px; border-radius: var(--r-sm);
   background: linear-gradient(90deg, var(--gold) 0 var(--p, 50%), rgba(255,255,255,.10) var(--p, 50%) 100%);
   box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
-.ui-range input::-moz-range-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.10); }
-.ui-range input::-moz-range-progress { height: 5px; border-radius: 3px; background: var(--gold); }
-.ui-range input::-webkit-slider-thumb { -webkit-appearance: none; width: 7px; height: 20px; margin-top: -7.5px; border-radius: 3px;
+.ui-range input::-moz-range-track { height: 5px; border-radius: var(--r-sm); background: rgba(255,255,255,.10); }
+.ui-range input::-moz-range-progress { height: 5px; border-radius: var(--r-sm); background: var(--gold); }
+.ui-range input::-webkit-slider-thumb { -webkit-appearance: none; width: 7px; height: 20px; margin-top: -7.5px; border-radius: var(--r-sm);
   background: linear-gradient(180deg, #fdf3cd, var(--gold-hi) 45%, #b8933f); border: none;
   box-shadow: 0 0 10px rgba(216,189,122,.55), 0 1px 3px rgba(0,0,0,.7);
   transition: transform .3s var(--spring); }
-.ui-range input::-moz-range-thumb { width: 7px; height: 20px; border: none; border-radius: 3px; background: var(--gold-hi); }
+.ui-range input::-moz-range-thumb { width: 7px; height: 20px; border: none; border-radius: var(--r-sm); background: var(--gold-hi); }
 .ui-range input:hover::-webkit-slider-thumb { transform: scaleY(1.12); }
 .ui-range input:active::-webkit-slider-thumb { transform: scaleY(1.3) scaleX(1.15); }
 .ui-range .ticks { position: absolute; left: 3px; right: 3px; top: 50%; height: 2px; margin-top: -1px; pointer-events: none; opacity: .35;
@@ -320,46 +412,51 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 @keyframes thumbBump { 0% { transform: scaleY(1.42) scaleX(.85); } 100% { transform: scaleY(1); } }
 
 /* ---- Switch: spring thumb + press squash ---- */
-.ui-switch { position: relative; width: 50px; height: 27px; padding: 0; border-radius: 14px; cursor: pointer;
-  background: rgba(255,255,255,.08); border: 1px solid rgba(216,189,122,.28); box-shadow: inset 0 1px 3px rgba(0,0,0,.6);
+.ui-switch { position: relative; width: 50px; height: 27px; padding: 0; border-radius: var(--r-pill); cursor: pointer;
+  background: rgba(255,255,255,.08); border: 1px solid var(--rule); box-shadow: inset 0 1px 3px rgba(0,0,0,.6);
   transition: background .25s var(--ease), border-color .25s var(--ease), box-shadow .25s var(--ease); }
 .ui-switch i { position: absolute; left: 3px; top: 2.5px; width: 20px; height: 20px; border-radius: 50%;
   background: linear-gradient(180deg, #f4ead2, #b9ac90); box-shadow: 0 1px 4px rgba(0,0,0,.6);
   transition: transform .42s var(--spring), width .16s var(--ease), background .25s var(--ease); }
 .ui-switch:active i { width: 26px; }
-.ui-switch.on { background: rgba(216,189,122,.30); border-color: var(--gold); box-shadow: inset 0 1px 3px rgba(0,0,0,.4), 0 0 14px rgba(216,189,122,.25); }
+.ui-switch.on { background: rgba(216,189,122,.30); border-color: var(--rule-lit); box-shadow: inset 0 1px 3px rgba(0,0,0,.4), 0 0 14px rgba(216,189,122,.25); }
 .ui-switch.on i { transform: translateX(23px); background: linear-gradient(180deg, #fdf3cd, var(--gold-hi)); }
 .ui-switch.on:active i { transform: translateX(17px); }
 
-/* ---- Segmented / Tabs: one pill glides between items (beUI layoutId indicator) ---- */
+/* ---- Segmented / Tabs: one pill glides between items (beUI layoutId indicator).
+   This is THE model — screencss.js's .stabs and .seg are rebuilt on it there. ---- */
 .ui-seg { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; padding: 3px;
-  border: 1px solid rgba(216,189,122,.22); border-radius: 8px; background: rgba(6,6,16,.55); }
-.ui-seg .ind { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 6px) / var(--n)); border-radius: 6px;
-  background: linear-gradient(180deg, rgba(216,189,122,.30), rgba(216,189,122,.16)); border: 1px solid rgba(246,227,172,.45);
-  box-shadow: 0 0 14px rgba(216,189,122,.22), inset 0 1px 0 rgba(255,245,215,.25);
+  border: 1px solid var(--rule); background: rgba(6,6,16,.55); }
+.ui-seg .ind { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 6px) / var(--n));
+  --cut: var(--cut-sm);
+  /* the SAME plate the site's Play button and the screens' tab pill are made of — one gold surface,
+     dark ink on it. The old translucent version made the settings modal's tabs a third material. */
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold));
+  box-shadow: var(--struck); filter: var(--lit);
   transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .46s var(--spring); }
 .ui-seg button { position: relative; z-index: 1; padding: 7px 4px; border: none; background: none; cursor: pointer;
   color: var(--textdim); font: 400 12.5px var(--serif); font-variant: small-caps; letter-spacing: .12em;
-  transition: color .22s var(--ease), transform .3s var(--spring); }
+  transition: color .22s var(--ease), translate .3s var(--spring), box-shadow .2s var(--ease); }
 .ui-seg button:hover { color: var(--text); }
-.ui-seg button.on { color: var(--gold-hi); text-shadow: 0 0 10px rgba(216,189,122,.35); }
-.ui-seg button:active { transform: scale(.95); }
+.ui-seg button.on { color: #241b06; }
 .ui-seg.tabs { padding: 4px; }
 .ui-seg.tabs button { padding: 9px 4px; font-size: 13.5px; }
 
-/* ---- Buttons: spring press ---- */
-.ui-btn { cursor: pointer; padding: 9px 20px; border-radius: 7px; border: 1px solid var(--gold-dim); background: rgba(12,11,26,.7);
+/* ---- Buttons: the site's plate — cut corner, struck hairline inside it, sinks on press ---- */
+.ui-btn { cursor: pointer; padding: 9px 20px; border: 1px solid var(--rule); background: rgba(12,11,26,.7);
   color: var(--text); font: 400 14px var(--serif); font-variant: small-caps; letter-spacing: .14em;
-  transition: transform .34s var(--spring), border-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease); }
-.ui-btn:hover { border-color: var(--gold-hi); color: var(--gold-hi); box-shadow: 0 0 16px rgba(216,189,122,.22); }
-.ui-btn:active { transform: scale(.95); }
-.ui-btn.primary { background: linear-gradient(180deg, rgba(216,189,122,.26), rgba(216,189,122,.10)); border-color: var(--gold); color: var(--gold-hi); }
-.ui-btn.ghost { background: none; border-color: rgba(216,189,122,.18); color: var(--textdim); }
+  box-shadow: var(--struck); filter: var(--lift);
+  transition: translate .2s var(--spring), border-color .2s var(--ease), color .2s var(--ease),
+    box-shadow .2s var(--ease), filter .2s var(--ease); }
+.ui-btn:hover { border-color: var(--gold-hi); color: var(--gold-hi); filter: var(--lift) var(--lit); }
+.ui-btn.primary { background: linear-gradient(180deg, rgba(216,189,122,.26), rgba(216,189,122,.10)); border-color: var(--rule-lit); color: var(--gold-hi); }
+.ui-btn.ghost { background: none; border-color: var(--rule); color: var(--textdim); }
 
 /* ---- keybind grid ---- */
 .kbgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; padding: 6px 0 10px; }
-.kb { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(216,189,122,.07); }
-.kb kbd { min-width: 74px; text-align: center; padding: 3px 7px; border: 1px solid var(--gold-dim); border-radius: 5px;
+.kb { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--rule-faint); }
+.kb kbd { min-width: 74px; text-align: center; padding: 3px 7px; border: 1px solid var(--rule);
+  --cut: var(--cut-sm);
   background: rgba(10,10,22,.75); color: var(--gold-hi); font: 600 11px "Segoe UI", system-ui, sans-serif; letter-spacing: .06em; }
 .kb span { font: 400 13px var(--serif); letter-spacing: .05em; color: var(--textdim); }
 
@@ -369,11 +466,11 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
    contrast and motion — no new elements, no per-frame layout.
    ========================================================================================== */
 #vitals { top: 24px; left: 26px; gap: 13px; }
-#lvl { width: 36px; height: 36px; border-width: 1px; border-radius: 4px;
+#lvl { width: 36px; height: 36px; border-width: 1px; border-radius: var(--r-md);
   background: linear-gradient(150deg, rgba(30,22,56,.92), rgba(9,8,20,.92));
   box-shadow: 0 0 16px rgba(0,0,0,.6), 0 0 18px rgba(211,165,72,.20), inset 0 0 10px rgba(216,189,122,.16); }
 #lvl b { font-size: 16px; text-shadow: 0 0 8px rgba(216,189,122,.5); }
-#hbar { width: 326px; height: 22px; border-radius: 4px; border: 1px solid rgba(216,189,122,.72);
+#hbar { width: 326px; height: 22px; border-radius: var(--r-md); border: 1px solid var(--rule-lit);
   background: linear-gradient(180deg, rgba(10,8,20,.95), rgba(26,18,38,.92));
   box-shadow: 0 2px 14px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.9), 0 0 20px rgba(211,165,72,.10); }
 #hbar .fill { background: linear-gradient(180deg, #f7d49b 0%, #e19a48 26%, #c85f2a 62%, #8d3418 100%);
@@ -393,16 +490,17 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #abrow { gap: 20px; }
 .ab { width: 48px; height: 48px; }
 .ab.sup { width: 68px; height: 68px; }
-.ab .dia { border-radius: 5px; border-width: 1px; border-color: rgba(216,189,122,.62);
+.ab .dia { border-radius: var(--r-md); border-width: 1px; border-color: var(--rule-lit);
   background: linear-gradient(150deg, rgba(52,44,96,.88), rgba(16,14,36,.90));
   box-shadow: 0 4px 16px rgba(0,0,0,.6), inset 0 0 14px rgba(140,190,255,.10); }
 .ab.ready .dia { border-color: var(--gold-hi); box-shadow: 0 0 18px rgba(216,189,122,.34), inset 0 0 14px rgba(140,190,255,.20); }
 .ab svg { width: 50%; height: 50%; }
-.ab b { bottom: -19px; font-size: 10.5px; letter-spacing: .18em; padding: 1px 6px; border-radius: 4px;
-  background: rgba(8,8,18,.6); border: 1px solid rgba(216,189,122,.22); color: rgba(246,236,208,.92); }
-#smeter { margin-top: 28px; width: 236px; height: 7px; border-radius: 4px; border-color: rgba(216,189,122,.45);
+.ab b { bottom: -19px; font-size: 10.5px; letter-spacing: .18em; padding: 1px 6px;
+  --cut: var(--cut-sm); border-radius: 0;
+  background: rgba(8,8,18,.6); border: 1px solid var(--rule); color: rgba(246,236,208,.92); }
+#smeter { margin-top: 28px; width: 236px; height: 7px; border-radius: var(--r-md); border-color: var(--rule);
   background: linear-gradient(180deg, rgba(8,6,16,.85), rgba(18,14,30,.8)); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
-#smeter i { border-radius: 4px; box-shadow: 0 0 10px rgba(180,144,255,.45); }
+#smeter i { border-radius: var(--r-md); box-shadow: 0 0 10px rgba(180,144,255,.45); }
 #smeter.full { box-shadow: 0 0 18px rgba(246,227,172,.5), inset 0 1px 3px rgba(0,0,0,.6); }
 
 /* ---- ammo ---- */
@@ -415,28 +513,29 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   background: linear-gradient(90deg, transparent, var(--gold-dim)); }
 
 /* ---- toasts / quest / pickups: card language shared with the settings menu ---- */
-.toast { padding: 7px 20px 7px 16px; border: 1px solid var(--line); border-left: 2px solid var(--gold);
-  border-radius: 6px; background: var(--glass); backdrop-filter: blur(4px); box-shadow: 0 6px 22px rgba(0,0,0,.55); }
-#quest { right: 26px; top: 236px; width: 268px; padding: 10px 14px 11px; border-radius: 7px;
-  border: 1px solid rgba(216,189,122,.20); border-right: 2px solid var(--gold);
+/* the cut corner, on the two cards the player reads mid-fight. The 2px accent rail stays a rail:
+   it is a signal (which kind of toast, which side the tracker is docked), not a hairline. */
+.toast { padding: 7px 20px 7px 16px; border: 1px solid var(--line); border-left: 2px solid var(--gold); background: var(--glass); backdrop-filter: blur(4px); filter: var(--lift); }
+#quest { right: 26px; top: 236px; width: 268px; padding: 10px 14px 11px;
+  border: 1px solid var(--rule); border-right: 2px solid var(--gold);
   background: linear-gradient(250deg, rgba(20,17,42,.62), rgba(9,8,20,.30)); backdrop-filter: blur(3px); }
 #quest .ql { display: none; }
-#iprompt kbd { border-radius: 5px; }
+#iprompt kbd { --cut: var(--cut-sm); border-radius: 0; }
 
 /* ---- boss bar ---- */
-#boss .bar { height: 10px; border-radius: 4px; border-color: rgba(216,189,122,.55);
+#boss .bar { height: 10px; border-radius: var(--r-md); border-color: var(--rule-lit);
   background: linear-gradient(180deg, rgba(8,6,16,.92), rgba(22,16,34,.9)); box-shadow: inset 0 2px 5px rgba(0,0,0,.85), 0 0 22px rgba(211,165,72,.14); }
 #boss .bname { letter-spacing: .24em; text-indent: .24em; }
 /* shield reads as a rail UNDER the health, not a blue block painted over its left third */
-#boss .bsh, #tgt .tsh { top: auto; bottom: 0; height: 3px; border-radius: 0 0 3px 3px; }
+#boss .bsh, #tgt .tsh { top: auto; bottom: 0; height: 3px; border-radius: 0 0 var(--r-sm) var(--r-sm); }
 
 /* ---- escort guide frame ---- */
-#guide .bar { height: 8px; border-radius: 4px; background: linear-gradient(180deg, rgba(8,6,16,.92), rgba(14,26,18,.9)); box-shadow: inset 0 2px 5px rgba(0,0,0,.85), 0 0 16px rgba(95,217,126,.16); }
+#guide .bar { height: 8px; border-radius: var(--r-md); background: linear-gradient(180deg, rgba(8,6,16,.92), rgba(14,26,18,.9)); box-shadow: inset 0 2px 5px rgba(0,0,0,.85), 0 0 16px rgba(95,217,126,.16); }
 #guide .gname { letter-spacing: .18em; }
 
 /* ---- start hint: same kit, spring entrance ---- */
 #start.strip { padding-bottom: 15vh; gap: 12px; }   /* clear of the ability row and the ammo block */
-#start .cta { padding: 9px 26px; border-radius: 8px; border: 1px solid var(--gold-dim); background: rgba(9,8,20,.5);
+#start .cta { padding: 9px 26px; border: 1px solid var(--rule); background: rgba(9,8,20,.5);
   backdrop-filter: blur(4px); animation: ctaIn .6s var(--spring), lowpulse 2.4s ease-in-out infinite 1s; }
 @keyframes ctaIn { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
 #start .controls { max-width: 720px; }

@@ -14,7 +14,8 @@
 
 export const SCREEN_CSS = `
 #ui .scr,#ui .scr *{box-sizing:border-box}
-#ui .scr{--r:var(--gold);--sink:#07060f;--srule:rgba(216,189,122,.20)}
+/* --srule was a fourth hairline alpha hiding in a local variable; it is the house edge now */
+#ui .scr{--r:var(--gold);--sink:#07060f;--srule:var(--rule)}
 
 /* ------------------------------------------------------------------ fit or scroll
    Every screen is a padded grid cell. Cards may never exceed it; anything taller
@@ -25,14 +26,14 @@ export const SCREEN_CSS = `
 /* ------------------------------------------------------------------ the panel
    Same object as the settings modal: glass, one gold hairline, a stud top and bottom. */
 #ui .scr .parch{background:radial-gradient(ellipse at 50% -8%,rgba(143,216,255,.09),transparent 58%),var(--glass);
-  color:var(--text);border:1px solid var(--line);border-radius:10px;
+  color:var(--text);border:1px solid var(--line);border-radius:var(--r-md);
   box-shadow:0 30px 90px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,240,205,.10),0 0 60px rgba(124,91,214,.10)}
 #ui .scr .parch::after{content:none}
 #ui .scr .parch::before{content:"";position:absolute;inset:auto;top:-5px;left:50%;margin-left:-5px;
-  width:9px;height:9px;border:1.5px solid var(--gold);transform:rotate(45deg);background:#0b0a1a;
+  width:9px;height:9px;border:1px solid var(--rule-lit);transform:rotate(45deg);background:#0b0a1a;
   border-radius:0;box-shadow:none}
 #ui .scr .parch>.sfoot::after{content:"";position:absolute;bottom:-19px;left:50%;margin-left:-5px;
-  width:9px;height:9px;border:1.5px solid var(--gold);transform:rotate(45deg);background:#0b0a1a}
+  width:9px;height:9px;border:1px solid var(--rule-lit);transform:rotate(45deg);background:#0b0a1a}
 #ui .parch.pane{display:flex;flex-direction:column;min-height:0}
 #ui .pane>.shead,#ui .pane>.sfoot,#ui .pane>.say,#ui .pane>.curr{flex:0 0 auto}
 #ui .pscroll{position:relative;flex:1 1 auto;min-height:0;display:flex}
@@ -40,8 +41,8 @@ export const SCREEN_CSS = `
   overscroll-behavior:contain;scrollbar-gutter:stable;padding:1px 10px 2px 1px;
   scrollbar-color:rgba(216,189,122,.5) rgba(255,255,255,.05);scrollbar-width:thin}
 #ui .pbody::-webkit-scrollbar{width:9px}
-#ui .pbody::-webkit-scrollbar-track{background:rgba(255,255,255,.04);border-radius:6px}
-#ui .pbody::-webkit-scrollbar-thumb{border-radius:6px;border:1px solid rgba(216,189,122,.35);
+#ui .pbody::-webkit-scrollbar-track{background:rgba(255,255,255,.04);border-radius:var(--r-md)}
+#ui .pbody::-webkit-scrollbar-thumb{border-radius:var(--r-md);border:1px solid var(--rule);
   background:linear-gradient(180deg,rgba(216,189,122,.55),rgba(138,97,25,.55))}
 #ui .pbody::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--gold-hi),var(--gold))}
 /* scroll affordance: a fade + caret, only while there is more below */
@@ -67,58 +68,89 @@ export const SCREEN_CSS = `
   background:linear-gradient(90deg,transparent,var(--gold-dim),transparent)}
 #ui .shead .mflourish::after{content:"\\2756";position:absolute;left:50%;top:-8px;transform:translateX(-50%);
   color:var(--gold);font-size:10px}
-#ui .stabs{display:flex;gap:2px;justify-content:center;margin:14px auto 12px;padding:3px;
-  border:1px solid var(--line);border-radius:9px;background:rgba(5,4,12,.5);width:fit-content}
-#ui .stabs button{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;gap:7px;
-  padding:7px 18px;border:0;border-radius:7px;background:none;cursor:pointer;color:var(--textdim);
-  font:400 12px/1 var(--serif);font-variant:small-caps;letter-spacing:.18em;
-  transition:color .18s var(--ease),background .28s var(--spring)}
-#ui .stabs button:hover{color:var(--text)}
-#ui .stabs button.on{color:#0d0b18;background:linear-gradient(180deg,var(--gold-hi),var(--gold));
-  box-shadow:0 2px 10px rgba(216,189,122,.28)}
+/* ------------------------------------------------------------------ segmented controls
+   ONE model, and it is ui.css's .ui-seg: a single pill that GLIDES to the picked cell on the house
+   spring. These two used to swap a background on the active button instead — a cut, not a move —
+   so the product shipped two motion models for the same control.
+   .ui-seg takes its index from an .ind span settings.js appends; this markup lives in Screens.js and
+   rpgscreens.js, which this file does not own, so the pill is the container's ::before and :has()
+   hands it the index and the count that span would have carried. Equal columns are what let one
+   pill's travel be written as translateX(i * 100%) — and equal cells are what a segmented control
+   IS; a row of differently-sized chips is a toolbar. */
+#ui :is(.stabs,.seg){position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
+  gap:0;padding:3px;border:1px solid var(--line);--n:1;--i:0}
+#ui .stabs{margin:14px auto 12px;background:rgba(5,4,12,.5);width:fit-content}
+#ui .seg{display:inline-grid;background:rgba(5,4,12,.45)}
+#ui :is(.stabs,.seg)::before{content:'';position:absolute;left:3px;top:3px;bottom:3px;z-index:0;
+  width:calc((100% - 6px) / var(--n));--cut:var(--cut-sm);
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold));box-shadow:var(--struck);
+  transform:translateX(calc(var(--i) * 100%));
+  transition:transform .46s var(--spring),opacity .2s var(--ease)}
+/* the sort segment can legitimately have NOTHING lit (inv.sort==='up' lights the pill beside it
+   instead), and a pill parked on cell 1 would be a lie about which sort is active */
+#ui :is(.stabs,.seg):not(:has(>button.on))::before{opacity:0}
+/* the count and the index the .ind span would have been handed. Eight covers the widest segment
+   in the product — the inventory's eight slot filters. */
+#ui :is(.stabs,.seg):has(>button:nth-child(2):last-child){--n:2}
+#ui :is(.stabs,.seg):has(>button:nth-child(3):last-child){--n:3}
+#ui :is(.stabs,.seg):has(>button:nth-child(4):last-child){--n:4}
+#ui :is(.stabs,.seg):has(>button:nth-child(5):last-child){--n:5}
+#ui :is(.stabs,.seg):has(>button:nth-child(6):last-child){--n:6}
+#ui :is(.stabs,.seg):has(>button:nth-child(7):last-child){--n:7}
+#ui :is(.stabs,.seg):has(>button:nth-child(8):last-child){--n:8}
+#ui :is(.stabs,.seg):has(>button:nth-child(2).on){--i:1}
+#ui :is(.stabs,.seg):has(>button:nth-child(3).on){--i:2}
+#ui :is(.stabs,.seg):has(>button:nth-child(4).on){--i:3}
+#ui :is(.stabs,.seg):has(>button:nth-child(5).on){--i:4}
+#ui :is(.stabs,.seg):has(>button:nth-child(6).on){--i:5}
+#ui :is(.stabs,.seg):has(>button:nth-child(7).on){--i:6}
+#ui :is(.stabs,.seg):has(>button:nth-child(8).on){--i:7}
+#ui :is(.stabs,.seg) button{position:relative;z-index:1;appearance:none;-webkit-appearance:none;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:0;
+  background:none;cursor:pointer;color:var(--textdim);white-space:nowrap;
+  transition:color .18s var(--ease),translate .3s var(--spring)}
+#ui .stabs button{padding:7px 18px;font:400 12px/1 var(--serif);font-variant:small-caps;letter-spacing:.18em}
+#ui .seg button{padding:6px 11px;font:400 10px/1 var(--serif);font-variant:small-caps;letter-spacing:.16em}
+#ui :is(.stabs,.seg) button:hover{color:var(--text)}
+/* the ink sits ON the pill — the active button paints nothing of its own any more */
+#ui :is(.stabs,.seg) button.on{color:#241b06}
 #ui .stabs kbd{min-width:16px;height:15px;padding:0 4px;margin:0;font-size:9px;opacity:.72}
 #ui .stabs button.on kbd{background:rgba(11,10,26,.22);border-color:rgba(11,10,26,.4);color:#221a06;
   box-shadow:none;text-shadow:none}
 
-/* ------------------------------------------------------------------ focus
-   Arrow-key roving moves focus programmatically, which Chrome does not always classify as
-   :focus-visible — so plain :focus carries the ring too. A menu with an invisible ring is not a menu. */
-#ui .scr :focus{outline:2px solid var(--gold);outline-offset:2px;border-radius:4px;
-  box-shadow:0 0 0 4px rgba(216,189,122,.22),0 0 18px rgba(216,189,122,.35)}
-#ui .scr :focus-visible{outline-color:var(--gold-hi);
-  box-shadow:0 0 0 4px rgba(216,189,122,.34),0 0 22px rgba(216,189,122,.5)}
-#ui .pbody:focus,#ui .pbody:focus-visible{outline-offset:-2px}
+/* focus lives in ui.css now, as ONE product-wide primitive (see "ONE FOCUS RING" there). It kept the
+   two load-bearing decisions this rule got right — plain :focus rings too, because arrow-key roving
+   moves focus programmatically and Chrome does not reliably call that :focus-visible; and it is loud
+   — and traded the outline for an inset ring, because an outline is painted by the element and so is
+   clipped away by the chamfer these controls now wear. .pbody's outline-offset:-2px was already that
+   answer for one element; it is the general rule now. */
 
-/* ------------------------------------------------------------------ controls */
+/* ------------------------------------------------------------------ controls
+   The house plate: cut corner, struck hairline just inside it, and it SINKS on press (ui.css's
+   "ONE PRESS"). It used to shrink — transform:translateY(1px) scale(.985) — while the site's
+   buttons sank, which is one gesture with two physics. */
 #ui .scr .btn{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;gap:7px;
-  padding:8px 15px;margin:0;border:1px solid var(--line);border-radius:7px;cursor:pointer;
-  background:rgba(255,255,255,.04);color:var(--text);
+  padding:8px 15px;margin:0;border:1px solid var(--line);cursor:pointer;
+  background:rgba(255,255,255,.04);color:var(--text);box-shadow:var(--struck);
   font:400 11px/1.2 var(--serif);letter-spacing:.17em;text-transform:uppercase;text-align:center;
-  transition:background .16s var(--ease),box-shadow .16s var(--ease),transform .18s var(--spring),color .16s}
-#ui .scr .btn:hover{background:rgba(255,255,255,.09);border-color:var(--gold-dim);color:#fff6e0}
-#ui .scr .btn:active{transform:translateY(1px) scale(.985)}
-#ui .scr .btn.gold{background:linear-gradient(180deg,var(--gold-hi),var(--gold));border-color:var(--gold);
-  color:#241b06;box-shadow:0 2px 14px rgba(216,189,122,.3)}
+  transition:background .16s var(--ease),box-shadow .16s var(--ease),translate .18s var(--spring),
+    filter .16s var(--ease),color .16s}
+#ui .scr .btn:hover{background:rgba(255,255,255,.09);border-color:var(--rule);color:#fff6e0}
+#ui .scr .btn.gold{background:linear-gradient(180deg,var(--gold-hi),var(--gold));border-color:var(--rule-lit);
+  color:#241b06}
+/* :not(:active) is the press: the glow is one of the two things a sink takes away, and this rule
+   would otherwise out-specify ui.css's ONE PRESS and keep the plate lit while it is pushed in */
+#ui .scr .btn.gold:not(:active){filter:var(--lit)}
 #ui .scr .btn.gold:hover{background:linear-gradient(180deg,#fff3ce,var(--gold-hi));color:#241b06}
 #ui .scr .btn.warn{color:#ff9a86;border-color:rgba(224,85,52,.45)}
 #ui .scr .btn.warn:hover{background:rgba(224,85,52,.16);color:#ffc3b4}
-#ui .scr .btn.on{background:linear-gradient(180deg,var(--gold-hi),var(--gold));border-color:var(--gold);color:#241b06}
-#ui .scr .btn[aria-disabled="true"],#ui .scr .btn:disabled{opacity:.38;cursor:default;box-shadow:none}
+#ui .scr .btn.on{background:linear-gradient(180deg,var(--gold-hi),var(--gold));border-color:var(--rule-lit);color:#241b06}
+#ui .scr .btn[aria-disabled="true"],#ui .scr .btn:disabled{opacity:.38;cursor:default;box-shadow:none;filter:none}
 #ui .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 
-/* segmented control — the settings-menu tabs at list scale (filters, sort) */
-#ui .seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:8px;
-  background:rgba(5,4,12,.45)}
-#ui .seg button{appearance:none;-webkit-appearance:none;border:0;border-radius:6px;background:none;
-  cursor:pointer;padding:6px 11px;color:var(--textdim);font:400 10px/1 var(--serif);
-  font-variant:small-caps;letter-spacing:.16em;
-  transition:color .16s var(--ease),background .26s var(--spring)}
-#ui .seg button:hover{color:var(--text)}
-#ui .seg button.on{color:#241b06;background:linear-gradient(180deg,var(--gold-hi),var(--gold))}
-
 #ui .scr kbd{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:17px;
-  padding:0 5px;margin:0 2px;border-radius:5px;vertical-align:middle;
-  border:1px solid rgba(216,189,122,.4);background:rgba(9,8,20,.7);
+  padding:0 5px;margin:0 2px;--cut:var(--cut-sm);vertical-align:middle;
+  border:1px solid var(--rule);background:rgba(9,8,20,.7);
   box-shadow:inset 0 1px 0 rgba(255,240,205,.12);
   font:400 10px/1 var(--serif);letter-spacing:.04em;text-transform:none;color:var(--gold-hi);text-shadow:none}
 
@@ -129,19 +161,19 @@ export const SCREEN_CSS = `
 #ui .say[data-kind="good"]{color:#a8e08a}
 #ui .cmpn{margin:8px 0 2px;text-align:left;letter-spacing:.12em;color:var(--textdim)}
 #ui .sfoot{position:relative;display:flex;align-items:center;gap:16px;justify-content:space-between;
-  margin-top:11px;padding-top:11px;border-top:1px solid rgba(216,189,122,.14)}
+  margin-top:11px;padding-top:11px;border-top:1px solid var(--rule-faint)}
 #ui .scr .hint{flex:1 1 auto;margin:0;text-align:left;color:rgba(232,222,196,.45);
   font:400 10px/1.7 var(--serif);letter-spacing:.24em;text-transform:uppercase}
 #ui .sfoot .btn{flex:0 0 auto}
 /* the corner ✕ — the thing every player's mouse goes to first */
 #ui .sclose{position:absolute;right:13px;top:13px;z-index:3;width:34px;height:34px;padding:0;
-  display:grid;place-items:center;cursor:pointer;border:1px solid var(--line);border-radius:9px;
+  display:grid;place-items:center;cursor:pointer;border:1px solid var(--line);
   background:rgba(5,4,12,.5);color:var(--textdim);font:400 15px/1 var(--serif);
   transition:color .16s var(--ease),background .16s var(--ease),transform .2s var(--spring)}
 #ui .sclose:hover{color:#fff6e0;background:rgba(224,85,52,.22);border-color:rgba(224,85,52,.5);transform:scale(1.06)}
 
 #ui .curr{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:center;align-items:center;
-  padding:7px 10px;margin-bottom:12px;border:1px solid var(--line);border-radius:8px;
+  padding:7px 10px;margin-bottom:12px;border:1px solid var(--line);
   background:rgba(5,4,12,.4);font:400 12px/1 var(--serif);color:var(--text)}
 #ui .curr .c{display:inline-flex;align-items:center;gap:6px;letter-spacing:.06em;padding:0 6px}
 #ui .curr .c u{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--textdim);text-decoration:none}
@@ -150,7 +182,7 @@ export const SCREEN_CSS = `
 #ui .curr .btn{padding:5px 11px;font-size:10px}
 
 #ui .stat{display:grid;grid-template-columns:1fr auto auto;gap:1px 9px;align-items:baseline;
-  padding:6px 0 5px;border-bottom:1px solid rgba(216,189,122,.10)}
+  padding:6px 0 5px;border-bottom:1px solid var(--rule-faint)}
 #ui .stat .k{font:400 10px/1.5 var(--serif);letter-spacing:.2em;text-transform:uppercase;color:var(--textdim)}
 #ui .stat .v{font:400 15px/1.2 var(--serif);letter-spacing:.03em;color:#fdf6e6;text-align:right;
   font-variant-numeric:lining-nums tabular-nums}
@@ -158,9 +190,9 @@ export const SCREEN_CSS = `
 #ui .stat .d.up{color:#8fdc8a}
 #ui .stat .d.dn{color:#ff9a86}
 #ui .stat .n{grid-column:1/-1;font:italic 400 11px/1.45 var(--serif);color:rgba(232,222,196,.5);letter-spacing:.02em}
-#ui .meter{grid-column:1/-1;position:relative;height:5px;margin:5px 0 1px;border-radius:3px;
-  background:rgba(255,255,255,.07);border:1px solid rgba(216,189,122,.16);overflow:visible}
-#ui .meter i{display:block;height:100%;border-radius:2px;
+#ui .meter{grid-column:1/-1;position:relative;height:5px;margin:5px 0 1px;border-radius:var(--r-sm);
+  background:rgba(255,255,255,.07);border:1px solid var(--rule-faint);overflow:visible}
+#ui .meter i{display:block;height:100%;border-radius:var(--r-sm);
   background:linear-gradient(90deg,#8a6119,var(--gold) 70%,var(--gold-hi));
   box-shadow:0 0 9px rgba(216,189,122,.4);transition:width .35s ease-out}
 #ui .meter u{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;
@@ -170,7 +202,7 @@ export const SCREEN_CSS = `
 #ui .pips b.on{background:var(--gold);box-shadow:0 0 5px rgba(216,189,122,.7)}
 
 #ui .perk{display:flex;gap:9px;align-items:flex-start;padding:7px 0;
-  border-bottom:1px solid rgba(216,189,122,.10)}
+  border-bottom:1px solid var(--rule-faint)}
 #ui .perk .g{flex:0 0 auto;margin-top:2px}
 #ui .perk .t{font:400 13px/1.25 var(--serif);letter-spacing:.04em;color:#fdf6e6}
 #ui .perk .s{font:400 9px/1.4 var(--serif);letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
@@ -182,24 +214,24 @@ export const SCREEN_CSS = `
 #ui .rar i{width:8px;height:8px;transform:rotate(45deg);background:var(--r,var(--gold));
   box-shadow:0 0 8px var(--r,var(--gold))}
 
-#ui .scr .card{border:1px solid var(--line);border-radius:9px;padding:13px 15px;
+#ui .scr .card{border:1px solid var(--line);padding:13px 15px;
   background:rgba(255,255,255,.028)}
 #ui .scr .card h3,#ui .scr .detail h3,#ui .scr .rows h3{margin:12px 0 8px;font:400 11px/1 var(--serif);
   letter-spacing:.32em;text-transform:uppercase;color:var(--gold)}
 #ui .scr .card>h3:first-child{margin-top:0}
 #ui .scr .row{border-bottom:0;padding:2px 0;color:var(--text)}
 #ui .scr .row span{color:var(--textdim)}
-#ui .scr .xp{height:6px;border-radius:3px;background:rgba(255,255,255,.08);border:1px solid rgba(216,189,122,.2)}
+#ui .scr .xp{height:6px;border-radius:var(--r-sm);background:rgba(255,255,255,.08);border:1px solid var(--rule)}
 #ui .scr .xp i{background:linear-gradient(90deg,#8a6119,var(--gold-hi));box-shadow:0 0 10px rgba(216,189,122,.5)}
 #ui .empty{padding:22px 4px;text-align:center;font:italic 400 13px/1.7 var(--serif);color:rgba(232,222,196,.45)}
 
 /* ------------------------------------------------------------------ item icon plate
    One plate, three sizes: bag tile, doll slot, detail header. Rarity drives the tint. */
-#ui .ic{position:relative;display:grid;place-items:center;border-radius:9px;overflow:hidden;
+#ui .ic{position:relative;display:grid;place-items:center;--cut:var(--cut-sm);overflow:hidden;
   color:var(--r,var(--gold));
   background:rgba(6,5,14,.86);
   background:radial-gradient(ellipse at 50% 18%,color-mix(in srgb,var(--r,#d8bd7a) 20%,transparent),rgba(5,4,12,.92) 74%);
-  border:1px solid rgba(216,189,122,.35);border-color:color-mix(in srgb,var(--r,#d8bd7a) 45%,transparent);
+  border:1px solid var(--rule);border-color:color-mix(in srgb,var(--r,#d8bd7a) 45%,transparent);
   box-shadow:inset 0 1px 0 rgba(255,240,205,.10),inset 0 -12px 20px -12px rgba(0,0,0,.9)}
 #ui .ic img{width:100%;height:100%;object-fit:contain;padding:5%;
   filter:drop-shadow(0 2px 5px rgba(0,0,0,.75));-webkit-user-drag:none}
@@ -207,7 +239,7 @@ export const SCREEN_CSS = `
 #ui .ic.big{width:78px;height:78px}
 #ui .ic.big svg{width:58%;height:58%}
 /* empty slot: the silhouette only, pushed back so a filled slot always wins the eye */
-#ui .dslot.empty .ic{background:rgba(255,255,255,.03);border-color:rgba(216,189,122,.14)}
+#ui .dslot.empty .ic{background:rgba(255,255,255,.03);border-color:var(--rule-faint)}
 #ui .dslot.empty .ic svg{opacity:.34}
 
 /* ------------------------------------------------------------------ character sheet */
@@ -223,7 +255,7 @@ export const SCREEN_CSS = `
 #ui .rows.cols2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 22px}
 
 #ui .dhead{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;
-  padding-bottom:11px;border-bottom:1px solid rgba(216,189,122,.14)}
+  padding-bottom:11px;border-bottom:1px solid var(--rule-faint)}
 #ui .dhead .dh{min-width:0}
 #ui .dhead .rar{margin-top:5px}
 #ui .pwbig{text-align:right;font:300 30px/1 var(--serif);color:var(--gold-hi);
@@ -236,7 +268,7 @@ export const SCREEN_CSS = `
 #ui .dslot{appearance:none;-webkit-appearance:none;cursor:pointer;text-align:left;position:relative;
   display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto;gap:1px 10px;
   align-items:center;
-  padding:9px 11px;border:1px solid var(--line);border-radius:9px;color:var(--text);
+  padding:9px 11px;border:1px solid var(--line);color:var(--text);
   background:linear-gradient(150deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
   border-left:3px solid var(--r,rgba(216,189,122,.35));
   transition:background .16s var(--ease),border-color .16s var(--ease),transform .2s var(--spring)}
@@ -246,7 +278,7 @@ export const SCREEN_CSS = `
 #ui .dslot .nm{grid-column:2;font:400 13px/1.3 var(--serif);color:#fdf6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;align-self:start}
 #ui .dslot .pw{grid-row:1/3;grid-column:3;align-self:center;font:400 15px/1 var(--serif);color:var(--textdim);
   font-variant-numeric:lining-nums tabular-nums}
-#ui .dslot.empty{opacity:.55;border-left-color:rgba(216,189,122,.18)}
+#ui .dslot.empty{opacity:.55;border-left-color:var(--rule)}
 #ui .dslot.empty .nm{font-style:italic;color:var(--textdim)}
 #ui .dgrid .dslot:first-child{grid-column:1/-1}
 #ui .dgrid .dslot:first-child .ic{width:62px;height:62px}
@@ -255,7 +287,7 @@ export const SCREEN_CSS = `
 #ui .rankhead{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;
   margin-bottom:10px}
 #ui .rankhead .lvl{width:46px;height:46px;display:grid;place-items:center;transform:rotate(45deg);
-  border:1.5px solid var(--gold);background:rgba(5,4,12,.6);color:var(--gold-hi);
+  border:1px solid var(--rule-lit);background:rgba(5,4,12,.6);color:var(--gold-hi);
   font:400 19px/1 var(--serif);box-shadow:0 0 16px rgba(216,189,122,.18)}
 #ui .rankhead .lvl{font-variant-numeric:lining-nums tabular-nums}
 #ui .rankhead .lvl::first-letter{display:inline-block}
@@ -281,16 +313,16 @@ export const SCREEN_CSS = `
 #ui .invcols{display:grid;grid-template-columns:minmax(244px,286px) minmax(0,1.15fr) minmax(286px,.9fr);
   gap:14px;align-items:start}
 #ui .bag{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;align-content:start}
-#ui .tile.ghost{min-height:112px;border-style:dashed;border-color:rgba(216,189,122,.13);
+#ui .tile.ghost{min-height:112px;border-style:dashed;border-color:var(--rule-faint);
   background:rgba(255,255,255,.012);cursor:default;pointer-events:none;box-shadow:none}
 #ui .tile.ghost::before,#ui .tile.ghost::after{content:none}
 #ui .tile{position:relative;appearance:none;-webkit-appearance:none;cursor:pointer;
   display:grid;justify-items:center;gap:6px;padding:10px 7px 8px;
-  border:1px solid var(--line);border-radius:10px;color:var(--text);
+  border:1px solid var(--line);color:var(--text);
   background:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,.012));
   transition:background .16s var(--ease),border-color .16s var(--ease),transform .2s var(--spring),
     box-shadow .18s var(--ease)}
-#ui .tile::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;border-radius:10px 10px 0 0;
+#ui .tile::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
   background:var(--r,var(--gold));opacity:.85}
 #ui .tile .ic{width:58px;height:58px}
 #ui .tile .nm{font:400 12px/1.32 var(--serif);letter-spacing:.02em;color:var(--text);text-align:center;
@@ -300,15 +332,14 @@ export const SCREEN_CSS = `
 #ui .tile .dl{position:absolute;right:7px;top:6px;font:400 10px/1 var(--serif);letter-spacing:.02em}
 #ui .tile .dl.up{color:#8fdc8a}
 #ui .tile .dl.dn{color:#ff9a86}
-#ui .tile:hover{background:rgba(255,255,255,.10);transform:translateY(-3px);
-  box-shadow:0 10px 26px rgba(0,0,0,.45)}
+#ui .tile:hover{background:rgba(255,255,255,.10);transform:translateY(-3px);filter:var(--lift)}
 /* the rarity colour bleeds up from the plate, so a legendary reads from across the grid */
 #ui .tile::after{content:"";position:absolute;left:12%;right:12%;top:0;height:34px;pointer-events:none;
   background:radial-gradient(ellipse at 50% 0%,color-mix(in srgb,var(--r,#d8bd7a) 30%,transparent),transparent 72%);
   opacity:.75}
-#ui .tile.sel{border-color:var(--gold);background:rgba(216,189,122,.10);
-  box-shadow:0 0 0 1px rgba(216,189,122,.35),0 0 26px rgba(216,189,122,.16)}
-#ui .detail{position:sticky;top:0;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+#ui .tile.sel{border-color:var(--rule-lit);background:rgba(216,189,122,.10);
+  box-shadow:inset 0 0 0 1px rgba(216,189,122,.35);filter:var(--lit)}
+#ui .detail{position:sticky;top:0;border:1px solid var(--line);padding:14px 16px;
   background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
 
 /* ---- THE PAPER DOLL -----------------------------------------------------------------------
@@ -317,10 +348,10 @@ export const SCREEN_CSS = `
    at each hip with a fist closed on its haft above it. The figure is behind the slots and
    pointer-events:none — the SLOTS are the interface, the drawing is the room they stand in.
    Layout runs bottom-heavy on purpose: the row the hands live in carries no plate. */
-#ui .pdoll{position:relative;border:1px solid var(--line);border-radius:10px;padding:9px 9px 8px;
+#ui .pdoll{position:relative;border:1px solid var(--line);padding:9px 9px 8px;
   background:radial-gradient(ellipse at 50% 20%,rgba(216,189,122,.10),rgba(255,255,255,.014) 68%)}
 #ui .pdhd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px;
-  padding-bottom:6px;border-bottom:1px solid rgba(216,189,122,.14)}
+  padding-bottom:6px;border-bottom:1px solid var(--rule-faint)}
 #ui .pdhd span{font:400 9px/1 var(--serif);letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
 #ui .pdhd b{font:400 17px/1 var(--serif);color:var(--gold-hi);font-variant-numeric:lining-nums tabular-nums}
 #ui .pdhd b u{margin-left:5px;text-decoration:none;font:400 8px/1 var(--serif);letter-spacing:.24em;
@@ -425,7 +456,7 @@ export const SCREEN_CSS = `
   --plate:rgba(11,9,24,.74);--plate2:rgba(7,5,17,.55);--brk:rgba(216,189,122,.44);
   display:grid;justify-items:center;align-content:start;gap:2px;padding:6px 4px 5px;
   border:1px solid color-mix(in srgb,var(--r,#d8bd7a) 30%,rgba(216,189,122,.20));
-  border-radius:9px;color:var(--text);
+  border-radius:var(--r-lg);color:var(--text);
   background:
     linear-gradient(var(--brk),var(--brk)) left 4px top 4px/10px 1.4px no-repeat,
     linear-gradient(var(--brk),var(--brk)) left 4px top 4px/1.4px 10px no-repeat,
@@ -444,7 +475,7 @@ export const SCREEN_CSS = `
 #ui .pdslot:hover{--plate:rgba(34,27,64,.88);--plate2:rgba(18,14,38,.72);--brk:var(--gold-hi);
   --lift:2px;box-shadow:inset 0 1px 0 rgba(255,240,205,.16),0 6px 16px rgba(0,0,0,.55)}
 #ui .pdslot.on{--plate:rgba(52,40,20,.86);--plate2:rgba(28,21,12,.70);--brk:var(--gold-hi);
-  border-color:var(--gold);box-shadow:0 0 0 1px rgba(216,189,122,.3)}
+  border-color:var(--rule-lit);box-shadow:0 0 0 1px rgba(216,189,122,.3)}
 #ui .pdslot .ic{width:var(--pdi);height:var(--pdi)}
 #ui .pdslot .sl,#ui .pdslot .nm{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #ui .pdslot .sl{font:400 8px/1.3 var(--serif);letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
@@ -455,18 +486,18 @@ export const SCREEN_CSS = `
 /* an empty slot is a SOCKET, not a dimmer copy of a full one: recessed, cold, no filigree lit.
    Filled slots are frames with the light on. Two different objects, one glance apart. */
 #ui .pdslot.empty{--plate:rgba(5,4,13,.74);--plate2:rgba(3,2,9,.62);--brk:rgba(216,189,122,.13);
-  opacity:.8;border-color:rgba(216,189,122,.13);border-bottom-color:rgba(216,189,122,.16);
+  opacity:.8;border-color:var(--rule-faint);border-bottom-color:var(--rule-faint);
   box-shadow:inset 0 4px 10px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.03)}
 #ui .pdslot.empty:hover{--brk:rgba(216,189,122,.5)}
-#ui .pdslot.empty .ic{background:rgba(255,255,255,.03);border-color:rgba(216,189,122,.16);
+#ui .pdslot.empty .ic{background:rgba(255,255,255,.03);border-color:var(--rule-faint);
   box-shadow:inset 0 2px 6px rgba(0,0,0,.7)}
 #ui .pdslot.empty .ic svg{opacity:.34}
 #ui .pdslot .dl{position:absolute;right:3px;top:3px;font:400 10px/1 var(--serif);color:#8fdc8a;
   text-shadow:0 0 8px rgba(143,220,138,.5)}
 /* the gun actually in your hands right now — the one fact a single-slot loadout could not express */
-#ui .pdslot.held{border-color:rgba(216,189,122,.55)}
+#ui .pdslot.held{border-color:var(--rule-lit)}
 #ui .pdslot .hd{position:absolute;left:50%;top:-7px;transform:translateX(-50%);z-index:2;
-  padding:1px 5px;border-radius:5px;background:#0b0a1a;border:1px solid rgba(216,189,122,.55);
+  padding:1px 5px;border-radius:var(--r-md);background:#0b0a1a;border:1px solid var(--rule-lit);
   font:400 7.5px/1.4 var(--serif);letter-spacing:.16em;text-transform:uppercase;color:var(--gold-hi);
   white-space:nowrap;pointer-events:none}
 #ui .pdslot.okfree .hd{display:none}
@@ -478,10 +509,10 @@ export const SCREEN_CSS = `
    2. .dragok        — you have actually picked it up. Same gold, solid and brighter: still legal.
    3. .over          — the pointer is on it. Filled: let go and it lands here.
    .dragno is the refusal. This is DOM, not the scene — glow is free here and cannot bloom. */
-#ui .pdslot.ok,#ui .pdslot.okfree{opacity:1;border-color:rgba(216,189,122,.7);--brk:var(--gold-hi);
+#ui .pdslot.ok,#ui .pdslot.okfree{opacity:1;border-color:var(--rule-lit);--brk:var(--gold-hi);
   box-shadow:0 0 0 1px rgba(216,189,122,.35),0 0 18px rgba(216,189,122,.22)}
-#ui .pdslot.ok::after,#ui .pdslot.okfree::after{content:'';position:absolute;inset:-3px;border-radius:11px;
-  border:1px dashed rgba(216,189,122,.6);pointer-events:none}
+#ui .pdslot.ok::after,#ui .pdslot.okfree::after{content:'';position:absolute;inset:-3px;border-radius:var(--r-lg);
+  border:1px dashed var(--rule-lit);pointer-events:none}
 /* an empty slot is a free upgrade — say so in the same ▲ green the tiles already use for a gain */
 #ui .pdslot.okfree{border-color:#8fdc8a;--brk:#a8e6a2;
   box-shadow:0 0 0 1px rgba(143,220,138,.4),0 0 22px rgba(143,220,138,.26)}
@@ -490,17 +521,17 @@ export const SCREEN_CSS = `
    other legal one, and labelled, because right-click is instant and otherwise unexplained */
 #ui .pdslot.okpick{border-color:var(--gold-hi);
   box-shadow:0 0 0 2px rgba(216,189,122,.45),0 0 24px rgba(216,189,122,.3)}
-#ui .pdslot.okpick::after{border-color:rgba(216,189,122,.8)}
+#ui .pdslot.okpick::after{border-color:var(--rule-lit)}
 #ui .pdslot.ok.okpick::before,#ui .pdslot.okfree::before{position:absolute;left:50%;top:-8px;
-  transform:translateX(-50%);z-index:2;padding:1px 5px;border-radius:5px;background:#0b0a1a;
+  transform:translateX(-50%);z-index:2;padding:1px 5px;border-radius:var(--r-md);background:#0b0a1a;
   font:400 8px/1.3 var(--serif);letter-spacing:.14em;text-transform:uppercase;pointer-events:none;
   white-space:nowrap}
-#ui .pdslot.ok.okpick::before{content:'▸ goes here';border:1px solid rgba(216,189,122,.6);color:var(--gold-hi)}
+#ui .pdslot.ok.okpick::before{content:'▸ goes here';border:1px solid var(--rule-lit);color:var(--gold-hi)}
 #ui .pdslot.okfree::before{content:'▲ free';border:1px solid rgba(143,220,138,.5);color:#8fdc8a}
 #ui .pdslot.dragok{opacity:1;border-color:var(--gold-hi);--brk:var(--gold-hi);
   box-shadow:0 0 0 2px rgba(216,189,122,.6),0 0 26px rgba(216,189,122,.34)}
-#ui .pdslot.dragok::after{content:'';position:absolute;inset:-3px;border-radius:11px;
-  border:1px solid rgba(216,189,122,.75);pointer-events:none}
+#ui .pdslot.dragok::after{content:'';position:absolute;inset:-3px;border-radius:var(--r-lg);
+  border:1px solid var(--rule-lit);pointer-events:none}
 #ui .pdslot.dragok.over{--plate:rgba(216,189,122,.34);--plate2:rgba(216,189,122,.14);
   --lift:3px;transform:translateY(calc(var(--ty) - var(--lift))) scale(1.04);
   box-shadow:0 0 0 2px var(--gold-hi),0 0 34px rgba(216,189,122,.5)}
@@ -525,14 +556,14 @@ export const SCREEN_CSS = `
 #ui .cmphd{margin-bottom:5px;font:400 9px/1.4 var(--serif);letter-spacing:.24em;text-transform:uppercase;
   color:var(--gold)}
 #ui .cmpset .cmpbar+.cmpbar{margin-top:6px}
-#ui .cmpbar.pick{border-color:rgba(216,189,122,.5);background:rgba(216,189,122,.09)}
+#ui .cmpbar.pick{border-color:var(--rule-lit);background:rgba(216,189,122,.09)}
 #ui .cmpbar .mv{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:3px 10px;margin-top:2px;
   font:400 10px/1.3 var(--serif);letter-spacing:.03em}
 #ui .cmpbar .mv b{font-weight:400}
 #ui .cmpbar .mv b.up{color:#8fdc8a}
 #ui .cmpbar .mv b.dn{color:#ff9a86}
 #ui .cmpbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:2px 10px;align-items:center;
-  margin:11px 0 0;padding:7px 10px;border:1px solid var(--srule);border-radius:9px;
+  margin:11px 0 0;padding:7px 10px;border:1px solid var(--srule);
   border-left:3px solid var(--r,rgba(216,189,122,.35));background:rgba(6,5,14,.5)}
 #ui .cmpbar .ic{width:34px;height:34px}
 #ui .cmpbar .lb{min-width:0;font:400 13px/1.25 var(--serif);color:#fdf6e6;
@@ -550,8 +581,9 @@ export const SCREEN_CSS = `
 #ui .btnrow.prime{margin:10px 0 0}
 #ui .scr .btn.equip{flex:1 1 100%;justify-content:center;padding:11px 18px;
   font-size:12px;letter-spacing:.26em;
-  box-shadow:0 6px 20px rgba(216,189,122,.22),inset 0 1px 0 rgba(255,246,220,.5)}
-#ui .scr .btn.equip[disabled]{box-shadow:none}
+  box-shadow:inset 0 1px 0 rgba(255,246,220,.5)}
+#ui .scr .btn.equip:not(:active){filter:var(--lit)}
+#ui .scr .btn.equip[disabled]{box-shadow:none;filter:none}
 #ui .blocked{margin-top:6px;text-align:center;font:italic 400 11px/1.5 var(--serif);
   color:rgba(255,154,134,.75)}
 #ui .blocked.ok{color:rgba(232,222,196,.5)}
@@ -566,7 +598,7 @@ export const SCREEN_CSS = `
 #ui .btnrow.prime.split .btn.equip b.dn{color:#ff9a86}
 #ui .btnrow.prime.split .btn.equip:not(.gold) b.up{color:#8fdc8a}
 /* the hover preview: same card, one caption, so it can never be mistaken for the picked item */
-#ui .detail.preview{border-color:rgba(143,216,255,.4);box-shadow:0 0 0 1px rgba(143,216,255,.18)}
+#ui .detail.preview{border-color:rgba(143,216,255,.4);box-shadow:inset 0 0 0 1px rgba(143,216,255,.18)}
 #ui .pvtag{margin:-4px 0 8px;text-align:center;font:400 9px/1.4 var(--serif);letter-spacing:.22em;
   text-transform:uppercase;color:var(--aether)}
 #ui .scr .btn.upsbadge{padding:6px 12px;font-size:9.5px;letter-spacing:.18em}
@@ -642,32 +674,32 @@ export const SCREEN_CSS = `
 /* ------------------------------------------------------------------ skills */
 #ui .skillwrap{width:min(1180px,96vw);padding:0 20px 12px}
 #ui .branches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
-#ui .branch{border:1px solid var(--line);border-radius:10px;padding:12px 13px 13px;
+#ui .branch{border:1px solid var(--line);padding:12px 13px 13px;
   background:rgba(255,255,255,.028)}
 #ui .branch>h3{margin:0 0 3px;font:400 11px/1.3 var(--serif);letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
 #ui .branch>p{margin:0 0 11px;font:italic 400 11px/1.5 var(--serif);color:rgba(232,222,196,.5)}
-#ui .node{position:relative;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:8px;
+#ui .node{position:relative;border:1px solid var(--line);padding:9px 11px;margin-bottom:8px;
   background:rgba(255,255,255,.03)}
 #ui .node .nh{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 #ui .node .nn{font:400 15px/1.2 var(--serif);letter-spacing:.03em;color:#fdf6e6}
 #ui .node .nc{font:400 9px/1.3 var(--serif);letter-spacing:.2em;text-transform:uppercase;color:var(--textdim);white-space:nowrap}
 #ui .node .nd{margin-top:4px;font:italic 400 12px/1.5 var(--serif);color:rgba(232,222,196,.6)}
 #ui .node.own{background:linear-gradient(180deg,rgba(216,189,122,.20),rgba(216,189,122,.06));
-  border-color:var(--gold-dim);box-shadow:inset 0 0 26px rgba(216,189,122,.12)}
+  border-color:var(--rule);box-shadow:inset 0 0 26px rgba(216,189,122,.12)}
 #ui .node.own .nn::after{content:' ✦';color:var(--gold)}
-#ui .node.can{border-color:var(--gold-dim);box-shadow:0 0 0 1px rgba(216,189,122,.18),0 0 20px rgba(216,189,122,.14)}
+#ui .node.can{border-color:var(--rule);box-shadow:inset 0 0 0 1px rgba(216,189,122,.18);filter:var(--lit)}
 #ui .node.lock{opacity:.6}
 #ui .node.gone{opacity:.4}
 #ui .node.gone .nn{text-decoration:line-through}
 #ui .why{margin-top:7px;font:400 10px/1.4 var(--serif);letter-spacing:.14em;text-transform:uppercase;color:#ff9a86}
 #ui .node.own .why{color:#a8e08a}
-#ui .fork{position:relative;border:1px dashed rgba(216,189,122,.4);border-radius:8px;
+#ui .fork{position:relative;border:1px dashed var(--rule);border-radius:var(--r-lg);
   padding:17px 8px 4px;margin:15px 0 8px}
 #ui .fork::before{content:'EITHER / OR — CHOOSE ONE';position:absolute;top:-8px;left:10px;
   padding:0 7px;background:#0d0b1c;font:400 9px/1.6 var(--serif);letter-spacing:.24em;color:#ff9a86}
 #ui .fork .node{margin-bottom:8px}
 #ui .ptbanner{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;
-  padding:9px 12px;margin:12px 0 0;border:1px solid var(--line);border-radius:9px;
+  padding:9px 12px;margin:12px 0 0;border:1px solid var(--line);
   background:linear-gradient(180deg,rgba(216,189,122,.13),rgba(255,255,255,.02));
   font:400 11px/1.3 var(--serif);letter-spacing:.2em;text-transform:uppercase;color:var(--text)}
 #ui .ptbanner b{font-weight:400;font-size:20px;letter-spacing:.04em;color:var(--gold-hi);
@@ -680,14 +712,14 @@ export const SCREEN_CSS = `
    the house serif, tabular-nums counters so a run of "3 / 8" stacks lines up like a ledger. */
 #ui .qlog{display:flex;flex-direction:column;gap:16px}
 #ui .qsec>h3{margin:0 0 9px}
-#ui .qsec+.qsec{margin-top:2px;padding-top:14px;border-top:1px solid rgba(216,189,122,.14)}
+#ui .qsec+.qsec{margin-top:2px;padding-top:14px;border-top:1px solid var(--rule-faint)}
 /* a region group inside "The Chain" — the label is why two very-different-level cards are
    allowed to sit next to each other (see chainSection's doc-comment) */
 #ui .qgroup+.qgroup{margin-top:16px}
 #ui .qgroup>h4{display:flex;align-items:center;gap:10px;margin:0 0 8px;
   font:400 10px/1 var(--serif);letter-spacing:.28em;text-transform:uppercase;color:var(--textdim)}
 #ui .qgroup>h4::after{content:'';flex:1 1 auto;height:1px;background:linear-gradient(90deg,rgba(216,189,122,.35),transparent)}
-#ui .qcard{border:1px solid var(--line);border-radius:9px;padding:13px 16px 14px;margin-bottom:10px;
+#ui .qcard{border:1px solid var(--line);padding:13px 16px 14px;margin-bottom:10px;
   background:rgba(255,255,255,.028);border-left:3px solid var(--gold-dim)}
 #ui .qcard:last-child{margin-bottom:0}
 #ui .qcard.qdone{border-left-color:var(--aether);opacity:.82}
@@ -707,9 +739,9 @@ export const SCREEN_CSS = `
    paragraph in a ~1170px card; giving it chain position + reward makes the measure read as a
    deliberate column instead of a wrapping bug. Collapses to one column on a narrow viewport. */
 #ui .qbody{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:20px;align-items:start;
-  margin-top:11px;padding-top:10px;border-top:1px solid rgba(216,189,122,.10)}
+  margin-top:11px;padding-top:10px;border-top:1px solid var(--rule-faint)}
 #ui .qmain{min-width:0}
-#ui .qside{display:flex;flex-direction:column;gap:12px;padding-left:18px;border-left:1px solid rgba(216,189,122,.14)}
+#ui .qside{display:flex;flex-direction:column;gap:12px;padding-left:18px;border-left:1px solid var(--rule-faint)}
 #ui .qchain{display:flex;flex-direction:column;gap:2px}
 #ui .qchain .k{font:400 9px/1 var(--serif);letter-spacing:.28em;text-transform:uppercase;color:var(--textdim)}
 #ui .qchain .v{font:400 21px/1.2 var(--serif);color:var(--gold-hi);font-variant-numeric:lining-nums tabular-nums}
@@ -722,12 +754,12 @@ export const SCREEN_CSS = `
 #ui .qstage b{display:block;margin-bottom:2px;font:400 9.5px/1 var(--serif);letter-spacing:.28em;text-transform:uppercase;color:var(--textdim)}
 #ui .qstage.cur{color:var(--text)}
 #ui .qstage.cur b{color:var(--gold)}
-#ui .qside .qreward{margin-top:0;padding-top:10px;border-top:1px solid rgba(216,189,122,.10)}
+#ui .qside .qreward{margin-top:0;padding-top:10px;border-top:1px solid var(--rule-faint)}
 #ui .qreward{margin-top:10px;font:400 11.5px/1.4 var(--serif);letter-spacing:.06em;color:var(--gold-hi)}
 @media (max-width:760px){
   #ui .qbody{grid-template-columns:minmax(0,1fr)}
   #ui .qside{flex-direction:row;flex-wrap:wrap;gap:16px;padding-left:0;padding-top:10px;
-    border-left:0;border-top:1px solid rgba(216,189,122,.14)}
+    border-left:0;border-top:1px solid var(--rule-faint)}
 }
 @media (max-height:620px){#ui .qname{font-size:15px}#ui .qstage{font-size:12.5px}}
 
@@ -735,13 +767,13 @@ export const SCREEN_CSS = `
    Two or three real rolled items, racked side by side with their deltas against what is already
    on you. Same card in two places — under an accepted quest in the log, and blown up in the
    turn-in picker — because the thing you were deciding on has to be the thing you are handed. */
-#ui .qchoice{margin-top:12px;padding-top:10px;border-top:1px solid rgba(216,189,122,.10)}
+#ui .qchoice{margin-top:12px;padding-top:10px;border-top:1px solid var(--rule-faint)}
 #ui .qchoice>h4{display:flex;align-items:center;gap:10px;margin:0 0 8px;
   font:400 9.5px/1 var(--serif);letter-spacing:.28em;text-transform:uppercase;color:var(--gold)}
 #ui .qchoice>h4::after{content:'';flex:1 1 auto;height:1px;background:linear-gradient(90deg,rgba(216,189,122,.30),transparent)}
 #ui .rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;align-items:start}
 #ui .rgrid.big{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
-#ui .rcard{position:relative;border:1px solid var(--line);border-top:2px solid var(--r);border-radius:9px;
+#ui .rcard{position:relative;border:1px solid var(--line);border-top:2px solid var(--r);
   padding:10px 12px 12px;background:rgba(255,255,255,.035);display:flex;flex-direction:column;gap:8px}
 #ui .rgrid.big .rcard{padding:16px 18px 18px;gap:12px}
 #ui .rhead{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center}
@@ -777,8 +809,8 @@ export const SCREEN_CSS = `
   height:calc(100dvh - 24px);width:min(96vw,calc(100dvh - 24px))}
 #ui .mapbox{position:relative;flex:1 1 auto;min-height:0}
 #ui .mapbox canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;
-  border:1px solid var(--gold-dim);border-radius:6px;
-  box-shadow:inset 0 0 60px rgba(120,88,38,.4),0 8px 30px rgba(0,0,0,.55);
+  border:1px solid var(--rule);
+  box-shadow:inset 0 0 60px rgba(120,88,38,.4);filter:var(--lift);
   cursor:grab;touch-action:none}
 #ui .mapbox canvas:active{cursor:grabbing}
 #ui .legend{display:flex;gap:8px 18px;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:9px;
@@ -833,5 +865,6 @@ export const SCREEN_CSS = `
 @media (prefers-reduced-motion:reduce){
   #ui .meter i{transition:none}
   #ui .tile,#ui .dslot,#ui .scr .btn{transition:none}
+  #ui :is(.stabs,.seg)::before{transition:none}
 }
 `;
