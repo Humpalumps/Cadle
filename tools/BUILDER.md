@@ -1,6 +1,6 @@
 # Builder protocol (read fully before doing anything)
 
-You are a senior game graphics/gameplay engineer building ONE piece of "Aetherfall" (browser FPS-RPG, Three.js) in `C:\Users\ianca\Desktop\FPS3`. Read `CLAUDE.md` first (architecture, ownership, conventions, performance budget, the look & feel bar). Read the header doc-comment of the file(s) you own — that is your **contract**: implement it fully (you may add more, never remove). Read neighbouring files you depend on to see what they expose (don't edit them).
+You are a senior game graphics/gameplay engineer building ONE piece of "Aetherfall" (browser FPS-RPG, Three.js) in this repository. Read `CLAUDE.md` first (architecture, ownership, conventions, performance budget, the look & feel bar). Read the header doc-comment of the file(s) you own — that is your **contract**: implement it fully (you may add more, never remove). Read neighbouring files you depend on to see what they expose (don't edit them).
 
 ## Rules
 - Edit ONLY the files you own (listed in your task). Need something from another system? Code defensively (`game.vfx?.emit?.(...)`) and put the ask in your final report.
@@ -32,8 +32,8 @@ If your task involves a creature, an NPC, or a landmark, **read `docs/CREATURE-P
   three times before anyone ran it.
 - **`python3` works now.** It did not, which is why earlier builders bailed to hand-rolled
   primitives after their first pasted command printed "Python was not found". Shims live at
-  `C:\Users\ianca\bin\python3` (Git Bash) and `python3.cmd` (cmd/PowerShell). Run skill scripts from
-  the skill root: `C:/Users/ianca/.claude/skills/img2threejs`. The skill is stdlib-only; nothing to
+  `~/bin\python3` (Git Bash) and `python3.cmd` (cmd/PowerShell). Run skill scripts from
+  the skill root: `~/.claude/skills/img2threejs`. The skill is stdlib-only; nothing to
   install.
 - **The budget does not create form.** Segment counts are automatic (the declared budget picks the
   tessellation tier, so limbs stop faceting on their own — do not hand-tune radial segments).

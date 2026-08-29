@@ -171,9 +171,9 @@ This worktree needs **its own** dev server - 5173 serves the MAIN repo and 5179 
 different worktree entirely, so a run against either measures the wrong build.
 
 ```
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js --port 5181 --strictPort --host 127.0.0.1
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js build
-node C:/Users/ianca/Desktop/fps4/node_modules/vite/bin/vite.js preview --port 5182 --strictPort --host 127.0.0.1
+node <repo>/node_modules/vite/bin/vite.js --port 5181 --strictPort --host 127.0.0.1
+node <repo>/node_modules/vite/bin/vite.js build
+node <repo>/node_modules/vite/bin/vite.js preview --port 5182 --strictPort --host 127.0.0.1
 $env:CADLE_URL='http://127.0.0.1:5181'; node tools/gate.mjs      # needs the GPU to itself
 ```
 
@@ -462,7 +462,7 @@ before.**
    merge on a red gate and does not want the wave sitting unmerged once it is green. This is a
    durable authorization for the merge itself — no need to re-ask once the two conditions are met.
    Mechanics note: `main` has been deliberately untouched all campaign and the main checkout
-   (C:/Users/ianca/Desktop/fps4) sits on a DIFFERENT branch, so merge from here by pushing the branch
+   (<repo>) sits on a DIFFERENT branch, so merge from here by pushing the branch
    and opening/merging a PR with `gh` (the repo already uses PRs), or fast-forward push if main is an
    ancestor — check `git merge-base --is-ancestor origin/main claude/session-e5730b` first.
 2j. **MERGE STATE 2026-08-28 EVENING — 6 of 7 gate checks GREEN, the 7th blocked by GPU CONTENTION,
@@ -1184,7 +1184,7 @@ A border to walk: `?at=tundra&back=-260` (the tundra/celestial seam, gate stones
 | Contact sheet | `tools/sheet.py` | `python tools/sheet.py tools/out/<dir> 3 640` → `sheet.png` to Read |
 | Progress page | `progress/state.json` + `tools/progress.mjs` | → `progress.html` |
 
-**Where you work.** `main` is checked out at `C:/Users/ianca/Desktop/fps4`; the biome work was done in the
+**Where you work.** `main` is checked out at `<repo>`; the biome work was done in the
 worktree `.claude/worktrees/graphics-ff14-quality-audit-7eb837` and is fully merged, so **start from the main
 checkout** and make a fresh branch. The dev server on 5173 was last started from that worktree — if you edit
 the main checkout and nothing changes in the browser, that is why: kill it and restart from where you are
@@ -1241,7 +1241,7 @@ pins the ceilings — **fix the code, never the rule.**
 
 `CLAUDE.md` says "the dev server is **always already running** at `http://127.0.0.1:5173/`". That
 sentence was true and became a trap the moment work moved into a **git worktree**. The user's server
-was started in the MAIN repo (`C:/Users/ianca/Desktop/fps4`), which sits on its own branch. A worktree
+was started in the MAIN repo (`<repo>`), which sits on its own branch. A worktree
 under `.claude/worktrees/<name>/` is a different directory with different files, and nothing about
 `localhost:5173` tells you which one it is showing you.
 
@@ -1256,7 +1256,7 @@ running page although it was plainly there in `src/main.js` on disk.
 ```bash
 curl -s http://127.0.0.1:5173/src/main.js | grep -c "<a phrase you just wrote>"
 ```
-Zero matches = wrong tree. Or check the obvious: `git -C C:/Users/ianca/Desktop/fps4 branch --show-current`.
+Zero matches = wrong tree. Or check the obvious: `git -C <repo> branch --show-current`.
 
 **The fix is in the harness now, so this cannot silently recur.** `tools/inspect.mjs` fetches
 `src/main.js`, `src/core/Game.js` and `src/render/PostFX.js` back off the server before it navigates,

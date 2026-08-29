@@ -55,7 +55,7 @@ export const DEFS = {
     hip: { pos: [0.17, -0.15, -0.36], rot: [0.02, 0.08, 0.02] }, sprint: { pos: [0.17, -0.19, -0.36], rot: [-0.45, 0.35, 0.3] }, adsZ: 0.42, zoom: 1.3,
     bob: 1.0, swapTime: 0.45,
   },
-  // ---- imported from the Aurelen build (C:/Users/ianca/Desktop/FPS, src/combat/defs.js). Those two
+  // ---- imported from an earlier prototype of this game (its src/combat/defs.js). Those two
   // archetypes had no counterpart here, so they are the ones worth carrying over; the tuning is the
   // original's intent (scout = 200 rpm 2.0x precision marksman, beam = 0.55 s charge piercing lance)
   // restated in this file's schema, and the models are rebuilt from scratch in the house language.
