@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cadle</title>
+<!-- the same icon set cadle.gg carries: one product, one tab icon -->
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/ui/mark/icon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/ui/mark/icon-16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/ui/mark/icon-180.png" />
+
+<!-- THE MENU IS THE FIRST PAINT AND IT IS PAINTED BY THIS FILE, NOT BY JAVASCRIPT.
+     Everything the title screen needs — markup, styles, the backdrop still — is either inline here or
+     preloaded from here, so the browser can show a finished title screen while main.js is still being
+     downloaded. The old cinematic intro needed the module graph, a Three.js scene and 304 KB of bedroom
+     textures before it could show anything; this shows the menu at first paint and lets the world build
+     happen behind it. -->
+<!-- Preloaded from a two-line inline script rather than a static <link> for one reason: under ?auto=1
+     there is no title screen, nothing ever uses the image, and every harness run then logs a
+     "preloaded but not used" warning into report.json that reads like a bug. Still runs during head
+     parse, so the fetch starts before the module graph is even requested. -->
+<script>if(new URLSearchParams(location.search).get('auto')!=='1'){var l=document.createElement('link');
+l.rel='preload';l.as='image';l.href='/assets/ui/menu_vista.jpg';l.fetchPriority='high';document.head.appendChild(l);}</script>
+<!-- The HUD stylesheet is 40 KB and the HUD does not exist until the game has booted, so it must not
+     block the menu's first paint. Loaded as a non-applying sheet, flipped to `all` on load. -->
+<link rel="stylesheet" href="/src/ui/ui.css" media="print" onload="this.media='all'" />
+<noscript><link rel="stylesheet" href="/src/ui/ui.css" /></noscript>
+
+<style>
+/* ===================================================================================================
+   TITLE SCREEN — inline, ~6 KB, no webfont, no image dependency for the layout.
+   Palette: gold #d3a548 / ivory #f7eed6 / aether #b9a2ff on blue-violet #0b0818.
+   Everything that animates animates transform or opacity ONLY, so it runs on the compositor and keeps
+   moving even while the main thread is blocked solid building the world.
+   =================================================================================================== */
+:root{
+  --gold:#d3a548; --gold-hi:#fdf3cd; --gold-dim:rgba(211,165,72,.42);
+  --ivory:#f7eed6; --aether:#b9a2ff; --ink:#0b0818;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  /* the ONE spring the whole product moves on — same token as src/ui/ui.css's UI KIT and cadle.gg */
+  --spring:cubic-bezier(.22,1.42,.36,1);
+}
+/* The ground the title screen stands on, painted before anything else exists. It is also the last
+   resort: if WebGL2 is unavailable the backdrop canvas is hidden and this is what the menu sits on. */
+html,body{margin:0;height:100%;overflow:hidden;
+  background:radial-gradient(120% 100% at 68% 42%,#3a2f63 0%,#1d1740 42%,#0d0a1f 76%,#070510 100%) #0b0818}
+body{font-family:Georgia,'Palatino Linotype','Times New Roman',serif;-webkit-font-smoothing:antialiased}
+canvas#game{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+/* the animated backdrop: painted by a worker (src/ui/menu/backdropWorker.js) over a CSS ground that is
+   already the right colour, so there is never a black frame between paint and first GL frame */
+canvas#menucanvas{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:40;pointer-events:none;
+  background:radial-gradient(120% 100% at 68% 42%,#3a2f63 0%,#1d1740 42%,#0d0a1f 76%,#070510 100%);
+  opacity:1;transition:opacity .5s ease}
+/* prefers-reduced-motion: the still the shader is painted over, and nothing else (Menu._startBackdrop) */
+canvas#menucanvas.still{background-image:url('/assets/ui/menu_vista.jpg');background-size:cover;
+  background-position:center}
+#splash{position:fixed;inset:0;z-index:5;background:radial-gradient(120% 90% at 50% 38%,#191233 0%,#0d0a1c 52%,#070510 100%)}
+#splash.gone{opacity:0;pointer-events:none;transition:opacity .3s ease}
+
+/* ---------- frame ---------- */
+#menu{position:fixed;inset:0;z-index:100;pointer-events:none;color:var(--ivory);
+  opacity:1;transition:opacity .45s ease}
+#menu.off{opacity:0}
+/* left scrim: Destiny's trick — the art stays untouched on the right, the type sits on a deep well */
+/* Tuned against the actual backdrop, which is already a night: heavier and the left third goes to flat
+   black and the art stops existing. Just enough to hold gold type at AA-legible contrast. */
+#menu::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,rgba(6,4,14,.86) 0%,rgba(6,4,14,.72) 20%,rgba(6,4,14,.40) 38%,rgba(6,4,14,.10) 55%,rgba(6,4,14,0) 70%),
+             linear-gradient(0deg,rgba(6,4,14,.62) 0%,rgba(6,4,14,0) 26%),
+             linear-gradient(180deg,rgba(6,4,14,.50) 0%,rgba(6,4,14,0) 22%);
+  transition:opacity .6s ease}
+/* letterbox bars — the frame reads as a cinematic, and they close in on Play */
+#menu .bar{position:absolute;left:0;right:0;height:0;background:#050310;z-index:3;
+  transition:height .9s var(--ease)}
+#menu .bar.t{top:0} #menu .bar.b{bottom:0}
+#menu.loading .bar{height:6.5vh}
+
+/* ---------- brand ---------- */
+#brand{position:absolute;left:clamp(38px,6.2vw,120px);top:clamp(46px,9vh,120px);z-index:6;
+  transform-origin:0 0;transition:transform .85s var(--ease)}
+#menu.loading #brand{transform:scale(.66) translateY(-8px)}
+/* THE MARK. Three layers on a common 512 canvas so they stack and turn about one origin — the same
+   `.mark3` build as index.html's, not a second drawing of the same emblem. Here is where it earns the
+   91 KB: it is 62 px and on screen for as long as the player reads the menu, so the ring's turn and the
+   gem's breath are visible. (cadle.gg's 24 px top bar uses the flat icon-96 for exactly that reason.)
+   The float lives on the wrapper so it never fights the layers' own rotations. */
+#brand .sig{position:relative;display:block;width:72px;height:72px;margin:0 0 12px -4px;opacity:.97;
+  animation:sigfloat 7s ease-in-out infinite}
+#brand .sig i,#load .wheel i{position:absolute;inset:0;display:block;background:center/contain no-repeat}
+#brand .sig .ring{background-image:url(/assets/ui/mark/ring.webp);animation:spinA 34s linear infinite}
+#brand .sig .ticks{background-image:url(/assets/ui/mark/ticks.webp);animation:spinB 21s linear infinite reverse}
+#brand .sig .gem{background-image:url(/assets/ui/mark/gem.webp);
+  animation:breathe 4.2s cubic-bezier(.4,0,.6,1) infinite}
+@keyframes spinA{to{transform:rotate(360deg)}}
+@keyframes spinB{to{transform:rotate(360deg)}}
+@keyframes breathe{0%,100%{transform:scale(1);filter:brightness(1)}
+  50%{transform:scale(.955);filter:brightness(1.22)}}
+@keyframes sigfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+#brand h1{margin:0;font-weight:400;font-size:clamp(50px,6.4vw,104px);line-height:.92;letter-spacing:.16em;
+  color:#efe6cd;text-shadow:0 0 42px rgba(211,165,72,.34),0 2px 24px rgba(0,0,0,.9);
+  background:linear-gradient(100deg,#a97f2a 0%,#d3a548 30%,#fdf3cd 46%,#d3a548 62%,#a97f2a 100%);
+  background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:sheen 9s ease-in-out infinite}
+@keyframes sheen{0%,100%{background-position:118% 0}50%{background-position:-18% 0}}
+#brand .rule{width:min(30vw,430px);height:1px;margin:16px 0 12px;
+  background:linear-gradient(90deg,rgba(211,165,72,.95),rgba(211,165,72,.25) 62%,rgba(211,165,72,0))}
+#brand .sub{margin:0;font-size:clamp(12px,1.15vw,18px);letter-spacing:.5em;text-indent:.5em;
+  font-variant:small-caps;color:rgba(233,222,196,.72)}
+
+/* ---------- nav ---------- */
+#nav{position:absolute;left:clamp(38px,6.2vw,120px);top:clamp(255px,40vh,430px);z-index:6;
+  width:min(34vw,430px);pointer-events:auto;transition:opacity .3s ease}
+#nav button{display:block;position:relative;width:100%;margin:0 0 2px;padding:13px 20px 13px 30px;
+  border:0;background:none;text-align:left;cursor:pointer;color:rgba(226,215,190,.78);
+  font:400 clamp(15px,1.5vw,23px)/1 Georgia,serif;font-variant:small-caps;letter-spacing:.22em;
+  transform:translateX(0);opacity:1;
+  transition:color .18s ease,transform .5s var(--ease),opacity .35s ease}
+/* the selection plate: gold-lit, hatched, with a bright left cap — the Destiny read */
+#nav button::before{content:'';position:absolute;inset:0;z-index:-1;transform:scaleX(0);transform-origin:0 50%;
+  background:linear-gradient(90deg,rgba(214,172,86,.30) 0%,rgba(214,172,86,.13) 46%,rgba(214,172,86,0) 100%);
+  transition:transform .32s var(--ease)}
+#nav button::after{content:'';position:absolute;left:0;top:14%;bottom:14%;width:3px;
+  background:linear-gradient(180deg,var(--gold-hi),var(--gold));box-shadow:0 0 14px rgba(253,243,205,.75);
+  transform:scaleY(0);transform-origin:50% 50%;transition:transform .28s var(--ease)}
+#nav button:hover,#nav button.on{color:var(--gold-hi)}
+#nav button:hover::before,#nav button.on::before{transform:scaleX(1)}
+#nav button:hover::after,#nav button.on::after{transform:scaleY(1)}
+#nav button:focus-visible{outline:1px solid var(--gold-dim);outline-offset:2px}
+#nav .k{position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:.62em;letter-spacing:.2em;
+  color:rgba(211,165,72,.55);opacity:0;transition:opacity .2s ease}
+#nav button:hover .k,#nav button.on .k{opacity:1}
+/* on Play the items sweep out to the left, staggered by --i */
+#menu.loading #nav{pointer-events:none}
+#menu.loading #nav button{transform:translateX(-44px);opacity:0;
+  transition-delay:calc(var(--i) * 45ms)}
+
+/* ---------- flavour + meta ---------- */
+#tagline{position:absolute;left:clamp(38px,6.2vw,120px);bottom:clamp(40px,7vh,84px);z-index:6;margin:0;
+  max-width:min(38vw,470px);font-size:clamp(12px,1.05vw,16px);font-style:italic;line-height:1.6;
+  color:rgba(185,162,255,.72);transition:opacity .4s ease}
+#menu.loading #tagline{opacity:0}
+#meta{position:absolute;right:clamp(30px,3.4vw,58px);top:clamp(30px,4vh,54px);z-index:6;text-align:right;
+  font-size:clamp(10px,.82vw,13px);letter-spacing:.26em;color:rgba(226,215,190,.42);line-height:2}
+#meta b{color:rgba(211,165,72,.8);font-weight:400}
+
+/* ---------- panels ---------- */
+/* the detail column sits BESIDE the list, not on top of it — the list stays readable and lit, which is
+   what makes a menu feel like a menu rather than a stack of modals */
+#panel{position:absolute;left:calc(clamp(38px,6.2vw,120px) + min(34vw,430px) + 34px);
+  top:clamp(215px,34vh,380px);z-index:7;
+  width:min(38vw,560px);max-height:min(58vh,560px);overflow:auto;pointer-events:auto;
+  padding:26px 30px;border-left:1px solid var(--gold-dim);
+  background:linear-gradient(100deg,rgba(9,7,20,.95),rgba(9,7,20,.88) 62%,rgba(9,7,20,.76));
+  opacity:0;transform:translateX(-14px);visibility:hidden;
+  transition:opacity .34s ease,transform .34s var(--ease),visibility .34s;
+  scrollbar-width:thin;scrollbar-color:var(--gold-dim) transparent}
+#panel.open{opacity:1;transform:none;visibility:visible}
+#panel h2{margin:0 0 4px;font-weight:400;font-size:clamp(17px,1.7vw,26px);letter-spacing:.3em;
+  font-variant:small-caps;color:var(--gold-hi)}
+#panel .lead{margin:0 0 18px;font-size:13px;font-style:italic;color:rgba(185,162,255,.75)}
+#panel p,#panel li{font-size:clamp(12px,1.02vw,15px);line-height:1.75;color:rgba(226,215,190,.82)}
+#panel ul{margin:0;padding:0;list-style:none}
+#panel li{display:flex;gap:14px;padding:5px 0;border-bottom:1px solid rgba(211,165,72,.10)}
+#panel li b{flex:0 0 clamp(88px,10vw,150px);font-weight:400;color:var(--gold);letter-spacing:.12em;
+  font-variant:small-caps}
+#panel li i{flex:0 0 auto;margin-left:auto;font-style:normal;color:rgba(185,162,255,.6);font-size:.9em}
+/* ---------- segmented control (graphics preset) ---------- */
+/* ONE gliding indicator on --spring, not three boxes that swap their own background: the same component
+   as `.ui-seg` in src/ui/ui.css and the site's tabs, in this screen's chamfered geometry. The indicator
+   is a compositor transform driven by --qi, so it never fights the world build for the main thread. */
+#panel .seg{position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;margin:8px 0 4px;
+  padding:3px;background:rgba(9,7,20,.66);
+  box-shadow:inset 0 2px 4px #000,inset 0 0 0 1px rgba(211,165,72,.22);
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+#panel .seg .ind{position:absolute;left:3px;top:3px;bottom:3px;width:calc((100% - 6px) / var(--n,3));
+  background:linear-gradient(180deg,rgba(253,243,205,.34),rgba(211,165,72,.14));
+  box-shadow:inset 0 0 0 1px rgba(253,243,205,.45),0 0 16px rgba(211,165,72,.20);
+  clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px);
+  transform:translateX(calc(var(--qi,0) * 100%));transition:transform .46s var(--spring)}
+#panel .seg button{position:relative;z-index:1;padding:12px 4px;border:0;background:none;cursor:pointer;
+  color:rgba(226,215,190,.66);font:400 14px/1 Georgia,serif;font-variant:small-caps;letter-spacing:.2em;
+  transition:color .22s ease,transform .3s var(--spring)}
+#panel .seg button:hover{color:var(--ivory)}
+#panel .seg button.on{color:var(--gold-hi);text-shadow:0 0 12px rgba(211,165,72,.5)}
+#panel .seg button:active{transform:scale(.95)}
+/* it had no focus rule at all, so it fell back to Chrome's default ring */
+#panel .seg button:focus-visible{outline:1px solid var(--gold-dim);outline-offset:-4px}
+#panel .note{margin:12px 0 0;font-size:11.5px;letter-spacing:.1em;color:rgba(226,215,190,.42)}
+
+/* ---------- the loading screen ---------- */
+/* the right padding reserves the sigil's column so the bar and the percentage never run under it */
+#load{position:absolute;left:0;right:0;bottom:0;z-index:8;
+  padding:0 calc(clamp(38px,6.2vw,120px) + clamp(56px,7vw,104px) + 30px) clamp(46px,8vh,96px) clamp(38px,6.2vw,120px);
+  opacity:0;transform:translateY(26px);pointer-events:none;
+  transition:opacity .5s ease .25s,transform .7s var(--ease) .25s}
+#menu.loading #load{opacity:1;transform:none}
+/* where you are going, the way a real loading screen names the destination */
+#load .dest{margin:0 0 10px;font-size:clamp(10px,.86vw,14px);letter-spacing:.42em;font-variant:small-caps;
+  color:rgba(211,165,72,.78);text-shadow:0 2px 12px #000}
+#load .dest span{color:rgba(185,162,255,.7);margin:0 .5em}
+#load .row{display:flex;align-items:flex-end;gap:20px;margin:0 0 14px}
+#load .phase{flex:1;margin:0;font-size:clamp(13px,1.35vw,21px);letter-spacing:.34em;font-variant:small-caps;
+  color:var(--ivory);text-shadow:0 2px 14px #000}
+/* THE PERCENTAGE ROLLS, AND IT ROLLS ON THE COMPOSITOR. Each digit is a strip of eleven cells (a blank,
+   then 0-9) inside a clipped window, moved by translateY — the same count-up motion as the marketing
+   site's stat strip, except the site can afford a rAF ticker and this screen cannot: a rAF number would
+   freeze in the same stall the bar is built to survive, and a frozen number beside a moving bar reads
+   worse than no motion at all. Menu._setPct() only writes --c per slot; the transition does the rest.
+   Cell 0 is empty so 7 reads "7%" and not "007%", while the slots keep their width and nothing jitters
+   as the number grows a digit. */
+#load .pct{margin:0;display:flex;align-items:flex-start;font-size:clamp(14px,1.5vw,24px);
+  letter-spacing:.1em;color:var(--gold);font-variant-numeric:tabular-nums;text-shadow:0 2px 14px #000}
+#load .pct .d{display:block;width:.6em;height:1.34em;overflow:hidden}
+#load .pct .d>span{display:block;transform:translateY(calc(var(--c,1) * -1.34em));
+  transition:transform .5s var(--spring)}
+#load .pct b{display:block;height:1.34em;line-height:1.34em;font-weight:400;text-align:center}
+#load .pct .u{display:block;height:1.34em;line-height:1.34em;margin-left:.06em}
+
+/* THE BAR NEVER FREEZES. Its width is a compositor-driven transform with a long linear transition, so a
+   multi-second main-thread stall cannot stop it — the browser keeps interpolating the last target it was
+   given. The shimmer on top is a pure CSS keyframe for the same reason. */
+#load .barwrap{position:relative}
+/* THE TRACK IS A VESSEL, NOT A RULE. At 7px over ~1400px the 5px cut corners were geometrically
+   invisible — the shape effort was spent where nobody could see it — and the empty track read as a thin
+   line rather than something with a volume to fill. So: 15px tall, and built as a chamfered PLATE
+   (.track, whose background IS the struck hairline) holding a 1px-inset chamfered WELL (.well) with a
+   real recess. Two clip-paths rather than one plus an inset ring, because a rectangular inset shadow is
+   cut flat across the chamfer and leaves the corner open. Same cut corner the site's Play button carries. */
+#load .track{position:relative;height:15px;background:rgba(211,165,72,.32);
+  clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);
+  transition:background .5s ease,box-shadow .5s ease}
+#load .well{position:absolute;inset:1px;z-index:1;overflow:hidden;
+  background:linear-gradient(180deg,#0a0716,#171227);
+  box-shadow:inset 0 2px 4px #000,inset 0 -1px 0 rgba(211,165,72,.10);
+  clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px)}
+/* end terminals: a struck tick at each end so the vessel has ends instead of just stopping. Both are
+   pseudo-elements of the plate at z-index 2, i.e. ABOVE the fill — the far one has to survive being
+   filled over, and an engraved mark that vanishes under the ink was never engraved. */
+#load .track::before,#load .track::after{content:'';position:absolute;top:4px;bottom:4px;width:3px;z-index:2;
+  background:linear-gradient(90deg,rgba(0,0,0,.72) 0 1px,rgba(226,190,110,.72) 1px 2px,rgba(0,0,0,.5) 2px 3px)}
+#load .track::before{left:4px}
+#load .track::after{right:4px}
+/* .45s, not the 1.1s this used to be — see Menu._paint(). Measured off the compositor's screencast
+   frames, a transform transition that is still in flight gets re-committed under contention and
+   REPLAYS from its start value, so the length of the transition is the size of the visible reversal:
+   13-26 backward jumps per load, worst 53.4% -> 10.7% in one frame with no JS involved at all. Kept
+   just above the 400 ms creep tick so the motion is still continuous. */
+#load .fill{position:absolute;inset:0;transform-origin:0 50%;transform:scaleX(0);
+  background:linear-gradient(180deg,rgba(255,250,230,.34),rgba(255,250,230,.02) 46%,rgba(0,0,0,.18)),
+             linear-gradient(90deg,#7a5316,#c79a3f 60%,#eed58c);
+  transition:transform .45s linear}
+/* The sweep was a white streak on a near-white fill, i.e. nothing. Raising its contrast is not the fix
+   either: measured at 3x, a streak bright enough to read on the gold smears across the EMPTY well and
+   makes 0% look about a third full, which is a worse bug than an invisible highlight. `overlay` is what
+   makes it honest — on the dark well it multiplies and stays dark, on the gold it screens and flares —
+   so the glint exists only where there is bar to glint off. Static property; the motion is still a
+   transform keyframe, so a stall cannot stop it.
+   GOLD, not white, and that is not a taste call. `overlay` SCREENS wherever the backdrop channel is
+   above half, so a pure-white streak drove all three channels of the fill's bright end to 255 — a
+   washed-white band sweeping the bar, measured in the screencast frames (and it read to the pixel
+   harness as the fill ENDING there, manufacturing eleven-point phantom reversals). Capping the source's
+   blue at ~0.67 means the glint can brighten the gold but can never desaturate it. */
+#load .shine{position:absolute;top:0;bottom:0;width:22%;z-index:1;mix-blend-mode:overlay;
+  background:linear-gradient(100deg,rgba(255,232,170,0),rgba(255,232,170,.92) 52%,rgba(255,232,170,0));
+  animation:shine 3.2s var(--ease) infinite}
+@keyframes shine{from{transform:translateX(-140%)}to{transform:translateX(460%)}}
+/* The leading spark. It is a FULL-WIDTH box whose only ink is a bright sliver on its left edge, so
+   translateX(p * 100%) puts that sliver at p of the track — a compositor transform, like the fill,
+   instead of an animated `left` that a blocked main thread would freeze. */
+#load .cap{position:absolute;top:-6px;bottom:-6px;left:0;width:100%;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,250,230,.95) 0 2px,rgba(255,250,230,.30) 2px 7px,rgba(255,250,230,0) 7px);
+  filter:drop-shadow(0 0 9px rgba(253,243,205,.85));
+  transform:translateX(0);transition:transform .45s linear}
+#load .tip{margin:16px 0 0;max-width:min(52vw,720px);font-size:clamp(11.5px,1vw,15px);font-style:italic;
+  line-height:1.6;color:rgba(185,162,255,.7);transition:opacity .5s ease}
+#load .tip.fade{opacity:0}
+/* A dead load used to be five minutes of a frozen bar with nothing on screen to press. This is the
+   only interactive thing the loading screen has, so it takes the pointer events back. */
+#load .err{margin:16px 0 0;display:flex;align-items:center;gap:18px;pointer-events:auto}
+#load .err[hidden]{display:none}         /* an ID rule out-specifies the UA's [hidden]{display:none} */
+#load .err .msg{margin:0;font-size:clamp(12px,1.05vw,16px);font-style:italic;color:rgba(240,180,170,.92)}
+#load .err button{padding:11px 26px;cursor:pointer;color:var(--gold-hi);
+  background:linear-gradient(180deg,rgba(253,243,205,.20),rgba(211,165,72,.10));border:0;
+  box-shadow:inset 0 0 0 1px rgba(253,243,205,.5);
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  font:400 14px/1 Georgia,serif;font-variant:small-caps;letter-spacing:.2em;
+  transition:transform .3s var(--spring),box-shadow .2s ease}
+#load .err button:hover{box-shadow:inset 0 0 0 1px var(--gold-hi),0 0 20px rgba(211,165,72,.3)}
+#load .err button:active{transform:scale(.95)}
+#load .err button:focus-visible{outline:1px solid var(--gold-hi);outline-offset:3px}
+#menu.failed #load .track{background:rgba(224,120,100,.4)}
+#menu.failed #load .phase{color:rgba(240,180,170,.95)}
+/* The sigil on the right. It used to be a dashed `stroke-dasharray` ring — the single most recognisable
+   generic-loader signature there is — carrying a comment that claimed it sped up with progress, which
+   nothing ever wired. It is the BRAND MARK now, the same three-layer build as the wordmark above and
+   cadle.gg's, and it finally does what that comment always promised: Menu._paint() drives the layers'
+   `playbackRate` from the bar's own position, so the emblem spins up as the world comes together. That
+   is a WAAPI property on the existing CSS animations, not a duration swap — changing a duration
+   reinterprets the animation's local time and the ring visibly jumps. --k adds a little scale on top. */
+#load .wheel{position:absolute;right:clamp(38px,6.2vw,120px);bottom:clamp(42px,7.4vh,90px);
+  width:clamp(56px,7vw,104px);height:clamp(56px,7vw,104px);opacity:.9;
+  transform:scale(calc(1 + .07 * var(--k,0)));transition:transform 1.1s var(--ease)}
+#load .wheel .ring{background-image:url(/assets/ui/mark/ring.webp);animation:spinA 34s linear infinite}
+#load .wheel .ticks{background-image:url(/assets/ui/mark/ticks.webp);animation:spinB 21s linear infinite reverse}
+#load .wheel .gem{background-image:url(/assets/ui/mark/gem.webp);
+  animation:breathe 4.2s cubic-bezier(.4,0,.6,1) infinite}
+#menu.ready #load .phase{color:var(--gold-hi)}
+#menu.ready #load .track{background:rgba(253,243,205,.62);box-shadow:0 0 30px rgba(211,165,72,.45)}
+
+/* ---------- the hand-off flash ---------- */
+#flash{position:fixed;inset:0;z-index:200;pointer-events:none;opacity:0;transition:opacity .18s ease-in;
+  background:radial-gradient(58% 58% at 50% 50%,#efe9ff 0%,#b9a2ff 34%,#6b4fd0 62%,#160f30 100%)}
+#flash.on{opacity:1}
+#flash.off{opacity:0;transition:opacity .75s cubic-bezier(.2,.7,.3,1)}
+
+/* ?start — arrived from the Play button on the landing page. The menu is put straight into its loading
+   state by the script under the markup; these rules kill the entrances so it does not animate INTO the
+   state it is already in, which would read as a stutter on the first frame. */
+#menu.instant #nav button,#menu.instant #brand,#menu.instant #load,#menu.instant .bar,#menu.instant #tagline{transition:none}
+
+/* REDUCED MOTION MEANS THE WHOLE SCREEN, NOT ITS ORNAMENTS. This used to stop four decorations while
+   the letterbox still closed, the nav still swept out, the brand still shrank, the loading screen
+   still slid up, the dive still swirled and the hand-off still ramped a full-screen white flash —
+   measured identical luma under `reducedMotion: reduce`. Everything here keeps its end state and stops
+   travelling to it. The animated WebGL backdrop is handled in Menu._startBackdrop(), which shows the
+   still it is painted over instead of starting the worker. */
+@media (prefers-reduced-motion:reduce){
+  #brand .sig i,#load .wheel i{animation:none}
+  #menu,#menu *,#menu *::before,#menu *::after{transition:none!important;animation:none!important}
+  #menucanvas,#splash{transition:none!important}
+  #flash{display:none}
+}
+/* the sigil's column is 52% of a 320px screen, which left a 165px track and wrapped the phase line */
+@media (max-width:640px){
+  #load{padding-right:clamp(38px,6.2vw,120px)}
+  #load .wheel{display:none}
+  #load .err{flex-wrap:wrap;gap:12px}
+  /* .34em of tracking on a 16-character phase needs 290 px it does not have here, so it wrapped */
+  #load .dest{letter-spacing:.2em}
+  #load .phase{font-size:12.5px;letter-spacing:.14em}
+}
+/* not enough width for two columns: the panel takes the frame and the list dims behind it */
+@media (max-width:1100px){
+  #panel{left:clamp(38px,6.2vw,120px);width:min(72vw,560px);top:clamp(250px,38vh,420px);
+    background:linear-gradient(100deg,rgba(9,7,20,.985),rgba(9,7,20,.94))}
+  #menu.panelled #nav{opacity:0;pointer-events:none}   /* it sits UNDER the panel here — hide it outright */
+}
+@media (max-width:760px){
+  #menu::before{background:linear-gradient(180deg,rgba(6,4,14,.9) 0%,rgba(6,4,14,.35) 40%,rgba(6,4,14,.85) 100%)}
+  #nav{width:auto;right:clamp(28px,6vw,60px)}
+  #panel{width:auto;right:clamp(28px,6vw,60px)}
+}
+</style>
+</head>
+<body>
+<div id="splash"></div>
+<canvas id="game"></canvas>
+<canvas id="menucanvas"></canvas>
+
+<!-- The title screen ships as markup so it is on screen at first paint. src/ui/Menu.js only wires it up. -->
+<div id="menu">
+  <div class="bar t"></div><div class="bar b"></div>
+
+  <div id="brand">
+    <span class="sig" aria-hidden="true"><i class="ring"></i><i class="ticks"></i><i class="gem"></i></span>
+    <h1>CADLE</h1>
+    <div class="rule"></div>
+    <p class="sub">The Sundered Vale</p>
+  </div>
+
+  <nav id="nav">
+    <!-- the .k hints are a visual affordance; a screen reader announcing "The Vale 1" is noise -->
+    <button data-act="play"     style="--i:0">Play<span class="k" aria-hidden="true">enter</span></button>
+    <button data-act="world"    style="--i:1">The Vale<span class="k" aria-hidden="true">1</span></button>
+    <button data-act="controls" style="--i:2">Controls<span class="k" aria-hidden="true">2</span></button>
+    <button data-act="settings" style="--i:3">Settings<span class="k" aria-hidden="true">3</span></button>
+    <button data-act="credits"  style="--i:4">Credits<span class="k" aria-hidden="true">4</span></button>
+  </nav>
+
+  <div id="panel"></div>
+
+  <p id="tagline">Ten regions. One broken sky. Whatever the Sundering left behind is still out there,
+    and it is still hungry.</p>
+
+  <div id="meta"><b>CADLE</b> v0.1.0<br>10 regions · levels 1–50</div>
+
+  <div id="load">
+    <p class="dest">The Vale <span>·</span> Aetheryte Plaza</p>
+    <!-- .pct is plain text until Menu.init() swaps in the digit strips, so ?start (which paints this
+         screen during parse) never shows an empty slot while the module is still downloading. -->
+    <div class="row"><p class="phase" aria-live="polite">GATHERING AETHER</p>
+      <p class="pct" aria-label="0 percent">0%</p></div>
+    <div class="barwrap">
+      <div class="track" role="progressbar" aria-label="Loading the Vale"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="well"><div class="fill"></div><div class="shine"></div></div></div>
+      <div class="cap"></div>
+    </div>
+    <p class="tip"></p>
+    <!-- shown by Menu.fail(): a dead load must say so and offer the one thing that helps -->
+    <div class="err" hidden><p class="msg"></p><button type="button">Reload</button></div>
+    <span class="wheel" aria-hidden="true"><i class="ring"></i><i class="ticks"></i><i class="gem"></i></span>
+  </div>
+</div>
+
+<script>
+/* /play?start — the landing page's Play button. Put the screen into its loading state HERE, during
+   parse, rather than waiting for Menu.init(): otherwise the full menu paints first and then sweeps
+   itself away, which reads as a mis-click. Menu.init() sees the same param and calls play(). */
+if (new URLSearchParams(location.search).has('start')) {
+  document.getElementById('menu').classList.add('loading', 'instant');
+  setTimeout(function () { document.getElementById('menu')?.classList.remove('instant'); }, 60);
+}
+/* The whole point of this screen is that it is finished at first paint — which means Play is on screen,
+   looking pressable, before src/main.js has been fetched, and until Menu.init() runs there is no handler
+   on it. Measured under contention: the click landed on a live-looking button and nothing happened at
+   all. So remember it here, during parse, and Menu.init() acts on it the moment it is wired. */
+document.getElementById('nav').addEventListener('click', function (e) {
+  if (e.target.closest('[data-act="play"]')) window.__earlyPlay = 1;
+});
+</script>
+
+<div id="flash"></div>
+<div id="ui"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

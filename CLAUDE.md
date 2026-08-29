@@ -72,7 +72,16 @@ Target: **Destiny 2 moment-to-moment game feel** × **Final Fantasy XIV mystical
   `stats()` for anything spike-shaped: `stats()` is percentiles over 600 frames and `perf.systems` is an
   EMA, so both are blind to a single 1 s frame. Runs vsync ON by default (what a player feels);
   `--uncapped` for the old stress behaviour. See HANDOVER 4j.
+- **TWO PAGES.** `/` is the marketing site (`index.html`, zero engine); **the game is at `/play/`**
+  (`play/index.html` -> `src/main.js`). Every harness tool appends `/play/` itself (`tools/gameurl.mjs`),
+  so keep passing a bare origin to `--url` / `CADLE_URL`.
+- **NOTHING LOADS UNTIL PLAY (user decision 2026-08-28).** Landing on `/play/` builds no renderer, no
+  `Game`, no asset preload and no terrain — the title screen is idle. `Menu.play()` calls `main.js`'s
+  `boot()`, and that is the only thing that starts the world (plus `skip()` and `?auto=1`, which are the
+  harness's paths). `/play?start` — the landing page's Play button — is exactly "load /play and press
+  Play". Do not move world-building back to page load.
 - Game URL params: `?auto=1` (automation: no click-to-start, synthetic input), `&q=low|medium|high|ultra`, `&seed=N`, `&debug=1`,
+  `&start` (skip the menu, go straight to the loading screen), `&menu=1` (run the title screen under `?auto=1`), `&hold=1` (do not auto-play it),
   `&at=<biome id>` (spawn in that region instead of the Vale, facing its heart, music/bed already correct), `&back=N`
   (metres short of that region's landmark, default 150), `&hour=H` (set + freeze the clock).
 - Python 3 + Pillow available for cropping/contact sheets: `python -c "from PIL import Image; ..."`.
@@ -106,11 +115,15 @@ src/enemies/Enemies.js (+ src/enemies/*.js)  creatures/AI/spawner            (en
 src/vfx/VFX.js (+ src/vfx/*.js)  particles/tracers/decals/flashes            (vfx builder)
 src/audio/Audio.js (+ src/audio/*.js)  synthesized SFX/ambient/music          (audio builder)
 src/ui/HUD.js, src/ui/ui.css (+ src/ui/*.js)  DOM HUD/menus                  (hud builder)
-src/ui/Intro.js             cinematic loading screen: renderer/composer, transition (orchestrator)
-src/ui/intro/stage.js       intro scene assembly, ALL its lights, camera path      (orchestrator)
-src/ui/intro/room.js        intro bedroom: walls/window/desk/monitor/props         (intro-room builder)
-src/ui/intro/character.js   intro seated guy + gaming chair, idle + suck-in pose   (intro-character builder)
-intro.html                  standalone preview of the intro stage (dev only)       (orchestrator)
+src/ui/Menu.js              title screen + loading screen: nav, panels, bar, hand-off (orchestrator)
+src/ui/menu/backdrop.js     the animated backdrop (raw WebGL2, no three, no engine)  (orchestrator)
+src/ui/menu/backdropWorker.js  it running on its own thread (OffscreenCanvas)        (orchestrator)
+play/index.html             the title screen's MARKUP + inline CSS: it paints before any JS (orchestrator)
+index.html                  cadle.gg — the marketing site. NO engine, no three          (orchestrator)
+src/site/main.js            the site's entry: wires the components, nothing load-bearing (orchestrator)
+src/site/ui.js              the house component set on the web side (beUI vocabulary)    (orchestrator)
+src/site/scene.js           the world behind the page (reuses ui/menu/backdrop.js)       (orchestrator)
+src/site/rail.js            the ten-region cylinder carousel that steers the backdrop    (orchestrator)
 src/rpg/*, src/bosses/*     later waves
 ```
 Each file's header doc-comment is the **contract** (methods, fields, events). Implement it fully; you may add more. If another system's stub lacks something you need, code defensively (`game.vfx.emit?.(...)`) and list the ask in your final report.
@@ -122,7 +135,7 @@ Each file's header doc-comment is the **contract** (methods, fields, events). Im
   turns your work into the user's to-do list. Check in ONLY when the next step actually costs something:
   fidelity for speed, a design change, a risky or hard-to-reverse edit, or two defensible options where
   the user's taste decides. "I could also X" about a free perf win is not a check-in, it is X, done.
-- **Assets: local-only at runtime; AI-generated assets now allowed and encouraged (user decision 2026-08-20).** The orchestrator generates textures / SFX / music / GLB models with the Magnific MCP and commits them under `public/assets/` — see `ASSETS.md` for the manifest. **Load them ONLY through `game.assets`** (`src/core/Assets.js`, preloaded before any system init): `game.assets.tex(name)`, `game.assets.model(name)` (clone the scene AND materials before mutating), `game.assets.audioBuffer(ctx, name)`. Never fetch/TextureLoader asset files yourself — the preloader guarantees one copy, GPU pre-upload, and zero mid-game streaming hitches. Missing asset → the accessor returns null → keep your procedural fallback. **One documented exception: the intro loading screen** (`src/ui/intro/stage.js`) loads its own 287 KB set from `public/assets/intro/` — it is on screen *while* `game.assets` is still preloading, so it cannot wait for it; see ASSETS.md. Nothing else may bypass `game.assets`. Need a new asset? Put "ASSET ASK: ..." in your report. **Never fetch an external URL from game code, no CDN, no npm asset packages** — everything ships in the repo.
+- **Assets: local-only at runtime; AI-generated assets now allowed and encouraged (user decision 2026-08-20).** The orchestrator generates textures / SFX / music / GLB models with the Magnific MCP and commits them under `public/assets/` — see `ASSETS.md` for the manifest. **Load them ONLY through `game.assets`** (`src/core/Assets.js`, preloaded before any system init): `game.assets.tex(name)`, `game.assets.model(name)` (clone the scene AND materials before mutating), `game.assets.audioBuffer(ctx, name)`. Never fetch/TextureLoader asset files yourself — the preloader guarantees one copy, GPU pre-upload, and zero mid-game streaming hitches. Missing asset → the accessor returns null → keep your procedural fallback. **One documented exception: the title screen** (`src/ui/Menu.js` / `menu/backdropWorker.js`) fetches its single backdrop still, `public/assets/ui/menu_vista.jpg` — it is on screen *while* `game.assets` is still preloading, so it cannot wait for it; see ASSETS.md. Nothing else may bypass `game.assets`. Need a new asset? Put "ASSET ASK: ..." in your report. **Never fetch an external URL from game code, no CDN, no npm asset packages** — everything ships in the repo.
 - **MODELS, ROUTE CHANGED 2026-08-26: MONSTERS are rigged GLBs (concept -> Tripo generate -> Tripo `animate_rig` -> local `gltf-transform` meshopt+KTX2 -> `game.assets`); ARCHITECTURE stays procedural.** The old blanket ban came from `guy.glb` shipping with `skinCount 0` (an animation failure, not a perf one) — on the GPU a rigged GLB costs exactly what procedural geometry costs. `tools/invariants.mjs` rule (n) now allows `/assets/creatures/*.glb` from `Assets.js` or `src/enemies/` and still fails the build everywhere else. **Gotcha that looks like a dead end: `animate_rig` MUST be passed `model_version: v2.0-20250506` or newer — the default v1.0 returns error 1004 with zero credits and reads as "unriggable".** Full route + the 101-joint pruning question: `docs/CREATURE-PIPELINE.md`.
 - **The old rule, still in force for everything that is not a rigged creature: no GLB reaches the runtime. The pipeline is concept image → Tripo GLB → the `img2threejs` SKILL → procedural Three.js code, and only that code ships** (user directive 2026-08-26; `tools/invariants.mjs` rule (n) fails the build on a `GLTFLoader` import or a `.glb` string in code — provenance *comments* naming the reference are wanted). **Every monster and every NPC goes through it, and every future creature is born this way.** Before you convert anything, read **`docs/CREATURE-PIPELINE.md`** (the recipe, the machine setup, the concept-prompt rules) and **`docs/ORNAMENT-STANDARD.md`** (why our landmarks read as greybox and the bar that fixes it).
   **Do not improvise it.** `img2threejs` is a gated multi-stage pipeline — local state gate (`forge/next.py`), pre-spec assessment + quality contract, a detail inventory where every identity-defining feature maps to a real component (prose does not count), staged build passes, then turntable / self-intersection / interior-difference / per-feature fidelity gates with a bounded correction loop. Three landmark rebuilds and two creatures shipped at ~15-20% of their reference's detail because a builder wrote "img2threejs GLB-mediated track" in a comment and hand-assembled primitives instead. **The mechanical cause: the skill's docs say `python3` and this box had none** — that is shimmed now (`C:\Users\ianca\bin\python3{,.cmd}`), so the documented commands work verbatim. Run its scripts from the skill root, `C:/Users/ianca/.claude/skills/img2threejs`.
@@ -138,6 +151,14 @@ Each file's header doc-comment is the **contract** (methods, fields, events). Im
 - **Coordinates**: Y up, meters. Player spawn ≈ (0, h, 0). Terrain is `terrain.size` m square centered at origin; `terrain.heightAt(x,z)` is the ground truth for everything.
 - **Automation must keep working**: `?auto=1` start with no click; `window.__game` API in `src/main.js` (teleport/look/setHour/input/state/stats). If you add things critics should be able to trigger (spawn enemies, give weapon, set quality), expose them through your system and mention them — the orchestrator wires `__game`.
 - No new npm deps without strong reason (and say so in the report). Prefer `three/addons/*` already installed.
+- **The site's motion vocabulary is the GAME's.** `src/ui/settings.js` + the "UI KIT" block of
+  `src/ui/ui.css` rebuild beUI's components (beui.dev/components/motion) in plain DOM and CSS on ONE
+  spring token (`--spring: cubic-bezier(.22,1.42,.36,1)`): segmented tabs with a gliding indicator,
+  spring-pressed buttons, cards with a cursor glare, blur cross-fades between panes, a
+  centre-morph modal with gold corner studs, text that reveals in a cascade, numbers that roll.
+  `src/site/ui.js` is the same set for cadle.gg, on the same token. Anything new on either side extends
+  that set — a control that moves on its own easing is how a page starts looking assembled rather than
+  designed.
 - Code: compact, readable, comment the why. Mark deliberate shortcuts with `// ponytail: <ceiling>, <upgrade path>`.
 - **Git: the orchestrator owns it.** The repo is `https://github.com/Humpalumps/Cadle` (branch `main`; `v0.1.0-stable` = known-good revert point). Builders and critics: never `git commit`, `git push`, `git checkout`, `git reset`, or otherwise touch git state — just edit your files; the orchestrator commits between waves. Never touch `progress.html` or `tools/` unless you are the orchestrator (running `tools/gate.mjs` / `tools/inspect.mjs` is expected, editing them is not).
 

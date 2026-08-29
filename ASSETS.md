@@ -153,52 +153,130 @@ comment in `Assets.js`, so it is a deliberate orchestrator decision, not a build
 
 **Usage: `game.assets.tex('<key>')`** (keys = filename without extension; glyphs = `glyph1`/`glyph2`). Preloaded + GPU-uploaded before any system init — never load asset files yourself. sRGB, repeat-wrap, aniso 8 already set (leaf_card/glyphs are clamped). Derive normal/roughness procedurally (height-from-luma or noise) — only albedo is generated. Blend with your procedural detail/macro variation; do not drop macro variation.
 
-## Intro loading screen — `public/assets/intro/` (293 KB total: 7 x 512 px JPG, NO model)
+## Title screen — `public/assets/ui/menu_vista.jpg` (one 1920x1080 JPG)
 
-The ONE set that does **not** go through `game.assets`: the intro (`src/ui/Intro.js` / `src/ui/intro/stage.js`) is
-on screen *while* `game.assets` is still preloading the 29 MB main set, so it loads these itself, in
-`stage.js` `loadIntroTextures()`, and hands them to `room.js` / `character.js` as `tex`. Keep the set tiny —
-every kilobyte here is dead time before the loading screen can appear — and keep every material's procedural
-fallback working, because `tex.<name>` is `null` when a file is missing.
+The ONE asset that does **not** go through `game.assets`: the title screen (`src/ui/Menu.js`) is on screen
+*while* `game.assets` is still preloading the 29 MB main set, so it cannot wait for it. It is preloaded from
+`index.html` (`<link rel="preload" as="image" fetchpriority="high">`) and fetched inside the backdrop worker,
+so it never queues behind the main thread's world build.
 
-| file | `tex` key | for |
-|---|---|---|
-| `hoodie_knit.jpg` | `hoodie` | the character's hoodie (map + low-scale bumpMap); charcoal brushed fleece, seamless |
-| `chair_leather.jpg` | `leather` | gaming chair upholstery; black quilted leather, violet stitching, seamless |
-| `wall_plaster.jpg` | `plaster` | bedroom walls/ceiling; dark grey-violet painted plaster, seamless |
-| `wood_floor.jpg` | `wood` | floor planks and the desk top; dark walnut, seamless |
-| `rug_indigo.jpg` | `rug` | the rug; deep indigo wool with a gold geometric motif, seamless |
-| `poster_crystal.jpg` | `posterCrystal` | portrait wall print (352×528) — aether crystal on a plinth, gold filigree border |
-| `poster_ruins.jpg` | `posterRuins` | landscape wall print (528×352) — ruins under an aurora |
+It is **not** generated art. It is a frame of the real game, captured through the same menu camera the live
+backdrop later uses (`CAM` in `Menu.js`), which is why the cross-fade from still to live world reads as the
+picture waking up instead of a cut. Re-capture it whenever the Vale's look changes:
 
-Tiling textures arrive with `RepeatWrapping`, sRGB and aniso 8 set. They are **shared between modules** —
-`clone()` before touching `.repeat`, and dispose your clones.
+```
+node tools/inspect.mjs --nolock --noready --name vistapose --script tools/scripts/menu-vista.json   --w 1920 --h 1080 --q high --params "menu=1&hold=1"
+```
 
-**The seated character is 100% procedural** (`src/ui/intro/character.js`) — there is no model file on this
-path any more. He used to be `guy.glb` (495 KB, 21k tris, Magnific -> trellis-2, meshopt-compressed),
-awaited before the first frame with a 900 ms deadline and `<link rel="preload">`ed from index.html, with
-`character.js`'s own body hidden behind him.
+then save the chosen frame as `public/assets/ui/menu_vista.jpg` at quality 88. Capture at 1920x1080 and no
+higher: the menu backdrop draws through PostFX, so the frame is already SMAA'd and already graded — it needs
+no supersampling, and a 4K pass takes minutes per shot for nothing. Budget: **<= 320 KB**; it is the only
+image on the first-load critical path.
 
-Removed 2026-08-24 after rebuilding the procedural body against `docs/intro-ref/hoodie-back-ref.jpg` with
-the img2threejs GLB-mediated v2 track (the rendered GLB as structural baseline; its topology and materials
-were never copied). What the swap bought:
+Missing or 404? The backdrop draws a procedural sky in the same palette instead and nothing breaks — the
+still is an upgrade, never a dependency.
 
-* **the animation back.** The GLB had `skinCount 0, animationCount 0` — one rigid mesh. The two-bone IK
-  arms, the breathing idle and the `setSuck()` reach in `character.js` were all dead while it was on
-  screen, and its placement (`GUY_FIT`/`GUY_CHAIR`) had to be solved against the desk *by eye* for the
-  same reason.
-* **495 KB off the intro's critical path**, plus the `GLTFLoader` + `MeshoptDecoder` imports, the
-  `<head>` preload and the whole `guyBuf` hand-off through `IntroHost` -> `introWorker` -> `Intro`.
-* **a garment that is actually charcoal.** Measured on the shipped frame, the procedural garment's lit
-  back is sRGB (70,71,73) — channel spread 3 against `character.js`'s own stated target of < 15, where
-  the previous value measured 45-48. The GLB rendered khaki-beige under the same lights.
+## Landing page — `public/assets/site/` (~2.0 MB, all lazy-loaded)
 
-Per-region agreement with the GLB baseline (img2threejs `compare_region_passes.py`, six passes, camera
-correction group applied): garment silhouette IoU 0.952, depth 0.934, normal 0.933, beauty 0.886.
-Hair is the weakest region (0.376) and is the one open defect — see the note at `M.hair` in character.js.
+Screenshots of the running game for cadle.gg. Captured by `tools/scripts/site-gallery.json` (which uses
+the per-region camera poses from `tools/scripts/fin/*.json` — those are perpendicular to each region's
+bearing on purpose; on the bearing you are standing in the pass road) and converted by the pipeline
+documented in `tools/out/_siteimg.py`:
 
-Art reference (not shipped, dev only): `docs/intro-ref/hoodie-back-ref.jpg` (the character, clean back view),
-`docs/intro-ref/desk-back-{1,2}.jpg` (the full shot). Builders judge their work against these.
+* `<id>-c.jpg` — 900 px, q76. The ten region cards on the rail, shown at ~440 px: covers 2x DPR.
+* `<id>-b.jpg` — 1280 px, q72. The full-page BACKDROP the site cross-fades to as you scroll. It is drawn
+  behind a scrim, under grain and a vignette, parallaxed and pushed, so detail past this is bandwidth
+  rather than quality.
+* `<id>.jpg` — 1600 px, q78. The six gallery frames only; these open full-screen in the lightbox.
+
+**None of it is on the critical path**: every one is `loading="lazy"` with explicit width/height. The
+only image the landing page blocks on is the hero, which is `assets/ui/menu_vista.jpg` — the same file
+the title screen uses, so a visitor who presses Play already has it.
+
+Re-capture whenever the world's look changes:
+
+```
+node tools/inspect.mjs --nolock --name sitegal --script tools/scripts/site-gallery.json --w 1920 --h 1080 --q high
+python tools/out/_siteimg.py
+```
+
+## The brand mark - `public/assets/ui/mark/` (2026-08-29)
+
+The old mark was counter-rotating nested squares and a dot, drawn in inline SVG, and it read as amateur.
+The new one is an emblem: an engraved gold double ring with fleur points at the cardinals, four long
+tapered spikes on the diagonals, and a cut amethyst at the centre. It reads as a reticle and a crystal at
+once, which is what the game is.
+
+Pipeline: `images_generate` (seedream-5-pro, four concepts, picked by eye) -> `images_upscale` 2x
+(`VideoGameAssets`, subtle, resemblance 8, creativity -6) for a 4000 px master ->
+`images_remove_background` -> `tools/out/logosplit.py`.
+
+`logosplit.py` splits the master into the three layers the animation needs, by RADIUS and HUE - gold has
+r > b, the aether violet has b > r, so one test plus two radii is the whole split:
+
+* `ring.webp` the gold ringwork and spikes, `ticks.webp` the four crosshair lozenges, `gem.webp` the
+  stone. **All three are cut from ONE square centred on the mark** - cropping each to its own bounding
+  box scales them independently, and the stone came out three times too big in the composite.
+* `mark-512.webp` / `mark-180.webp` - the whole mark, flat.
+* `icon-16/32/48/96/180.png` - **the favicon is the mark itself, downscaled.** A redrawn "simplified
+  flat-vector sibling" for 16 px was tried and was exactly the clip art the mark exists to replace. At
+  16 px a downscale of the real art still reads as gold points around a violet stone.
+
+The animated build is `.mark3` in `index.html`: the three layers stacked with `position:absolute;inset:0`,
+ringwork turning one way, ticks the other, the stone still and breathing. Transform and opacity only.
+Use it where the mark is LARGE - the marketing site's top bar takes the flat `icon-96.png`, because at
+24 px a rotation is invisible and the three layers are 91 KB for nothing.
+
+## Landing page creatures — `public/assets/site/beasts/` (6 WebP, 295 KB total)
+
+Six creature sprites sit around cadle.gg as props you can shoot off the page (see HANDOVER 6.2). They
+are **not** game screenshots and **not** generated art: they are the Tripo studio renders of the real
+rigged creature models, the ones on `progress.html` under "creatures", with the background removed.
+
+Pipeline, in order:
+
+1. The renders live in the creature worktree at `tools/out/assetgen/tripo/<name>-hq-render.jpg`, and the
+   progress page serves them, so a plain HTTP GET off that dev server is the fastest way to fetch them.
+2. **Background removal via Magnific** (`images_remove_background`). A local flood-fill key off the grey
+   card gets the silhouette right but leaves the studio contact shadow behind as a grey smear; the tool
+   removes both cleanly in one pass.
+3. **RE-POSE each one** (`images_generate`, model `seedream-5-pro`, the cut PNG passed as an `image`
+   reference, count 2, pick by eye). The Tripo renders are all neutral standing turntable poses, and six
+   creatures standing to attention in the margins read as clip art. Each one is re-posed for the thing it
+   is going to sit on — the hound SITTING on its haunches looking down over an edge, the golem SITTING
+   with its legs hanging over a ledge, the sentinel LEANING its shoulder on an unseen wall with the
+   greatsword point-down, the drake PERCHED with its claws over a lip and its head craned down, the moth
+   HOVERING tilted forward, the wraith LEANING OUT from behind a corner. The prompt names the pose and
+   then forbids the prop: "no ledge, no wall, no ground, no cast shadow, isolated on a plain flat neutral
+   mid-grey background". **The prop must never be generated** — the page itself has to be the ledge, or
+   the sprite arrives carrying a rock that belongs to no section. Re-run `images_remove_background` on the
+   pick.
+4. Bake the separation in, and it is NOT the same for all six. Grounded creatures (hound, golem, sentinel,
+   drake) get a real contact shadow — silhouette, offset 20 px, blurred 16, alpha 0.55. Airborne ones
+   (moth, wraith) get a soft dark HALO instead — same silhouette, no offset, blur 22, alpha 0.62. An
+   offset contact shadow under a creature that is hovering is a shadow with no floor, which is exactly the
+   defect the art critic caught on the old golem. Tone is baked here too: brightness, saturation, and for
+   the two creatures that arrive with no colour of their own (median HSV saturation 0.03 and 0.05 against
+   0.23-0.50 for the other four) a 62% blend toward `--aether` #b9a2ff. A blend, never a flat multiply —
+   multiplying all the way turns a painted creature into one violet silhouette. A bone-white moth beside a
+   heading wins every time otherwise. Save WebP q84.
+   **The shadow must be baked, never a CSS `filter: drop-shadow`** — these sprites animate continuously,
+   and a filter on an animating element is re-run every frame: six of them took the page's scroll from
+   p99 18.5 ms to p99 112 ms with 116 frames over 33 ms. Measured. For the same reason nothing in the
+   `.beast` CSS may carry a `filter`; if a creature is too bright, it is re-baked, not filtered.
+5. Give every `<img class="beast">` its real `width`/`height`. Without them an absolutely-positioned
+   sprite that has not loaded yet has no aspect ratio, and the wraith rendered 1601 px wide across the
+   gallery heading.
+
+WebP, not PNG, and each one is exported at its OWN size — that creature's largest rendered
+CSS height x 2 for a 2x display, no more (300 px for the hound, 660 for the sentinel). One flat
+440 px for all six was simultaneously soft on the two big ones and 60% wasted bytes on the two
+that sit above the fold.
+
+An earlier attempt cut creatures straight out of the game using `PostFX._renderSkyMask` (geometry green,
+sky magenta — the blob gate's mask, so the alpha is exact). It works and is worth remembering for a
+creature with no Tripo render, but it only works for something silhouetted against SKY: on the ground the
+terrain is green too, and the flood fill takes the hillside with it.
 
 ## SFX — `public/assets/sfx/` (mp3, 4 distinct takes each — round-robin them per shot for natural variation)
 
@@ -320,9 +398,9 @@ every boot: **688 ms, 52% of the whole asset preload phase, for zero draw calls.
 along with `Assets.MODELS`, the model-parse loop and the `model()` accessor.
 
 **If you want a GLB, the bar is: it must be in the frame, and it must beat what code can build.**
-The one model that passes is the intro's, and it is not in this manifest because the intro does not go
-through `game.assets` — see the intro section above. Before asking for a mesh asset, build it procedurally
-first; that is the house style (`Props.js`, `weapons/models.js`, `intro/character.js` are all zero-asset).
+There is currently **no GLB in the build at all** — the last one (the old intro character) went when the
+cinematic intro was replaced by the title screen. Before asking for a mesh asset, build it procedurally
+first; that is the house style (`Props.js` and `weapons/models.js` are both zero-asset).
 
 ## Requested / planned next batch
 - Tree impostor sheets (octahedral bake happens in-engine — see TECHNIQUES.md #6)
@@ -369,3 +447,4 @@ Usage: DOM only (inventory / character screens), `<img src="/assets/ui/items/<ke
 relative-path rule as everything else. A missing file falls back to the drawn SVG silhouette in
 `ITEM_ICON`, so the screens never break. Style: dark gunmetal + gold filigree + blue-violet aether,
 even diffuse lighting — the house look.
+
