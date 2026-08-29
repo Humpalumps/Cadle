@@ -102,7 +102,7 @@ src/world/terrainWorker.js  the bake worker entry — imports the kernel, nothin
 src/world/Water.js          lakes/rivers: reflect/refract/foam/waves       (water builder)
 src/world/Grass.js          instanced grass, wind, interaction, LOD        (grass builder)
 src/world/Vegetation.js     trees/rocks/crystals instancing + colliders    (vegetation builder)
-src/world/Props.js          landmarks: ruins, aetheryte, pillars, POIs     (vegetation builder)
+src/world/Props.js          landmarks: ruins, waystone, pillars, POIs     (vegetation builder)
 src/world/Colliders.js      static collider registry (sphere/capsule/box)  (orchestrator; additive changes ok by vegetation builder)
 src/world/World.js          container                                       (orchestrator)
 src/player/Player.js        container + health/shield/target               (orchestrator)
@@ -174,7 +174,7 @@ Terrain is **2048 × 2048 m** centered at origin, `terrain.waterLevel` ≈ 4 (wa
 AND `terrain.dryAt(x,z)` is 0). Everything below is derived from `Biomes.js` — read the table, do not hardcode.
 
 **HOME BOWL (r < 330) — biome 1, "The Vale" (Meadow).** Unchanged from v0.5:
-- **Spawn meadow**: origin, gentle rolling grass, radius ~90. **Aetheryte** at (0, h, -28) — Props.
+- **Spawn meadow**: origin, gentle rolling grass, radius ~90. **Waystone** at (0, h, -28) — Props.
 - **Lake "Mirrormere"**: basin centered (-170, -, -70), radius ~85, beaches; island at (-150, -, -60).
 - **Ruins "Sundered Spire"**: plateau at (140, -, 60), radius ~60; enemy camp + the Warden.
 - **Forest "Whisperwood"** (the Enchanted Forest's home-side edge): z < -180, x -250..250.

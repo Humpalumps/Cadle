@@ -37,7 +37,7 @@ const FLIP_MS = 380;          // how long a shot control spins
  * pixel on this page that swallows a click.
  */
 // NOT `.plate`, `.pane` or `.card`. Those are the reading panels, and a permanent 56 px decal over 15 px
-// body copy makes the site worse at being a site - three shots into one paragraph left "aetheryte" and
+// body copy makes the site worse at being a site - three shots into one paragraph left "waystone" and
 // "Nine other places" unreadable for the rest of the visit. A shot there falls through to the section, so
 // the hole lands in the art behind the panel and the words survive.
 const SURFACE = 'figure, .tiltcard, .rail-card, .stat, .railclip, #bar, footer, section';

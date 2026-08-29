@@ -67,5 +67,5 @@ Destiny 2 destination?* If the answer at 8 m is "it is a clean box", it is not d
 
 This applies to all ten landmarks, the biome clutter kits and the ruin sets — the Elderheart (crown
 currently reads as flat-shaded boulders), Kharaz-Dun, the Convergence, the Glacier Throne, the
-Hagstone, the Drowned Court, the Unmaking, the Cinder Maw, the Aetheryte and Hearthfall. Build the
+Hagstone, the Drowned Court, the Unmaking, the Cinder Maw, the Waystone and Hearthfall. Build the
 library first, then sweep the landmarks with it; do not hand-roll ornament per landmark.

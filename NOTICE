@@ -1,0 +1,53 @@
+CADLE — what the MIT licence in this repository does and does not cover
+======================================================================
+
+CODE — covered by LICENSE (MIT)
+-------------------------------
+Everything under src/, tools/, play/, index.html, and the documentation is MIT
+licensed. Use it, fork it, ship it.
+
+ART AND MODELS — shipped, but NOT granted under the MIT licence
+---------------------------------------------------------------
+The files under public/assets/ (textures, UI art, creature GLBs, site imagery)
+and under docs/concepts/ were produced with third-party generative AI services.
+Those services grant the author commercial USE of the output; they do not
+uniformly grant the right to sublicense it onward, and in several jurisdictions
+purely AI-generated output may carry no copyright for anyone to license in the
+first place. So:
+
+  * The MIT grant above applies to the CODE. It is not a grant of rights in the
+    asset files, because those are not the author's to give.
+  * They are included so the game runs when you clone it, and so the rendering
+    work can be evaluated as it was built.
+  * If you fork this for anything you intend to publish, regenerate or replace
+    the assets. Do not assume the asset files travel with the MIT grant.
+
+RECORDED AUDIO — not in this repository at all
+-----------------------------------------------
+The recorded weapon, explosion and region-theme takes are absent from the tree
+AND from its history. The service that generated them permits use but expressly
+forbids redistributing, reselling or sublicensing the audio, which is precisely
+what publishing them here would do.
+
+Nothing is missing as a result. Every sound in the game has a full synthesis
+path and that path is what you will hear:
+
+  * src/audio/sfx.js  — every weapon, impact and explosion recipe falls through
+    to synthesis when no recorded take is present.
+  * src/audio/music.js — falls back to its generative score, per region.
+
+A build that does have recorded takes places the mp3s in public/assets/{sfx,music}/
+and adds public/assets/audio.json listing them; src/core/Assets.js reads that
+manifest if it exists and skips the whole recorded path if it does not.
+
+THIRD-PARTY DEPENDENCIES
+------------------------
+three (MIT), postprocessing (Zlib), @dgreenheck/ez-tree (MIT), meshoptimizer
+(MIT), sharp (Apache-2.0), vite (MIT), playwright (Apache-2.0). All permissive;
+none copyleft.
+
+TRADEMARKS
+----------
+Cadle is not affiliated with, endorsed by, or connected to any other game or
+studio. Other games are named in the documentation only to describe the design
+target, which is nominative use and nothing more.

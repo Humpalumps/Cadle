@@ -417,13 +417,13 @@ before.**
    threshold set BELOW frozen-skeleton level. Fixed: 0.04-0.12 rad/frame limb collapse on 20+ types.
    **WAVE 7 = the discrete defect list, in two lanes (in flight):** combat-visual (magenta bolt lens,
    kill-VFX bloom, grenade core, the OPAQUE FILM class that is hue-legal so the detector passes it,
-   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Aetheryte ring has no
+   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Waystone ring has no
    collider and eats the player's head in the first 30 seconds; Cinder Maw drops you inside the world
    with lava classified as swimmable water; vale grass LOD bubble at 25-28 m that slides with the
    camera; villager facing not firing live; border content collapse). Then: re-run the extended gate,
    re-judge.
 2h. **WAVE 7 STATUS (2026-08-28, the "every cheap high-impact defect" round the user asked for).**
-   LANDED + PUSHED: **world** (13 defects — Aetheryte collider was smaller than the pedestal it
+   LANDED + PUSHED: **world** (13 defects — Waystone collider was smaller than the pedestal it
    fenced; the Cinder Maw "hole" was the underside of the water mesh, not missing colliders; the
    grass bubble was blade SCREEN WIDTH (0.7 px at 30 m), not radius or density; border collapse was
    `wedgeAt` being a bare Math.round against a jittered 34 m splat band, fixed at Terrain._seam;
@@ -521,7 +521,7 @@ settings) or take the deferred Blender/Mixamo evaluation. The mixer wiring is do
   - `Enemy.js` `GLB_TINT_WASH = 0.55` makes rigged-creature palettes largely inert — the corsairs were
     fixed by going near-white on their own tints, but the global knob is still the reason other rigged
     creatures resist re-colouring.
-  - Aetheryte glow reads as a 161 px pale disc against pale mountains (Props).
+  - Waystone glow reads as a 161 px pale disc against pale mountains (Props).
 **F. PERFORMANCE (deferred by user decree, but the numbers are known).** Uncapped q=high mean 8.1-8.5 ms
 vs a 7 ms budget and q=low 6.6 vs 4 (both PRE-EXISTING and GPU-bound — `gpuMs ~= frameMs`); one hamlet
 angle reads 4.1 M tris vs the 4 M line (1.8 M of it CSM shadows, 1.1 M grass); `public/assets` is
@@ -876,7 +876,7 @@ settling is not strobing.
 
    **THE WAVE-6 BUILD BATCH IS IN FLIGHT: workflow `wf_a359a136-2de`, 8 file-owned lanes, builders
    Fable-5 effort-high** (terrain: ring banding + region ring splat + near field | props: Elderheart,
-   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + aetheryte, Hagstone, Drowned
+   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + waystone, Hagstone, Drowned
    Court, celestial isles + 8 m marble, Wayfinder placement | water: fen murk + sunken cascade shot |
    sky: infernal blue polygon, shadowfen sun, void haze | grass: vale neon retune | weapons: the
    viewmodel rebuild | vfx+abilities: combat gate to zero, impact decal, Starfall super, firing wedge |
@@ -1128,7 +1128,7 @@ holding them up, rubble that never landed, snapped pillars of something older, 0
 - DONE: bridges got kerbs and posts; the isles carry snapped pillars and rubble that never landed.
 - gap: same isle silhouette problem as the Celestial Isles (see there).
 
-**🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Aetheryte, Mirrormere,
+**🌾 The Vale (home) — the calibration reference.** Rolling meadow, wildflowers, the Waystone, Mirrormere,
 the Sundered Spire, the hamlet. Full grass [1.0], neutral light. **Do not "improve" it casually** — it is what
 the blob gate is calibrated against, and it is the one region the user has signed off.
 
@@ -2341,7 +2341,7 @@ last few rows of a Gaussian tail and found alpha ~0), and the mobile nav was alr
 review finished — the selector had been `#bar .wrap`, which matches nothing because `#bar` has no `.wrap`
 child, and is `#bar{flex-wrap:wrap}` now.
 
-**The weapon strip was six photographs of the same place** � identical aetheryte, identical grass,
+**The weapon strip was six photographs of the same place** � identical waystone, identical grass,
 identical hour in all six, one muzzle flash between them, under copy that says each gun is "in hand and
 firing". Re-shot: six regions, six hours, six camera angles, HUD hidden and viewmodel kept, the shot
 actually landing (`god(true)`/`passive(true)`, a spawned target, and a burst of frames around the trigger

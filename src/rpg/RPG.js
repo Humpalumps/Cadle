@@ -30,7 +30,7 @@ const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'P
 
 // world layout from CLAUDE.md — the map's landmark set
 const LANDMARKS = [
-  { name: 'Aetheryte Plaza', position: { x: 0, z: -28 } },
+  { name: 'Waystone Plaza', position: { x: 0, z: -28 } },
   { name: 'Mirrormere', position: { x: -170, z: -70 } },
   { name: 'The Sundered Spire', position: { x: 140, z: 60 } },
   { name: 'Whisperwood', position: { x: 0, z: -220 } },

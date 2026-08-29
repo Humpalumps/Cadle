@@ -190,7 +190,7 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #guide .gfill { background: linear-gradient(180deg, #c9ffd2, #5fd97e 55%, #2f8c47); box-shadow: 0 0 8px rgba(95,217,126,0.55); }
 
 /* ---------- notify / toasts / prompt / pickups / quest ---------- */
-/* soft dark band behind the card: the text is DOM (always on top), but gold-on-bright-aetheryte
+/* soft dark band behind the card: the text is DOM (always on top), but gold-on-bright-waystone
    washed out to unreadable (feel audit) — the scrim guarantees contrast over any world content */
 #notify { position: absolute; left: 0; right: 0; top: 25%; padding: 40px 0 44px; text-align: center; opacity: 0; pointer-events: none;
   /* radii sized so `transparent 80%` lands INSIDE the box on both axes (0.8 x 58% of box height

@@ -358,7 +358,7 @@ export class PostFX {
     if (!frozen) this._grainT = (this._grainT ?? 0) + dt;
     this.grade.grainT = this._grainT ?? 0;
     this.bloom.intensity = 0.5 + 0.35 * night;
-    this.bloom.luminanceMaterial.threshold = lerp(this.bloomNightTh, this.bloomDayTh, day); // night emissives (crystals, aetheryte) sit below day threshold; let them halo
+    this.bloom.luminanceMaterial.threshold = lerp(this.bloomNightTh, this.bloomDayTh, day); // night emissives (crystals, waystone) sit below day threshold; let them halo
     // FF14 grade rides the sun: warm gain + saturation at golden hour, cool blue-violet lift + softer S-curve deep at night
     const g = this.grade;
     g.gain.set(lerp(1.0, 1.075, golden), lerp(0.99, 0.96, golden), lerp(0.955, 0.84, golden));

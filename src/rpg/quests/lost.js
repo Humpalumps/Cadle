@@ -61,7 +61,7 @@ export default [
     name: 'The Convergence',
     giver: 'stele:lost',
     text: {
-      offer: 'The Archon has been holding the argument open for four ages because as long as nothing is decided, nothing is finished, and as long as nothing is finished it does not have to be wrong. That is why the Vale bleeds, why the fen is farmed, why a nursery is folded inside a horror. Go to the centre and end the argument. There is no next stele. This is the road you were pointed down the morning the Aetheryte flared, and it stops here.',
+      offer: 'The Archon has been holding the argument open for four ages because as long as nothing is decided, nothing is finished, and as long as nothing is finished it does not have to be wrong. That is why the Vale bleeds, why the fen is farmed, why a nursery is folded inside a horror. Go to the centre and end the argument. There is no next stele. This is the road you were pointed down the morning the Waystone flared, and it stops here.',
       progress: 'The centre of the ring. Everything you have walked past is standing behind it.',
       done: 'It let go. The sixteen stones went out one after another like lamps at dawn, and somewhere behind you the Vale stopped bleeding. Go home, Wayfarer. It remembers you.',
     },

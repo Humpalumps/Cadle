@@ -14,10 +14,10 @@ export default [
     id: 'vale-01', region: 'meadow', level: 1, next: 'vale-02',
     name: 'The Vale Remembers',
     giver: 'stele:meadow',
-    // the old voiced opener, rewritten: same staging — aetheryte flare, zone card, waypoint east
+    // the old voiced opener, rewritten: same staging — waystone flare, zone card, waypoint east
     intro: { flare: [0, 6, -28], card: ['The Shattered Meadow', 'Cadle'] },
     text: {
-      offer: 'You woke in the grass with no name the world will answer to. The Aetheryte flared when you stood — it knows you, even if nothing else does. East, past the meadow, broken stone climbs where a spire used to stand. Start there; the Vale keeps its wounds where you can find them.',
+      offer: 'You woke in the grass with no name the world will answer to. The Waystone flared when you stood — it knows you, even if nothing else does. East, past the meadow, broken stone climbs where a spire used to stand. Start there; the Vale keeps its wounds where you can find them.',
       progress: 'East. Follow the rising sun until the stone climbs.',
       done: 'The Sundered Spire. Aether bleeds out of it like a held breath finally let go.',
     },
@@ -166,7 +166,7 @@ export default [
     giver: 'npc:serel', giverName: 'Serel the Well-Keeper', giverPos: [116, -99],
     text: {
       offer: 'Our well drinks from the same seam as Mirrormere, and this month the water has come up tasting of weather — storms that have not happened yet, if you ask me, which nobody does. Walk to the lake and look at it. I do not need a hero; I need eyes younger than mine to tell me whether the shore has moved.',
-      progress: 'West past the Aetheryte, then follow the ground downhill. Water knows the way better than the road does.',
+      progress: 'West past the Waystone, then follow the ground downhill. Water knows the way better than the road does.',
       done: 'The shore held, you say. Then it is the seam itself that is restless. I will sleep better knowing the lake is where I left it — that is more than most people get from a well.',
     },
     objectives: [{ type: 'reach', poi: 'Mirrormere', r: 60, text: 'Look upon Mirrormere for Serel' }],

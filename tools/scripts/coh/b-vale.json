@@ -8,7 +8,7 @@
  {"look":[4.7124,0]},{"shot":"v-west"},
  {"look":[0,-0.75]},{"shot":"v-floor"},
  {"look":[0,0.02]},
- {"log":"walk to aetheryte"},
+ {"log":"walk to waystone"},
  {"key":"KeyW","down":true},{"wait":1.2},
  {"burst":{"name":"walk","n":6,"interval":0.1}},
  {"eval":"JSON.stringify({fov:window.__game.game.camera.fov,pos:window.__game.state().pos,vel:window.__game.game.player.controller?.vel})"},

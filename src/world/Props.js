@@ -12,14 +12,14 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 /**
  * Props: hand-placed landmarks (procedural geometry, seeded detail), all colliding:
- *   - Aetheryte at (0,-28): huge faceted floating crystal (rotates/bobs, pulsing emissive, point light) over an ornate octagonal
+ *   - Waystone at (0,-28): huge faceted floating crystal (rotates/bobs, pulsing emissive, point light) over an ornate octagonal
  *     stone plinth with 3 rotating rune glyph rings, floor glyph, orbiting shards and drifting motes.
  *   - Sundered Spire ruins at (140,60): jagged shattered tower (per-block tinted masonry, assets/tex/ruins_stone.jpg triplanar),
  *     colonnades (intact + broken fluted columns), arches, sunken cracked paving, fallen drums, a broken stair.
  *   - The Hollow Crown: 12 rune-lit monoliths ringing the boss arena (-60,260) + floor glyph + central dais.
  *   - Standing stones on the spawn meadow, rune lanterns (emissive crystal flames + additive ground glow, no point lights).
  *   - Glowing mushrooms clustered at tree bases in the Whisperwood (instanced, LOD, night-boosted emissive + additive ground glow).
- * Exposes: props.aetheryte {group, crystal, light, pos}, props.lights [PointLight], props.landmarks {name -> Vector3}
+ * Exposes: props.waystone {group, crystal, light, pos}, props.lights [PointLight], props.landmarks {name -> Vector3}
  */
 
 // ---------------------------------------------------------------- textures
@@ -1164,7 +1164,7 @@ export class Props {
     // the albedo, deep teal-greens, zero emissive (ground-adjacent foliage never glows: BLOB LAW).
     this.barkMat = mkTri('rm-bark', 'bark_gnarled', 0.40, { rough: 0.92, moss: 0.30 });
     this.leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, color: 0xffffff });
-    // WAVE-5 vale: the Aetheryte read as a "uniform running-bond brick cone" because plinthMat wore the
+    // WAVE-5 vale: the Waystone read as a "uniform running-bond brick cone" because plinthMat wore the
     // sandstone BRICK map. The hub of an aether network now wears the violet flagstone already preloaded
     // for the Lost dais — no brick joint anywhere on it — and takes vertex colours so weather() composes.
     const flagTex = game.assets?.tex?.('flagstone_violet') ?? null;
@@ -1235,7 +1235,7 @@ export class Props {
 
     // A frame between each landmark build. Nine of these ran back to back and the set was one of the
     // longest blocks on the loading screen; the intro cannot paint through any of it.
-    this._buildAetheryte(rng, h, col);
+    this._buildWaystone(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
     this._buildRuins(rng, h, col);
     await new Promise((r) => requestAnimationFrame(r));
@@ -2086,12 +2086,12 @@ export class Props {
 
   /**
    * Hearthfall — the Vale's hamlet (biome 1 is "grasslands, VILLAGES, wildflowers"). Nine cottages and a well
-   * on the gentle rise east of the meadow, far enough from the Aetheryte plaza to read as its own place.
+   * on the gentle rise east of the meadow, far enough from the Waystone plaza to read as its own place.
    * All one merged mesh + one merged thatch mesh: two draw calls for a village.
    */
   _buildVillage(rng, h, col) {
     const { scene } = this.game;
-    const CX = 118, CZ = -96;                       // meadow, clear of the aetheryte (0,-28) and the lake
+    const CX = 118, CZ = -96;                       // meadow, clear of the waystone (0,-28) and the lake
     // FOUR BUCKETS, FOUR MATERIALS (wave-3 vale major: "walls, thatch roof, well, shutters, doors and field
     // walls all wear the same terracotta brick ... a thatched roof rendered in masonry"). A village is lime
     // plaster on a timber frame, over a stone footing, under laid straw — and a vertex tint can darken a
@@ -2541,7 +2541,7 @@ export class Props {
     const aWell = (x, z) => Math.atan2(CX - x, CZ - z);                       // face the well
     // CANVAS VALUES. Both tints multiply the PLASTER material's own light base + map, so they land far
     // brighter than they read as numbers: 0.92/0.40/0.38 arrived as a hot salmon that out-shouted the
-    // Aetheryte against the new earth-toned ground. Madder-dyed cloth is a mid, not a light — the value
+    // Waystone against the new earth-toned ground. Madder-dyed cloth is a mid, not a light — the value
     // comes down and the hue stays, which is the same rule the villagers' albedo grade now follows.
     stall(CX - 4.5, CZ + 6.5, aWell(CX - 4.5, CZ + 6.5), [0.66, 0.30, 0.26]); // madder-red canvas
     stall(CX + 7.2, CZ + 4.2, aWell(CX + 7.2, CZ + 4.2), [0.21, 0.27, 0.62]); // woad-blue canvas (0.4/0.48/0.92 read as washed silver in full sun; 0.24/0.31/0.74 still read pale)
@@ -2554,14 +2554,14 @@ export class Props {
     col.add({ type: 'sphere', pos: V3(CX - 7.8, h(CX - 7.8, CZ + 9.4) + 0.4, CZ + 9.4), r: 1.4 });
     board(CX - 19, CZ + 11, Math.atan2(0.866, -0.499));                       // on the plaza lane, facing back up it
     bench(CX + 2.9, CZ - 3.8, aWell(CX + 2.9, CZ - 3.8));
-    bench(12.6, -20.5, Math.atan2(-12.6, -7.5));                              // plaza edge, facing the Aetheryte
-    // lantern posts: two at the market, four pacing the lane from the hamlet toward the Aetheryte plaza
+    bench(12.6, -20.5, Math.atan2(-12.6, -7.5));                              // plaza edge, facing the Waystone
+    // lantern posts: two at the market, four pacing the lane from the hamlet toward the Waystone plaza
     const DP = [-0.866, 0.499];                                               // village -> plaza, unit
     lantern(CX - 6.8, CZ + 3.2); lantern(CX + 9.0, CZ + 7.8);
     for (let li = 0; li < 4; li++) { const dd = 34 + li * 18, sd = li % 2 ? 2.3 : -2.3;
       lantern(CX + DP[0] * dd + 0.499 * sd, CZ + DP[1] * dd + 0.866 * sd); }
     // THE LANE ITSELF (user: the props "don't look finished" and the paving reads as scattered tiles). The
-    // lanterns already paced a road from the hamlet to the Aetheryte plaza and there was no road under them.
+    // lanterns already paced a road from the hamlet to the Waystone plaza and there was no road under them.
     // Two courses of flags laid side by side, 1.0 m pitch, running the lantern bearing from the market out
     // past the noticeboard: a lane you can follow with your feet, in the masonry bucket, zero draw calls.
     { const lang = Math.atan2(DP[0], DP[1]), nx3 = 0.499, nz3 = 0.866, laneR = mulberry32(0x1a4e | 0);
@@ -2607,7 +2607,7 @@ export class Props {
    * skins once in each village — no multiples of the same npc"): Serel (herbwife), Wick (merchant),
    * Bram (mason), plus — since the four new unique bodies landed — Harl (fisherman) at the well,
    * Tessa (farmwoman) at the vegetable strips, Cole (guard) at the lane entrance and Pell (scholar)
-   * at the noticeboard. Seven villagers, seven bodies, plus the unique Wayfinder at the Aetheryte.
+   * at the noticeboard. Seven villagers, seven bodies, plus the unique Wayfinder at the Waystone.
    * ALL are STATIC idlers at a fixed post — the walk routes were removed outright on the same decree
    * ("the movement on the npc's is terrible, lets not have any of them moving"); the walk clips stay
    * unused in the assets. The six town quests were re-authored onto the original three givers
@@ -4353,11 +4353,11 @@ export class Props {
       // The GIVER's position is the NPC's feet, not the marker's — that is the thing you walk up to, and
       // it is what `steleAt(region)` hands the quest engine and the harness scripts.
       const pos = V3(nx, y + DY, nz);
-      this.steles[regionId] ??= pos; // meadow gets two givers; the first built (the Aetheryte hub) is the canonical position
+      this.steles[regionId] ??= pos; // meadow gets two givers; the first built (the Waystone hub) is the canonical position
       this._steleList.push({ id, region: regionId, pos, faceAngle });
     };
 
-    build('meadow', this.landmarks.aetheryte, OFFSET.meadowA, 'meadow', 1);
+    build('meadow', this.landmarks.waystone, OFFSET.meadowA, 'meadow', 1);
     build('meadow', this.landmarks.ruins, OFFSET.meadowB, 'meadow', -1);
     for (const B of OUTER) build(B.id, this.landmarks[B.id], OFFSET[B.id] ?? 40, B.id, B.k % 2 ? -1 : 1);
 
@@ -4876,7 +4876,7 @@ export class Props {
     console.log(`[props] chests: ${specs.length} across ${regions.length} regions`);
   }
 
-  /** Proximity + [E] open, mirroring the aetheryte/loot-pickup prompt pattern exactly (hud.prompt + justPressed('KeyE')). */
+  /** Proximity + [E] open, mirroring the waystone/loot-pickup prompt pattern exactly (hud.prompt + justPressed('KeyE')). */
   _updateChests(t) {
     const chests = this.chests; if (!chests.length) return;
     const g = this.game, p = g.player?.position; if (!p) return;
@@ -5166,9 +5166,9 @@ export class Props {
   }
 
 
-  _buildAetheryte(rng, h, col) {
-    const { scene } = this.game; const X = 0, Z = -28, Y = h(X, Z) - 0.15; this.landmarks.aetheryte = V3(X, Y, Z);
-    const g = new THREE.Group(); g.name = 'aetheryte'; g.position.set(X, Y, Z); scene.add(g);
+  _buildWaystone(rng, h, col) {
+    const { scene } = this.game; const X = 0, Z = -28, Y = h(X, Z) - 0.15; this.landmarks.waystone = V3(X, Y, Z);
+    const g = new THREE.Group(); g.name = 'waystone'; g.position.set(X, Y, Z); scene.add(g);
     // plinth: octagonal steps, pedestal, FLUTED column, cradle — ornament-library grade (wave-5: the hub
     // was stacked plain cylinders in a brick map). Steps weathered, pedestal on a real torus-and-scotia
     // base under a dentil course, the column fluted, and every ring course is REAL GOLD (PG -> goldMat)
@@ -5190,7 +5190,7 @@ export class Props {
     for (let i = 0; i < 8; i++) {
       const a = (i + 0.5) / 8 * Math.PI * 2, x = Math.cos(a) * 5.9, z = Math.sin(a) * 5.9;
       parts.push(new THREE.CylinderGeometry(0.2, 0.26, 2.4, 8).translate(x, 2.3, z), new THREE.BoxGeometry(0.55, 0.2, 0.55).translate(x, 3.6, z));
-      // WAVE-6 COHERENCE: "Aetheryte pylon finials render as flat near-black diamonds that read as holes in
+      // WAVE-6 COHERENCE: "Waystone pylon finials render as flat near-black diamonds that read as holes in
       // the image." A 0.44 m octahedron on plinthMat is the void-pillar failure verbatim (Props.js ~1691):
       // `flat()` strips the UVs so the piece is 100% TRIPLANAR, 0.44 m spans a quarter of one tile of a
       // dark-violet flagstone map, and `pow(abs(n),4)` normalises to (1/3,1/3,1/3) on EVERY octahedron
@@ -5201,27 +5201,27 @@ export class Props {
       PGA(new THREE.OctahedronGeometry(0.22).translate(x, 3.95, z), [1, 0.94, 0.82]);
       const a2 = i / 8 * Math.PI * 2; PGA(new THREE.OctahedronGeometry(0.16).translate(Math.cos(a2) * 6.65, 0.85, Math.sin(a2) * 6.65), [1, 0.94, 0.82]); // step-edge studs
     }
-    const plinth = new THREE.Mesh(flat(mergeAll(parts)), this.plinthMat); plinth.castShadow = plinth.receiveShadow = true; plinth.name = 'aetheryte-plinth'; g.add(plinth);
+    const plinth = new THREE.Mesh(flat(mergeAll(parts)), this.plinthMat); plinth.castShadow = plinth.receiveShadow = true; plinth.name = 'waystone-plinth'; g.add(plinth);
     // rune plaques on the pedestal (share monoMat program with the arena monoliths — box faces map the rune strip cleanly)
     const plq = []; for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + Math.PI / 4; plq.push(new THREE.BoxGeometry(1.0, 1.5, 0.16).rotateY(-a + Math.PI / 2).translate(Math.cos(a) * 2.45, 1.95, Math.sin(a) * 2.45).toNonIndexed()); }
-    const plaques = new THREE.Mesh(mergeGeometries(plq), this.monoMat); plaques.castShadow = false; plaques.receiveShadow = true; plaques.name = 'aetheryte-plaques'; g.add(plaques);
+    const plaques = new THREE.Mesh(mergeGeometries(plq), this.monoMat); plaques.castShadow = false; plaques.receiveShadow = true; plaques.name = 'waystone-plaques'; g.add(plaques);
     // colliders: steps walkable, pedestal solid
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 8, Y - 1, Z - 8), V3(X + 8, Y + 0.35, Z + 8)), walkable: true });
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 6.6, Y - 1, Z - 6.6), V3(X + 6.6, Y + 0.7, Z + 6.6)), walkable: true });
     col.add({ type: 'box', box: new THREE.Box3(V3(X - 5.4, Y - 1, Z - 5.4), V3(X + 5.4, Y + 1.1, Z + 5.4)), walkable: true });
-    // WAVE-6 COHERENCE BLOCKER: "holding W from spawn, your head goes INSIDE the Aetheryte and stays there."
+    // WAVE-6 COHERENCE BLOCKER: "holding W from spawn, your head goes INSIDE the Waystone and stays there."
     // The blocking capsule was r 2.7 — SMALLER than the pedestal it is meant to fence (base radius 2.8) and
     // barely past the gold pedestal collar (torus 2.55 + tube 0.14 = 2.69 outer, at y 2.72). A player who
     // sprints up the steps rests at 2.7 + bodyRadius 0.4 = 3.1 m from the axis with their eye at
     // stepTop 1.1 + 1.65 = 2.75 m — i.e. 0.41 m from a 0.28 m gold tube AT EXACTLY EYE HEIGHT, which fills
     // the frame with gold and reads as "inside the landmark". The ornament envelope, not the pillar, is what
     // has to be fenced: r 3.6 leaves the eye 1.3 m clear of the collar and still leaves a 1.2 m walkable rim
-    // on the top step (radius 5.2-5.6) to stand on and look up. Probe: colProbes 'aetheryte-plinth' below.
+    // on the top step (radius 5.2-5.6) to stand on and look up. Probe: colProbes 'waystone-plinth' below.
     col.add({ type: 'capsule', a: V3(X, Y + 0.9, Z), b: V3(X, Y + 7.0, Z), r: 3.6 });
     for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI * 2; col.add({ type: 'capsule', a: V3(X + Math.cos(a) * 5.9, Y + 1, Z + Math.sin(a) * 5.9), b: V3(X + Math.cos(a) * 5.9, Y + 4, Z + Math.sin(a) * 5.9), r: 0.3 }); }
     // the exact coherence route: walk north into the plinth and assert the body ends OUTSIDE the ornament
     // envelope (fp 3.5 -> the old r 2.7 collider parked the player at 3.1 and would fail this).
-    (this.colProbes ??= []).push({ kind: 'wall', name: 'aetheryte-plinth', sx: X, sz: Z + 8, dx: 0, dz: -1, maxTravel: 6.0, dur: 2.5, fp: { cx: X, cz: Z, ry: 0, hw: 3.5, hd: 3.5 } });
+    (this.colProbes ??= []).push({ kind: 'wall', name: 'waystone-plinth', sx: X, sz: Z + 8, dx: 0, dz: -1, maxTravel: 6.0, dur: 2.5, fp: { cx: X, cz: Z, ry: 0, hw: 3.5, hd: 3.5 } });
     // the crystal
     // BLOB LAW, VALE BLOCKER (wave 3): "two perfectly round white-cored balls with radial violet-to-white
     // falloff sit in the crystal body", core (255,249,248), and 5.3% of the crystal body washed at noon.
@@ -5239,7 +5239,7 @@ export class Props {
         totalEmissiveRadiance = totalEmissiveRadiance * pulse * (0.5 + core * 0.7) + vec3(0.32, 0.14, 1.0) * rim * (0.55 + 0.4 * pulse); }`,
       vHead: 'varying vec3 vWPosA;', vBegin: 'vWPosA = position;',
     });
-    // AETHERYTE_CAP: no channel above 1.45, and never more than 0.5 of PURE WHITE underneath the hue. The
+    // WAYSTONE_CAP: no channel above 1.45, and never more than 0.5 of PURE WHITE underneath the hue. The
     // second line is the one that matters — subtracting the achromatic floor turns a would-be white highlight
     // into a dim violet-grey while leaving an already-saturated violet completely untouched (its min channel
     // is far below 0.5). Cap the CHANNEL, not the luminance: a luminance cap is 72% green and lets two
@@ -5252,7 +5252,7 @@ export class Props {
            outgoingLight -= max(0.0, aeG - 0.50); }
          #include <opaque_fragment>`); }; }
     this.crystalMat = crystalMat;
-    const crystal = new THREE.Mesh(bigCrystalGeometry().scale(1.35, 1.35, 1.35), crystalMat); crystal.position.set(0, 13.0, 0); crystal.castShadow = true; crystal.name = 'aetheryte-crystal'; g.add(crystal);
+    const crystal = new THREE.Mesh(bigCrystalGeometry().scale(1.35, 1.35, 1.35), crystalMat); crystal.position.set(0, 13.0, 0); crystal.castShadow = true; crystal.name = 'waystone-crystal'; g.add(crystal);
     const shardGeos = []; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; shardGeos.push(new THREE.OctahedronGeometry(0.35 + rng() * 0.3).scale(1, 1.9, 1).rotateX(rng()).rotateZ(rng()).translate(Math.cos(a) * 4.6, 11.5 + Math.sin(a * 2) * 2.4, Math.sin(a) * 4.6)); }
     const shards = new THREE.Mesh(mergeGeometries(shardGeos.map((g0) => g0.index ? g0.toNonIndexed() : g0)), crystalMat); shards.castShadow = true; g.add(shards);
     // rune rings (additive glyphs), different radii/tilts/speeds
@@ -5278,7 +5278,7 @@ export class Props {
     // ~15 units of irradiance and threw the two white specular balls the verdict measured. From the column
     // neck it lights the plinth (which is its job) and the crystal gets a soft wash instead of a hotspot.
     const light = new THREE.PointLight(0x7a5cff, 60, 48, 2); light.name = 'props-light'; light.position.set(0, 7.2, 0); g.add(light); this.lights.push(light);
-    this.aetheryte = { group: g, crystal, shards, rings, light, pos: V3(X, Y, Z) };
+    this.waystone = { group: g, crystal, shards, rings, light, pos: V3(X, Y, Z) };
   }
 
   _buildRuins(rng, h, col) {
@@ -5400,11 +5400,11 @@ export class Props {
   _buildMeadow(rng, h, col) {
     const { scene } = this.game; const parts = [], tints = []; const U = this.U;
     const P = (g, t) => { parts.push(g); tints.push(t); };
-    // standing stones around the spawn meadow (keep the north path to the aetheryte clear)
+    // standing stones around the spawn meadow (keep the north path to the waystone clear)
     for (let i = 0; i < 7; i++) { const a = (i + 0.5) / 7 * Math.PI * 2 + 0.4, r = 42 + rng() * 40, x = Math.cos(a) * r, z = Math.sin(a) * r; if (Math.abs(x) < 12 && z < 0) continue; const hh = 2.4 + rng() * 1.8, y = h(x, z);
       const t0 = 0.78 + rng() * 0.2;
       P(menhirGeometry(hh, rng).rotateZ((rng() - 0.5) * 0.16).rotateY(rng() * Math.PI * 2).translate(x, y, z), [t0, t0, t0 * 1.04]); col.add({ type: 'capsule', a: V3(x, y - 1, z), b: V3(x, y + hh - 0.6, z), r: 0.75 }); }
-    // rune lanterns lining the spawn path to the Aetheryte: hex cage on a tapered post, crystal-flame inside
+    // rune lanterns lining the spawn path to the Waystone: hex cage on a tapered post, crystal-flame inside
     const flames = [];
     for (const [x, z] of [[-3.6, -8], [3.6, -8], [-3.8, -17], [3.8, -17], [-4.2, 6], [4.2, 6]]) {
       const y = h(x, z) - 0.05;
@@ -5571,7 +5571,7 @@ export class Props {
     // ramp has the lamp already at three-quarters with the sun up, which flattens the metal it is lighting.
     if (this._nightLights) { const sI = clamp(this.game.sky?.sunIntensity ?? 1, 0, 1), f = Math.pow(1 - sI, 2.2);
       for (const nl of this._nightLights) nl[0].intensity = nl[1] * f; }
-    const A = this.aetheryte; if (!A) return;
+    const A = this.waystone; if (!A) return;
     A.crystal.rotation.y += dt * 0.12; A.crystal.position.y = 13.0 + Math.sin(t * 0.6) * 0.4; A.shards.rotation.y -= dt * 0.3; A.shards.position.y = Math.sin(t * 0.9 + 1) * 0.3;
     for (const r of A.rings) r.rotation.y += dt * r.userData.speed;
     for (const r of this._rot) r.rotation.y += dt * r.userData.speed;
