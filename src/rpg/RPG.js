@@ -15,12 +15,15 @@
 import * as prog from './progression.js';
 import * as loot from './loot.js';
 import * as ammo from './ammo.js';
+import * as glimmer from './glimmer.js';
+import * as shop from './shop.js';
 import * as save from './save.js';
 import { RARITY, TIERS, ARMOUR_SETS, ELEMENTS, CONSUMABLES, EXOTICS, EXOTIC_ARMOUR, describe, shortLabel, ARMOUR_SLOTS, makeQuestItem } from './items.js';
 import { reserveNames } from './names.js';
 import { compareAgainstLoadout, WEAPON_SLOTS, SLOT_LABELS, defaultSlotFor } from './compare.js';
 import { Screens } from '../ui/Screens.js';
 import { OpeningQuest } from './quest.js';
+import { QuestMarkers } from './QuestMarkers.js';
 import { LANDMARKS as BIOME_LANDMARKS } from '../world/Biomes.js';
 
 const AR_LABEL = { handcannon: 'Hand Cannon', autorifle: 'Auto Rifle', pulse: 'Pulse Rifle', shotgun: 'Shotgun', sniper: 'Sniper Rifle', fusion: 'Fusion Rifle', scout: 'Scout Rifle', beam: 'Charge Beam' };
@@ -80,6 +83,8 @@ export class RPG {
       // silently done nothing for the whole life of the project and no error was ever raised. The
       // swallowing catch is why: a missing API that throws gets fixed, one that no-ops does not.
       marker: (o) => g.hud?.marker?.(o),
+      // the pickup feed (left side) — glimmer.js batches mote payouts into one "+38 Glimmer" line
+      pickup: (t) => g.hud?.pickup?.(t),
     };
     const world = {
       get size() { return g.terrain?.size ?? 1024; },
@@ -157,6 +162,12 @@ export class RPG {
     R.ammo = () => ammo.state(ctx);
     R.ammoDrop = (kind, pos) => ammo.drop(ctx, kind, pos);
     R.clearBricks = ammo.clearBricks;
+    // glimmer economy — kills scatter gold motes that magnet in (glimmer.js); shops spend them
+    R.glimmerState = () => glimmer.state();
+    R.clearMotes = glimmer.clearMotes;
+    R.shopStock = (npcId) => shop.stockFor(ctx, npcId);
+    R.shopBuy = (npcId, key) => shop.buy(ctx, npcId, key);
+    R.isVendor = shop.isVendor; R.vendorFor = shop.vendorFor;
     // quest rewards pay glimmer; prog.grant existed but was never mirrored onto R, so every
     // quest's reward.glimmer would have silently paid nothing.
     R.grant = (amounts) => prog.grant(ctx, amounts);
@@ -180,6 +191,7 @@ export class RPG {
     prog.init(ctx);
     loot.init(ctx);
     ammo.init(ctx);
+    glimmer.init(ctx);
 
     // ---------- load ----------
     const d = save.read();
@@ -199,7 +211,11 @@ export class RPG {
     // `enemy.xp` is the LEVEL-SCALED value Enemy.spawn() computes (defs.LEVEL_XP), not the flat
     // `def.xp` base. Reading the base is what made a level-44 Void Horror pay the same 280 as its
     // level-34 twin, which on its own put the 1->50 curve thousands of kills out of reach.
-    g.events.on('enemy:death', (e) => { const en = e?.enemy; R.addXp(en?.xp ?? en?.def?.xp ?? 10); });
+    g.events.on('enemy:death', (e) => {
+      const en = e?.enemy; R.addXp(en?.xp ?? en?.def?.xp ?? 10);
+      // named rares (Enemies.js NAMED_RARES) always pay purple+: the walk to the POI is the price
+      if (en?.namedRare && en.position) { try { R.dropLoot(en.position, 'legendary'); } catch (err) {} }
+    });
     // player-outgoing damage rides gear quality: wrap the two combat entry points once
     const mul = () => (R.stats.damageMul || 1) * (R.weaponMul || 1);
     for (const fn of ['hitscan', 'explode']) {
@@ -226,12 +242,16 @@ export class RPG {
     this.activeDrops = R.activeDrops; this.clearDrops = R.clearDrops;
     this.ammo = R.ammo; this.clearBricks = R.clearBricks; this.grant = R.grant; this.dropQuestItem = R.dropQuestItem;
     this.ammoDrop = R.ammoDrop;   // was reachable only via game.rpg.ctx.rpg.ammoDrop, unlike its siblings
+    this.glimmerState = R.glimmerState; this.clearMotes = R.clearMotes;
+    this.shopStock = R.shopStock; this.shopBuy = R.shopBuy; this.isVendor = R.isVendor;
 
-    g.events.on('player:respawn', () => { try { ammo.clearBricks(); } catch (e) {} });
+    g.events.on('player:respawn', () => { try { ammo.clearBricks(); glimmer.clearMotes(); } catch (e) {} });
 
     this.screens = new Screens(g, ctx);
     this.quest = new OpeningQuest(g, R);
     this.quest.init();
+    // world-space ! / ? over quest givers + minimap pips (HUD reads this.markers.pips())
+    this.markers = new QuestMarkers(g, this.quest);
   }
 
   update(dt, t) {
@@ -240,11 +260,13 @@ export class RPG {
     prog.update(ctx, dt);
     loot.update(ctx, dt);
     ammo.update(ctx, dt);
+    glimmer.update(ctx, dt);
     // the loot prompt is re-asserted every frame it applies; clear the HUD line when it stops
     if (!this._promptSet && this._promptWas) this.game.hud?.prompt?.(null);
     this._promptWas = this._promptSet;
     this.screens.frame(dt);
     this.quest.update(dt, this.game.time);
+    this.markers?.update(dt, this.game.time);
     if (this._dirty && this.game.time > this._nextSave) { this._nextSave = this.game.time + 6; this.ctx.rpg.save(); }
   }
 }

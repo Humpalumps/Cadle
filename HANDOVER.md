@@ -5,21 +5,44 @@ Order: **§1 the job → §2 the next job (biomes) → §3 the machine → §4 t
 `CLAUDE.md` is the contract (file ownership, conventions, perf budget, world layout, `window.__game` API) —
 this file is state and hard-won knowledge. **Keep it current; delete what has stopped being true.**
 
-Repo: `https://github.com/Humpalumps/Cadle` · branch `main` · everything below is merged and pushed.
+**MERGED TO MAIN 2026-08-28: `main` is now `904a459` (fast-forward from `d9ca2b5`, 97 commits).**
+The campaign branch `claude/session-e5730b` and `main` are identical — main is no longer the stale
+pre-wave-5 tree, so branch from main for new work. Merged on the user's explicit instruction with 6
+of 7 gate checks green and the 7th (combat white-out) clean on every frame captured but never able to
+complete a full 356-frame run on a GPU shared with a game — see 2j for the TDR diagnosis and the
+chunked-capture workaround. **First job for the next session: run the full combat capture on a quiet
+GPU and close that last check** (one 58 px vale-kill cluster was the only outstanding finding).
+
+Repo: `https://github.com/Humpalumps/Cadle`. **You are in the worktree
+`.claude/worktrees/cadle-character-load-perf-ee5b7b` on branch `claude/session-e5730b`, and its dev
+server is `http://127.0.0.1:5179/` — NOT 5173, which serves the main checkout.** All of this session's work is COMMITTED **and PUSHED**:
+HEAD `913ed1c` on branch `claude/session-e5730b`, 31 commits, **deliberately NOT merged to `main`**.
 
 ---
 
-## 0. WHERE IT STANDS (2026-08-29) - read this before anything else
+## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
-Working tree: the `shader-compilation-worker-7299da` worktree, on `6579628`. **Nothing is committed** -
-43 changed files. The orchestrator commits; builders and critics never touch git.
+> **Written 2026-08-27 as a deliberate HANDOVER at the end of a session. Wave 5 is BUILT, COMMITTED,
+> PUSHED and JUDGED — and it went BACKWARDS (4.9/10, was 5.8, with 5 blob violations).**
+> **YOU ARE THE ORCHESTRATOR.** That matters: it means you own `tools/`, `progress.html`, git and
+> this file — the "never edit files you don't own" rule in CLAUDE.md binds the sub-agents you spawn,
+> not you. You may edit any file; your BUILDERS may not.
+> **YOUR SHELL IS PowerShell** (a Bash tool is also available; each takes its own syntax). Commands in
+> this repo's older notes are written for bash — `cmd > log 2>&1 &` is a parse error in PowerShell.
+> **THE CAMPAIGN METHOD ASSUMES THE `Workflow` TOOL** (fan out sub-agents, file-owned lanes). If your
+> session does not have it, use the Agent tool instead and say so — every "fire this workflow"
+> instruction below is really "run these agents in parallel with these prompts".
+> Keep this section current after every milestone, not at session end: the user hits weekly usage
+> limits and swaps in a fresh agent mid-campaign, and this file is all your replacement gets.
 
-**The game itself is unchanged and verified.** Only three game files were touched this pass:
-`src/core/Input.js` (the Tab guard, §6.0i), `src/ui/ui.css` and `src/ui/screencss.js` (chrome tokens,
-chamfer removed). `invariants` OK, `curvecheck` OK, **`questgate` all OK** - both weapons fire and
-reload, ammo returns after running dry, all five quest objective types accept/tick/turn in, no page
-errors, memory flat. `tools/gate.mjs` has NOT been run since those edits: it refuses to start with other
-harness Chromes alive and will not accept a starved capture. **Run it first on a quiet machine.**
+### THE FRONT DOOR IS IN (2026-08-29) - merged from `claude/intro-screen-redesign-f158ef`
+
+This branch was cut at `6579628` and sat there while main took 97 commits of wave 6/7 world work, so it
+was merged forward rather than rebased. **Only three files conflicted** - `CLAUDE.md`, `HANDOVER.md` and
+`src/ui/ui.css` - and all three were the same shape: this branch tokenised CSS literals and rewrote docs
+while main added new rules using the old literals. Resolved as a union keeping the tokens. `src/main.js`
+auto-merged; main's changes to it were `__game.give` returning a name, which is untouched here.
+**Main never touched the intro** this branch deleted, so nothing was resurrected.
 
 The work of this pass is the front door:
 
@@ -108,6 +131,743 @@ dropped every rule after it), `rangecheck`, `shootcheck`, `linkcheck` (every Pla
 **Two traps that have each cost hours:** PowerShell's `Get-Content`/`Set-Content` mojibakes any BOM-less
 UTF-8 file - edit with Python or the Edit tool, never a PS round trip. And a harness run is only honest
 if the machine is quiet; a contended run reports failures it did not earn.
+
+**What did NOT happen before the merge (user call, 2026-08-29: "lets just check for merge conflicts and
+merge this in, it's taking too long"):** the critic round. Art direction, game feel and front-end all
+returned DO NOT SIGN OFF on earlier drafts and the fixes since - the loading-screen rebuild, the jiggle
+removal, the button/chamfer/em-dash pass - have never been re-reviewed. Twice in this project a fix has
+re-opened the same defect on the adjacent code path. **That review is still owed.**
+
+### WAVE 5 IS JUDGED - IT WENT BACKWARDS, AND WHY (read before doing anything else)
+
+**Average 4.9/10, down from 5.8. Five of ten regions carry a BLOB VIOLATION; wave 4 had none.**
+Full verdicts: `tools/out/wave5-summary.txt` and `wave5-verdicts.json` (I wrote these by hand from the
+workflow journal - the collator agent never ran, see the takeover note below). Raw journal returns:
+`tools/out/wave5-raw.json`.
+
+**ALL FIVE BLOBS ARE THE SAME BUG, AND IT IS NOT THE PLAYER'S GUNFIRE: fighting a region's own
+bestiary blows the screen to white.** Five independent critics found it separately, several with the
+player never firing a shot:
+
+| region | what they measured |
+|---|---|
+| dragon | a wyvern's breath attack tone-maps to pure cream-white and swallows the entire frame |
+| vale | wisp bolt impact renders as a hard white core, sampled **rgb 229,238,233**, on the spawn meadow grass |
+| void | riftling + voidhorror at 16-18 m; **437 additive + 291 alpha particles**; player never fired (ammo still 6/60) |
+| infernal | imp/magmagolem/drake at 8-12 m, drop passive, viewport near-solid within **0.5 s** |
+| lost | Stone Golem hit -> hard-edged opaque near-white egg over its chest crystal, **rgb 236,232,221**, crisp rim, no falloff |
+
+**THE REAL LESSON, and it is bigger than the bug: `node tools/gate.mjs` PASSED while the game was in
+this state.** `blobcheck` is scoped to GROUND COVER in a scripted meadow burst, so a full-screen
+combat-VFX wash is simply outside what it looks at. A gate with a coverage hole reads as a clean bill
+of health, and this campaign has now been burned twice by trusting a green gate over a person looking
+at the screen (the other time was the animation gate passing 23/23 while creatures visibly jittered).
+**WAVE 6's FIRST JOB IS TO CLOSE THAT HOLE - a combat-VFX blobcheck scenario - BEFORE any new art.**
+Do not simply fix the five instances; the next uncovered scenario will do the same thing again.
+
+**Suspects for the regression, in order** (none verified - this is where to start, not a conclusion):
+enemy attack/impact VFX intensity; whatever the wave-5 LIGHTING lane changed about the environment /
+PMREM to make gold read as metal (a hotter env raises everything); and the new GLB creature material.
+Note `GLB_RIM_MAX` was already lowered 0.75 -> 0.30 this session, so the rim is not it.
+
+**THE COHERENCE PASS (first ever run) is the good news and it is worth reading in full** at the end of
+`wave5-summary.txt`. Its verdict: Cadle is *"unmistakably a game rather than a tech demo"* - a real
+quest spine (55 written quests, a closed 1-50 XP curve, drop pity that holds), an MMO-grade parchment
+map and quest log, a measurably correct Destiny-shaped movement core (walk 6.61 / sprint 10.18 m/s,
+sprint FOV kick in 300 ms, ADS 220 ms, slide boosting to 11.54), and ten regions you can genuinely
+WALK between - it held W for 200 seconds from the Vale meadow through a pass into the Whisperwood and
+out to the world's edge with no teleport. Its blocker list: **every surface within 8 m of your face is
+a flat plane with low-frequency noise on it in seven of ten regions**, the mountain ring shows
+horizontal contour-line banding that reads as a texture bug, the impact decal is a 200-pixel pure-black
+circle, the super is two flat yellow clip-art hands, the only NPC has no face, and creatures charging
+the spawn meadow blow the grass out.
+
+### READ THIS BEFORE TRUSTING ANYTHING BELOW SECTION 0
+
+**Section 0 is current. Sections 2-5 are an archive and parts of them are STALE.** They were written
+across earlier waves and were not rewritten when later waves changed the same files. Specifically:
+
+- **Section 2's per-region `gap:` lists are dated 2026-08-23** and predate wave 5, which shipped
+  lanes for `Terrain.js`, `Sky.js`, `Lighting.js`, `Props.js`, `Vegetation.js` and `Water.js`.
+  **Use the wave-5 verdicts in `tools/out/wave5-summary.txt` for what is wrong TODAY**; section 2 is
+  still good for what each region IS SUPPOSED TO BE (the spec), which has not changed.
+- **Section 3 tells you to "start from the main checkout and make a fresh branch."** That is a whole
+  wave out of date. You are in the `cadle-character-load-perf-ee5b7b` worktree on
+  `claude/session-e5730b`. Ignore it.
+- **Ports quoted in sections 3-5 (5173 / 5174 / 5198) are from earlier worktrees.** This one is 5179.
+- Two counts disagree with CLAUDE.md and CLAUDE.md is the older number: enemies alive is **72**
+  (`MAX_ALIVE`), not 40; the washed-white-blob bug has now shipped **six** times, not five.
+- **CLAUDE.md contradicts itself on GLBs in adjacent bullets** (one says monsters/NPCs ARE rigged
+  GLBs, the next says "no GLB reaches the runtime"). The FIRST is current — the route changed
+  2026-08-26 and `tools/invariants.mjs` rule (n) enforces the new rule mechanically: creature GLBs
+  are allowed from `Assets.js` and `src/enemies/` and banned everywhere else. Architecture stays
+  procedural.
+- **CLAUDE.md's three-gate sign-off lists PERFORMANCE as mandatory; the user later deferred it**
+  (2026-08-26). The deferral is current — do not gate a wave on frame time. Graphics, animation and
+  game-mechanics gates still bind.
+
+### ENVIRONMENT & ACCESS - what survives a different Claude account / a different machine
+
+**The code is safe and portable.** Pushed 2026-08-27 to
+`https://github.com/Humpalumps/Cadle` as branch **`claude/session-e5730b`** (30 commits,
+**deliberately NOT merged to `main`**, so main is untouched and this can be reviewed or reset away).
+
+**Same machine, same Windows user (`ianca`), different Claude account -> everything works:**
+the worktree, `~/.claude/` (global CLAUDE.md, skills, this project's memory files) and the
+`TRIPO_API_KEY` environment variable are all per-WINDOWS-USER, not per-Claude-account.
+
+**Different machine -> you must bootstrap:**
+```
+git clone https://github.com/Humpalumps/Cadle.git
+cd Cadle && git checkout claude/session-e5730b && npm install
+npx vite --port 5179 --strictPort --host 127.0.0.1 > tools/out/vite.log 2>&1 &
+```
+Then set `TRIPO_API_KEY` in the environment. Node 22. The harness needs `npx playwright install chromium`
+if it has never run there, and it wants a real GPU (this box is an RTX 3060).
+
+**THE DEV SERVER IS A PROCESS, NOT A FILE.** Everything in this handover assumes
+`http://127.0.0.1:5179/` is serving THIS worktree. Check with `curl -s -o /dev/null -w "%{http_code}"
+http://127.0.0.1:5179/` and start it with the vite command above if it is down. **Port 5173 serves the
+MAIN checkout — measuring or screenshotting it tests the wrong build, and that has burned this project
+before.**
+
+**WHAT DOES NOT TRAVEL, and one of these matters:**
+- **The Magnific MCP connector is account-level, NOT in the repo.** `.mcp.json` contains only `tripo`.
+  So a different Claude account may have **no image generation**, which means no new CONCEPT ART and
+  therefore no new creatures until it is reconnected. **Tripo is unaffected** — the REST API works off
+  `$TRIPO_API_KEY` (`tools/creature-anims.mjs` uses it directly), and the doc notes the Tripo MCP tools
+  401 in-session anyway, so REST is the supported path regardless.
+- **Workflow runs and session transcripts are session-scoped.** Nothing in flight can be resumed by
+  another session or account; re-fire from the script path instead. This is why the wave-5 judge script
+  lives in the repo at `tools/out/wave5-judge-workflow.js`.
+- Credit balances are on the shared Tripo/Magnific accounts, not the Claude account: Tripo ~4,150,
+  Magnific ~4,400 at handover.
+
+### ⚡ TAKEOVER 2026-08-27 EVENING (written at ~8% usage with an 8-lane build batch IN FLIGHT)
+
+**If you are reading this cold, here is the exact state and what to do, in order:**
+
+1. **Git state: everything up to `tools/out/wave6-build-batch.js` is COMMITTED AND PUSHED** on
+   `claude/session-e5730b` (this worktree, dev server 5179 — start with the vite command in
+   ENVIRONMENT & ACCESS below if `curl` on 5179 fails). Landed this session, all pushed:
+   - `b2dbf49` the COMBAT GATE (tools/combatcheck.py + tools/scripts/combat-blob-steps.json + gate.mjs
+     check 1b) — the wave-5 coverage hole is closed and was RED on the wave-5 build (8/10 regions).
+   - `66f5569` animcheck folded into gate.mjs (check 2b). HANDOVER job 5 done.
+   - `e0eecd5` the combat white-out FIX (3 builder lanes: Brush min-channel cap, pool+halo near-fades,
+     preset re-authors, uGLB material ceilings, METAL_ENV skinned-mesh opt-out, AE aeKnee rolloff)
+     + invariants rule (o) pinning every guard.
+   - `87c494a` Assets.js keeps GLB animation clips (assets.clips(name)) + 11 animated GLBs swapped
+     into public/assets/creatures/ (idle/walk/run; serpent+giant have none; wisp procedural).
+   - a follow-up commit: bolt-core saturation, death-pop hued, explosion energy conservation
+     (er=min(1,2.2/r)) — combat gate progression 58→47→37→44-findings-no-washes across runs
+     `tools/out/cvfx-{cal,vfxlane,verify,r2,r3,r4}` (r4 worst region washFrac 0.085 vs 0.84 pre-fix;
+     residuals are cores over PALE ground — snow/marble — and small; vfx lane owns finishing them).
+2. **THE WAVE-6 BATCH IS RESOLVED, and the 3-lane REDO is IN FLIGHT (workflow wf_5340119f-a0d, script archived at tools/out/wave6-redo-3lanes.js; journal path pattern same as before under this session dir). If it died: same decision rule — gates + journal reports, commit what passes, revert unexplained failures.** The user's spend limit killed
+   3 of 8 lanes mid-work; the other 5 returned verified reports. What happened next:
+   - **COMMITTED per-lane (a0a2fc4..15460f9): terrain** (ring contour banding killed at both authors —
+     never reintroduce a height-periodic term on the ring; near-field grain within 22 m; forest floor
+     lift), **water** (fen tannin brown + shore soak + scum thinned; reflection cap 0.17→0.34),
+     **sky** (shadowfen golden hour sun; void distance haze), **grass** (vale off neon), **weapons**
+     (viewmodel night fixes; the full rebuild was already in an earlier commit).
+   - **REVERTED (unfinished, unexplained, user-visible damage): enemies mixer wiring, Props.js batch,
+     vfx-abilities batch.** Their partial diffs are archived at `tools/out/wave6-partials/*.patch`
+     (committed) — mineable, but the REDO should start clean from the briefs in
+     `tools/out/wave6-build-batch.js`. The half-wired mixer made creatures FLAIL (user saw it live) and
+     one of the partials broke boot (stuck loading overlay + black composer) — both cured by revert.
+   - **USER FEEDBACK for the mixer REDO (binding): the baked clips must be judged BY EYE, not just by
+     animcheck** — "floppy, limbs flail everywhere, much worse than before". The redo lane must
+     compare procedural vs baked per creature (gait contact sheets) and KEEP THE BETTER ONE per
+     creature; a bad retarget does not ship because a gate passed.
+   - **SKY LANE HANDOFF: the infernal "giant flat blue polygon" is NOT sky** — it is a world-anchored
+     column of layered blue camera-facing translucent sheets with a red-orange tip (a vfx/loot-beacon
+     class object), photographed in `tools/out/skyw5-wedge/`. The vfx redo lane owns it.
+   - Terrain lane could not capture 3 of its after-shots (the boot breakage window); re-shoot
+     sunken/fen/forest down-looks when convenient — the code paths are shared with verified shots.
+2b. **REDO RESOLVED (later that evening): all three redo lanes landed, COMMITTED+PUSHED**
+   (`02965f4` enemies, `165ea18` props, `107bd90` vfx). Headlines: the mixer is wired but **USE_CLIPS
+   ships all-false — every Tripo retarget lost the eye A/B against the procedural gait** (sheets in
+   `tools/out/eyepass-clips/`); regenerating better locomotion clips is an OPEN product question —
+   with better clips, flipping a body's USE_CLIPS entry after its A/B sheet is the whole integration.
+   animcheck 23/23 (serpent vertical wave + arch, wraith aux streaming, spine breath de-phase, seraph
+   arm-chain trim fixes all six sentinel-body types). The infernal blue wedge was 5+ stacked unfogged
+   LOOT BEACONS (dropmesh.js fogged/translucent; **ASK for rpg lane: scatter multi-drops ~2 m**).
+   Firing wedge = tracer endpoint behind the eye mirror-projecting; near-plane clip in Extras TR_VERT
+   fixes tracers AND beams. Impact decal rebuilt; Starfall redone, barrel warp REMOVED. Combat gate
+   42→21 during the lanes; the orchestrator then fixed the two attributed residual authors (wisp
+   WHITE core albedo → mid-neutral 0x8e97a8 so ecol dominates; aether-burst deep-clamp L≤0.55/S≥0.7
+   for pastel glowColors; bolt-core view-normal shading in Combat.js) — verification run r5 lands in
+   `tools/out/cvfx-r5/` + `cvfx-r5-check.txt`. **BOSS TIER decision (user): bosses convert at ~30k
+   tris with wing/finger chains kept — docs/CREATURE-PIPELINE.md.**
+2c. **QUEUE (user asks, 2026-08-27 late): after content batch 1 lands** (workflow `wf_62b76999-b8e`,
+   script archived `tools/out/wave6-content-1.js` — quest !/? markers + town quests | first-person
+   arms | town NPCs): (i) **BANDIT/PIRATE CAMP lane** (raider enemy types on existing GLB bodies +
+   camp set pieces + quests naming them; needs enemies files free — the combat-gate closer holds
+   them); (ii) **COLLISION lane** (user: "I can go through buildings / fall through floor" — audit +
+   fix wall/floor colliders in Props/Vegetation via the registry, bisect prop-floor vs heightAt vs
+   streaming causes, and build a tools/collidecheck probe that drives the player at every
+   building/landmark and asserts no clip-through/sink; needs Props.js free — the town lane holds it).
+   THEN: full gate + curvecheck + questgate capstone, THEN the Opus-high judge fleet.
+2d. **CRASH RECOVERY + BATCH 3 ASSETS (2026-08-27, latest).** Claude Code crashed mid-session; the dev
+   server was restarted (same vite command), the two in-flight closers (combat gate, collision) were
+   unresumable and were RELAUNCHED as fresh agents inheriting their on-disk uncommitted edits
+   (combat: Combat.js/materials.js/VFX.js; collision: Props.js + NEW tools/collidecheck.mjs).
+   **NPC/RAIDER ASSET BATCH 3 (npcs get their own skins — user ask):** 6 Magnific concepts (~450 cr)
+   at tools/out/assetgen/npcs/*.jpg (style-checked, excellent); 5 Tripo models generated + RIGGED
+   (herbwife-b, merchant, mason, raider, captain — *-rigged.glb on disk, task ids in npc-*-tasks.txt,
+   forge script tools/out/assetgen/npc-forge.mjs: gen|poll|rig|rigpoll|clips|clipspoll); idle+walk
+   retargets (10 tasks, ~130 cr) polling. NEXT for assets: clipspoll -> optimize each via
+   tools/optimize-creature.mjs (biped 15k tier) -> merge clips -> stage to public/assets/creatures/
+   -> Assets.js MODEL literals -> lanes consume.
+   **USER FEEDBACK QUEUE (all recorded 2026-08-27):** quest markers lagging walkers FIXED+pushed
+   (live-ref glue per frame). PIRATE CAMP spec addenda: pirates SIT (drinking ale) at camp, stand on
+   aggro and shoot GUNS (aether flintlock/musket style, coherent with the world); chest at each camp
+   centre; named captain mini-boss per camp (captain model forged). FP ARMS still not good enough by
+   the user's eye — a dedicated arms-quality redo lane is owed (judge by screenshots, not by "exists").
+   ECONOMY lane owed: gold drops with ammo-style magnet pickup + vendor NPCs (ammo/weapons/armor,
+   prices as data). QUEST OFFER CARD owed: E opens name/pitch/objectives/rewards Accept/Decline
+   before accepting. Wayfinder STAYS as unique first-contact guide.
+2e. **USER ASK (2026-08-28): PRE-JUDGE PERF PASS — the performance deferral is LIFTED for this.**
+   Before the Opus fleet: `node tools/hitchhunt.mjs --route combat` on the densest case AND the hamlet
+   viewpoint, fix what it blames, re-measure. Budget: mean <=7 ms, p99 <=14 ms, <=350 calls, <=4 M
+   tris, memMB flat 30 s. KNOWN DEBTS going in: village angle measured 4.79 M tris (over budget —
+   pre-existing 4.46 + villagers 0.34); assets payload 66.95 MB vs 40 target (boot bandwidth — webp/
+   quality trim candidates); 12 villager mixers (distance-banded already); collision added ~1000
+   static AABBs (broadphase, cheap). Sequence: pirates lane -> perf pass -> full gate battery
+   (invariants, combat, anim, collide, meadow, pointer, curvecheck, questgate) -> Opus judges.
+2f. **STATE 2026-08-28: COMBAT GATE GREEN (COMBATCHECK OK, 260 frames, 0.0% peak washFrac — the
+   halo quad was the last author, pinned by a corrected bisect: toggle material.visible, not
+   glowMesh.visible which Combat.update overwrites). PIRATE CAMPS SHIPPED (3 named Gloamtide Corsair
+   camps: sitting/drinking crews, aether flintlocks, paying strongboxes — props:chest never paid for
+   ANY world chest before, fixed — named captains, 3 quests). VILLAGERS: pruned to unique bodies,
+   static only, facing root-caused (+X-authored rigs, shipped yaw was 90 deg off backwards); 7 unique
+   villager bodies + raider/captain staged; re-fill lane in flight (harl/tessa/cole/pell on
+   fisherman/farmwoman/guard/scholar). Full gate.mjs on this build: blob high/low clean, anim 25/25,
+   combat no fails, pointer lock OK; sole red = in-gate collidecheck eval race (dedicated run all OK).
+   REMAINING BEFORE THE OPUS FLEET: re-fill lands -> PERF PASS (2e) -> one quiet-GPU capstone
+   gate.mjs + curvecheck + questgate all green -> judges (Opus high, script per 3 below).**
+2g. **WAVE 6 JUDGED (2026-08-28, Opus fleet, 13 agents): average 4.73 — a SECOND regression
+   (5.75 -> 4.90 -> 4.73), no region at the bar, best tundra 5.8, worst dragon 4.0. BUT the trend
+   inside it is not all bad: blob violations 5 -> 2 (forest treant-KILL bloom, shadowfen grenade
+   core), and the COHERENCE score rose 5.0 -> 5.5 with the verdict "Cadle is a real game with a real
+   world in it, being sabotaged by three or four specific objects... the parts are wave-6 quality,
+   the assembly is not". Full: `tools/out/wave6-summary.txt`, `wave6-verdicts.json`,
+   `wave6-judge-workflow.js` (re-fire with resumeFromRunId for a wave-7 judging).
+   **THE JUDGES' OWN LESSON, again: the gate could not see what they saw.** The combat suite never
+   KILLED anything, never fired the player's gun and never threw a grenade, so the kill-bloom, the
+   sight-post bloom and the grenade white core were all outside it. The scenario now covers kills +
+   loot payout + player fire + grenade (bursts `cvfx-<region>-k`, `cvfx-pfire-*`).
+   **The animation lane's find is the wave's best catch: EVERY grounded creature died as a mannequin
+   tipping over** — death-window bone motion at float noise (0.001-0.009 rad/frame) passing a
+   threshold set BELOW frozen-skeleton level. Fixed: 0.04-0.12 rad/frame limb collapse on 20+ types.
+   **WAVE 7 = the discrete defect list, in two lanes (in flight):** combat-visual (magenta bolt lens,
+   kill-VFX bloom, grenade core, the OPAQUE FILM class that is hue-legal so the detector passes it,
+   bogwitch screen-wide beam, screen-edge streak, sight-post bloom) and world (Aetheryte ring has no
+   collider and eats the player's head in the first 30 seconds; Cinder Maw drops you inside the world
+   with lava classified as swimmable water; vale grass LOD bubble at 25-28 m that slides with the
+   camera; villager facing not firing live; border content collapse). Then: re-run the extended gate,
+   re-judge.
+2h. **WAVE 7 STATUS (2026-08-28, the "every cheap high-impact defect" round the user asked for).**
+   LANDED + PUSHED: **world** (13 defects — Aetheryte collider was smaller than the pedestal it
+   fenced; the Cinder Maw "hole" was the underside of the water mesh, not missing colliders; the
+   grass bubble was blade SCREEN WIDTH (0.7 px at 30 m), not radius or density; border collapse was
+   `wedgeAt` being a bare Math.round against a jittered 34 m splat band, fixed at Terrain._seam;
+   the Lost "dome you stand inside" was a default-capped CylinderGeometry; plus dais, dragon-door
+   rubble, apron placeholders, stray monolith, void sliver, finials, abyss parapet).
+   **systems** (respawn was deaf to synthetic input only — a real player could always respawn but no
+   gate could ever end a death; music was ~80% a reporting artefact plus one real latent bug —
+   unlocking audio inside a region left music.region at its default; nameplates were CSS-pinned 350 px
+   above centre which also caused the mislabel; the opening quest existed but its auto-offer was gated
+   on "no stele in region" and the Vale has one; the green t-shirt was the world DROP not the icon;
+   new damage-direction wedges; region label lifted out of _minimap's early-returns).
+   **ground scatter** (GroundScatter.js — the coherence judge's ONE THING, 3 draw calls for all ten
+   regions, hue from terrain.colorAt but BIMODAL value per piece because one multiplier is invisible
+   on black basalt and white marble alike; also killed the snowfield-oak bleed).
+   **Wayfinder rest yaw** (his look-at used the rig's +X convention, his rest pose the plane
+   convention — 90 deg apart; that was the user's "the cloaked guy doesn't look at me").
+   IN FLIGHT: combat-visual lane (void-amber hardcoded hue at VFX.js ~672/683/684/690, opaque-film
+   class, magenta lens, kill bloom, grenade core, beam, edge streak, sight-post bloom, shield bubbles,
+   super hands, wrong-creature reskins) and a placeholder-cleanup lane (marshmallow border rocks,
+   greybox celestial isles, reed billboards, greybox hamlet).
+   **STILL OWED WHEN THE TREE IS QUIET: `node tools/gate.mjs` full battery.** q=high has been
+   unmeasurable all evening — the browser dies mid-capture under 8-16 concurrent headless shells from
+   parallel lanes (4 attempts). This is the gate's own "aborted measurement, not an earned failure"
+   case. ALSO: three lanes independently reported captures ruined by other lanes saving broken
+   intermediates into the shared worktree (one syntax error left the game unbootable for minutes).
+   **Next campaign should give each lane its own worktree (Workflow isolation: 'worktree') or run
+   fewer at once — verification trust is now the bottleneck, not build throughput.**
+2i. **USER DIRECTIVE 2026-08-28 — THE MERGE CONDITION (standing authorization).** When BOTH of these
+   pass, MERGE `claude/session-e5730b` TO `main` on github.com/Humpalumps/Cadle and push:
+     (a) the VISUAL PASS — the new CLAUDE.md decree: every visible thing this wave touched is captured
+         at the distances it is actually seen from, the PNGs are READ, and the report says what was
+         seen and what would still be docked. Not a metric, a look.
+     (b) `node tools/gate.mjs` on a QUIET tree (invariants + meadow blobs + jitter at both qualities +
+         combat white-out + animcheck + collidecheck + pointer lock), plus curvecheck and questgate.
+   If either fails: FIX the issues and RE-RUN until both pass, THEN merge. The user does not want a
+   merge on a red gate and does not want the wave sitting unmerged once it is green. This is a
+   durable authorization for the merge itself — no need to re-ask once the two conditions are met.
+   Mechanics note: `main` has been deliberately untouched all campaign and the main checkout
+   (C:/Users/ianca/Desktop/fps4) sits on a DIFFERENT branch, so merge from here by pushing the branch
+   and opening/merging a PR with `gh` (the repo already uses PRs), or fast-forward push if main is an
+   ancestor — check `git merge-base --is-ancestor origin/main claude/session-e5730b` first.
+2j. **MERGE STATE 2026-08-28 EVENING — 6 of 7 gate checks GREEN, the 7th blocked by GPU CONTENTION,
+   NOT by the build.** Verified this session on the current tree:
+   invariants all OK · blobs+jitter GATE PASS at q=high AND q=low · collidecheck 27/27 all OK ·
+   animcheck all 25 creatures pass (icegiant + archon fail only inside a long run and pass isolated) ·
+   pointer lock engage + re-acquire OK (standalone runner at tools/out/plock.mjs) · curvecheck +
+   questgate all OK. **Combat white-out: every frame captured is clean, but a FULL 356-frame capture
+   cannot currently be completed.** Diagnosis, so nobody re-derives it: the browser dies ~130 s in with
+   `Target page... closed` / `GPU state invalid after WaitForGetOffsetInRange`, while `nvidia-smi`
+   shows only 1.6 GB of 12 GB VRAM used and 39% GPU utilisation with ZERO headless browsers running —
+   i.e. another process (the user games on this box) is driving the GPU and Windows TDR is resetting
+   the driver under the capture. It is NOT VRAM and NOT the build: the identical scenario completed
+   356 frames earlier the same day. WORKAROUND THAT WORKS: split the scenario by region
+   (`tools/scripts/cb-part{1..5}.json`, generated from the region `== name ==` log markers) and run
+   the chunks — they finish inside the TDR window. Last measured state: full run before the final two
+   fixes = 4 findings, all <=588 px, all in the player-fire bursts; after warming the muzzle core
+   (mats.flashCore was PURE WHITE at 0.34 additive — the one effect drawn on every shot) and deepening
+   the impact star, chunked re-runs show ONE finding left: a 58 px cluster in a vale kill burst.
+   **To finish: get ~6 minutes of quiet GPU (nothing else rendering), run
+   `node tools/inspect.mjs --nolock --name cb-final --q high --script tools/scripts/combat-blob-steps.json
+   --url http://127.0.0.1:5179/` then `python tools/combatcheck.py tools/out/cb-final`. If OK, the
+   user's merge condition (2i) is met: fast-forward main and push.**
+### ★ OUTSTANDING WORK AFTER THE 2026-08-28 MERGE — START HERE ★
+
+**A. CLOSE THE LAST GATE CHECK (mechanical, ~10 min on a quiet GPU).**
+Run the full combat capture with nothing else using the card (see 2j for why it kept dying):
+`node tools/inspect.mjs --nolock --name cb-final --q high --script tools/scripts/combat-blob-steps.json --url http://127.0.0.1:5179/`
+then `python tools/combatcheck.py tools/out/cb-final`. Only outstanding finding at merge time was a
+58 px cluster in a vale KILL burst. If it fails, the author is a death/kill VFX layer, not an attack.
+
+**B. THE ART BAR — the expensive category the cheap-fix wave deliberately did not touch.** These are
+multi-wave craft jobs, all named by the wave-6 Opus critics (`tools/out/wave6-summary.txt`):
+  1. **Forest canopy leaf cards** — giant flat quads with visible cut edges and fold seams, THREE waves
+     unfixed, and they fill the top 30-50% of most forest frames. Needs real layered clusters.
+  2. **Landmark craft at 40 m and material truth at 8 m** — still failing on most heroes (Elderheart has
+     no silhouette at any ground range; Glacier Throne invisible at 200 m; Drowned Court has no
+     ornament; celestial isles are dressed now but the Gate's marble is flat at 8 m).
+  3. **The sunken cataracts** — the region's named acceptance shot ("a staircase of silver water") has
+     not existed for FIVE waves. Water lane built falls; they do not read.
+  4. **Region sky character** — shadowfen has no golden hour, void has no sky event at any hour,
+     infernal night has zero stars, lost is one hue at one value.
+  5. **Void abyss rim** — the 130 m drop is still invisible from its own edge (the fall-in safety is
+     fixed, the VISUAL rim is not).
+**C. CREATURE IDENTITY (needs the Tripo forge, ~500 credits).** Three creatures wear another creature's
+body: the celestial "seraph" is the forgeknight (no wings, no halo), the sunken Drowned Courtier is a
+red-tinted sentinel, the lost Archon is a dark Stone Golem. Palettes were separated this wave; the
+MODELS still need forging. `docs/CREATURE-PIPELINE.md` has the route and the boss-tier rule.
+**D. ANIMATION — the open product question.** Every Tripo locomotion retarget LOST its eye A/B against
+the procedural gait, so `USE_CLIPS` ships all-false. Either regenerate better clips (different retarget
+settings) or take the deferred Blender/Mixamo evaluation. The mixer wiring is done and waiting.
+**E. CROSS-LANE ASKS LEFT BY BUILDERS (small, named, unowned).**
+  - `src/rpg/dropmesh.js`: scatter multi-drops ~2 m apart — a camp wipe stacks 5+ loot beams into one
+    column (that stack was the infernal "giant blue polygon"), and the drop payout is implicated in the
+    forest kill frames.
+  - `Enemy.js` `GLB_TINT_WASH = 0.55` makes rigged-creature palettes largely inert — the corsairs were
+    fixed by going near-white on their own tints, but the global knob is still the reason other rigged
+    creatures resist re-colouring.
+  - Aetheryte glow reads as a 161 px pale disc against pale mountains (Props).
+**F. PERFORMANCE (deferred by user decree, but the numbers are known).** Uncapped q=high mean 8.1-8.5 ms
+vs a 7 ms budget and q=low 6.6 vs 4 (both PRE-EXISTING and GPU-bound — `gpuMs ~= frameMs`); one hamlet
+angle reads 4.1 M tris vs the 4 M line (1.8 M of it CSM shadows, 1.1 M grass); `public/assets` is
+66.95 MB against a 40 MB target. Every one of these costs visible quality to fix — user's call.
+**G. RE-JUDGE.** The wave-7 build has never been judged. `tools/out/wave6-judge-workflow.js` is ready
+(critics already on `model: 'opus', effort: 'high'` per the standing directive); update its per-region
+"what wave N said" blocks from `wave6-verdicts.json` first, as was done for wave 6.
+
+3. **Then the standing order continues: BUILD MORE BEFORE JUDGING** (user directive, with the two
+   model rules in "The method" below: builders Fable-5 high, judges Opus high). Remaining backlog
+   beyond the batch: whatever lanes report unfinished, then wave-5 items not in any lane (tundra
+   Glacier Throne read, celestial region-wide identity, void 120 m drop rim, forest canopy leaf-card
+   rectangles). Re-judge ONLY after a big batch: `Workflow({scriptPath: 'tools/out/wave5-judge-workflow.js'})`
+   with every judge agent switched to `model: 'opus', effort: 'high'` (edit the script first — it
+   predates that directive).
+4. Keep progress.html current (user asks for it; it is served at http://127.0.0.1:5179/progress.html).
+
+### FIRST THING TO DO ON TAKEOVER (older block, session handed over 2026-08-27 at ~3% usage)
+
+**Everything is COMMITTED AND PUSHED: HEAD `913ed1c` on branch `claude/session-e5730b`, not merged
+to `main`.** Working tree is clean,
+`node tools/invariants.mjs` exits 0, and the game boots at q=high with zero page errors
+(298 draw calls / 3.33 M tris, inside the 350 / 4 M budget).
+
+**YOUR FIRST ACTION IS JOB 0 IN "NEXT JOBS" — close the gate's combat-VFX coverage hole, then fix
+the five blobs. Nothing else comes before it.**
+
+Do NOT start by re-firing the wave-5 judge workflow: wave 5 is already judged (verdicts are written
+to `tools/out/wave5-summary.txt`), and re-judging a build whose blockers you have not fixed just
+reproduces the same five verdicts. The judge script stays in the repo for the NEXT wave, after you
+have fixed something:
+
+```
+Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })
+```
+
+It runs 11 agents at once (ten fresh region critics, each pre-loaded with its own wave-4 findings so
+it must report whether they were CLOSED, plus the whole-game coherence agent), then the ANIMATION
+inspect-and-fix lane, then a collator that writes `tools/out/wave5-summary.txt` and
+`wave5-verdicts.json` in the wave-4 format. Partial output from the killed run may exist under
+`tools/out/crit5-*`, `tools/out/coh*` and `tools/scripts/coh/*` - it is safe to ignore or reuse.
+
+**THE SCOREBOARD BELOW NOW HAS A w5 COLUMN and it is worse than w4.** That is real, not a
+measurement artifact — read "WAVE 5 IS JUDGED" above for why.
+
+**Parallelism, since it came up:** the fan-out is capped by FILE OWNERSHIP, not agent budget -
+per-region work all lands in the same few single-owner files (`Props.js` owns all ten landmarks,
+`Terrain.js` all ground), which is why wave 5 was six FILE-owned lanes rather than ten region lanes.
+Critics additionally need a FROZEN build, and every judging agent drives headless Chromium on the
+real GPU (16 live Chromium processes today made an agent unable to run the gate at all). **The unlock
+not yet used: the Workflow tool's `isolation: 'worktree'`** gives each agent its own git worktree, so
+two agents CAN own the same file and you merge after - worth it for genuinely separable landmarks,
+not for a shared helper library where every agent touches the same functions.
+
+### The method the user asked for (keep using it)
+
+**USER DIRECTIVE (2026-08-27 late): CONCURRENCY CAP — at most 3-4 agents running at once while the
+user is at the machine (they play games on it; agent load + GPU capture bursts lag them). Queue the
+rest; prefer letting a wave finish before firing the next. Harness captures are the real GPU load —
+pause them on request.**
+
+**USER DIRECTIVE 2026-08-27 (binding): BUILD BEFORE RE-JUDGING, and JUDGE ON OPUS.** (1) Do not fire
+the wave-6 judge fleet until a large batch of fixes has landed — the campaign was burning most of its
+credits on judging instead of building. (2) When critics/judges DO run, spawn them with
+`model: 'opus', effort: 'high'` in the agent() opts (Workflow tool) — never on the default session
+model; the user does not want Fable credits spent on judge sub-agents. (3) MODEL STATE 2026-08-28: **the Fable monthly spend limit was hit mid-wave-7 and the session
+switched to OPUS 5** — builders now inherit the session model (omit `model`, keep `effort: 'high'`).
+The earlier directive was builders on
+**Fable 5 at high effort** — omit `model` (inherits the session's fable-5) and pass
+`effort: 'high'` explicitly.
+
+Break work into the smallest judgeable pieces; fan out sub-agents with strictly owned files
+(`CLAUDE.md` has the table); a **fresh-context critic inspects the RUNNING GAME**, never a builder's
+summary, and is harsh; the critic compares blind against real Destiny 2 / FF14 and names the single
+biggest gap when ours loses. **No fixed number of rounds - loop until the critics are genuinely
+wowed.** Between major waves, one fresh agent plays the whole thing end to end and judges it as ONE
+experience. The user is usually away: **act, do not ask.** Report what you did and what you measured.
+
+### Wave scoreboard (fresh critics, blind vs the real Destiny 2 / FF14)
+
+| region | w1 | w2 | w3 | w4 | **w5** |
+|---|---|---|---|---|---|
+| forest | 3 | 6 | 6 | 5 | **4.5** |
+| tundra | 4.5 | 6 | 5 | 6 | **5.5** |
+| celestial | 3.5 | 4.5 | 6 | 6.5 | **5.5** |
+| dragon | 3.5 | 5 | 4 | 5 | **4.5** **BLOB** |
+| infernal | 4 | 5.5 | 6 | 6.5 | **4.5** **BLOB** |
+| lost | 3.5 | 5 | 6 | 6.5 | **5.5** **BLOB** |
+| shadowfen | 4 | 5.5 | 5 | 6 | **5.5** |
+| sunken | 3 | (redesign) | 4 | 4.5 | **5** |
+| void | 4 | 5.5 | 5 | 5.5 | **4.5** **BLOB** |
+| vale | 6.5 | 7 | 5 | 6 | **4** **BLOB** |
+
+Average 3.9 -> 5.7 -> 5.2 -> 5.8 -> **4.9 (REGRESSION)**. Nothing is at the bar, and wave 5 went BACKWARDS. Per-finding evidence:
+`tools/out/wave{1,2,3,4}-summary.txt`, `wave{1,2,3,4}-verdicts.json`, screenshots in
+`tools/out/crit{1,2,3,4}-<region>*/`. Wave 4 closed with a **full GATE PASS** and curvecheck OK.
+
+### THE FOUR SYSTEMIC FAULTS behind every wave-4 LOSE (this is what wave 5 is fixing)
+
+Reading all ten wave-4 verdicts together, the same four causes repeat in ten places. **Wave 5 is
+therefore organised by CAUSE, not by region** - which also makes it file-disjoint and parallelisable,
+because per-region work all lands in the same few single-owner files.
+
+1. **Landmarks are greybox.** No carved ornament, no material truth. 8 of 10 regions. The fix is the
+   shared ornament library in `Props.js` (`docs/ORNAMENT-STANDARD.md`): flute / moulding / dentils /
+   coffer / relief / gold-trace / weather. **This is the wave headline.**
+2. **The near field is a featureless smear** at 2-25 m (shadowfen, lost, infernal slopes, sunken
+   bedrock) and there is no macro relief (dragon). Terrain lane.
+3. **Noon identity fails** - void reads as a purple alpine valley, infernal shows blue sky and white
+   cumulus, the mountain ring wears snowcaps inside the fire region. Sky lane (+ ring splat).
+4. **Gold renders black-brown and aether washes to white.** Both are the same missing piece: metal
+   with no environment to reflect goes black, and an uncapped aether clips to white. Lighting lane.
+
+### WHAT LANDED THIS SESSION
+
+- **`creature-glb-integration`** (`wf_6dc753f5-91b`) - **LANDED, 8 agents, 0 errors.** All 12 creature
+  GLBs preload through `game.assets` (7.91 MiB, 73/73 assets in ~4.3 s, not the boot critical path);
+  `glbBody.js` + `glbAnim.js` created with a runnable offline check
+  (`node tools/out/glbbody-check.mjs` -> 13/13 rigs); 21 enemy types resolve to a GLB asset; one
+  SkinnedMesh / one material / 3 textures each = **1 draw call per creature**.
+- **`wave5-builders`** (`wf_e0b17042-114`) - **LANDED 2026-08-27, 12 agents, 0 errors.** Six file-owned lanes, one systemic fault each, each
+  followed by its own self-check pass that must screenshot and fix what it sees:
+  `Props.js` (ornament) | `Terrain.js`+kernel (near field, ring splat) | `Sky.js` (noon identity) |
+  `Lighting.js` (metal/aether/aerial perspective) | `Vegetation.js` (canopy cards) | `Water.js`
+  (the sunken staircase-of-water shot, foam, fen murk).
+
+Both persist their scripts under
+`~/.claude/projects/<proj>/<session>/workflows/scripts/*.js`; resume with
+`Workflow({scriptPath, resumeFromRunId})`. Per-agent returns are in each run's `journal.jsonl`.
+
+### BUILD HEALTH (verified by the orchestrator after wave-5 builders landed)
+
+`node tools/invariants.mjs` -> all OK. Game boots at q=high with **ZERO page errors**, **21 enemy
+types on GLB assets**, **298 draw calls / 3.33 M tris** (budget: <=350 / <=4 M).
+A `vUv : undeclared identifier` shader error in the Props floor-sigil rework was live mid-wave and
+the Props lane's own self-check fixed it. Kept here as a standing trap: **in three r185 the map
+varying is `vMapUv` - plain `vUv` does not exist unless something declares it**, so an
+`onBeforeCompile` injection that uses `vUv` compiles nowhere.
+
+### THE CREATURE ROUTE - monsters and NPCs are rigged GLBs (architecture stays procedural)
+
+The user rejected the procedural reconstruction output ("those models are terrible ... they aren't
+even close to the glb sample"). **`docs/CREATURE-PIPELINE.md` is the definitive process** and must be
+read before touching a creature or an NPC. concept (Magnific) -> Tripo `image_to_model` -> Tripo
+`animate_rig` -> Tripo `animate_retarget` for locomotion -> `node tools/optimize-creature.mjs` ->
+`public/assets/creatures/*.glb` -> `game.assets`. `tools/invariants.mjs` rule (n) allows
+`/assets/creatures/*.glb` from `Assets.js` or `src/enemies/` and **fails the build for a `.glb`
+anywhere else**, so architecture cannot quietly follow.
+
+**Tripo version audit (2026-08-27), so nobody re-derives it:** the authoritative `model_version` enum
+lives in the Tripo MCP tool schema, not the docs site (which renders empty). Newest is
+**`v3.1-20260211`** and that is what we use, at `geometry_quality: detailed` /
+`texture_quality: detailed` / `face_limit: 60000` / `pbr: true`. There is no v3.5. Rig side,
+`v2.0-20250506` resolves server-side to `v2.5-20260210`. **Deliberately NOT used:**
+`orientation: "align_image"` (would lock the model to our three-quarter concept camera),
+`quad: true` (topology we would immediately triangulate, and `simplify` dissolves its edge loops
+anyway), `auto_size` (redundant - we normalise to the procedural body's bind box).
+**THE TRAP that reads as a dead end:** `animate_rig` MUST get `model_version` or it returns
+`error_code 1004` with zero credits, which is indistinguishable from "unriggable".
+
+### THE BESTIARY AS IT STANDS - 13 creatures + 1 NPC, all on tier
+
+`public/assets/creatures/`. One mesh + one material each, so **one draw call each**.
+
+| creature | tris | joints | MB | notes |
+|---|---|---|---|---|
+| treant | 15,000 | 32 | 1.06 | +walk/idle/run clips staged |
+| golem | 14,973 | 30 | 0.88 | +clips |
+| sentinel | 15,000 | 28 | 0.97 | +clips |
+| warden | 15,000 | 20 | 0.84 | NEW batch 2, +clips, critic 5/10 |
+| giant | ~15,000 | - | 0.73 | NEW batch 2, critic 6/10, NO clips (see below) |
+| hound | 10,000 | 40 | 0.79 | was 101 joints, +clips |
+| drake | 10,000 | 52 | 0.84 | +clips |
+| wraith | 10,000 | 37 | 0.74 | was 94 joints, +clips |
+| frostwolf | 9,992 | 30 | 0.75 | +clips |
+| riftling | 10,000 | 45 | 0.69 | +clips |
+| serpent | ~10,000 | - | 0.69 | NEW batch 2, critic 7/10, NO clips |
+| sprite | 4,606 | 27 | 0.40 | +idle/walk |
+| wayfinder (NPC) | 15,000 | 23 | 0.68 | NEW - replaces the vale blocker's "flat face slab" |
+
+**wisp stays PROCEDURAL by user decision** - it is a glow orb, not a mesh.
+
+**Both batch-1 optimiser issues are CLOSED (2026-08-27).** (1) The simplify ratio was computed from
+`count()` evaluated *before* `weld()` in the same transform chain; a Tripo export is non-indexed so
+the base read ~2x high and everything shipped 1.3-5x over tier. Weld now runs in its own pass and
+simplify iterates to convergence. (2) `tools/creature-joints.mjs` prunes skeletons at conversion
+time - keeps every `tripo::*` structural joint, everything carrying >=1.2% skin weight and their
+ancestors, folds dropped joints' weights into the nearest kept ancestor and re-parents children with
+the matrix composed, so every surviving bone's world bind pose is bit-identical and the inverse bind
+matrices are a plain row subset. It is animation-aware: when clips are present it only drops LEAF
+joints, because folding a dropped joint's rest transform into a child would silently invalidate any
+channel writing an absolute local T/R/S to that child.
+
+**Baked locomotion landed**: 29 clips over 10 creatures via `tools/creature-anims.mjs fetch|merge`
+(~390 credits). Verified: clips survive decimation, root motion is ~0.01 units (Tripo bakes in
+place, so a clip cannot fight the AI-driven `root.position`), +0.2 MB per creature.
+**Staged at `tools/out/anims/*.glb`, NOT yet swapped into `public/assets/creatures/`** - deliberately,
+because the integration workflow was consuming those files. **Swapping them in and wiring an
+AnimationMixer that blends idle/walk/run by `e.speedN` is the next creature job.** Attacks, stagger
+and death stay PROCEDURAL by decree (a baked clip cannot be cut off mid-swing, and attack timing has
+to line up with damage windows and telegraph frames).
+
+**serpent and giant have no reachable rig task id** - the batch-2 forge only persisted
+`warden-rig.json` - so they cannot get retargeted clips and run on procedural animation. That is
+acceptable (a serpent is a `chainWave`; a slam boss attacks procedurally anyway).
+**ALWAYS write `<name>-rig.json`.** Recorded ids: `tools/out/assetgen/creatures/rig-tasks.txt`.
+
+**What every batch-2 critic independently said**, and it is a MATERIAL-stage fix, not new art:
+surfaces read as glossy vinyl, and the gold filigree arrives as desaturated beige. The fix is a
+roughness floor plus an albedo saturate/darken on the accent, in `src/enemies/materials.js`.
+
+### THE ANIMATION GATE (new 2026-08-27, user ask: "proper inspection and fix of animations")
+
+`node tools/animcheck.mjs [--types a,b,c] [--calibrate]`. It is now **gate 2b in the CLAUDE.md
+sign-off** and must exit 0 for any creature you touched. It does NOT judge pixels: it reads the live
+bone hierarchy while the AI drives the creature and fails on T-pose (never leaves bind),
+frozen-while-moving, foot slide (limb rotation per metre travelled), moonwalking (facing vs
+velocity), sunk/hovering feet (lowest bone Y vs `terrain.heightAt`), size mismatch vs
+`def.height * def.scale`, dead idle, flat attack, and a death that never plays. Screenshots are
+captured only to show WHY a number failed. **Thresholds in its `LIMITS` block are orchestrator-owned
+- run `--calibrate` to read the numbers, never widen one to turn a red build green.**
+**CALIBRATED AND PASSING 2026-08-27: 23/23 clean** (`tools/out/animgate/anim-report.json`). That is
+the first mechanical proof the bestiary actually animates: no T-poses, no foot slide on any walker,
+no sunk or hovering feet, no moonwalking, sizes correct, every attack animates or telegraphs, every
+death plays. Sample numbers for a healthy creature (hound): facing 1.00, groundGap -0.054 m,
+limbPerMetre 7.45, bindDelta 0.71 rad.
+
+**Calibration corrected three false-positive classes in the gate itself - do not reintroduce them:**
+(a) FOOT SLIDE is walker-only; the first full run failed exactly five creatures and all five were
+flyers (wisp, imp, drake, skyserpent, leviathan) - a serpent has no legs and a wisp is a glow orb.
+Flyers and limbless bodies get a RAILS check on whole-body deformation instead. (b) FLAT ATTACK
+compares against IDLE, not against locomotion - a melee creature attacks from its standoff ring with
+its legs planted, so locomotion is the wrong comparand and it failed a hound whose attack was fine.
+(c) An attack counts as animated if it moves bones **OR** raises `e.telegraph` - a wisp/imp
+telegraphs with emissive and scale, not with its skeleton, and a bone-only gate called it flat for
+doing exactly what it was designed to do.
+
+### CREATURE ANIMATION - what the user found by eye, all four fixed, one thread still open
+
+**The general lesson, which is now written up properly in `docs/CREATURE-PIPELINE.md` ("TWO BUG
+CLASSES THE USER FOUND BY EYE THAT EVERY GATE MISSED"): a 23/23 gate PASS meant the creatures
+animated CORRECTLY, not WELL.** Every fault below was invisible to every metric we had and obvious to
+a person looking at the game for ten seconds. Read that section before wiring any new creature.
+
+1. **Swaying/jittering on the spot - FIXED.** `Enemy.js` rate-limits `_animate` by camera distance and
+   HOLDS the pose between updates rather than interpolating, while `_move` keeps gliding the root
+   every frame. Full-rate animation ended at **12 m**. Measured per-frame bone delta at 20 m was
+   `0.107 0.001 0.107 0.001` - every other frame held. Bands widened to full rate < 30 m, every 2nd to
+   50 m, 3rd to 110, 6th to 220; affordable because the joint prune cut hound 101 -> 40 and wraith
+   94 -> 37. Verified `_animate` now runs 60/60 rendered frames at lod 0.
+2. **A membrane tearing between the hound's tail and its right hind leg - FIXED.** `chainWave()` ramps
+   amplitude per segment (`amp * (0.6 + i*0.3)`) and those rotations SUM down the chain. Tuned against
+   3-bone procedural tails (sum 2.7); Tripo hands back 6 (hound) and 7 (riftling), i.e. sums 8.1 and
+   10.5, so the tail curled ~120 degrees into the haunch. Normalised by chain length INSIDE `wave()`
+   in glbAnim.js, which fixed the aux-chain caller for free. **Cleared the joint prune of causing it**
+   by measuring skin influence spread before/after: the prune IMPROVED it (hound 8.03% of verts with
+   influences >0.35 m apart -> 0%).
+3. **"A light glow which bulges as he moves" - FIXED.** A GLB body has `vGlow` 0 everywhere (no aGlow
+   attribute), so `uRim` was not picking out crystals as it does on a procedural body - it lit the
+   WHOLE silhouette, and the time `pulse` in materials.js made it breathe. `GLB_RIM_MAX` 0.75 -> 0.30.
+   A rigged creature's aether read must come mostly from its albedo.
+4. **"The movement of the 4 legs is a bit off" - FIXED.** Phasing was already correct (`off =
+   (front === left) ? 0 : PI` is a proper diagonal trot, FL+HR / FR+HL) and `boneAxes` correctly maps
+   world axes into each bone's parent frame, so mirroring was fine too. It was pure AMPLITUDE:
+   `legSwing 0.55 * (0.10 + 0.90*sp)` gives ~10 degrees of hip swing at patrol speed and ~31 flat out,
+   where a real quadruped swings 45-60. Now `0.92 * (0.34 + 0.66*sp)`. Verified visually against a
+   12-frame gait contact sheet (`tools/out/houndrun2/gait-sheet.png` vs the before at
+   `tools/out/houndrun/gait-sheet.png`).
+
+**STILL OPEN - flyers strobe.** After the band fix `tools/out/animfull2` still failed
+`hound, sprite, skyserpent, magmagolem, leviathan, riftling` on STEPPED POSE, and riftling's reading
+is unambiguous: **50% of frames held, alternating 100% of the time, at 19 m** - where `animEvery` is
+definitionally 1 and `_animate` was measured running every frame. So there is a SECOND rate limiter
+somewhere in the flyer/hover path (most of the failures fly), and it is not `Enemy.update`'s
+`animEvery`. Find it. The gate now also requires ALTERNATION as well as held frames, because a
+creature that damps to rest at its standoff ring is legitimately still and read 32% held at 4 m -
+settling is not strobing.
+
+### WHAT THE INTEGRATION REPORTED THAT MATTERS LATER (do not rediscover)
+
+- **`wayfinder.glb` is on disk but NOT referenced by `Assets.js`** - it was not in the contract's key
+  list. Add it when the NPC is wired (Props.js owns the Wayfinder).
+- **Invariants rule (n) matches a LITERAL path**, so the 12 model URLs in `Assets.js` are spelled out
+  one by one on purpose. A template like `` `/assets/creatures/${name}.glb` `` FAILS THE BUILD. Do not
+  "tidy" them into a loop.
+- **The ORM texture is bound twice per material** (roughnessMap AND metalnessMap), so the GPU warm
+  loop de-dupes with a Set - 36 unique textures for 12 creatures, not 72.
+- **Per-model facing had to be read, never assumed:** every upright Tripo model faces +X; the
+  quadrupeds and the serpent face +Z - EXCEPT the frostwolf, which is a quadruped facing +X. That is
+  the `yaw` column of `GLB_CFG`.
+- **Limb classification is shaky on some rigs and is worth a look** when animation quality is judged:
+  sentinel's legs classified as g0.**L** and g1.**R**; giant came back g0 L4 R1 / g1 L1 R4; wraith's
+  "16-joint limb" is really spine+arm+fingers on the midline; drake's WINGS are unnamed
+  `bone_30..38` / `bone_42..50` so they are not in the limb set at all; golem has no `Head_` chain
+  (its neck is `L1L_2`); serpent has NO spine and NO limbs, just a 9-joint tail; frostwolf's tail is
+  a single joint.
+
+### NEXT JOBS, in order
+
+0. ~~CLOSE THE GATE'S COVERAGE HOLE~~ **GATE HALF DONE 2026-08-27 (new session): the coverage hole is
+   CLOSED, the fix lanes are IN FLIGHT.** What exists now:
+   - `tools/scripts/combat-blob-steps.json` — drives all ten regions: own bestiary spawned 8-18 m,
+     aggroed (alert forced), one `takeDamage({amount:6})` landed on every enemy (hit-flash path), a
+     late "sustain" burst so slow volleys (void: 0.7 windup + 2.2 cd + 4.5 s flight) detonate at the
+     lens inside the capture, player NEVER fires. Bursts `cvfx-<region>-{a,hit,c}`.
+   - `tools/combatcheck.py` — the detector. Washed = bright AND desaturated (the decree verbatim: a
+     hue that survives tone mapping passes by construction). WASH >5.5% of non-sky / CATASTROPHE
+     >40% of whole frame / WHITE CORE clusters (blobcheck's cluster+local-contrast machinery, scoped
+     to all non-sky). numpy-vectorised, 180 frames ~19 s. `--selftest <frame>` paints a synthetic
+     wash + core and asserts both caught — run it after ANY change. Fail-closed on missing masks
+     (exit 2). blobcheck.py gained an `if __name__` guard so its machinery imports (selftest re-run:
+     PASS).
+   - `tools/gate.mjs` — new section 1b runs the scenario at q=high + combatcheck (~12 min; q=high
+     only is justified: presets differ only in pixelRatio/shadows/aniso, bloom/exposure identical).
+   - **Calibration on the wave-5 build (`tools/out/cvfx-cal/combatcheck.json`): EIGHT of ten regions
+     fail, not five** — peak washFrac dragon .84, celestial .83, infernal .76, lost .75, sunken .63,
+     shadowfen .55, tundra .31, vale white-cores at rgb(225,238,233) = the critic's sampled value;
+     forest alone clean. The wave-5 critics under-sampled: every region with explosive bolts washes.
+   - **Root causes diagnosed to the line** (4-agent read-only workflow, results in this session's
+     journal `wf_87c26cc4-dfc`): (1) the 'explosion' preset (core 0xffffff×hdr8, flare 0xfff4d8×4)
+     fires for EVERY enemy explosive bolt via 'combat:explosion' with NO near-camera fade on the
+     quads — bolts detonate AT the camera; (2) 'impact-enemy' 0xffffff×hdr(6+3day) = the lost golem
+     "egg"; (3) 'impact-terrain' 0xfff0d0×3 discards the element colour = the vale bolt core;
+     (4) HOT_TINT only fires on exact 0xffffff and cannot cap sums; (5) 'spark-trail' 70 Hz on every
+     enemy bolt stacks ~59 additive/bolt (the 'trail' preset's range-fade fix was never propagated);
+     (6) additive pool shader has NO output cap of any kind; (7) GLB creatures have all-zero aGlow so
+     BOTH aether caps are inert on 13 creatures, and the rim add (~1.43/ch) bypasses caps everywhere;
+     (8) wave-5 METAL_ENV (2.5-3x env specular) reaches skinned creatures with ORM metalness 1;
+     (9) wave-5 veil-darkening makes auto-exposure ride its 1.3x cap in void/infernal — a frame-wide
+     multiplier applied before the bloom threshold test.
+   - **Fix workflow `wf_c4b8377c-1cf` launched**: three file-owned lanes (vfx: Brush min-channel
+     hue-preserving cap + additive-pool near-camera fade + preset re-author; materials: uGLB-keyed
+     aether caps + rim/dissolve/hit-flash/telegraph caps; lighting: USE_SKINNING guard on METAL_ENV +
+     AE-bloom decoupling) + a serialized verifier that re-runs the combat gate. If it died mid-run,
+     resume: `Workflow({scriptPath: '<session workflows dir>/blob-fix-wf_c4b8377c-1cf.js',
+     resumeFromRunId: 'wf_c4b8377c-1cf'})` — or just read the lanes' reports in its journal and run
+     the verifier steps by hand (invariants → combat capture → combatcheck).
+   **STATE 2026-08-27 (late): fixes LANDED and COMMITTED (`e0eecd5` fix, `87c494a` clips,
+   invariants rule (o) pins every guard). Washes are DEAD** — per-region peak washFrac after the lanes
+   + orchestrator follow-ups: dragon .84→.0002, celestial .83→.005, infernal .76→.0006, lost
+   .75→.0004, sunken .63→.0002, shadowfen .55→.035, tundra .31→.036, void/vale/forest ≈0 (all under
+   the .055 bar; run r3 = `tools/out/cvfx-r3/`). Residual WHITE-CORE clusters were traced by crop to
+   THREE authors, all fixed after r3: the Combat.js bolt-core sphere (lerp-to-WHITE removed,
+   min-channel cap, halo near-fade, sat 1.0 / l≤0.48 ×1.5), the spark-trail mist bleaching the bolt's
+   own core (alpha 0.7→0.5), and the DEATH preset's white-hot pop (hued to the creature's element,
+   hdr 5-7→3-3.5 — the tundra 22k-px "ball" was a wisp dying). Verification run r4 in flight.
+   The judge fleet stays PARKED (user directive): build a big batch first, judges on Opus high.
+   **r4 residual class understood: additive glows over PALE ground (snow/marble/sand) lift an
+   already-bright surface into the cream band — fixed structurally with explosion energy conservation
+   (`er = min(1, 2.2/r)`), bolt-core saturation, death-pop hue (commit after e0eecd5). Remaining
+   combat-gate findings are OWNED by the wave6 batch's vfx lane (target: zero).**
+
+   **THE WAVE-6 BUILD BATCH IS IN FLIGHT: workflow `wf_a359a136-2de`, 8 file-owned lanes, builders
+   Fable-5 effort-high** (terrain: ring banding + region ring splat + near field | props: Elderheart,
+   Kharaz-Dun doorway, lost monolith gold + aether, vale ruin plaza + aetheryte, Hagstone, Drowned
+   Court, celestial isles + 8 m marble, Wayfinder placement | water: fen murk + sunken cascade shot |
+   sky: infernal blue polygon, shadowfen sun, void haze | grass: vale neon retune | weapons: the
+   viewmodel rebuild | vfx+abilities: combat gate to zero, impact decal, Starfall super, firing wedge |
+   enemies: mixer wiring, second rate limiter, seraph rig). If it dies, per-lane reports are in the
+   run's journal.jsonl; resume with the scriptPath in the session workflows dir. AFTER it lands:
+   orchestrator runs full gate (all checks incl. combat + animcheck), curvecheck/questgate, commits,
+   THEN the judge fleet on Opus high (script: tools/out/wave5-judge-workflow.js).
+0b. ~~Read the wave-5 judge verdicts~~ **DONE** - they are at the top of this section, and
+   `tools/out/wave5-summary.txt` / `wave5-verdicts.json` / `wave5-raw.json` are written.
+1. **WIRE THE ANIMATION MIXER. The decisive next creature job** - it turns a smooth *procedural* gait
+   into a real retargeted walk cycle, and it is what decides whether Blender+Mixamo is worth adding
+   (that evaluation is in `docs/CREATURE-PIPELINE.md`, "EVALUATED AND DEFERRED"). Five steps:
+   **(1) THE TRAP: `src/core/Assets.js` currently THROWS THE CLIPS AWAY** -
+   `gltfLoader.loadAsync(url).then((g) => { this.models[name] = g.scene; })` drops `g.animations` on
+   the floor, so swapping the animated GLBs in without fixing this looks like "the clips did not
+   work". Keep them (`this.clips[name] = g.animations`) and add a `clips(name)` accessor.
+   (2) `src/enemies/glbBody.js` - pass the clips onto the asset it returns.
+   (3) `src/enemies/Enemy.js` - an `AnimationMixer` per instance, actions cross-faded by `e.speedN`;
+   clip names as merged are `idle`, `walk` (or `quadruped-walk` on quadrupeds), `run`.
+   (4) `src/enemies/glbAnim.js` - keep procedural attack/stagger/death and layer them AFTER
+   `mixer.update()`, since both write bone rotations.
+   (5) copy `tools/out/anims/*.glb` -> `public/assets/creatures/` (10 creatures have clips; serpent
+   and giant have no reachable rig task id; wisp is procedural by decision).
+   **Prerequisite:** the `animEvery` band fix is already in, but if a second rate limiter is still
+   holding poses (job 2) the baked clips will strobe exactly as the procedural gait did.
+2. **Find the SECOND pose rate limiter.** After the `animEvery` fix, `_animate` was measured running
+   60/60 frames at lod 0, yet `tools/out/animfull2` still failed
+   `hound, sprite, skyserpent, magmagolem, leviathan, riftling` on STEPPED POSE - riftling at
+   **50% held / 100% alternating at 19 m**. Most of those fly, so look in the flyer/hover path.
+   `node tools/animcheck.mjs` is the red test.
+3. **Wire the Wayfinder NPC** - `public/assets/creatures/wayfinder.glb` exists (15k tris, 23 joints,
+   walk/idle/run clips) but is not in `Assets.js`'s MODEL table and not consumed by `Props.js`.
+   Closes the vale blocker's "flat face slab, gold headphone discs" finding.
+4. **Fire the wave-5 judge phase** - the script is already written:
+   `Workflow({ scriptPath: 'tools/out/wave5-judge-workflow.js' })`. Ten fresh region critics each
+   pre-loaded with their own wave-4 findings, an ANIMATION inspect-and-fix lane, and **the whole-game
+   coherence agent that plays it end to end and judges it as ONE experience** - the user asked for
+   that between major waves and it has never been run. **Do not fire it against a half-written build.**
+5. **Fold `tools/animcheck.mjs` into `tools/gate.mjs`** so the animation gate runs with the others
+   instead of having to be remembered.
+6. **Performance is a DEFERRED dedicated pass** (user call) - do NOT gate waves on it. Current live
+   reading after wave 5: 298 draw calls / 3.33 M tris at q=high, inside the 350 / 4 M budget.
+
+### Live asset accounts
+Magnific ~4,400 credits. Tripo **~4,150** (`$TRIPO_API_KEY` is in the environment; the REST API works,
+the Tripo MCP tools 401 in-session and need an app restart to pick the key up). Creature payload
+~9.6 MB of a 40 MB budget.
 
 ## 1. The job
 
@@ -616,8 +1376,8 @@ reintroduces the string form, drops the module-worker call, imports three into t
 `heightAt` wiring.
 
 `terrain.heightAt` is ground truth for the entire game. Snapshot it before touching the kernel — seed 1337
-must give `{"n":2695,"sum":162867.162973}`
-(**re-baselined 2026-08-23.** The old figure here, 164490.108949, was stale: the ten-biome pass moved the
+must give `{"n":2695,"sum":164219.761892}`
+(**re-baselined 2026-08-26** — the wave-3 kernel pass moved sunken/void/lost/tundra deliberately; previous figure 162867.162973. Earlier note: **re-baselined 2026-08-23.** The old figure here, 164490.108949, was stale: the ten-biome pass moved the
 height kernels — `bhTundra`'s basin alone went 5.2 -> 3.35 — so this check had been FAILING on unmodified
 `main`. Verified identical on `main` @ 5e52a14 and on the hitch-wave branch. Re-baseline it deliberately
 whenever a kernel changes, and say so here; a snapshot that cries wolf is one nobody reads.):
@@ -986,6 +1746,46 @@ against 11.6 s before it, which looks exactly like a 10 s regression. It was not
 JS bundles differ by 1004 bytes with identical chunking. **Cross-run boot comparisons on this box are
 worthless (4d), and 18 orphaned `chrome-headless-shell` processes were inflating everything (4b).** Kill the
 orphans, then interleave, before believing any boot number.
+
+## 4m-bis. CREATURE TRI BUDGET IS TIERED (user, 2026-08-26)
+
+Was a flat ~3.5k. Now tiered by FORM complexity: **~4k** small/ethereal (wisp, sprite), **~10k**
+standard creature (hound, frostwolf, drake, serpent, riftling, wraith), **~15k** complex/armoured
+(sentinel, golem, treant, warden, giant). Roughly where Destiny 2's own rank-and-file combatants sit.
+
+Triangles were never the reason our creatures looked bad — the sentinel reads as stacked slabs at 4k
+and would at 50k. Chamfered edges, relief and material are what was missing.
+
+**The trap, and it is not obvious:** `performanceBudget.targetTriangles` selects the img2threejs
+generator's tessellation tier (low <= 6000, standard <= 60000). Declaring the 4k target directly
+picks the LOW tier and coarsens every curve — which is precisely how a small creature comes out
+faceted. Always declare 10000/15000 and let a simple form land under its target.
+
+**What the deferred perf pass must therefore check** (it did not exist as a risk before): `MAX_ALIVE`
+is 72 and `Enemies` streams camps by distance, so a dense fight can put a lot of LOD0 bodies on
+screen at once. 15k x even a dozen near bodies is 180k tris, which is fine against the 4 M budget —
+the failure mode is the LOD ladder NOT falling away, not LOD0 itself. Measure a real camp fight, not
+the meadow, and check LOD1/LOD2 tri counts as well as the totals.
+
+## 4m. PERFORMANCE IS A DEFERRED PASS (user call, 2026-08-26)
+
+During the Destiny-2-polish campaign the user decided **not** to gate each wave on performance:
+"none of that seems majorly over, we can tidy up with performance and hitch afterwards." Builders
+still carry the budget in their briefs and self-report, but the perf leg of the three-gate sign-off
+is deliberately deferred to ONE dedicated wave at the end of the visual/content campaign.
+
+What that wave owes, measured 2026-08-26 and not yet fixed:
+- **Vegetation reports 4.2-5.0 M tris** on the densest forest views (budget 4 M). The forest south
+  view was already 4.4 M before this campaign; the canopy has since been closed, so it is worse.
+- **One 514 ms frame** in `tools/out/props2-hitch` with cpu 513 ms, gpu 6.3 ms and a moving program
+  count — the shader-link-during-play signature (4j). Every wave has added material variants
+  (per-region prop albedos, converted creature bodies); they need boot prewarm through
+  `compileForComposer`, or they link on first draw mid-play.
+- **hitchhunt mean 7.56 ms vs the 7 ms budget, p99 18.2 vs 14, 152 spikes (50/min)** on that run.
+- Individual probes reported p99 39.7 ms (terrain) and p99 176 ms (vegetation, life) — unattributed.
+
+Do NOT let a builder spend a wave on this before the visuals are signed off; equally, do not let the
+campaign end without it.
 
 ## 5. Everything else open
 

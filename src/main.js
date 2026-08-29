@@ -195,7 +195,11 @@ Object.assign(window.__game, {
   clearEnemies: () => game.enemies.clear?.(),
   dummy: (dist = 10, opts) => { const p = P().position, y = P().yaw; return game.combat.spawnDummy?.({ x: p.x - Math.sin(y) * dist, z: p.z - Math.cos(y) * dist }, opts); },
   // --- player kit ---
-  give: (id, slot) => P().weapons.give?.(id, slot),                               // handcannon|autorifle|pulse|shotgun|sniper|fusion
+  // Returns the weapon's NAME, never the handle: weapons.give() hands back the viewmodel Object3D, and
+  // an {eval} step serialises its result — a Three.js node is circular, so the harness threw "Converting
+  // circular structure to JSON" and wrote NO report.json, which reads as a dead run rather than a bad
+  // step. Every __game entry point must return something JSON-safe for exactly this reason.
+  give: (id, slot) => { const w = P().weapons.give?.(id, slot); return w?.def?.name ?? w?.name ?? id; }, // handcannon|autorifle|pulse|shotgun|sniper|fusion
   swap: (i) => P().weapons.swap?.(i),
   reload: () => P().weapons.reload?.(),
   ads: (on) => P().weapons.setAds?.(on),

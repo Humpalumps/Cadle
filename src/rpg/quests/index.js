@@ -7,7 +7,10 @@
  *   region    a Biomes.js region id: meadow forest tundra shadowfen infernal sunken dragon celestial void lost
  *   level     the level the quest is written for (inside that region's band in Biomes.js)
  *   name      the title on the tracker
- *   giver     'stele:<region>' — abstract. With no stele in the world the region auto-offers on entry.
+ *   giver     'stele:<region>' — abstract; with no stele in the world the region auto-offers on entry.
+ *             OR 'npc:<id>' — a named villager. npc quests are offered/turned in only at that giver
+ *             (quest.readGiver); they also carry giverName (the prompt line) and giverPos [x,z] (the
+ *             authored anchor QuestMarkers falls back to until the NPC body exists in Props).
  *   next      the id that is auto-accepted on turn-in. Each region's chain finale points at the NEXT
  *             region's chain head; that is the whole of "the route goes through the areas in order".
  *   text      { offer, progress, done } — written, never spoken.
@@ -41,6 +44,11 @@ export const POIS = {
   'Whisperwood': { x: 0, z: -220 },
   'The Crystal Fields': { x: 250, z: 30 },
   'The Hollow Crown': { x: -60, z: 260 },
+  // Gloamtide Corsair camps (fixed anchors; Props._buildPirateCamps pitches each camp within ~22 m of
+  // its anchor, so `reach` radii on these stay >= 25)
+  'Driftfire Hollow': { x: -10, z: -396 },
+  'The Cinder Tithe': { x: 142, z: 375 },
+  'The Salt-Grin Camp': { x: -396, z: -62 },
 };
 
 export const QUESTS = [...meadow, ...forest, ...tundra, ...shadowfen, ...infernal, ...sunken, ...dragon, ...celestial, ...theVoid, ...lost];

@@ -1,0 +1,9 @@
+[
+ { "wait": 8 }, { "eval": "__game.god(true)" }, { "hour": 13 },
+ { "eval": "__game.goto('tundra', 120)" }, { "wait": 3 }, { "look": [0.4, -0.75] }, { "wait": 1.5 }, { "shot": "t-down" },
+ { "perfWindow": { "secs": 3, "label": "tundra" } },
+ { "eval": "__game.goto('void', 120)" }, { "wait": 3 }, { "look": [0.4, -0.75] }, { "wait": 1.5 }, { "shot": "v-down" },
+ { "eval": "__game.goto('dragon', 130)" }, { "wait": 3 }, { "look": [0.4, -0.75] }, { "wait": 1.5 }, { "shot": "d-down" },
+ { "perfWindow": { "secs": 3, "label": "dragon" } },
+ { "stats": "fin" }
+]

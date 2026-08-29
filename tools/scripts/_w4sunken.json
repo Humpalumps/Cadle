@@ -1,0 +1,162 @@
+[
+ {
+  "wait": 22
+ },
+ {
+  "eval": "__game.god(true); __game.passive(true); 1"
+ },
+ {
+  "hour": 13
+ },
+ {
+  "tp": [
+   -545.9,
+   null,
+   -47.6
+  ]
+ },
+ {
+  "look": [
+   1.4839,
+   -0.13
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "pass-vista"
+ },
+ {
+  "look": [
+   1.4839,
+   -0.3
+  ]
+ },
+ {
+  "wait": 1.0
+ },
+ {
+  "shot": "pass-down"
+ },
+ {
+  "tp": [
+   -720.5,
+   null,
+   -82.9
+  ]
+ },
+ {
+  "look": [
+   -1.6577,
+   0.06
+  ]
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "shot": "riser1-up"
+ },
+ {
+  "tp": [
+   -675.1,
+   null,
+   -28.7
+  ]
+ },
+ {
+  "look": [
+   1.4839,
+   -0.1
+  ]
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "shot": "channel-down"
+ },
+ {
+  "burst": {
+   "name": "chan",
+   "n": 4,
+   "interval": 0.35
+  }
+ },
+ {
+  "tp": [
+   -690.0,
+   null,
+   -60.0
+  ]
+ },
+ {
+  "look": [
+   1.4839,
+   -0.22
+  ]
+ },
+ {
+  "wait": 2.0
+ },
+ {
+  "shot": "riser2-foot"
+ },
+ {
+  "eval": "JSON.stringify((__game.game.world.water.fallSites||[]).map(f=>[Math.round(f.sx),Math.round(f.sz),+f.hw.toFixed(1),+f.w.toFixed(1)]))"
+ },
+ {
+  "tp": [
+   -90,
+   null,
+   -70
+  ]
+ },
+ {
+  "look": [
+   1.5708,
+   -0.1
+  ]
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "shot": "vale-lake"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.45
+  ]
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "vale-shore"
+ },
+ {
+  "tp": [
+   -250,
+   null,
+   -70
+  ]
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.08
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "vale-lake-far"
+ },
+ {
+  "stats": "sunken"
+ }
+]

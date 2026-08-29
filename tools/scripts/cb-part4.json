@@ -1,0 +1,154 @@
+[
+ {
+  "wait": 6.0
+ },
+ {
+  "eval": "__game.god(true)"
+ },
+ {
+  "eval": "(()=>{ for (const el of document.body.children) if (el.tagName !== 'CANVAS') el.style.visibility = 'hidden'; return 'hud hidden' })()"
+ },
+ {
+  "eval": "(()=>{ __game.game.player.weapons.setHidden(true); return 'viewmodel hidden' })()"
+ },
+ {
+  "hour": 13
+ },
+ {
+  "log": "COMBAT-VFX BLOB SUITE: each region's own bestiary spawned 8-18 m out, aggroed, player fires NOTHING. Burst A = attacks/telegraphs in flight; then every enemy takes a 6 hp hit (flash=1) and burst B catches hit-flash + impacts. This is the scenario five wave-5 critics used to measure full-screen white-outs while gate.mjs passed."
+ },
+ {
+  "log": "== lost (wave-5 blob: golem hit -> opaque near-white egg over chest crystal) =="
+ },
+ {
+  "eval": "__game.goto('lost')"
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;const T=['golem','golem','sentinel','sentinel','wraith','wraith'];T.forEach((t,i)=>{const a=-0.55+1.1*i/(T.length-1),d=8+10*(i%3)/2;g.spawn(t,p.x+Math.sin(a)*d,p.z-Math.cos(a)*d);});for(const e of g.game.enemies.list){e.alert=true;e.lastSeenT=g.game.time;e.lastSeen&&e.lastSeen.copy(p);}return T.length+' spawned'})()"
+ },
+ {
+  "wait": 1.4
+ },
+ {
+  "burst": {
+   "name": "cvfx-lost-a",
+   "n": 10,
+   "interval": 0.15
+  }
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive){e.takeDamage({amount:6});n++}}return n+' hit'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-lost-hit",
+   "n": 8,
+   "interval": 0.15
+  }
+ },
+ {
+  "log": "sustain: volleys in flight (windup+cooldown+3.5-4.5 s flight) detonate at the lens inside this window"
+ },
+ {
+  "wait": 2.6
+ },
+ {
+  "burst": {
+   "name": "cvfx-lost-c",
+   "n": 8,
+   "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-lost-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
+  "eval": "__game.clearEnemies()"
+ },
+ {
+  "log": "== shadowfen =="
+ },
+ {
+  "eval": "__game.goto('shadowfen')"
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;const T=['wraith','wraith','wraith','bogwitch','bogwitch','hound','hound'];T.forEach((t,i)=>{const a=-0.55+1.1*i/(T.length-1),d=8+10*(i%3)/2;g.spawn(t,p.x+Math.sin(a)*d,p.z-Math.cos(a)*d);});for(const e of g.game.enemies.list){e.alert=true;e.lastSeenT=g.game.time;e.lastSeen&&e.lastSeen.copy(p);}return T.length+' spawned'})()"
+ },
+ {
+  "wait": 1.4
+ },
+ {
+  "burst": {
+   "name": "cvfx-shadowfen-a",
+   "n": 10,
+   "interval": 0.15
+  }
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive){e.takeDamage({amount:6});n++}}return n+' hit'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-shadowfen-hit",
+   "n": 8,
+   "interval": 0.15
+  }
+ },
+ {
+  "log": "sustain: volleys in flight (windup+cooldown+3.5-4.5 s flight) detonate at the lens inside this window"
+ },
+ {
+  "wait": 2.6
+ },
+ {
+  "burst": {
+   "name": "cvfx-shadowfen-c",
+   "n": 8,
+   "interval": 0.15
+  }
+ },
+ {
+  "log": "KILL PHASE: deaths + loot payout are combat VFX too (wave-6 forest blob was a treant KILL bloom + loot-beacon column; the old scenario never killed anything big)"
+ },
+ {
+  "eval": "(()=>{const g=__game;let n=0;for(const e of g.game.enemies.list){if(e.alive&&n<3){e.takeDamage({amount:999999});n++}}return n+' killed'})()"
+ },
+ {
+  "burst": {
+   "name": "cvfx-shadowfen-k",
+   "n": 8,
+   "interval": 0.18
+  }
+ },
+ {
+  "eval": "__game.clearEnemies()"
+ }
+]

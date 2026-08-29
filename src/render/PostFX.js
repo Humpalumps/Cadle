@@ -147,16 +147,27 @@ class AOEffect extends Effect {
 // ---- Auto exposure: GPU scene-luminance (128^2 luminance -> mips -> 1x1 temporally adapted), bounded factor applied pre-tone-map.
 //      Measures PRE-exposure luminance so there is no feedback loop; the time-of-day exposure stays the base.
 const AE_FRAG = /* glsl */`
-uniform lowp sampler2D lumBuffer; uniform vec3 aeParams; // target, min, max
+uniform lowp sampler2D lumBuffer; uniform vec3 aeParams; uniform vec2 aeKnee; // target, min, max; highlight-rolloff knee (start, end luminance)
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor){
   float la = unpackRGBAToFloat(texture2D(lumBuffer, vec2(0.5)));
   float f = clamp(aeParams.x / max(la, 1e-3), aeParams.y, aeParams.z);
-  outputColor = vec4(inputColor.rgb * f, inputColor.a);
+  // Adaptation brightens the SCENE, never what is already hot. When a dark region (wave-5 Void/Infernal
+  // noon) rides the max boost, that frame-wide multiplier lands on emissive/additive combat VFX that were
+  // tuned to sit just under clip — every channel goes high and ACES washes the hue to white (the combat
+  // wash decree). So the BOOST (f > 1) rolls off to 1.0 as the pixel's own luminance approaches the ACES
+  // shoulder: midtones and shadows adapt in full, hot cores keep their tuned values. Darkening (f < 1)
+  // applies everywhere — night adaptation and bright-scene pulldown are untouched. Note the bloom
+  // threshold never saw the AE factor (BloomEffect's luminance pass reads this pass's INPUT buffer): the
+  // coupling was AE x ACES, and this is the term that closes it.
+  float l = dot(inputColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float fp = mix(f, min(f, 1.0), smoothstep(aeKnee.x, aeKnee.y, l));
+  outputColor = vec4(inputColor.rgb * fp, inputColor.a);
 }`;
 class AutoExposureEffect extends Effect {
   constructor({ target = 0.3, min = 0.8, max = 1.3, tau = 1.6 } = {}) {
     super('AutoExposureEffect', AE_FRAG, { blendFunction: BlendFunction.SRC,
-      uniforms: new Map([['lumBuffer', new THREE.Uniform(null)], ['aeParams', new THREE.Uniform(new THREE.Vector3(target, min, max))]]) });
+      uniforms: new Map([['lumBuffer', new THREE.Uniform(null)], ['aeParams', new THREE.Uniform(new THREE.Vector3(target, min, max))],
+        ['aeKnee', new THREE.Uniform(new THREE.Vector2(0.9, 2.2))]]) });   // rolloff starts just under sunlit-white (~1.0), boost fully gone by 2.2; set (1e6, 1e6) to A/B the old behaviour
     const size = 128, exp = Math.log2(size);
     this.rtLum = new THREE.WebGLRenderTarget(size, size, { minFilter: THREE.LinearMipmapLinearFilter, depthBuffer: false });
     this.rtLum.texture.generateMipmaps = true;
@@ -255,6 +266,7 @@ export class PostFX {
     this._sun.frustumCulled = false; this.godraysSource = null; this.godraysAngle = 0.035; this.godraysDist = 1200; // beyond the mountain ring: peaks now depth-occlude the disc (and so its rays) instead of the sun drawing in front of them
     this.godraysBoost = 2.0; // HDR disc brightness: puts the ray core above the day bloom threshold (hot sun punch)
     this.godrays = new GodRaysEffect(camera, this._sun, { resolutionScale: this.q.godraysScale, samples: this.q.godraysSamples, density: 0.97, decay: 0.945, weight: 0.6, exposure: 0.3, clampMax: 1.35, kernelSize: KernelSize.SMALL, blur: true });
+    this._fixGodRayEdgeClamp();
     this.godraysPass = new EffectPass(camera, this.godrays); composer.addPass(this.godraysPass);
     // DoF (ADS), own pass so it can be toggled without recompiling
     this.dof = new CheapDofEffect(this._dof);
@@ -272,6 +284,26 @@ export class PostFX {
     this.overlayClear = new ClearPass(false, true, false); // depth only
     if (this.overlay) this.setOverlay(this.overlay.scene, this.overlay.camera);
     this.game.events?.on?.('player:damaged', ({ amount }) => { this.flash(0xff3020, clamp(0.1 + amount / 120, 0.12, 0.45), 0.35); this.kick(clamp(amount / 40, 0.3, 1)); });
+  }
+  /**
+   * FRAME-EDGE STREAK (wave-6 shadowfen, major: "a bright streak 4-6 px into the left and right screen
+   * edges of EVERY frame — x=0 measures 25x brighter than x=6", measured red-orange, brightest where the
+   * rays are strongest). It is not ours and it is not a wrap: it is a texture CLAMP inside the library's
+   * god-ray march. `convolution.god-rays.frag` walks `coord` from the pixel toward `lightPosition` and
+   * does a bare `texture2D(inputBuffer, coord)` with no bounds test — so for any pixel whose march leaves
+   * the light buffer (every frame the sun sits at or outside a frame edge) CLAMP_TO_EDGE re-reads the
+   * same border texel for the rest of the loop and accumulates it up to `samples` times. A border texel
+   * summed 60x is a hard bright strip exactly one texel-footprint wide, pinned to the frame edge.
+   * Fix: samples outside [0,1] contribute nothing, which is what "the light buffer ends here" means.
+   * Patched on the material rather than in node_modules so `npm ci` cannot silently undo it.
+   */
+  _fixGodRayEdgeClamp() {
+    const m = this.godrays?.godRaysPass?.fullscreenMaterial;
+    const SRC = 'vec4 texel=texture2D(inputBuffer,coord);';
+    if (!m?.fragmentShader?.includes(SRC)) { console.warn('[postfx] god-ray edge-clamp patch did not apply (upstream shader changed)'); return; }
+    m.fragmentShader = m.fragmentShader.replace(SRC,
+      'vec2 ib=step(vec2(0.0),coord)*step(coord,vec2(1.0));vec4 texel=texture2D(inputBuffer,coord)*ib.x*ib.y;');
+    m.needsUpdate = true;
   }
   setOverlay(scene, camera) {
     this.overlay = { scene, camera };

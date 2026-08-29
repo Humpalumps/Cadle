@@ -95,12 +95,19 @@ const SHAPES = {
     tor(0.088, 0.018, 0.11, 0.14, 0, P2),
     tor(0.088, 0.018, -0.11, 0.14, 0, P2),
   ],
+  // A CUIRASS, not a shirt. The old one was a 4-sided cylinder that FLARED downward (0.155 top ->
+  // 0.205 bottom) with two shoulder nubs — filled with an uncommon's green that silhouette is a
+  // t-shirt, which is exactly what the wave-6 coherence pass called it. Plate is the other way round:
+  // broad across the chest, pinched at the waist, then a fauld flaring back out under it, with a keeled
+  // centre ridge and a raised gorget. The waist pinch is the read — a garment has no waist.
   chest: () => [
-    cyl(0.155, 0.205, 0.36, 4, 0, 0, 0, 0, Math.PI / 4),   // tapered torso
-    box(0.17, 0.075, 0.155, 0.20, 0.13, 0, 0, 0, -0.42),   // pauldrons
-    box(0.17, 0.075, 0.155, -0.20, 0.13, 0, 0, 0, 0.42),
-    tor(0.10, 0.022, 0, 0.185, 0, P2),                     // collar
-    box(0.09, 0.09, 0.03, 0, 0.02, 0.155, 0, 0, Math.PI / 4),
+    cyl(0.190, 0.108, 0.34, 6, 0, 0.055, 0),                      // breastplate: broad at the chest, pinched at the waist
+    cone(0.112, 0.17, 6, 0, -0.205, 0, Math.PI),                  // plackart tapering to a POINT below the waist (apex down)
+    box(0.050, 0.34, 0.055, 0, 0.055, 0.108),                     // keel: the ridge down the centre of the breast
+    box(0.155, 0.10, 0.165, 0.205, 0.175, 0, 0, 0, -0.55),        // spaulders, riding high ON the shoulder, not out from it
+    box(0.155, 0.10, 0.165, -0.205, 0.175, 0, 0, 0, 0.55),
+    tor(0.098, 0.028, 0, 0.228, 0, P2),                           // gorget
+    box(0.095, 0.095, 0.035, 0, 0.10, 0.135, 0, 0, Math.PI / 4),  // the boss, riding the keel
   ],
   legs: () => [
     cyl(0.078, 0.052, 0.38, 7, 0.085, 0, 0),
@@ -164,7 +171,14 @@ const BEAM_COLOR = {
 const BEAM_GAIN = { common: 0.8, uncommon: 1.0, rare: 1.25, legendary: 1.6, exotic: 2.1 };
 // Short on purpose. The world's own light shafts are 26-30 m; nothing here goes past 6.
 const BEAM_H = { common: 1.8, uncommon: 2.4, rare: 3.2, legendary: 4.4, exotic: 6.0 };
-const EMIS = { common: 0.30, uncommon: 0.42, rare: 0.58, legendary: 0.78, exotic: 1.05 };
+// Emissive on the ITEM body is an accent, not a light source. The old numbers (0.30-1.05) said "dark
+// body, rarity-coloured glow" in the comment below and did the opposite: 0.42 of a saturated green
+// swamped both the diffuse term and the flat shading, so an uncommon armour drop rendered as an
+// unlit 100%-saturation green cut-out — the "flat green t-shirt" the wave-6 coherence pass named.
+// The BEACON is what makes a drop findable (that is its whole job, and it is untouched); the item
+// only has to look like forged metal. Same principle as the blob decree: saturate the colour, cap
+// the intensity — a value that clips reads as a coloured blob, not as an object.
+const EMIS = { common: 0.06, uncommon: 0.09, rare: 0.13, legendary: 0.17, exotic: 0.24 };
 
 let geo = null, mats = null;
 
@@ -185,23 +199,31 @@ export function buildKit() {
     mats[k] = {
       // dark body, rarity-coloured glow. A pale emissive blob has no silhouette against a
       // bright sky; dark metal with an accent does, which is the whole point of the shape.
+      // Gunmetal that the rarity TINTS, not the rarity colour dimmed. The old base (rarity x 0.34)
+      // plus a heavy emissive of the same hue gave every face the same value from every angle, which
+      // is why the silhouettes read as paper cut-outs. A dark metal takes the sun, the sky and the
+      // flat-shaded facets, so the shape is legible before the colour is.
       item: new THREE.MeshStandardMaterial({
-        color: label.clone().multiplyScalar(0.34), emissive: new THREE.Color(BEAM_COLOR[k]),
-        emissiveIntensity: EMIS[k], roughness: 0.55, metalness: 0.35, flatShading: true,
+        color: new THREE.Color(0x2b2d34).lerp(label, 0.30), emissive: new THREE.Color(BEAM_COLOR[k]),
+        emissiveIntensity: EMIS[k], roughness: 0.55, metalness: 0.45, flatShading: true,
       }),
-      // NORMAL blend + no tone map: this is the one that has to hold its hue against the sky
+      // NORMAL blend + no tone map: this is the one that has to hold its hue against the sky.
+      // fog: TRUE (wave-6 infernal "giant flat blue polygon"): with fog off, a camp wipe's pile of rare
+      // beams on a ridge punched through the region haze as a solid untone-mapped blue wedge pasted on
+      // the sky. The haze has to own a beacon at range exactly like everything else; opacity 0.62 keeps
+      // a STACK of drops (5+ land in one spot) translucent instead of summing to a solid sheet.
       core: new THREE.MeshBasicMaterial({
-        color: beam, vertexColors: true, transparent: true, opacity: 0.92,
-        depthWrite: false, side: THREE.FrontSide, fog: false, toneMapped: false,
+        color: beam, vertexColors: true, transparent: true, opacity: 0.62,
+        depthWrite: false, side: THREE.FrontSide, fog: true, toneMapped: false,
       }),
       halo: new THREE.MeshBasicMaterial({
         color: new THREE.Color(BEAM_COLOR[k]), vertexColors: true, transparent: true, opacity: 0.24,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-        fog: false, toneMapped: false,
+        fog: true, toneMapped: false,
       }),
       ring: new THREE.MeshBasicMaterial({
         color: beam, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-        depthWrite: false, fog: false, toneMapped: false,
+        depthWrite: false, fog: true, toneMapped: false,
       }),
     };
   }

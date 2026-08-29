@@ -1,0 +1,16 @@
+[
+ {"wait":0.8},{"shot":"boot-01"},
+ {"wait":1.5},{"shot":"boot-02"},
+ {"wait":2.0},{"shot":"boot-03"},
+ {"wait":2.5},{"shot":"boot-04"},
+ {"wait":3.0},{"shot":"boot-05"},
+ {"wait":4.0},{"shot":"boot-06"},
+ {"wait":4.0},{"shot":"boot-07"},
+ {"wait":5.0},{"shot":"boot-08"},
+ {"wait":5.0},{"shot":"boot-09"},
+ {"wait":5.0},{"shot":"boot-10"},
+ {"wait":5.0},{"shot":"boot-11"},
+ {"eval":"JSON.stringify({ready:!!(window.__game&&window.__game.state),hud:document.querySelector('#hud')?document.querySelector('#hud').className:null,bodyText:(document.body.innerText||'').slice(0,600)})"},
+ {"wait":4.0},{"shot":"boot-12"},
+ {"eval":"JSON.stringify({t:(document.body.innerText||'').slice(0,800)})"}
+]

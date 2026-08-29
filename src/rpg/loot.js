@@ -420,10 +420,27 @@ export function init(ctx) {
   group.name = 'rpg-loot';
   ctx.scene.add(group);
 
+  // SHADER WARM (perf pass 2026-08-28): buildKit() creates the materials, but until a MESH in the
+  // scene references them, main.js warmScene() (renderer.compile walks the scene graph) never links
+  // their programs — so they linked on the FIRST real payout, mid-combat: hitchhunt perf-combat
+  // measured prog 234 -> 237 as a 292 ms (vsync) / 303 ms (uncapped) frozen frame at the kill.
+  // One hidden specimen of each lazily-first-built visual (drop kit + quest item) at init puts the
+  // links under the loading bar instead. visible = false is fine: renderer.compile() gathers
+  // materials with a plain scene.traverse, not traverseVisible (see main.js warmScene doc).
+  {
+    const warm = new THREE.Group();
+    warm.name = 'rpg-loot-warm';
+    warm.visible = false;
+    warm.add(makeDrop({ kind: 'weapon', archetype: 'auto' }, 'legendary').g);  // item/core/halo/ring/chev — all tiers share these programs
+    warm.add(questVis().g);
+    group.add(warm);
+  }
+
   ctx.events.on('enemy:death', (e) => {              // Cadle payload: { enemy, killer }
     const en = (e && e.enemy) || e || {};
     const pos = en.position || (en.mesh && en.mesh.position) || ctx.player.position;
-    grant(ctx, { glimmer: 8 + Math.floor(Math.random() * 10) });
+    // kill glimmer is PHYSICAL now — gold motes that magnet in (src/rpg/glimmer.js), scaled by
+    // the enemy's level and tier there. The silent wallet grant that used to sit here is gone.
     // Destiny cadence: most kills give dust, some give a beam. Elites always pay out twice,
     // a region boss three times — and every one of them is rolled from the SOURCE, so the
     // level, the region's element and the creature's role all reach the item.

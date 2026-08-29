@@ -1,0 +1,10 @@
+[
+ { "wait": 8 }, { "eval": "__game.god(true)" }, { "hour": 13 },
+ { "eval": "__game.goto('infernal', 130)" }, { "wait": 3 }, { "look": [0.4, -0.8] }, { "wait": 1.5 }, { "shot": "s1-infernal-down" },
+ { "look": [0.4, -0.1] }, { "wait": 1 }, { "shot": "s2-infernal-eye" },
+ { "eval": "__game.goto('tundra', 130)" }, { "wait": 3 }, { "look": [0.4, -0.8] }, { "wait": 1.5 }, { "shot": "s3-tundra-down" },
+ { "eval": "__game.goto('void', 130)" }, { "wait": 3 }, { "look": [0.4, -0.8] }, { "wait": 1.5 }, { "shot": "s4-void-down" },
+ { "eval": "__game.goto('lost', 130)" }, { "wait": 3 }, { "look": [0.4, -0.8] }, { "wait": 1.5 }, { "shot": "s5-lost-down" },
+ { "eval": "__game.goto('dragon', 140)" }, { "wait": 3 }, { "look": [0.4, -0.8] }, { "wait": 1.5 }, { "shot": "s6-dragon-down" },
+ { "eval": "(()=>{const g=__game.game;const gs=g.world?.vegetation?.groundScatter;return JSON.stringify({exists:!!gs,live:gs?.live??gs?.count??null})})()" }
+]

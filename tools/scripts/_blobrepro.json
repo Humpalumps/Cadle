@@ -1,0 +1,6 @@
+[{"wait":31},
+ {"eval":"window.__game.god(true);window.__game.goto('dragon',60);'ok'"},{"wait":6},
+ {"eval":"window.__game.lineup(['drake','wyvern','sentinel']);window.__game.passive(false);'ok'"},
+ {"eval":"window.__game.spawnNear('wyvern',14);'ok'"},
+ {"wait":4},{"burst":{"name":"melee","n":8,"dt":0.25}},
+ {"wait":3},{"burst":{"name":"melee2","n":8,"dt":0.25}}]

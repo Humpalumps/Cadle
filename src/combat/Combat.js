@@ -131,23 +131,52 @@ class Projectile {
 // halo = view-oriented quad stretched along the screen-space velocity (Destiny "hot dart": white-hot core + saturated tail)
 const HALO_VERT = /* glsl */`
 attribute vec3 aPos; attribute vec3 aVel; attribute vec3 aColor; attribute float aSize;
-varying vec2 vUv; varying vec3 vColor;
+varying vec2 vUv; varying vec3 vColor; varying float vFade; varying float vHot;
 #include <fog_pars_vertex>
 void main() {
   vColor = aColor;
   vec4 mvPosition = modelViewMatrix * vec4(aPos, 1.0);
+  // near-camera coverage fade: a bolt detonating at the lens projects its halo over much of the frame,
+  // and several volley halos additively summed there was the celestial "41k-px pale disc" gate finding.
+  // Fade by projected coverage (size/depth) — same discipline as the particle pool's wash guard.
+  vFade = 1.0 - smoothstep(1.2, 2.4, aSize / max(-mvPosition.z, 0.05));
+  float cov = aSize / max(-mvPosition.z, 0.05);
+  // ...plus a gentle pre-roll from 0.35 coverage: a bolt ARRIVING at the lens (enemy volley endpoint) sits
+  // at cov 0.3-0.8 — under the hard fade, but its tight lobe + bloom + trail mist still summed to a white
+  // fill behind the dart (combat gate mix4, vale/shadowfen). Distant bolts (cov << 0.35) are untouched.
+  vFade *= 1.0 - 0.5 * smoothstep(0.35, 1.2, cov);
+  // white-core lock: the frag's "pinhead" white-hot core is pin-sized only at range — a bolt 2-3 m out
+  // projects it over thousands of pixels and the dart reads as a white streak on grass (combat gate,
+  // vale). As the quad's projected size grows, pull the core back to the bolt's own deep hue.
+  // Range 0.008-0.03 (was 0.06-0.18): a "pin" is < ~8 px on screen — for a 0.29 m volley-bolt quad that
+  // is cov < ~0.02 (beyond ~15 m). Bolts in the fight band (5-15 m, cov 0.02-0.06) must carry ZERO white
+  // mix: the mix's low channel is exactly what noon grass (or a pale creature body) completes into the
+  // desaturated ~100 px annulus the combat gate flags (probe-vale5/vb4, rgb ~207,235,231 — unchanged by
+  // a 0.02-0.10 range because cov 0.03 still gave vHot 0.96). The bisect (vb4): glow+core meshes OFF was
+  // the ONE clean config with the full roster, whole additive pool off still failed — this quad is the
+  // class. Distant pins keep the full white-hot sizzle; everything nearer sizzles in the bolt's own hue.
+  vHot = 1.0 - smoothstep(0.008, 0.03, cov);
   vec3 vv = (modelViewMatrix * vec4(aVel, 0.0)).xyz;
   vec2 sd = vv.xy; float sl = length(sd);
   vec2 axis = sl > 1e-4 ? sd / sl : vec2(1.0, 0.0);
   float e = clamp(sl * 0.06, 0.0, 1.0) * 3.0;                 // up to 4x elongation; head-on bolts stay round (correct)
   float w = 1.0 - e * 0.11;                                   // darts get thinner as they stretch (Destiny needle, not a plate)
+  // ENERGY CONSERVATION (same law as the explosion preset's): the quad's on-screen area grows with
+  // coverage AND with the 4x velocity stretch, and per-pixel additive intensity must fall as the area
+  // grows or the halo lands as a washed band on whatever bright surface sits behind it — the sentinel's
+  // 2 m stretched volley halo over noon grass was exactly the probe-vale7 c-4 finding (a pale ~200,233,230
+  // cone the white-mix fix alone could not touch, because the LOBES were the wash, not the pinhead).
+  // sqrt keeps it gentle: a pin (cov <= 0.02) is untouched, a fight-band bolt (~0.06) keeps ~58%, a
+  // lens-filling one is already owned by the hard fades above. The dart's punch lives in the opaque core
+  // sphere + the pin sizzle, both untouched.
+  vFade *= sqrt(0.02 / max(cov, 0.02)) * inversesqrt(1.0 + e * 0.85);
   mvPosition.xy += (axis * position.x * (1.0 + e) + vec2(-axis.y, axis.x) * position.y * w) * aSize;
   vUv = position.xy;
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
 const HALO_FRAG = /* glsl */`
-varying vec2 vUv; varying vec3 vColor;
+varying vec2 vUv; varying vec3 vColor; varying float vFade; varying float vHot;
 #include <fog_pars_fragment>
 void main() {
   float d2 = dot(vUv, vUv);
@@ -158,7 +187,21 @@ void main() {
   float wide = t * t;                                          // broad soft glow, exactly 0 at the rim -> no visible disc edge on bright sky
   float tight = (exp(-9.0 * d2) - 1.2341e-4) * 1.000123;
   float core = exp(-58.0 * d2);                                // only this pinhead goes white-hot (bloom turns it into the sizzle)
-  vec3 col = vColor * (wide * 0.55 + tight) + mix(vColor, vec3(1.0), 0.65) * core * 1.35;
+  // white mix 0.4 (was 0.65): even vHot-gated, the 0.65 mix left the centre's R/G/B ratio at ~0.6 of the
+  // hue, and ADDED to noon grass (which supplies the missing low channel) the sum tone-mapped to the pale
+  // annulus the combat gate flags (probe-vale5, rgb 210,235,231 around a healthy 144,230,233 dart). At 0.4
+  // the centre keeps a visibly hotter-than-tail core but its low channel stays low enough that grass
+  // underneath can't complete it to white — saturate the colour, cap the intensity (user decree).
+  vec3 col = (vColor * (wide * 0.55 + tight) + mix(vColor, vec3(1.0), 0.4 * vHot) * core * 1.35) * vFade;   // vHot: white only while the core is actually pin-sized on screen
+  // hue-preserving ceiling on the SUMMED lobes (max-channel cousin of BRUSH_MINCH_CAP): at the quad
+  // centre tight + core stack to ~3x. The ceiling FOLLOWS vHot: only a true pin (vHot -> 1, sub-8-px on
+  // screen) may clear the 1.05 bloom threshold (1.3 = the sizzle); any bigger halo is capped at 1.05 so
+  // it can never bloom at all — a blooming green lobe in front of the fen's pale noon haze was the last
+  // 90 px white cluster (cvfx-final4 shadowfen a-5/6, rgb 211,242,207: the haze supplies the low channels
+  // and bloom lifts the rest). Same decree as everywhere: the hue may be bright, only a pin may CLIP.
+  float cm = max(col.r, max(col.g, col.b));
+  float cap = mix(1.05, 1.3, vHot);
+  if (cm > cap) col *= cap / cm;
   #ifdef USE_FOG
     #ifdef FOG_EXP2
       float ff = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
@@ -255,7 +298,25 @@ export class Combat {
     const scene = this.game.scene;
     // bolt cores: one instanced low-poly sphere, HDR instance colors (bloom does the glow)
     const geo = new THREE.SphereGeometry(1, 10, 7);
-    this.coreMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff }), POOL);
+    // Core material carries a view-normal falloff: an unshaded instance colour renders as a FLAT SOLID
+    // DISC (combat gate cvfx-vfx6: "two flat solid-yellow ellipsoids on celestial marble", a flat magenta
+    // ball at the lens). Centre keeps the hot instance colour, the limb rolls off — the dart reads as a
+    // glowing orb with form, and its edge no longer posterises against the ground.
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    coreMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCN = normalize(normalMatrix * normal);');
+      // Floor 0.10, not 0.42. At 0.42 the limb still carried 42% of a fully-saturated instance colour and
+      // then STOPPED at the silhouette — which is why the wave-6 coherence pass photographed "a hard-edged
+      // solid magenta lens with zero falloff, zero texture, 100% saturation" (tools/out/COH-fight/zoom-magenta.png).
+      // The sphere is OPAQUE, so its edge is a real cut; the only way it reads as an orb instead of a
+      // sticker is for the limb to go dark. Centre keeps the full hot instance colour.
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCN;')
+        .replace('#include <opaque_fragment>', 'outgoingLight *= 0.10 + 0.90 * pow(saturate(dot(normalize(vCN), vec3(0.0, 0.0, 1.0))), 0.55);\n#include <opaque_fragment>');
+    };
+    this.coreMesh = new THREE.InstancedMesh(geo, coreMat, POOL);
     this.coreMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.coreMesh.frustumCulled = false; this.coreMesh.castShadow = false; this.coreMesh.receiveShadow = false; this.coreMesh.name = 'projectile-cores';
     this.coreMesh.setColorAt(0, WHITE); this.coreMesh.count = 0; this.coreMesh.visible = false;
@@ -556,11 +617,29 @@ export class Combat {
     p.position.copy(origin); p.prev.copy(origin); p.velocity.copy(dir).normalize().multiplyScalar(speed);
     p.node.position.copy(origin); p.node.quaternion.identity();
     p.color.set(visual?.color ?? BOLT_COLORS[element] ?? ELEMENT_COLORS[element] ?? 0xffffff);
+    // Author the bolt colour DEEP (S >= 0.7, L <= 0.55, same discipline as VFX deepen()): enemies feed
+    // their PASTEL glowColor here (sentinel gold 0xffd27a, frostwolf 0x9fd8ff), and a pastel ×1.5 halo
+    // clips all three channels — the vale white-yellow streak and the sunken pale-teal bolts of the
+    // combat gate (r9) were exactly this. A deep hue at the same energy reads MORE elemental, not less.
+    p.color.getHSL(_hsl);
+    if (_hsl.s < 0.05) { p.color.set(0x8a5cff); p.color.getHSL(_hsl); }   // grey has no hue to deepen — house aether violet
+    if (_hsl.l > 0.55 || _hsl.s < 0.7) p.color.setHSL(_hsl.h, Math.max(_hsl.s, 0.7), Math.min(_hsl.l, 0.55));
     p.size = visual?.size ?? Math.max(0.06, radius * 0.8); p.stretch = visual?.stretch ?? 3.5; p.glow = visual?.glow ?? 1;
     p.hasCore = !visual?.mesh;
-    // core: solid dart body, hue-locked and only lightly whitened — a near-white 3x sphere is what made bolts read as balloons
+    // core: solid dart body, hue-locked. The old `.lerp(WHITE, 0.3)` then ×1.9 put every channel over
+    // clip, so every enemy bolt tone-mapped to the exact cream the combat gate flags (rgb ~225,238,233 —
+    // the wave-5 vale finding) and the velocity-stretched instance read as a pale pillar. Min-channel
+    // discipline instead (same rule as Brush's BRUSH_MINCH_CAP): the dominant channel keeps the ×1.9
+    // heat, the smallest stays under clip so the hue survives ACES.
     p.color.getHSL(_hsl);
-    p.coreColor.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.15), Math.min(0.58, _hsl.l)).lerp(WHITE, 0.3).multiplyScalar(1.9);
+    // Full saturation, lightness clamped LOW, modest multiplier: at ×1.9/l 0.58 the sphere still read as a
+    // pale faceted egg lying in the grass once its own trail mist stacked on top (combat gate r3, vale).
+    p.coreColor.setHSL(_hsl.h, 1.0, Math.min(0.48, _hsl.l)).multiplyScalar(1.5);
+    { const m = Math.min(p.coreColor.r, p.coreColor.g, p.coreColor.b); if (m > 0.98) p.coreColor.multiplyScalar(0.98 / m); }
+    // ...and a MAX-channel ceiling at 1.35: a saturated mint/cyan at x1.5 puts its hot channel ~1.4, well
+    // over the 1.05 bloom threshold — bloom then paints a white-mint disc over the whole small dart and
+    // the ball reads pale (combat gate, wisp bolts on snow/grass). 1.35 still blooms gently, in hue.
+    { const M = Math.max(p.coreColor.r, p.coreColor.g, p.coreColor.b); if (M > 1.35) p.coreColor.multiplyScalar(1.35 / M); }
     if (visual?.mesh) { p.mesh = visual.mesh; p.node.add(visual.mesh); }
     this.game.scene.add(p.node);
     if (visual?.trail ?? true) p.trail = this.game.vfx?.attach?.('spark-trail', p.node, { color: p.color.getHex(), element, size: p.size }) ?? null;
@@ -637,14 +716,58 @@ export class Combat {
       if (sp > 1e-4) { this._t1.copy(p.velocity).divideScalar(sp); p.node.quaternion.setFromUnitVectors(FWD, this._t1); }
     }
     // visuals: compact live projectiles into instance slots 0..n-1 (count = n -> zero cost when idle)
+    // VOLLEY OVERLAP GOVERNOR (energy share, same law as the explosion's): a 3-bolt volley flies as a
+    // bunched line and the halos sum at the same pixels into white-cyan streaks between the darts
+    // (probe vale3 a-6: the sentinel's freshly-launched volley). The k-th bolt within 3 m shares the
+    // energy: each scales by 1/sqrt(1+neighbours). ponytail: O(n^2) over live bolts (< ~40), cheap.
+    const nbK = this._nbK ??= new Float32Array(this._pool.length);
+    for (let i = 0; i < live.length; i++) {
+      let n = 0; const a = live[i].position;
+      for (let j = 0; j < live.length; j++) { if (j !== i && a.distanceToSquared(live[j].position) < 9) n++; }
+      nbK[i] = 1 / Math.sqrt(1 + n);
+    }
     let ci = 0;
     for (let i = 0; i < live.length; i++) {
       const p = live[i], gi = i * 3;
-      if (p.hasCore) { const s = p.size * 0.45; this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++; }
+      const cd = p.position.distanceTo(this.game.camera.position);
+      if (p.hasCore) {
+        // near-lens fade, same discipline as the halo's vFade: a core sphere crossing the camera renders
+        // as a giant flat colour polygon filling the corner (combat gate r5, sunken crop). Shrink it out
+        // over the last ~2 m instead.
+        const nk = Math.min(1, Math.max(0, (cd - 1.0) / 2.2));   // full size past ~3.2 m; inside that the halo carries the read
+        // PROJECTED-SIZE CLAMP. The distance fade above is not the same rule as "how much of the frame does
+        // this own": nk is FULL at 3.2 m, and a 0.28 m void bolt's stretched core (size*0.45 long-axis
+        // *stretch*1.35 = 4.7:1) projects there at ~330 x 70 px of opaque, fully-saturated colour — the
+        // wave-6 coherence blocker, "a hard-edged solid magenta lens ~4 m across floats over the Sentinel",
+        // whose 4.7:1 aspect is this ellipsoid's exactly (tools/out/COH-fight/zoom-magenta.png).
+        // A dart core is a small hot CENTRE at every range, so clamp what it may subtend: 0.055 is the
+        // projected half-length of a healthy mid-range bolt (measured 90 px long at 9 m, which reads
+        // correctly). Beyond that the core shrinks and the halo — which has its own coverage fades — carries
+        // the near read. Same law as everywhere else here: the hue may be vivid, the COVERAGE is capped.
+        const proj = (p.size * 0.45 * nk * p.stretch * 1.35) / Math.max(cd, 0.1);
+        const ck = nk * Math.min(1, 0.055 / Math.max(proj, 1e-4));
+        if (ck > 0.01) {
+          const s = p.size * 0.45 * ck;
+          this.coreMesh.setMatrixAt(ci, this._mat.compose(p.position, p.node.quaternion, this._scl.set(s, s, s * p.stretch * 1.35))); this.coreMesh.setColorAt(ci, p.coreColor); ci++;
+        }
+      }
       this._gPos[gi] = p.position.x; this._gPos[gi + 1] = p.position.y; this._gPos[gi + 2] = p.position.z;
       this._gVel[gi] = p.velocity.x; this._gVel[gi + 1] = p.velocity.y; this._gVel[gi + 2] = p.velocity.z;
       this._gSize[i] = p.size * 1.3 * p.glow;
-      this._gCol[gi] = p.color.r * 1.5 * p.glow; this._gCol[gi + 1] = p.color.g * 1.5 * p.glow; this._gCol[gi + 2] = p.color.b * 1.5 * p.glow;
+      // halo colour: ×1.5×glow, min-channel-capped at 0.98 — N stacked volley halos sum additively, and
+      // a pale element colour (kinetic 0xffe3b0) at 1.5x already clips all three channels on its own.
+      // pale-ground damp (reuses VFX._paleK): over noon snow/marble the base is already near clip, so the
+      // wide halo lobe summing onto it is a pale band whatever the hue (probe t2, tundra c-0). The core
+      // sphere is untouched — the bolt stays a vivid saturated dart, the soft spill halves.
+      // ...and a near-LENS damp (same shape as the flash light's 2.5 m rule): a bolt in its last ~2 m
+      // before the camera puts its tight lobe + bloom over grass at full strength and the sum is a pale
+      // patch whatever the hue (gate mix6, vale). 35% floor keeps the imminent-hit glow readable.
+      const lk = 0.35 + 0.65 * Math.min(1, Math.max(0, (cd - 1.0) / 3.5));
+      const hk = (this.game.vfx?._paleK?.(p.position) ?? 1) * lk * nbK[i];
+      let gr = p.color.r * 1.5 * p.glow * hk, gg = p.color.g * 1.5 * p.glow * hk, gb = p.color.b * 1.5 * p.glow * hk;
+      const gm = Math.min(gr, gg, gb);
+      if (gm > 0.98) { const gs = 0.98 / gm; gr *= gs; gg *= gs; gb *= gs; }
+      this._gCol[gi] = gr; this._gCol[gi + 1] = gg; this._gCol[gi + 2] = gb;
     }
     this.coreMesh.count = ci; this.coreMesh.visible = ci > 0;
     this.glowMesh.visible = live.length > 0; this.glowMesh.geometry.instanceCount = live.length;

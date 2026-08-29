@@ -5,8 +5,35 @@
 // The hillshade is built ONCE into paperCv and only ever blitted after that — nothing
 // per-frame touches heightAt().
 import { C, clamp } from './theme.js';
+import { blendAt, RING_IN } from '../world/Biomes.js';
 
 const PN = 512;                       // hillshade resolution (built once)
+// REGION WASH. Wave-3 verdict (forest minor): "the minimap draws the Whisperwood as a blank sand-tan
+// disc" — a desert-coloured map inside a closed canopy is a region-read failure. The sheet is shared by
+// the map screen AND the HUD minimap, so tinting it here fixes both with one pass.
+// Each entry is the region's MID-TONE colour. It is applied as a hue SUBSTITUTION scaled by the
+// pixel's own relative brightness (`k` below), not as a multiplier: multiplying cannot make a cool
+// region out of warm parchment (base blue is 150 against red 214, so a "snow" multiplier just came
+// out cream — measured, tools/out/hud4c/shot-tundra-hud.png). Scaling by k keeps every bit of the
+// sheet's structure — hillshade, contour lines, the engraver's water hatching, shorelines, the
+// elevation ramp — and only replaces the hue, so it still reads as a chart, not a paint-by-numbers
+// blob. Each one is that region's own palette (ground splat + haze); cross-check BIOMES[].fog /
+// .ground before changing one.
+const TINT = {
+  meadow:    [150, 168,  96],   // Vale grass
+  forest:    [ 86, 116,  70],   // Whisperwood: deep canopy green
+  tundra:    [206, 216, 232],   // snow, cool and pale
+  celestial: [240, 232, 214],   // marble ivory — deliberately LIGHTER and less saturated than the
+                                //   parchment itself (232,222,196 measured as "just the paper again")
+  dragon:    [186, 116,  74],   // rust-orange peaks
+  infernal:  [120,  70,  58],   // ash + ember
+  lost:      [150, 116, 178],   // violet flagstone
+  shadowfen: [ 96, 112,  92],   // peat murk, green-grey
+  sunken:    [104, 142, 158],   // cascade blue-teal
+  void:      [ 72,  58,  94],   // voidstone, near-black violet
+};
+const TINT_BASE = 214 + 194 + 150;    // the parchment's own mid land tone — the reference for k
+const TINT_A = 0.85;                  // how far the wash goes at full region weight (the rest keeps the paper)
 const FOG_N = 128;                    // fog-of-war grid
 const REVEAL = 115;                   // world units the player uncovers as they walk
 
@@ -48,11 +75,14 @@ export function build(ctx, budgetMs = 0) {
   const hs = bs.hs;
   bs.img ??= new ImageData(N, N);
   const d = bs.img.data;
+  const bl = bs.bl ??= { id: 'meadow', w: 0, k: -1 };   // reused: blendAt would otherwise allocate 262k objects
   while (bs.prow < N) {
     const j = bs.prow;
+    const wz = -half + (j + 0.5) / N * size;
     for (let i = 0; i < N; i++) {
       const o = j * N + i;
       const h = hs[o];
+      const wx = -half + (i + 0.5) / N * size;
       const hx = hs[j * N + Math.min(N - 1, i + 1)] - h;
       const hz = hs[Math.min(N - 1, j + 1) * N + i] - h;
       const sh = clamp(0.5 + (hz - hx) * 0.30, 0, 1);       // hillshade, light from NW
@@ -81,6 +111,16 @@ export function build(ctx, budgetMs = 0) {
           const k = Math.max(0, 1 - band / (0.6 + slope * 0.35));
           r -= 34 * k; g -= 33 * k; b -= 27 * k;
         }
+      }
+      // region wash (see TINT): the outer nine fade in on the SAME weight the music/name-card use, so
+      // the colour hands over exactly where the region does; the home bowl gets its own meadow green.
+      blendAt(wx, wz, bl);
+      let t = TINT[bl.id], a = bl.w;
+      if (a < 0.02) { const rr = Math.hypot(wx, wz); a = clamp((RING_IN + 60 - rr) / 120, 0, 1); t = TINT.meadow; }
+      if (a > 0.02 && t) {
+        const k = (r + g + b) / TINT_BASE;   // this pixel's shading, carried through the hue swap
+        a *= TINT_A;
+        r += (t[0] * k - r) * a; g += (t[1] * k - g) * a; b += (t[2] * k - b) * a;
       }
       const q = o * 4;
       d[q] = clamp(r, 0, 255); d[q + 1] = clamp(g, 0, 255); d[q + 2] = clamp(b, 0, 255); d[q + 3] = 255;
@@ -127,14 +167,6 @@ export function stamp(ctx) {
     }
   }
 }
-
-const seenAt = (ctx, x, z) => {
-  if (!fog) return false;
-  const size = sizeOf(ctx), half = size / 2, cell = size / FOG_N;
-  const i = clamp(Math.floor((x + half) / cell), 0, FOG_N - 1);
-  const j = clamp(Math.floor((z + half) / cell), 0, FOG_N - 1);
-  return !!fog[j * FOG_N + i];
-};
 
 function fogImage() {
   if (!fogCv) { fogCv = document.createElement('canvas'); fogCv.width = fogCv.height = FOG_N; }
@@ -248,36 +280,33 @@ export function draw(ctx, cv) {
   const k = W / 620;                                    // marker scale, tuned at 620px
   const inView = (x, z, m) => x > f.x0 - m && x < f.x0 + f.vis + m && z > f.z0 - m && z < f.z0 + f.vis + m;
 
-  // ---- landmarks. Undiscovered ones are hollow question marks; unwalked ground shows none.
-  const done = discoveredSet(ctx);
+  // ---- landmarks: always on the sheet and always iconed — a map of anonymous shapes sells no
+  // destination (feel audit). Outer-region landmarks (l.biome) carry their region name and label at
+  // every zoom; the six Vale POIs label from zoom 2 up so their names don't pile onto the home bowl
+  // when the whole world is in frame. (The old fog/quest-discovery gate hid everything for hours.)
   for (const l of (ctx.world.landmarks || ctx.rpg && ctx.rpg.landmarks || [])) {
     const p = l.position || l.pos || l;
     if (typeof p.x !== 'number') continue;
-    const nm = l.name || l.label || l.id;
-    const known = done.has(nm);
-    if (!known && !seenAt(ctx, p.x, p.z)) continue;
     if (!inView(p.x, p.z, 60 / S)) continue;
     const x = toX(p.x), y = toY(p.z);
     g.save(); g.translate(x, y);
-    if (known) {
-      g.rotate(Math.PI / 4);
-      g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1.3 * k;
-      const s = 5 * k;
-      g.fillRect(-s, -s, s * 2, s * 2); g.strokeRect(-s, -s, s * 2, s * 2);
-      g.rotate(-Math.PI / 4);
-      g.font = `${Math.round(12 * k)}px ${'Georgia,serif'}`;
+    g.rotate(Math.PI / 4);
+    g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1.3 * k;
+    const s = 5 * k;
+    g.fillRect(-s, -s, s * 2, s * 2); g.strokeRect(-s, -s, s * 2, s * 2);
+    g.rotate(-Math.PI / 4);
+    if (l.biome || view.zoom >= 2) {
+      const nm = l.name || l.label || l.id;
       g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.font = `${Math.round(12 * k)}px Georgia,serif`;
       g.lineWidth = 3 * k; g.strokeStyle = 'rgba(240,228,198,.85)';
       g.strokeText(nm, 0, -13 * k);
       g.fillStyle = 'rgba(40,30,14,.95)'; g.fillText(nm, 0, -13 * k);
-    } else {
-      g.strokeStyle = 'rgba(80,60,26,.75)'; g.lineWidth = 1.3 * k;
-      g.setLineDash([3 * k, 3 * k]);
-      g.beginPath(); g.arc(0, 0, 6.5 * k, 0, 7); g.stroke();
-      g.setLineDash([]);
-      g.font = `${Math.round(11 * k)}px Georgia,serif`;
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillStyle = 'rgba(80,60,26,.85)'; g.fillText('?', 0, 0.5 * k);
+      if (l.biome) {                              // the region the landmark anchors, small italic
+        g.font = `italic ${Math.round(10 * k)}px Georgia,serif`;
+        g.strokeText(l.biome, 0, 19 * k);
+        g.fillStyle = 'rgba(96,66,28,.92)'; g.fillText(l.biome, 0, 19 * k);
+      }
     }
     g.restore();
   }
@@ -288,11 +317,22 @@ export function draw(ctx, cv) {
     if (e.dead) continue;
     const p = e.position || (e.mesh && e.mesh.position);
     if (!p || !inView(p.x, p.z, 20 / S)) continue;
-    const x = toX(p.x), y = toY(p.z), r = 5.5 * k;
+    const rare = !!(e.namedRare || (e.enemy && e.enemy.namedRare));   // Enemy, or a combat-target adapter
+    const x = toX(p.x), y = toY(p.z), r = (rare ? 8 : 5.5) * k;
     g.save(); g.translate(x, y);
     g.lineCap = 'round';
-    g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 4.2 * k; saltire(g, r); g.stroke();
-    g.strokeStyle = '#5e1a14'; g.lineWidth = 2 * k; saltire(g, r); g.stroke();
+    g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = (rare ? 5.4 : 4.2) * k; saltire(g, r); g.stroke();
+    g.strokeStyle = rare ? '#8a5a12' : '#5e1a14'; g.lineWidth = (rare ? 2.6 : 2) * k; saltire(g, r); g.stroke();
+    if (rare) {                                   // a named rare is a DESTINATION, not another mob: ringed + named
+      g.beginPath(); g.arc(0, 0, r * 1.5, 0, 7);
+      g.strokeStyle = C.gold; g.lineWidth = 1.6 * k; g.stroke();
+      if (view.zoom >= 2 && e.name) {
+        g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.font = `italic ${Math.round(10.5 * k)}px Georgia,serif`;
+        g.lineWidth = 3 * k; g.strokeStyle = 'rgba(240,228,198,.85)'; g.strokeText(e.name, 0, -r * 2.1);
+        g.fillStyle = 'rgba(96,66,28,.95)'; g.fillText(e.name, 0, -r * 2.1);
+      }
+    }
     g.restore();
   }
 
@@ -337,16 +377,50 @@ export function draw(ctx, cv) {
 
   rose(g, W, k);
   scaleBar(ctx, g, W, k, S);
+  legend(g, W, k);
 }
 
-function discoveredSet(ctx) {
-  const out = new Set();
-  try {
-    const sq = ctx.rpg && ctx.rpg.sideQuests;
-    if (typeof sq === 'function') for (const s of sq()) if (s.done) out.add(s.place);
-    for (const e of (ctx.rpg && ctx.rpg.lore) || []) if (e && e.place) out.add(e.place);
-  } catch (e) { /* the rpg piece may not be up yet */ }
-  return out;
+// A five-row key, bottom-right (rose owns top-right, scale bar bottom-left): what a diamond, an X, a
+// ringed X, the flag and the chevron each mean. Same glyph functions as the live markers so it cannot drift.
+function legend(g, W, k) {
+  const lh = 16 * k, pad = 8 * k, w = 100 * k, h = pad * 2 + 5 * lh;
+  const x = W - w - 14 * k, y = W - h - 14 * k;
+  g.save();
+  g.fillStyle = 'rgba(240,228,198,.80)'; g.fillRect(x, y, w, h);
+  g.strokeStyle = 'rgba(90,68,32,.8)'; g.lineWidth = 1 * k; g.strokeRect(x, y, w, h);
+  g.font = `${Math.round(10 * k)}px Georgia,serif`;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  const gx = x + pad + 6 * k, tx = x + pad + 16 * k;
+  let cy = y + pad + lh / 2;
+  const label = (t) => { g.fillStyle = 'rgba(50,36,14,.95)'; g.fillText(t, tx, cy); cy += lh; };
+  // you — the chevron
+  g.save(); g.translate(gx, cy); chevron(g, 4.6 * k);
+  g.fillStyle = C.blood; g.fill(); g.strokeStyle = 'rgba(40,20,10,.9)'; g.lineWidth = 0.9 * k; g.stroke();
+  g.restore(); label('you');
+  // landmark — the gold diamond
+  g.save(); g.translate(gx, cy); g.rotate(Math.PI / 4);
+  g.fillStyle = C.gold; g.strokeStyle = 'rgba(50,36,14,.85)'; g.lineWidth = 1 * k;
+  g.fillRect(-3.4 * k, -3.4 * k, 6.8 * k, 6.8 * k); g.strokeRect(-3.4 * k, -3.4 * k, 6.8 * k, 6.8 * k);
+  g.restore(); label('landmark');
+  // objective — the waypoint flag (the tracked quest plants it)
+  g.save(); g.translate(gx - 1 * k, cy + 4 * k);
+  g.strokeStyle = 'rgba(40,28,10,.85)'; g.lineWidth = 1.1 * k;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -9 * k); g.stroke();
+  g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6.5 * k, -6.6 * k); g.lineTo(0, -4.2 * k); g.closePath();
+  g.fillStyle = C.goldLt; g.fill(); g.stroke();
+  g.restore(); label('objective');
+  // foe — the saltire
+  g.save(); g.translate(gx, cy); g.lineCap = 'round';
+  g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 3 * k; saltire(g, 3.6 * k); g.stroke();
+  g.strokeStyle = '#5e1a14'; g.lineWidth = 1.4 * k; saltire(g, 3.6 * k); g.stroke();
+  g.restore(); label('foe');
+  // named rare — the same saltire inside a gold ring
+  g.save(); g.translate(gx, cy); g.lineCap = 'round';
+  g.strokeStyle = 'rgba(244,232,204,.85)'; g.lineWidth = 3 * k; saltire(g, 3.6 * k); g.stroke();
+  g.strokeStyle = '#8a5a12'; g.lineWidth = 1.4 * k; saltire(g, 3.6 * k); g.stroke();
+  g.beginPath(); g.arc(0, 0, 5.6 * k, 0, 7); g.strokeStyle = C.gold; g.lineWidth = 1.1 * k; g.stroke();
+  g.restore(); label('named rare');
+  g.restore();
 }
 
 function rose(g, W, k) {

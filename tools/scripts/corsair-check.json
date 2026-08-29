@@ -1,0 +1,17 @@
+[
+ { "wait": 10 },
+ { "eval": "(()=>{const sp=document.getElementById('splash');if(sp)sp.remove();__game.god(true);__game.passive(true);return 'ready'})()" },
+ { "hour": 13 },
+ { "eval": "(()=>{const c=__game.game.world.props.pirateCamps[0];__game.teleport(c.x+24,null,c.z+24);return 'tp'})()" },
+ { "wait": 9 },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];const n=g.enemies.list.filter(e=>Math.hypot(e.position.x-c.x,e.position.z-c.z)<40);const e=n[0];return JSON.stringify({near:n.length,hasProps:!!e?.props,gunVis:e?.props?.gun?.visible??null,tankVis:e?.props?.tankard?.visible??null,sitK:+(e?.sitK??0).toFixed(2),bones:Object.keys(e?.bones??{}).slice(0,14)})})()" },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];const n=g.enemies.list.filter(e=>Math.hypot(e.position.x-c.x,e.position.z-c.z)<40);const e=n[0];const p=e.center||e.position;__game.teleport(p.x+3.2,null,p.z+3.2);return JSON.stringify({tp:[+p.x.toFixed(1),+p.z.toFixed(1)]})})()" },
+ { "wait": 2 },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];const n=g.enemies.list.filter(e=>Math.hypot(e.position.x-c.x,e.position.z-c.z)<40);const e=n[0];const p=g.player.position;const t=e.center||e.position;__game.look(Math.atan2(-(t.x-p.x),-(t.z-p.z)),0.06);return 'face'})()" },
+ { "wait": 2 }, { "shot": "seated-face-3m" },
+ { "eval": "(()=>{const g=__game.game;__game.passive(false);const c=g.world.props.pirateCamps[0];for(const e of g.enemies.list){if(Math.hypot(e.position.x-c.x,e.position.z-c.z)<40){e.alert=true;e.lastSeenT=g.time;}}return 'aggro'})()" },
+ { "wait": 3.5 },
+ { "eval": "(()=>{const g=__game.game;const c=g.world.props.pirateCamps[0];const n=g.enemies.list.filter(e=>Math.hypot(e.position.x-c.x,e.position.z-c.z)<40);const e=n[0];return JSON.stringify({sitK:+(e?.sitK??0).toFixed(2),gunVis:e?.props?.gun?.visible??null,tankVis:e?.props?.tankard?.visible??null})})()" },
+ { "shot": "aggro-gun-3m" },
+ { "burst": { "name": "corsair-fire", "n": 5, "interval": 0.5 } }
+]

@@ -1,0 +1,67 @@
+[
+ { "log": "WAVE-7 VISUAL PASS (CLAUDE.md visual sign-off). Every visible thing this wave touched, at the distance it is actually seen from." },
+ { "wait": 10 },
+ { "eval": "(()=>{const sp=document.getElementById('splash');if(sp)sp.remove();const g=__game.game;return JSON.stringify({running:!!g._running,enemies:g.enemies.list.length})})()" },
+ { "wait": 2 },
+
+ { "log": "A. THE FIRST MINUTE — fresh spawn, the HUD a new player sees, then hold W into the Aetheryte" },
+ { "shot": "a1-spawn-hud" },
+ { "key": "KeyW", "down": true }, { "wait": 12 }, { "shot": "a2-walk-into-aetheryte" }, { "key": "KeyW", "down": false },
+ { "eval": "(()=>{const p=__game.game.player;return JSON.stringify({x:+p.position.x.toFixed(1),z:+p.position.z.toFixed(1)})})()" },
+ { "eval": "__game.god(true)" },
+
+ { "log": "B. THE WAYFINDER — faces the player, marker on the head" },
+ { "eval": "(()=>{const w=__game.game.world.props.wayfinders[0].mesh;const p=w.position;__game.teleport(p.x+5,null,p.z+5);return 'tp'})()" },
+ { "wait": 2 },
+ { "eval": "(()=>{const m=__game.game.world.props.wayfinders[0].mesh;const p=__game.game.player.position;__game.look(Math.atan2(-(m.position.x-p.x),-(m.position.z-p.z)),-0.02);return 'look'})()" },
+ { "wait": 2.5 }, { "shot": "b1-wayfinder" },
+
+ { "log": "C. THE HAMLET — unique villagers, paving without grass through it, the well, roofs" },
+ { "tp": [118, null, -96] }, { "look": [2.2, -0.1] }, { "wait": 2.5 }, { "shot": "c1-village-centre" },
+ { "tp": [126, null, -88] }, { "look": [3.6, -0.05] }, { "wait": 2.5 }, { "shot": "c2-village-people" },
+ { "tp": [108, null, -100] }, { "look": [1.2, -0.02] }, { "wait": 2.5 }, { "shot": "c3-village-wide" },
+
+ { "log": "D. GROUND SCATTER — off-centre so the landmark clearance does not hide it (the trap from the audit)" },
+ { "hour": 13 },
+ { "eval": "__game.goto('infernal', 130)" }, { "wait": 4 }, { "look": [0.4, -0.7] }, { "wait": 2 }, { "shot": "d1-infernal-ground" },
+ { "eval": "__game.goto('void', 130)" }, { "wait": 4 }, { "look": [0.4, -0.7] }, { "wait": 2 }, { "shot": "d2-void-ground" },
+ { "eval": "__game.goto('sunken', 130)" }, { "wait": 4 }, { "look": [0.4, -0.7] }, { "wait": 2 }, { "shot": "d3-sunken-ground" },
+
+ { "log": "E. PLACEHOLDER CLEANUP — celestial isles at standing height, border stones, fen reeds" },
+ { "eval": "__game.goto('celestial', 60)" }, { "wait": 4 }, { "look": [0.9, 0.02] }, { "wait": 2 }, { "shot": "e1-celestial" },
+ { "eval": "__game.goto('shadowfen', 90)" }, { "wait": 4 }, { "look": [0.6, -0.14] }, { "wait": 2 }, { "shot": "e2-fen-reeds" },
+
+ { "log": "F. COMBAT — the thing that has failed every wave. Three regions, enemies aggroed, player not firing." },
+ { "eval": "__game.goto('infernal', 120)" }, { "wait": 3.5 },
+ { "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;['imp','imp','magmagolem','drake'].forEach((t,i)=>{const a=-0.5+i*0.33;g.spawn(t,p.x+Math.sin(a)*11,p.z-Math.cos(a)*11)});for(const e of g.game.enemies.list){e.alert=true;e.lastSeenT=g.game.time;}return 'up'})()" },
+ { "wait": 2.5 }, { "burst": { "name": "f1-infernal-fight", "n": 5, "interval": 0.35 } },
+ { "eval": "(()=>{let n=0;for(const e of __game.game.enemies.list)if(e.alive){e.takeDamage({amount:99999});n++}return n})()" },
+ { "wait": 0.4 }, { "burst": { "name": "f2-infernal-kills", "n": 4, "interval": 0.3 } },
+ { "eval": "__game.clearEnemies()" },
+ { "eval": "__game.goto('void', 120)" }, { "wait": 3.5 },
+ { "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;['riftling','riftling','voidhorror'].forEach((t,i)=>{const a=-0.4+i*0.4;g.spawn(t,p.x+Math.sin(a)*12,p.z-Math.cos(a)*12)});for(const e of g.game.enemies.list){e.alert=true;e.lastSeenT=g.game.time;}return 'up'})()" },
+ { "wait": 3 }, { "burst": { "name": "f3-void-fight", "n": 5, "interval": 0.35 } },
+ { "eval": "__game.clearEnemies()" },
+
+ { "log": "G. PLAYER-SIDE — the viewmodel hands, firing, and the grenade (the newest gate coverage)" },
+ { "tp": [2, null, -2] }, { "look": [0, -0.03] }, { "wait": 2 },
+ { "eval": "__game.give('handcannon', 0)" }, { "wait": 1 }, { "shot": "g1-viewmodel-hip" },
+ { "eval": "(()=>{const g=__game;g.clearEnemies();const p=g.game.player.position;g.spawn('hound',p.x,p.z-12);g.spawn('sentinel',p.x+4,p.z-14);return 'targets'})()" },
+ { "wait": 2 },
+ { "click": 0, "down": true }, { "burst": { "name": "g2-firing", "n": 4, "interval": 0.25 } }, { "click": 0, "down": false },
+ { "eval": "__game.ability('grenade')" }, { "wait": 0.5 }, { "burst": { "name": "g3-grenade", "n": 4, "interval": 0.25 } },
+ { "click": 2, "down": true }, { "wait": 0.8 }, { "shot": "g4-ads" }, { "click": 2, "down": false },
+
+ { "log": "H. PIRATE CAMP — sitting crew, chest, captain" },
+ { "eval": "(()=>{const c=__game.game.world.props.pirateCamps;if(!c||!c.length)return 'none';const t=c[0];__game.teleport(t.x+16,null,t.z+16);return JSON.stringify({n:c.length,x:+t.x.toFixed(0),z:+t.z.toFixed(0)})})()" },
+ { "wait": 3 },
+ { "eval": "(()=>{const c=__game.game.world.props.pirateCamps[0];const p=__game.game.player.position;__game.look(Math.atan2(-(c.x-p.x),-(c.z-p.z)),-0.06);return 'look'})()" },
+ { "wait": 2.5 }, { "shot": "h1-pirate-camp" },
+
+ { "log": "I. DEATH AND RESPAWN" },
+ { "eval": "(()=>{__game.god(false);__game.damagePlayer(99999);return 'died'})()" },
+ { "wait": 1.5 }, { "shot": "i1-death" },
+ { "key": "Space", "down": true }, { "wait": 0.2 }, { "key": "Space", "down": false }, { "wait": 3 }, { "shot": "i2-respawned" },
+ { "eval": "(()=>{const p=__game.game.player;return JSON.stringify({alive:p.alive,hp:Math.round(p.health)})})()" },
+ { "stats": "visual-final" }
+]

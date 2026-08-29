@@ -1,0 +1,8 @@
+[{"wait":31},
+ {"eval":"window.__game.god(true);window.__game.passive(true);'ok'"},
+ {"hour":18},{"wait":2},{"shot":"gate-250-golden"},
+ {"eval":"window.__game.goto('celestial',120);'ok'"},{"wait":3},{"shot":"gate-120-golden"},
+ {"eval":"window.__game.goto('celestial',45);'ok'"},{"wait":3},{"shot":"gate-45-golden"},
+ {"hour":13},{"wait":2},{"shot":"gate-45-noon"},
+ {"eval":"window.__game.goto('celestial',16);'ok'"},{"wait":3},{"shot":"gate-16-noon"},
+ {"hour":22},{"wait":2},{"shot":"gate-16-night"}]

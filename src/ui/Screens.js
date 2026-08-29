@@ -9,6 +9,7 @@ import { CSS as THEME_CSS } from './theme.js';
 import { SCREEN_CSS } from './screencss.js';
 import * as R from './rpgscreens.js';
 import * as MAP from './mapscreen.js';
+import { HINT_KEY } from './HUD.js';
 
 const TABS = [
   ['map', 'The Vale', 'KeyM'],
@@ -51,6 +52,33 @@ export class Screens {
     const r = this._reward; if (!r) return;
     this._reward = null;
     this.game.rpg?.quest?.claim?.(r.id, i);
+  }
+
+  /**
+   * THE QUEST OFFER CARD (user ask 2026-08-27). src/rpg/quest.js raises this on a giver press
+   * instead of instant-accepting: name, the written pitch, objectives and rewards, then Accept
+   * (button / E / Enter) or Decline (button / Esc — and any close IS a decline: nothing changes,
+   * the giver keeps offering). `info` is quest.offerInfo(id)'s plain JSON.
+   */
+  showOffer(info) {
+    if (!info) return;
+    this._offer = info;
+    this.show('offer');
+  }
+
+  _acceptOffer() {
+    const o = this._offer; if (!o) return;
+    this._offer = null;
+    this.game.rpg?.quest?.accept?.(o.id);
+    this.tab = 'quests';
+    this.close();
+  }
+
+  /** The shop panel (src/rpg/shop.js data). QuestMarkers opens this on E at a vendor villager. */
+  showShop(npcId) {
+    if (!this.ctx.rpg?.isVendor?.(npcId)) return;
+    this._shop = npcId;
+    this.show('shop');
   }
 
   // called from RPG.update (i.e. only while the game is unpaused and running)
@@ -117,6 +145,15 @@ export class Screens {
       if (b.getAttribute('data-act') === 'takereward') {   // the one action that is not R.act's — it is quest state, not inventory state
         this._claimReward(+b.getAttribute('data-i'));
         this.tab = 'quests'; this.close(); return;
+      }
+      if (b.getAttribute('data-act') === 'acceptquest') { this._acceptOffer(); return; }
+      if (b.getAttribute('data-act') === 'declinequest') { this._offer = null; this.tab = 'quests'; this.close(); return; }
+      if (b.getAttribute('data-act') === 'buy') {          // shop state, same reasoning as takereward
+        const r = this.game.rpg?.shopBuy?.(this._shop, b.getAttribute('data-id')) || {};
+        this.say(r.ok ? 'bought — ' + (r.name || '') : (r.reason || 'cannot buy that'), r.ok ? 'good' : 'bad');
+        if (r.ok) { try { this.game.audio?.play?.('ui-click', { pitch: 1.35, vol: 0.5, force: true }); } catch (err) {} }
+        this._render();                                    // wallet + shelf changed
+        return;
       }
       const next = R.act(this.ctx, b, (t, kind) => this.say(t, kind));
       if (next === 'skills' || next === 'inv') this.tab = next;
@@ -325,6 +362,8 @@ export class Screens {
     const g = this.game;
     this._build();
     this.tab = tab || this.tab;
+    // retire the HUD tracker's one-time "J — Quest Log" affordance: they found it.
+    if (this.tab === 'quests') { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) {} }
     if (!this.visible) {
       this.visible = true;
       g.paused = true;
@@ -347,6 +386,9 @@ export class Screens {
     // Walking away from the picker still pays out: quest.js grants the first candidate rather than
     // nothing. Losing a quest reward to a stray Esc is the one outcome that is never acceptable.
     if (this._reward) { this._claimReward(-1); if (this.tab === 'reward') this.tab = 'quests'; }
+    // an offer closed any other way is a DECLINE: no change, the giver keeps offering
+    if (this._offer) { this._offer = null; if (this.tab === 'offer') this.tab = 'quests'; }
+    if (this._shop) { this._shop = null; if (this.tab === 'shop') this.tab = 'quests'; }
     this.visible = false;
     cancelAnimationFrame(this._raf);
     document.removeEventListener('keydown', this._keydown, true);
@@ -358,7 +400,10 @@ export class Screens {
   }
 
   _onKey(e) {
-    if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); return; }
+    if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); return; }   // an open offer declines inside close()
+    if (this.tab === 'offer' && (e.code === 'KeyE' || e.code === 'Enter')) {
+      e.preventDefault(); e.stopPropagation(); this._acceptOffer(); return;
+    }
     if (this.tab === 'inv') {
       if (e.code === 'Enter' || e.code === 'KeyE') { e.preventDefault(); e.stopPropagation(); this._equipSelected(); return; }
       if (e.code.startsWith('Arrow')) { e.preventDefault(); e.stopPropagation(); this._navBag(e.code); return; }
@@ -388,11 +433,24 @@ export class Screens {
     const ctx = this.ctx;
     const isMap = this.tab === 'map';
     const isReward = this.tab === 'reward';
-    this._ttl.textContent = isReward ? 'Choose your reward' : (TABS.find(([t]) => t === this.tab)?.[1] ?? '');
+    const isOffer = this.tab === 'offer';
+    const isShop = this.tab === 'shop';
+    const vendor = isShop ? ctx.rpg?.vendorFor?.(this._shop) : null;
+    // the status line is per-tab state: the map re-sets its zoom/waypoint readout below, every
+    // other tab starts blank (it used to leak "ZOOM 3.2x ..." under Inventory and the Quest Log)
+    if (this._prevTab !== this.tab) this.say('');
+    this._ttl.textContent = isReward ? 'Choose your reward'
+      : isOffer ? 'A task is offered'
+      : isShop ? (vendor ? vendor.name : 'The Shop')
+      : (TABS.find(([t]) => t === this.tab)?.[1] ?? '');
     for (const b of this._tabs) b.classList.toggle('on', b.getAttribute('data-tab') === this.tab);
     this._mapbox.style.display = isMap ? '' : 'none';
     this._body.parentElement.style.display = isMap ? 'none' : '';
-    this._hint.textContent = isReward
+    this._hint.textContent = isOffer
+      ? 'E or Enter accepts · Esc declines — nothing is lost by walking away'
+      : isShop
+      ? 'click Buy · glimmer comes off your purse · Esc returns to the fight'
+      : isReward
       ? 'pick the one you want · I compares it against your bag · closing takes the first'
       : isMap
       ? 'drag to pan · wheel to zoom · click to set a waypoint · C centres on you · M or Esc closes'
@@ -410,6 +468,8 @@ export class Screens {
     else if (this.tab === 'skills') R.renderSkills(ctx, this._body);
     else if (this.tab === 'quests') R.renderQuestLog(this.game, ctx, this._body);
     else if (isReward) R.renderRewardPicker(ctx, this._reward, this._body);
+    else if (isOffer) R.renderOfferCard(ctx, this._offer, this._body);
+    else if (isShop) R.renderShop(ctx, this._shop, this._body);
     // a tab switch starts scrolled to the top; an in-place re-render (equip/upgrade/filter clicks)
     // keeps wherever the player was reading
     if (this._prevTab !== this.tab) this._body.scrollTop = 0;

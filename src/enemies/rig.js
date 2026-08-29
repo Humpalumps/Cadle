@@ -20,11 +20,21 @@ export const prim = {
   sphereLo: () => PRIM.sphereLo ??= new THREE.SphereGeometry(1, 8, 6),
   box: () => PRIM.box ??= new RoundedBoxGeometry(1, 1, 1, 2, 0.09),   // beveled: soft edge highlights, no cardboard look
   boxB: () => PRIM.boxB ??= new RoundedBoxGeometry(1, 1, 1, 3, 0.22), // heavy bevel: armor plates / organic chunks that read at close range
+  // THE COST TABLE MATTERS: boxB is 588 tris and sphere is 192, which is why the wave-1 bodies came out at
+  // 6-12k each against a 3.5k crowd budget. These three are the cheap workhorses — a chamfered slab reads
+  // as forged armour at 108, a 4-sided taper reads as a plate/blade/tasset at 16, and a coarse band is a
+  // gold trim ring at 96 instead of the 240 the smooth torus costs.
+  plate: () => PRIM.plate ??= new RoundedBoxGeometry(1, 1, 1, 1, 0.12),          // 108 tris: chamfered armour slab
+  // tapered 4-sided prism, unit box footprint (-0.5..0.5 in x/z, y too). `taper` = bottom width / top width.
+  slab: (taper = 0.7) => PRIM['slab' + taper] ??= new THREE.CylinderGeometry(1, taper, 1, 4, 1).rotateY(Math.PI / 4).scale(0.70711, 1, 0.70711),
+  ring: () => PRIM.ring ??= new THREE.TorusGeometry(1, 0.06, 4, 12),             // 96 tris: trim band / halo
   cyl: () => PRIM.cyl ??= new THREE.CylinderGeometry(1, 1, 1, 8, 1),          // unit cylinder, y -0.5..0.5
   cone: () => PRIM.cone ??= new THREE.ConeGeometry(1, 1, 7, 1),
   octa: () => PRIM.octa ??= new THREE.OctahedronGeometry(1, 0),
   ico: () => PRIM.ico ??= new THREE.IcosahedronGeometry(1, 1),
-  torus: () => PRIM.torus ??= new THREE.TorusGeometry(1, 0.06, 6, 20),
+  // thinner tube than the original 0.06/6x20: at 0.045 the wisp/riftling halo reads as an arc of light
+  // instead of the "hula-hoop rings" the wave-3 void verdict called out — and costs 180 tris, not 240.
+  torus: () => PRIM.torus ??= new THREE.TorusGeometry(1, 0.045, 5, 18),
   hex: () => PRIM.hex ??= new THREE.CylinderGeometry(1, 1, 1, 6, 1),
   // tapered limb segment: top radius 1, bottom radius `taper`, y from 0 down to -1 (so a bone at the top aims -Y along it)
   limb: (taper = 0.7) => PRIM['limb' + taper] ??= new THREE.CylinderGeometry(1, taper, 1, 8, 1).translate(0, -0.5, 0),
@@ -36,6 +46,23 @@ export const prim = {
   // both faces under a FrontSide material. Unit box: x = span, z = chord (+Z leading edge), y = billow.
   // ~72 tris — LESS than the beveled RoundedBox it replaces, and it stops the wing looking like a plank.
   membrane: (lobes = 3) => PRIM['memb' + lobes] ??= makeMembrane(lobes),
+
+  // ---- SMOOTH / CHAMFERED FAMILY (creature triangle budget raised by the user 2026-08-26: ~4k small and
+  // ethereal, ~10k standard creature). The cost table above was written against a 3.5k crowd budget and the
+  // whole bestiary is now sitting at a fifth of its ceiling, so the cheap prims above are no longer the
+  // right default for anything ORGANIC. What the extra triangles actually buy, per docs/CREATURE-PIPELINE.md:
+  // curvature (an 8-segment limb facets visibly at 3 m) and chamfered edges (a razor 90 deg edge is the
+  // loudest greybox tell there is). Nothing here changes a silhouette — same shapes, no hard edges.
+  sphereMid: () => PRIM.sphereMid ??= new THREE.SphereGeometry(1, 16, 12),                                  // 352 tris
+  coneS: (seg = 14) => PRIM['coneS' + seg] ??= new THREE.ConeGeometry(1, 1, seg, 1),                        // 28 tris
+  limbS: (taper = 0.7, seg = 14) => PRIM[`limbS${taper}_${seg}`] ??= new THREE.CylinderGeometry(1, taper, 1, seg, 1).translate(0, -0.5, 0),
+  // `slab` generalised: an n-gon prism with the same unit footprint (flat-to-flat = 1 on x and z), so it is a
+  // drop-in for slab(taper) at any side count. sides=8 IS slab with all four of its 90 deg edges chamfered
+  // away, for 16 more triangles — which is the single highest-value triangle in the whole table.
+  prism: (taper = 0.6, sides = 8) => PRIM[`prism${taper}_${sides}`] ??= (() => {
+    const k = 1 / (2 * Math.cos(Math.PI / sides));
+    return new THREE.CylinderGeometry(1, taper, 1, sides, 1).rotateY(Math.PI / sides).scale(k, 1, k);
+  })(),
 };
 function makeMembrane(lobes) {
   const NX = 6, NZ = 3, pos = [], uv = [], idx = [];
@@ -122,10 +149,18 @@ export class Rig {
   }
 }
 
-/** Clone the template bone hierarchy for an instance; returns { root, bones (flat, template order), byName }. */
+/**
+ * Clone the template bone hierarchy for an instance; returns { root, bones (flat, template order), byName }.
+ * ALIASES: a bone may carry `userData.alias` — a list of extra names it also answers to. That is how a rigged
+ * GLB body (src/enemies/glbBody.js) keeps the procedural vocabulary working: Tripo's joints are renamed to
+ * 'spine0'/'neck2'/'L1R_3', and the semantic names the rest of the game looks up (def.weakPoints' 'head' /
+ * 'core' / 'torso', Enemy._fBody/_fHead, _muzzle) ride along as aliases on whichever joint actually is that
+ * feature. A real bone NAME always wins (`??=`) so an alias can never shadow a procedural body's own bone.
+ */
 export function cloneBones(template) {
   const root = template.clone(true); const bones = []; const byName = {};
   root.traverse((b) => { if (b.isBone) { bones[b.userData.index] = b; byName[b.name] = b; } });
+  root.traverse((b) => { if (b.isBone && b.userData.alias) for (const a of b.userData.alias) byName[a] ??= b; });
   return { root, bones, byName };
 }
 

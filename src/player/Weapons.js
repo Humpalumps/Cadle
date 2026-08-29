@@ -82,7 +82,7 @@ export class Weapons {
     this._swapSt = { phase: 0, t: 0, to: 0 }; this._rel = { on: false, t: 0, dur: 1 };
     this._cd = 0; this._queue = 0; this._qT = 0; this._qInt = 0; this._charge = 0; this._bloom = 0; this._trigPrev = false; this._emptyT = 0;
     this._gestSt = null;
-    this._lastFire = -9; this._flashT = 0; this._lastLightT = -9; this._bobPhase = 0; this._bobAmt = 0; this._sprintW = 0; this._cylAngle = 0; this._cylTarget = 0;
+    this._lastFire = -9; this._flashT = 0; this._lastLightT = -9; this._bobPhase = 0; this._bobAmt = 0; this._sprintW = 0; this._cylAngle = 0; this._cylTarget = 0; this._heat = 0;
     this._lag = new THREE.Vector2(); this._adsPressT = 0; this._adsToggled = false; this._chargeSound = null;
     this._fwd = new THREE.Vector3(); this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._dir = new THREE.Vector3();
     this._pos = new THREE.Vector3(); this._rot = new THREE.Vector3(); this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3(); this._q = new THREE.Quaternion();
@@ -102,7 +102,7 @@ export class Weapons {
     this.flashLight = new THREE.PointLight(0xffffff, 0, 1.2, 2);
     this.scene.environment = this._makeEnv(renderer);   // PMREM bake
     await new Promise((r) => requestAnimationFrame(r));
-    this.mats = makeMaterials();
+    this.mats = makeMaterials(this.game.assets);   // glove_leather for hands/sleeves/grip wraps (null-safe fallback inside)
     await new Promise((r) => requestAnimationFrame(r));
     this.rig = new THREE.Group(); this.scene.add(this.rig);
     this.flash = makeFlash(this.mats);
@@ -190,7 +190,7 @@ export class Weapons {
     const fm = this.mats.flash[w.element] || this.mats.flash.kinetic;
     for (const p of this.flash.userData.petals) p.material = fm.petal; this.flash.userData.star.material = fm.star;
     this.flashLight.color.setHex(ELEMENT_COLORS[w.element] || 0xffffff);
-    this._cd = 0.1; this._queue = 0; this._charge = 0; this._bloom = 0; this._flashT = 0; this._rel.on = false; w.reloading = false;
+    this._cd = 0.1; this._queue = 0; this._charge = 0; this._bloom = 0; this._flashT = 0; this._heat = 0; this._rel.on = false; w.reloading = false;
     if (prev && prev !== w) prev.reloading = false;
     if (!silent || prev !== w) this.game.events.emit('weapon:swap', { weapon: w });
     if (!silent) this.game.audio?.play?.('swap');
@@ -356,6 +356,10 @@ export class Weapons {
     view.kick?.(k.pitch * (0.85 + Math.random() * 0.3) * adsMul, yaw * adsMul); view.shake?.(d.shake * (this.ads ? 0.7 : 1), 0.12);
     this._rec.z.v += k.vz * adsMul; this._rec.rx.v += k.vx * adsMul; this._rec.roll.v += (Math.random() - 0.5) * k.roll; this._rec.yaw.v += (Math.random() - 0.5) * k.yawV;
     for (const s of [this._rec.z, this._rec.rx, this._rec.roll, this._rec.yaw]) { s.k = k.k; s.c = k.c; }
+    // sustained-fire heat: per-shot springs at 600 rpm alias into a blur — heat is the ACCUMULATING part of the
+    // kick (gun pushed back, muzzle riding up, hands fighting it) that any single frame of a burst shows. Fast
+    // guns build it per shot; slow guns get most of it from the springs so only a nudge here.
+    this._heat = Math.min(1, this._heat + (d.rpm >= 300 ? 0.16 : 0.45));
     // muzzle flash (viewmodel, 1-2 frames) + world vfx + audio + events
     this._flashT = 0.03; this._fireAnimT = 0; this._cylTarget += Math.PI / 3;
     if (w.model.port && (d.pellets ? true : d.fireMode !== 'charge')) this._eject(w.model.port);
@@ -425,6 +429,15 @@ export class Weapons {
     // recoil springs
     const R = this._rec; R.z.update(dt); R.rx.update(dt); R.roll.update(dt); R.yaw.update(dt);
     pos.z += Math.min(0.12, R.z.x); rot.x += R.rx.x; rot.z += R.roll.x; rot.y += R.yaw.x;
+    // sustained-fire heat: cumulative push-back + muzzle rise + hand tremor (see _shoot). Decays in ~0.4 s of
+    // silence — the "settle" after a burst is as much of the feel as the climb. ADS damps it (braced) but never
+    // hides it: a Destiny auto visibly fights you in the sights.
+    this._heat *= Math.exp(-dt * 2.6);
+    const ht = this._heat * (1 - 0.45 * a);
+    if (ht > 0.003) {
+      pos.z += 0.016 * ht; rot.x += 0.032 * ht;
+      pos.x += (Math.random() - 0.5) * 0.0022 * ht; pos.y += (Math.random() - 0.5) * 0.0018 * ht; rot.z += (Math.random() - 0.5) * 0.008 * ht;
+    }
     // landing dip + airborne lag (gun floats up when falling, drops on jump) + slide cant
     this._land.update(dt); pos.y += this._land.x; rot.x += this._land.x * 1.2;
     const airT = c.grounded ? 0 : THREE.MathUtils.clamp(-(c.velocity?.y || 0) * 0.003, -0.02, 0.02);

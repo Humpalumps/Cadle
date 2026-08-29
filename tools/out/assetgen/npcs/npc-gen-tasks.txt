@@ -1,0 +1,18 @@
+herbwife-b 8d053ad9-46f3-4bd4-97d9-8841030335bb
+merchant 5b97158f-f410-4d1e-82f2-4d8488f3e3c4
+mason f37499ec-789b-40b2-8f63-4ef51b5532ab
+raider 19b61815-b390-4e5c-8653-79bedb7da8b1
+captain 577fb548-2a85-43b5-9cb3-bc4908c30509
+mason 4aec3215-edd3-415b-a9bb-16af12efa310 (regen)
+mason 4aec3215-edd3-415b-a9bb-16af12efa310 (regen)
+herbwife-b c01e7fcb-8c83-4e6d-9448-741235be01a4 (regen)
+herbwife-b 7387c857-6296-4d9f-b560-8fe7ad4e391c (regen)
+herbwife-a 85693d19-a234-4f73-84dc-da7cd175ae98 (regen)
+fisherman 5d41c949-5d54-48af-b3f7-d8c7048b85be
+farmwoman b03f4dc8-1504-4e9a-a639-653f558221f8
+guard 065c42f1-aeb1-4845-b4a5-78a0c24f5a62
+scholar 27d912d0-09e3-4b3a-9b6d-61a2a4fe9874
+farmwoman 2157d2c5-5fa0-40f6-aa4a-590acbd1f885 (regen)
+farmwoman-b 530d963b-e302-437b-afb5-5b3a6f387e88 (regen)
+farmwoman-c 9add3d89-548f-4f37-801c-20b3fc1d7a57 (regen)
+farmwoman-c 9add3d89-548f-4f37-801c-20b3fc1d7a57 (regen, slit-skirt variant, ships as farmwoman)

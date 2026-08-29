@@ -73,7 +73,18 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 
 /* directional damage arcs */
 #dmgdir { position: absolute; left: 50%; top: 50%; }
-#dmgdir .arc { position: absolute; left: -80px; top: -80px; width: 160px; height: 160px; border-radius: 50%; border: 5px solid transparent; border-top-color: rgba(255,52,36,0.9); opacity: 0; will-change: transform, opacity; filter: drop-shadow(0 0 6px rgba(255,40,20,0.6)); }
+/* A 160 px ring around the crosshair was a tick you could miss — the wave-6 coherence walk lost 9 HP to
+   a wisp and never found it. This is a real screen-edge wedge now (44vmin, the Destiny/FF14 read), drawn
+   as a tapered conic sector so what you notice is the DIRECTION, not a decorative circle. Eight of them
+   animate independently, so three attackers read as three wedges.
+   The blob decree applies to the HUD too: the hot end is a saturated ember, never a white core, and the
+   mask hollows out everything inside 78% of the radius so the world in front of you is never washed. */
+#dmgdir .arc { position: absolute; left: -33vmin; top: -33vmin; width: 66vmin; height: 66vmin; border-radius: 50%;
+  opacity: 0; will-change: transform, opacity;
+  background: conic-gradient(from -24deg, rgba(255,108,54,0) 0deg, rgba(255,96,44,0.62) 10deg, rgba(255,72,30,0.92) 24deg, rgba(255,96,44,0.62) 38deg, rgba(255,108,54,0) 48deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 70%, #000 86%, #000 97%, transparent 100%);
+          mask: radial-gradient(closest-side, transparent 70%, #000 86%, #000 97%, transparent 100%);
+  filter: drop-shadow(0 0 12px rgba(120,16,4,0.6)); }
 
 /* sniper scope */
 #scope { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.08s; }
@@ -119,6 +130,12 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #res::before { content: '·'; margin-right: 8px; color: var(--gold-dim); }
 #rline { position: relative; height: 3px; width: 176px; margin: 3px 0 6px auto; background: rgba(216,189,122,0.18); border-radius: var(--r-sm); }
 #rline i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--aether); box-shadow: 0 0 6px var(--aether-glow); border-radius: var(--r-sm); will-change: transform; }
+/* glimmer wallet — small, rides the ammo cluster (src/rpg glimmer economy) */
+#glim { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; margin-top: 4px;
+  font: 500 13.5px var(--serif); letter-spacing: 0.08em; color: var(--gold-hi);
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+#glim svg { align-self: center; filter: drop-shadow(0 0 3px rgba(211,165,72,0.55)); }
+#glim u { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-dim); text-decoration: none; }
 
 /* ---------- abilities (bottom-left) ---------- */
 #abil { position: absolute; left: 30px; bottom: 30px; }
@@ -147,7 +164,10 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #dnums b.crit { font-size: 24px; font-weight: 800; }
 
 /* ---------- target nameplate ---------- */
-#tgt { position: absolute; left: 50%; top: 15.5%; transform: translateX(-50%); width: 300px; opacity: 0; transition: opacity 0.12s; text-align: center; }
+/* World-tracked (HUD.js writes the transform every frame from the creature's head bbox, exactly like
+   #guide). It used to be pinned at top:15.5%, i.e. ~350 px above whatever you were aiming at, floating
+   in the sky and — during the sticky hold — over a bystander. Do not put left/top back. */
+#tgt { position: absolute; left: 0; top: 0; width: 196px; opacity: 0; transition: opacity 0.12s; text-align: center; }
 #tgt .tname { font: 500 16px var(--serif); font-variant: small-caps; letter-spacing: 0.12em; color: var(--ivory); text-shadow: 0 1px 4px rgba(0,0,0,0.95); margin-bottom: 4px; }
 #tgt .tlvl { color: var(--gold-hi); font-size: 13px; margin-left: 8px; }
 #tgt .bar { height: 6px; width: 100%; }
@@ -170,7 +190,13 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #guide .gfill { background: linear-gradient(180deg, #c9ffd2, #5fd97e 55%, #2f8c47); box-shadow: 0 0 8px rgba(95,217,126,0.55); }
 
 /* ---------- notify / toasts / prompt / pickups / quest ---------- */
-#notify { position: absolute; left: 0; right: 0; top: 27%; text-align: center; opacity: 0; pointer-events: none; }
+/* soft dark band behind the card: the text is DOM (always on top), but gold-on-bright-aetheryte
+   washed out to unreadable (feel audit) — the scrim guarantees contrast over any world content */
+#notify { position: absolute; left: 0; right: 0; top: 25%; padding: 40px 0 44px; text-align: center; opacity: 0; pointer-events: none;
+  /* radii sized so `transparent 80%` lands INSIDE the box on both axes (0.8 x 58% of box height
+     < the half-height where the box clips) — a taller radius died on the box edge instead, which
+     rendered as a hard-edged grey stripe across the world */
+  background: radial-gradient(ellipse 42% 58% at 50% 50%, rgba(5,7,16,0.60), rgba(5,7,16,0.32) 55%, transparent 80%); }
 #notify h2 { margin: 0; font: 400 44px var(--serif); font-variant: small-caps; letter-spacing: 0.3em; color: var(--gold-hi); text-shadow: 0 0 24px rgba(216,189,122,0.55), 0 2px 6px rgba(0,0,0,0.9); }
 #notify p { margin: 6px 0 0; font: 400 16px var(--serif); font-variant: small-caps; letter-spacing: 0.28em; color: var(--aether); text-shadow: 0 0 12px var(--aether-glow), 0 1px 4px #000; }
 /* third line of the zone card: what this place DOES to you (low gravity, lava, swimming). Sits under the
@@ -207,6 +233,14 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #quest .qo-line.done { opacity: 0.6; }
 #quest .qo-line.done .qmark { color: var(--aether); }
 #quest .qo-line.done .qtx { text-decoration: line-through; color: rgba(220,228,205,0.7); }
+/* one-time "there is a quest log, it is on J" — retired the first time the log is opened (HUD.setQuest
+   reads the flag Screens.show writes). Quiet gold on parchment, same language as the rest of the tracker. */
+#quest .qhint { margin-top: 7px; font: 400 10.5px var(--serif); font-variant: small-caps; letter-spacing: 0.14em;
+  color: rgba(226,196,132,0.72); text-shadow: 0 1px 3px #000; animation: qhintbreathe 2.6s ease-in-out infinite; }
+#quest .qhint kbd { display: inline-block; min-width: 13px; padding: 0 4px; border: 1px solid rgba(216,189,122,0.5);
+  border-radius: 3px; background: rgba(24,20,12,0.55); font: 600 10px var(--serif); font-variant: normal;
+  letter-spacing: 0; color: var(--gold-hi); }
+@keyframes qhintbreathe { 0%, 100% { opacity: 0.62; } 50% { opacity: 1; } }
 #quest .qothers { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--rule-faint); font: 400 10.5px var(--serif); letter-spacing: 0.03em; color: rgba(210,200,175,0.58); text-shadow: 0 1px 3px #000; }
 
 /* ---------- minimap (top-right) ---------- */
@@ -216,8 +250,10 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 #minimap .rim { position: absolute; inset: -5px; border-radius: 50%; border: 1px solid var(--rule-lit);
   box-shadow: 0 0 14px rgba(216,189,122,0.22), inset 0 0 10px rgba(0,0,0,0.55); }
 #minimap .rim::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid var(--rule); }
+/* N marker: dark-ink-on-parchment died the moment the sheet started carrying region colour — it now sits
+   over forest green, void near-black and infernal ash as often as over tan. Ivory + ink shadow works on all ten. */
 #minimap .np { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); font: 600 10px var(--serif);
-  letter-spacing: 0.16em; color: #6b5424; text-shadow: 0 1px 0 rgba(255,244,214,0.5); }
+  letter-spacing: 0.16em; color: rgba(248,238,212,0.94); text-shadow: 0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.7); }
 #minimap .zone { position: absolute; left: 50%; top: -22px; transform: translateX(-50%); white-space: nowrap;
   font: 500 13px var(--serif); font-variant: small-caps; letter-spacing: 0.2em; color: var(--gold-hi); text-shadow: 0 1px 4px #000, 0 0 10px rgba(0,0,0,0.8); }
 #minimap .wpd { position: absolute; left: 50%; top: 172px; transform: translateX(-50%); white-space: nowrap;
@@ -539,6 +575,50 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
   backdrop-filter: blur(4px); animation: ctaIn .6s var(--spring), lowpulse 2.4s ease-in-out infinite 1s; }
 @keyframes ctaIn { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
 #start .controls { max-width: 720px; }
+
+/* ==========================================================================================
+   HUD v4 — the Destiny legibility pass (wave-3 HUD audit at 1080p).
+   ========================================================================================== */
+
+/* ---- damage numbers: they were 17 px of white text with a blur shadow, which is invisible over
+   snow, marble and the celestial plain — exactly where the highest-level fights are. A real
+   outline (paint-order: stroke fill, so the stroke sits BEHIND the glyph instead of eating it)
+   plus a size bump makes them read against any ground at any exposure. ---- */
+#dnums b { font: 800 20px 'Segoe UI', system-ui, sans-serif; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;   /* the `font:` shorthand above resets it — a merged number that
+                                           grows while it floats must not re-space its own digits */
+  -webkit-text-stroke: 3.2px rgba(6,4,2,.80); paint-order: stroke fill;
+  text-shadow: 0 2px 5px rgba(0,0,0,.7); }
+#dnums b.crit { font-size: 30px; font-weight: 900; -webkit-text-stroke: 3.8px rgba(30,10,0,.85); }
+
+/* ---- reticle: a 3 px pure-white dot with no keyline vanishes on the tundra snowfield and the
+   celestial marble. A hairline of ink around it costs nothing and holds on every backdrop. ---- */
+#ch .dot { width: 4px; height: 4px; margin: -2px; box-shadow: 0 0 0 1px rgba(4,4,8,.8); }
+#ch .tk { box-shadow: 0 0 0 1px rgba(4,4,8,.55); }
+/* the hand-cannon/shotgun ring is the ONLY spread feedback those two archetypes have (their ticks are
+   hidden) and it was a 1.4 px hairline at 85% — it disappeared into foliage. Thicker, opaque, keylined. */
+#ch .ring { border-width: 1.8px; opacity: 1; box-shadow: 0 0 0 1px rgba(4,4,8,.45), inset 0 0 0 1px rgba(4,4,8,.35); }
+/* reserve ammo was 0.72 alpha with no shadow — the one number that dropped out over a bright sky */
+#res { color: rgba(244,240,228,.86); text-shadow: 0 1px 4px rgba(0,0,0,.95); }
+
+/* ---- NAMED RARE (enemy.namedRare): a wandering elite gets the gold treatment, never the boss bar.
+   Same nameplate element, three changes — a "Rare" tag, gold name, and a gold-keylined bar. ---- */
+#tgt .tname { white-space: nowrap; }
+/* the tag + a full rare name + "Lv nn" need more room than the ordinary plate. Both shrank when the
+   plate stopped being a fixed banner at the top of the screen and became a nameplate ON the creature:
+   a 300 px bar floating over a 30 px hound at range read as a HUD element that had come loose. */
+#tgt.rare { width: 330px; }
+#tgt .trare { display: none; }
+#tgt.rare .trare { display: inline; margin-right: 9px; font: 600 11px var(--serif); font-style: normal;
+  font-variant: small-caps; letter-spacing: .18em; color: #f6d98a; text-shadow: 0 0 10px rgba(216,160,60,.6), 0 1px 3px #000; }
+#tgt.rare .tn { color: #ffe6ad; text-shadow: 0 0 14px rgba(226,168,64,.55), 0 1px 4px rgba(0,0,0,.95); }
+#tgt.rare .bar { height: 8px; border-color: rgba(233,196,106,.85); box-shadow: 0 0 14px rgba(216,160,60,.28), inset 0 2px 5px rgba(0,0,0,.85); }
+#tgt.rare .tfill { background: linear-gradient(180deg, #ffc98a, #d2482e 55%, #8e2b16); }
+
+/* rare kill banner: the zone card, re-keyed warm gold (its subtitle is normally aether blue) */
+#notify.rare h2 { color: #ffe0a2; text-shadow: 0 0 26px rgba(226,168,64,.6), 0 2px 6px rgba(0,0,0,.9); }
+#notify.rare p { color: #e9c46a; text-shadow: 0 0 12px rgba(216,160,60,.5), 0 1px 4px #000; }
+#notify.rare .fl { background: linear-gradient(90deg, transparent, #e9c46a, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
   #ui * { animation-duration: .01ms !important; transition-duration: .06s !important; }

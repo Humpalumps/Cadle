@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tripo": {
+      "command": "npx",
+      "args": ["-y", "tripo-ai-mcp-server"]
+    }
+  }
+}

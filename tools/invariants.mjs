@@ -294,5 +294,92 @@ for (const f of srcFiles) {
   }
 }
 
+// ------------------------------------------------------------------ (n) NO GLB EVER REACHES THE RUNTIME
+// User directive 2026-08-26: assets come in through concept -> Tripo GLB -> the img2threejs skill ->
+// PROCEDURAL Three.js code, and the GLB is a structural reference that never ships. The project already
+// paid for the lesson once: guy.glb was a single rigid mesh with skinCount 0, so while it was on screen
+// the intro's IK arms, breathing idle and suck-in reach were all dead code (HANDOVER 6).
+// Provenance COMMENTS naming a .glb are wanted — every converted body should say what it was built from —
+// so this rule only looks at code, and only for the two things that actually load one.
+{
+  const stripped = (src) => {
+    let out = '', block = false;
+    for (const raw of src.split('\n')) {
+      let line = raw;
+      if (block) { const e = line.indexOf('*/'); if (e < 0) continue; line = line.slice(e + 2); block = false; }
+      for (;;) {                                  // a line can open a block comment after real code
+        const s = line.indexOf('/*');
+        if (s < 0) break;
+        const e = line.indexOf('*/', s + 2);
+        if (e < 0) { line = line.slice(0, s); block = true; break; }
+        line = line.slice(0, s) + line.slice(e + 2);
+      }
+      const c = line.indexOf('//');
+      out += (c >= 0 ? line.slice(0, c) : line) + '\n';
+    }
+    return out;
+  };
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? walk(join(dir, d.name)) : (d.name.endsWith('.js') ? [join(dir, d.name)] : []));
+  // AMENDED 2026-08-26 (user call): RIGGED CREATURE GLBs ARE ALLOWED, everything else is still banned.
+  // Why the rule changed: the original ban was written after guy.glb shipped with skinCount 0 — one rigid
+  // mesh, so the intro's IK arms and breathing idle were dead code. That is an ANIMATION failure, not a
+  // performance one, and it does not apply to a properly rigged asset. Measured this session: Tripo's
+  // rig (v2.5-20260210 — the DEFAULT v1.0 fails with error 1004) returns the hound as a 101-joint
+  // quadruped Armature with full detail and zero warnings, and once a vertex buffer is on the GPU it
+  // costs exactly what procedurally-generated geometry costs. Procedural stays the rule for
+  // ARCHITECTURE, where parametric mouldings and exact repetition genuinely win.
+  // The narrow allowance: creature assets under /assets/creatures/, loaded through game.assets like
+  // everything else. Anything else naming a .glb in code is still the bug this rule was written for.
+  const CREATURE_GLB = /assets\/creatures\/[\w-]+\.glb/;
+  for (const f of walk('src')) {
+    const code = stripped(read(f));
+    const isAssets = f.replace(/\\/g, '/').endsWith('src/core/Assets.js');
+    const isEnemies = f.replace(/\\/g, '/').includes('src/enemies/');
+    if (/GLTFLoader|GLTF_?Loader/.test(code) && !isAssets) fail(`${f} imports/uses GLTFLoader - only src/core/Assets.js may load models, and only rigged creature GLBs under /assets/creatures/ (docs/CREATURE-PIPELINE.md).`);
+    for (const m of code.matchAll(/['"`]([^'"`]*\.glb)\b/g)) {
+      const url = m[1];
+      if (CREATURE_GLB.test(url) && (isAssets || isEnemies)) continue;   // the allowance
+      fail(`${f} names "${url}" in CODE (comments are fine). Only rigged creature GLBs under /assets/creatures/, referenced from Assets.js or src/enemies/, may exist at runtime - architecture stays procedural (docs/CREATURE-PIPELINE.md).`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- (o) combat-VFX min-channel discipline
+// The wave-5 regression: fighting a region's own bestiary blew the screen to near-white in 8 of 10
+// regions while the gate passed. The mechanical rule that closed it: a hue survives ACES iff its
+// SMALLEST channel stays under clip — so every author of small bright combat elements now carries a
+// min-channel cap, and the two screen-filling paths carry a near-camera coverage fade. These greps pin
+// the guards, not the tuning; tools/combatcheck.py (gate 1b) is the behavioural check.
+{
+  const brush = read(join('src', 'vfx', 'Brush.js'));
+  if (brush) {
+    const cap = brush.match(/BRUSH_MINCH_CAP\s*=\s*([0-9.]+)/);
+    if (!cap) fail('Brush.js lost BRUSH_MINCH_CAP — the structural min-channel cap every pool particle passes through; without it white cores at hdr>=3 clip to cream through ACES (wave-5 combat wash)');
+    else if (parseFloat(cap[1]) > 1.0) fail(`BRUSH_MINCH_CAP ${cap[1]} > 1.0 — above clip the cap no longer prevents whites from blooming`);
+  }
+  const parts = read(join('src', 'vfx', 'Particles.js'));
+  if (parts && !/smoothstep\(\s*1\.2\s*,\s*2\.4\s*,\s*size\s*\/\s*max\(\s*depth/.test(parts))
+    fail('Particles.js lost the near-camera coverage fade (env *= 1.0 - smoothstep(1.2, 2.4, size/max(depth,...))) — an enemy bolt detonating at the lens fills the frame with additive quads again (infernal "near-solid white in 0.5 s")');
+  const combat = read(join('src', 'combat', 'Combat.js'));
+  if (combat) {
+    if (/coreColor[\s\S]{0,120}?\.lerp\(\s*WHITE/.test(combat))
+      fail('Combat.js bolt coreColor lerps toward WHITE again — that plus the HDR multiplier is the exact cream bolt/pillar the wave-5 vale/shadowfen critics sampled (rgb ~225,238,233); keep the min-channel discipline instead');
+    if (!/min\(p\.coreColor\.r,\s*p\.coreColor\.g,\s*p\.coreColor\.b\)/.test(combat))
+      fail('Combat.js bolt coreColor lost its min-channel cap — the dominant channel may run hot, the smallest must stay under clip');
+    if (!/vFade\s*=\s*1\.0\s*-\s*smoothstep\(\s*1\.2\s*,\s*2\.4\s*,\s*aSize/.test(combat))
+      fail('Combat.js HALO_VERT lost its near-camera coverage fade (vFade) — stacked volley halos at the lens were the celestial 41k-px pale disc');
+  }
+  const mats = read(join('src', 'enemies', 'materials.js'));
+  if (mats && !/uGLB\s*>\s*0\.5/.test(mats))
+    fail('materials.js lost the uGLB body ceiling — rigged GLBs ship aGlow 0 on every vertex, so without it all 13 GLB creatures bypass BOTH aether caps (luminance 6.0 / channel 8.0 = inert)');
+  const lit = read(join('src', 'render', 'Lighting.js'));
+  if (lit && !/AETHER_SKIN/.test(lit))
+    fail('Lighting.js lost the AETHER_SKIN opt-out on METAL_ENV — the 2.5-3x env-specular gold boost lands on skinned creatures with ORM metalness 1 again (wave-5 "stickers" + wash amplifier)');
+  const pfx = read(join('src', 'render', 'PostFX.js'));
+  if (pfx && !/aeKnee/.test(pfx))
+    fail('PostFX.js lost the aeKnee highlight rolloff on auto-exposure — the AE boost (up to 1.3x) multiplies hot emissives before ACES in veil-darkened regions (void/infernal), re-arming the wash');
+}
+
 console.log(failed ? '[invariants] ==== FAILED ====' : '[invariants] all OK');
 process.exit(failed ? 1 : 0);

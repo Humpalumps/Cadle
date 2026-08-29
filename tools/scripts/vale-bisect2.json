@@ -1,0 +1,20 @@
+[
+ { "wait": 6.0 },
+ { "eval": "__game.god(true)" },
+ { "eval": "(()=>{ for (const el of document.body.children) if (el.tagName !== 'CANVAS') el.style.visibility = 'hidden'; return 'hud hidden' })()" },
+ { "eval": "(()=>{ __game.game.player.weapons.setHidden(true); return 'vm hidden' })()" },
+ { "hour": 13 },
+ { "tp": [2, null, -2] },
+ { "look": [0, -0.05] },
+ { "wait": 2.0 },
+ { "eval": "(()=>{window.__bolt=()=>{const g=__game.game,p=g.player.position;const o=p.clone();o.x=p.x-7;o.z=p.z-10;o.y=g.terrain.heightAt(o.x,o.z)+1.3;const d=p.clone();d.set(1,0,0);g.combat.projectile({origin:o,dir:d,speed:7,damage:0,element:'arc',team:'enemy',owner:null,radius:0.2,life:4,source:'wisp',visual:{color:0x7cffd8,size:0.22}});return 'bolt'};return __bolt()})()" },
+ { "burst": { "name": "b0-base", "n": 8, "interval": 0.2 } },
+ { "eval": "(()=>{__game.game.vfx.add.material.visible=false;return __bolt()+' add OFF'})()" },
+ { "burst": { "name": "b1-noadd", "n": 8, "interval": 0.2 } },
+ { "eval": "(()=>{const v=__game.game.vfx;v.add.material.visible=true;__game.game.combat.glowMesh.material.visible=false;return __bolt()+' halo OFF'})()" },
+ { "burst": { "name": "b2-noglow", "n": 8, "interval": 0.2 } },
+ { "eval": "(()=>{const c=__game.game.combat;c.glowMesh.material.visible=true;c.coreMesh.material.visible=false;return __bolt()+' core OFF'})()" },
+ { "burst": { "name": "b3-nocore", "n": 8, "interval": 0.2 } },
+ { "eval": "(()=>{const c=__game.game.combat;c.coreMesh.material.visible=true;return __bolt()+' all ON again'})()" },
+ { "burst": { "name": "b5-base2", "n": 8, "interval": 0.2 } }
+]

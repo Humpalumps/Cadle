@@ -1,0 +1,38 @@
+herbwife-b|idle 6cd7c019-5a3a-4612-8024-bbb2d40143b3
+herbwife-b|walk 3687f6a5-05c9-4809-b4ee-793f99ade31d
+merchant|idle 7981ced2-758c-4fab-b3f5-fccc69da2b91
+merchant|walk 63f284db-f3b9-43aa-9b37-d0a29b479475
+mason|idle aa1fdada-b7f8-4096-b8b6-7a61fb6e1854
+mason|walk af5dad6a-0fe9-4a55-865f-c7b951861996
+raider|idle 0482fad6-3cb9-4c9e-909d-35dda10bd036
+raider|walk 18425a4d-1d45-432c-9696-6d28e62b66a0
+captain|idle 96cc006f-729b-44b1-a16e-60e208999c3d
+captain|walk 014dd9d0-41fe-4adb-9a6d-7d5c29db09f3
+mason|idle c84c8d7a-2a7a-47e1-8d14-62643c2102c8 (regen)
+mason|walk 83a426f2-da5b-49a0-8d18-753fe2478052 (regen)
+mason|walk a50e90b9-9f50-4769-9170-8cb8d273ccba (regen)
+mason|idle dbf8b6a6-5b72-46fe-9ac4-130f9db0a1da (regen)
+herbwife-a|walk 179c3a79-5375-4dec-a918-fa5deb8f1176 (regen)
+herbwife-a|idle f4e7b65c-8ebd-448e-bba8-9926fdb83e57 (regen)
+herbwife-b|idle a2754fe6-1124-4b61-84dd-f8c842a4ee87
+herbwife-b|walk 2bde694b-ad48-439a-b006-fcc81c585de5
+merchant|idle 240c6393-a04c-4b8e-8630-e77b1ec26f39
+merchant|walk 58bb9101-1bf9-4ed8-b35f-3827603dda91
+mason|idle 4ddf0934-6d88-4eed-a68e-832d7db12967
+mason|walk 98a60e21-09da-4ebc-a620-1be416c0509a
+raider|idle 2ec145f5-38f9-49a7-804f-9417482bfe2a
+raider|walk 243ad125-4bd8-40c2-a767-96fc2b7bebeb
+captain|idle fab75723-df44-45c0-8dc2-5c4cb4d5dcbe
+captain|walk 96722c5a-a962-4a31-bc1e-c91ac2884173
+herbwife-a|idle d9afb3ab-8e0d-4099-be60-bfa191ab0154
+herbwife-a|walk d30976ec-5c94-4936-8aca-122c6b2e4f6f
+fisherman|idle 6e3abd2b-f168-4d7d-8f36-0a0631aee86c
+fisherman|walk 13415a68-71ff-4fcf-96d8-fe4fb5f1ab3c
+farmwoman|idle 15bebd72-643f-4513-a703-50b913a1937f
+farmwoman|walk bfc408ac-6c42-40fa-bda1-fc745ea94284
+guard|idle 6330f8e2-e648-4e39-8b01-db28c86defb7
+guard|walk 5a2971de-470d-4801-a36b-29d9117c2266
+scholar|idle 75bed704-2014-498d-bae2-34a2126ae0b3
+scholar|walk c4009297-b253-4032-a622-1dd439fb9b96
+farmwoman-c|idle 84d04106-1dfc-44e1-80da-0e735830447a
+farmwoman-c|walk 593c5182-53cb-445d-9fed-e953f15316c7

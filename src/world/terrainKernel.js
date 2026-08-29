@@ -5,9 +5,9 @@
 // Terrain.js imports heightAt from here and hangs it on the prototype, so there is still exactly one
 // height field in the game.
 import { mulberry32, noise2, smoothstep, lerp } from '../core/Noise.js';
-import { ORDER, RR, EDGE, THETA0, STEP, centerOf } from './Biomes.js';
+import { ORDER, RB, RR, EDGE, THETA0, STEP, centerOf } from './Biomes.js';
 
-export const LAYERS = 12;    // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro) 8 ash 9 ice 10 muck 11 voidstone
+export const LAYERS = 17;    // 0 grass 1 forest 2 dirt 3 rock 4 sand 5 snow 6 stone 7 detail(nx,nz,h,macro) 8 ash-basalt 9 sastrugi-snow 10 peat 11 voidstone 12 columnar-basalt(infernal cliffs) 13 violet-flagstone(lost) 14 seabed-sand(sunken) 15 glacial-ice(tundra frozen lake) 16 granite-detail(near-camera cliff octave)
 
 const ss = smoothstep, mix = lerp, n2 = noise2;
 // unrolled fbm/ridged (same lattice + seed scheme as Noise.js fbm/ridged, no options object => ~2x faster)
@@ -45,15 +45,29 @@ const BH = [
     let t = 24 + g * 13 + rmf(x * 0.014, z * 0.014, s + 212, 3) * 6;
     t -= 4.5 * Math.sin(t * 0.42 + n2(x * 0.009, z * 0.009, s + 213) * 3.4);   // ice terraces / pressure ridges
     const bd = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.012, z * 0.012, s + 214) * 18;
-    t = mix(t, 3.35, ss(96, 52, bd));                                          // FROZEN LAKE. It was 5.2 — 1.2 m ABOVE terrain.waterLevel, so Winterspring's signature was a dry dish. 3.35 puts ~0.65 m of ice-cold water over it: shallow enough to walk out onto, deep enough that Water paints it (WATER_LOOK.tundra)
+    // FROZEN LAKE, walkable at last (wave-2 major: "no walkable ice sheet"). 4.22 sits 0.22 m ABOVE
+    // terrain.waterLevel: the bowl is a solid ice SHEET you walk onto — the splat paints it ice_glacial
+    // (layer 15, cracks + snow patches) and Terrain.dryAt masks the bowl so no melt puddle ever paints.
+    // The liquid-meltwater read came from the old 3.35 bed: 0.65 m of real water over the whole bowl.
+    t = mix(t, 4.22, ss(96, 52, bd));
     return mix(h, t, w);
   },
   function bhCelestial(x, z, h, s, w, cx, cz) {                                // Celestial Isles: shattered high plateau, chasms below the floating isles
     const pl = 62 + fbm3(x * 0.007 + 9, z * 0.007 - 4, s + 221) * 9;
-    const cut = ss(0.34, 0.15, ridged3(x * 0.0065, z * 0.0065, s + 222));      // narrow gulfs between the shelves
+    let cut = ss(0.34, 0.15, ridged3(x * 0.0065, z * 0.0065, s + 222));        // narrow gulfs between the shelves
+    // APPROACH FLATTENING (props-B ask, wave 2): a gully on the walk-in bearing ~100-150 m out swallowed
+    // the 34 m Empyrean Gate at mid-approach (reads at 250 m and <60 m, vanishes between). Inside a ~30 m
+    // corridor along the region bearing, 95..175 m out on the HOME side only, the gulf cut is suppressed
+    // so the shelf runs unbroken and the gate stays on the skyline for the whole walk.
+    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
+    {
+      const r0 = Math.sqrt(x * x + z * z);
+      let da = Math.abs(Math.atan2(z, x) - (THETA0 + 2 * STEP)); if (da > Math.PI) da = 2 * Math.PI - da;
+      const walk = ss(30, 12, da * r0) * ss(175, 138, d) * ss(60, 95, d) * ss(775, 745, r0);
+      cut *= 1 - walk;
+    }
     // chasm WALLS get their own crag detail: without it the drop reads as one smooth grey dome
     const crag = rmf(x * 0.021, z * 0.021, s + 223, 4) * 9 * cut * (1 - cut) * 4;
-    const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
     let t = mix(pl, pl - 48 + crag, cut);
     t = mix(t, pl, ss(115, 58, d));                                            // the Empyrean Gate stands on solid shelf, not over a gulf
     return mix(h, t, w);
@@ -67,6 +81,16 @@ const BH = [
     // Without them the region is one unbroken climb and the "dragon nests on the ledges" is a texture.
     const bench = ss(0.30, 0.44, m) * (1 - ss(0.52, 0.64, m));
     if (bench > 0.01) t = mix(t, Math.round(t / 26) * 26 + 4, bench * 0.72);
+    // EROSION STRUCTURE (wave-4 blocker: "no macro relief at any distance — a photograph wallpapered
+    // onto a smooth mesh"). m and c are smooth multifractals: they give a big shape and fine crag, and
+    // NOTHING in between, so the faces read as one continuous swell however good the texture is. Real
+    // peaks get their read from DRAINAGE — a branching network of gullies incised into the flanks,
+    // deepest mid-slope and closing at both the crest and the toe, leaving spurs standing between.
+    // Band-limited to >= 9 m (ridged4 at 0.013 = 77/37/18/9 m) so the 1 m bake reproduces it exactly.
+    const flank = m * (1 - m) * 4;                                             // 0 on the summit and on the plain
+    if (flank > 0.02) t -= ss(0.55, 0.95, ridged4(wx * 0.013, wz * 0.013, s + 236)) * 23 * flank * (1 - 0.65 * bench);
+    // TALUS at the foot: 22 m blocky relief so the bowl the walls tower over is broken ground, not pavement.
+    t += (rmf(x * 0.045, z * 0.045, s + 237, 3) - 0.42) * 5.2 * ss(0.34, 0.05, m);
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
     t = mix(t, 44, ss(105, 55, d));                                            // the gate needs a forecourt
     return mix(h, t, w);
@@ -101,13 +125,39 @@ const BH = [
     // Channels are cut BELOW terrain.waterLevel on purpose: the world water surface fills them and wears the
     // molten skin (Water uLava), so the lava rivers are real geometry you can fall into, not a decal.
     // Lower frequency than the old cut: fewer, longer, wider rivers across the plain instead of a rash.
-    t -= ss(0.50, 0.88, ridged3(x * 0.0075 + 3, z * 0.0075 - 2, s + 244)) * 14;
+    // 0.30 (was 0.50) widens the valley SHOULDER without moving the full-depth threshold: the same channels
+    // at the same 14 m, but the descent spreads over ~25 m instead of ~12 — a ~30 deg bank you can walk back
+    // out of, not the ~49 deg shaft the wave-6 judge fell down.
+    t -= ss(0.30, 0.88, ridged3(x * 0.0075 + 3, z * 0.0075 - 2, s + 244)) * 14;
+    // LAVA FLOOR — wave-6 infernal blocker: "walk into the Cinder Maw and you drop 18 m into state 'swim'
+    // INSIDE the world, looking at back-faces with a rectangle of sky punched through solid geometry."
+    // waterLevel is 4. At the old bed (measured 1.49 at the Maw) the player's EYE sat at 3.14 — UNDER the
+    // water plane — so they were looking up at the UNDERSIDE of the water mesh and out through the square
+    // seam where the coarse skirt hands over to the fine grid. That is the "rectangle of sky"; the
+    // back-faces are the water mesh, not the terrain. Clamp the channel bed to 2.6: still 1.4 m of lava
+    // (a wade — see Water.submergedDepth), but the eye rides at 4.25, ABOVE the plane, with nothing to look
+    // up through. Bed geometry under opaque lava is never seen, so a flat floor costs nothing visually.
+    if (t < 2.6) t = 2.6;
     return mix(h, t, w);
   },
   function bhLost(x, z, h, s, w, cx, cz) {                                     // The Lost Realm: ceremonial plain inside a ruined rampart ring
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3) + n2(x * 0.011, z * 0.011, s + 251) * 12;
     let t = 32 + fbm3(x * 0.007 + 13, z * 0.007 + 9, s + 252) * 5;
-    t += 30 * ss(118, 146, d) * ss(192, 160, d);                               // rampart ring
+    // GATE NOTCH (wave-2 major: "arrival sightline is a wall"). The rampart is cut through on the arrival
+    // bearing (+105 deg): full cut inside +-8 m of the centreline, feathered to +-20 m, edges roughened so
+    // the breach reads ruined, not routed. Sill ~3.6 m of residual berm over the plain — a saddle you walk,
+    // with 30 m berm shoulders either side. Crossing centre ~(-157, 586), i.e. r0 568..642 on the bearing;
+    // Props can frame that span with gate architecture.
+    let da = Math.abs(Math.atan2(z, x) - (THETA0 + 5 * STEP)); if (da > Math.PI) da = 2 * Math.PI - da;
+    const notch = ss(20, 8, da * Math.sqrt(x * x + z * z) + n2(x * 0.03, z * 0.03, s + 253) * 4);
+    const berm = ss(118, 146, d) * ss(192, 160, d);
+    t += 30 * berm * (1 - 0.88 * notch);                                       // rampart ring, pierced by the gate
+    // The rampart is the zone's LARGEST surface and it was a smooth extruded ramp — at 5-15 m there was
+    // nothing on it but the plate (wave-4 finding). A ruined earthwork is slumped rubble: 18/9/4.5 m lumps
+    // on the two FACES only (the band term is 0 on the crest and on the plain), so the berm reads as
+    // collapsed masonry under turf instead of a bevel, and the near field has something to measure.
+    const face = berm * (1 - berm) * 4;
+    if (face > 0.02) t += face * (rmf(x * 0.055 + 3, z * 0.055 - 7, s + 254, 3) * 4.8 - 1.9);
     t -= 7 * ss(62, 22, d);                                                    // sunken plaza
     return mix(h, t, w);
   },
@@ -116,21 +166,83 @@ const BH = [
     // Wetter. At 3.05 the flats sat under 0.95 m of water and the hummocks were most of the surface, so from
     // anywhere but the middle the fen read as a damp green wood. 2.45 puts the flats knee-to-thigh deep and
     // leaves the hummocks as the only dry ground — which is the region's whole passive.
-    const t = 2.45 + (hum > 0 ? hum : 0) * 3.2 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.3;
+    let t = 2.45 + (hum > 0 ? hum : 0) * 3.2 + fbm3(x * 0.005, z * 0.005, s + 262) * 1.3;
+    // TUSSOCKS AND POOLS (wave-4 blocker: "everything from 2 m to 25 m in front of the player is
+    // featureless water, at every hour and every angle"). The hummock field is a 48 m fbm whose finest
+    // octave is 0.21 m, so the flooded flats were a DEAD FLAT bed under a dead flat water plane: there
+    // was literally nothing for the eye to measure in the near field. A ridged octave at 16/8/4 m puts
+    // sedge tussocks that break the surface between pools that go knee-deep, so depth VARIES over the
+    // near field — which is the only thing that makes shallow water read as ground rather than a sheet.
+    // ADDITIVE ONLY (max(0, ...)): a two-sided term dug the pools to 1.8 m, and "peat to the knee" is the
+    // region's whole passive — the crowns come UP, the water line does not go down.
+    const tus = ridged3(x * 0.062 + 9, z * 0.062 - 4, s + 263);
+    t += Math.max(0, tus * tus - 0.12) * 2.4 * (1 - 0.5 * ss(0, 0.55, hum));
     return mix(h, t, w);
   },
-  function bhSunken(x, z, h, s, w, cx, cz) {                                   // The Sunken Kingdom: a real sea basin with coral ridges
+  function bhSunken(x, z, h, s, w, cx, cz) {                                   // The Sunken Kingdom: cascade gorge (user decree 2026-08-25 — NO underwater area)
+    // docs/SUNKEN-REDESIGN-BRIEF.md: the sea bowl became a tiered gorge — three broad terraces stepping
+    // down from the mountain-ring side to the Drowned Court, gorge walls at the flanks. The ONE global
+    // water plane (WL 4) can only flood one altitude, so: the Court basin floods at wading depth
+    // (~3.45, 0.4-0.7 m of water, never over-head), the upper treads sit dry ABOVE the plane and carry
+    // their water in a meandering rapid CHANNEL cut below WL — the plane fills it, and where the channel
+    // crosses a riser is a waterfall face for Water to dress. Risers 5.3/5.6 m (brief: 4-8).
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
-    let t = -27 + fbm3(x * 0.006 + 21, z * 0.006 - 11, s + 271) * 10;
-    t += ridged3(x * 0.013, z * 0.013, s + 272) * 15;                          // coral shelves
-    t += ss(110, 200, d) * 33;                                                 // basin rim climbs to the shore
+    const r0 = Math.sqrt(x * x + z * z);
+    const a = RB - r0 + n2(x * 0.013, z * 0.013, s + 271) * 14;                // along the approach: +210 pass side, 0 at the Court, negative behind it. Jitter -> riser lines meander
+    let da = Math.abs(Math.atan2(z, x) - (THETA0 + 7 * STEP)); if (da > Math.PI) da = 2 * Math.PI - da;
+    const b = da * r0;                                                         // metres off the gorge centreline
+    let t = 3.45                                                               // T3: the Court basin — flooded streets at wading depth
+      + 5.35 * ss(38, 56, a)                                                   // riser T3 -> T2 (waterfall face)
+      + 5.6 * ss(96, 116, a)                                                   // riser T2 -> T1
+      + ss(150, 205, a) * 20                                                   // entrance ramp down off the pass
+      + ss(-70, -130, a) * 24                                                  // gorge back wall behind the Court
+      + (fbm3(x * 0.02 + 7, z * 0.02 - 3, s + 272) - 0.5) * 0.28;              // tread micro-relief (keeps wading 0.3-0.7 m, never over-head)
+    // dry causeways: raised street bands through the flooded basin, so the old kingdom's streets
+    // alternate flooded/dry (the causeway tops sit ~0.6 m above the water line)
+    const basinM = ss(56, 38, a) * ss(-130, -70, a);
+    t += basinM * ss(0.62, 0.78, ridged3(x * 0.016, z * 0.016, s + 273)) * 1.15;
+    // SCOURED BEDROCK (wave-4 blocker: "the bedrock is a bare, untextured, geometry-free plane — the near
+    // field of the whole region has zero detail"). The treads carried +-0.14 m of 50 m fbm, i.e. nothing:
+    // a photograph on a ramp. A gorge floor that a river has worked is RIBBED — hard bands standing proud,
+    // plunge hollows scooped between them. 19/9/5 m ridged, ~1.5 m peak-to-trough on the dry treads and
+    // half that in the flooded basin (so wading stays 0.3-1.0 m, never over-head).
+    t += (ridged3(x * 0.052 + 4, z * 0.052 - 6, s + 276) - 0.38) * (1.55 - 0.8 * basinM);
+    // the rapid channel: ~10-18 m wide, meanders down the centreline, cut to 3.35 (0.65 m of fast water).
+    // It slots through the upper treads and pours over each riser; gated off behind the Court.
+    const ch = ss(13, 5, b + n2(x * 0.02 + 3, z * 0.02 - 5, s + 274) * 9) * ss(-60, -25, a);
+    if (ch > 0.01) t = mix(t, 3.35, ch);
+    t = mix(t, 4.55, ss(30, 14, d));                                           // the Court plaza stands dry (after the channel: the rapids END at the plaza rim, water round the arches) — Props raise the dais on it
+    // gorge walls at the flanks, cragged so they read as cut rock
+    const fl = ss(118, 168, b);
+    if (fl > 0.01) t += fl * (18 + rmf(x * 0.02, z * 0.02, s + 275, 3) * 12);
     return mix(h, t, w);
   },
   function bhVoid(x, z, h, s, w, cx, cz) {                                     // The Void: shelves of broken reality over an abyss
     const r1 = ridged3(x * 0.0055 + 5, z * 0.0055 - 9, s + 281);
     const plat = 46 + fbm3(x * 0.009, z * 0.009, s + 282) * 7;                 // shelves are FLAT: you fight on them
     const d = Math.sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz) + 1e-3);
-    let t = mix(plat, -40, ss(0.34, 0.155, r1));
+    // THE ABYSS (wave-2 major: the old -40 dish never read as one). The pit floor now drops to ~-100 m
+    // around the heart ring, the shelf->pit transition band is HALVED (0.32..0.205, sheer walls instead
+    // of a ramp), the walls carry their own crag detail (also kills the smooth-slope contour rings from
+    // the 1 m bake), and the floor gets low relief so it reads as broken ground, not a bowl. Shelf tops
+    // are untouched (same r1 field, same plat) — the walkable ring and the isle/updraft routes hold.
+    const cut = ss(0.32, 0.205, r1);
+    const pit = -40 - 62 * ss(200, 95, d) + (rmf(x * 0.016, z * 0.016, s + 284, 3) - 0.5) * 9;
+    // WAVE-6 VOID BLOCKER (safety half): "heightAt drops 49.4 to -82.7 over 20 m with no lip ... the player
+    // fell to y=-11.6 mid-fight with no traversal input." `mix(plat, pit, cut)` is monotone, so the shelf top
+    // ran flat straight into a 130 m sheer face — there was nothing underfoot and nothing on screen to say
+    // "edge". Two terms, both inside the existing cut field so the walkable ring, the isle routes and the
+    // updraft columns are untouched:
+    //   cutS  — squaring the ramp flattens dt/dcut at BOTH ends, so the last metre of shelf rolls over
+    //           instead of ending on a knife edge (a shoulder you can see and feel from a running start).
+    //   rim   — a raised strata lip peaked where cut is still tiny, i.e. ON the shelf just before the roll.
+    //           ~1.1 m: a parapet that stops you WALKING off, low enough to vault deliberately. The Void is
+    //           meant to be shelves over an abyss you cross by updraft, not a pit you fall in by accident.
+    const cutS = cut * cut * (3 - cut - cut);
+    const rim = ss(0.0, 0.030, cut) * ss(0.175, 0.055, cut);
+    let t = mix(plat, pit, cutS) + rim * (1.9 + rmf(x * 0.05, z * 0.05, s + 285, 3) * 1.4);
+    const band = cut * (1 - cut) * 4;                                          // wall band only
+    if (band > 0.02) t += band * (rmf(x * 0.019, z * 0.019, s + 283, 4) * 18 - 5);
     t = mix(t, plat, ss(120, 62, d));                                          // The Unmaking needs ground under it
     return mix(h, t, w);
   },
@@ -214,12 +326,12 @@ export function heightAt(x, z) {
         // like a slope" report — pass * everything flattened the whole gap into a dune)
         let m = wall * (12 + 26 * teeth) * (0.35 + 0.65 * pass)
               + mt * ((14 + 54 * massif) * summit * pass + 52 * teeth * (0.25 + 0.75 * pass));   // ring crests ~120-175 m (CLAUDE.md: ~150); a pass bottoms out ~35 m over the meadow
-        // bedding planes: amplitude, frequency, TILT and presence all vary per region, so the ring is never one corduroy
-        const reg = n2(x * 0.0035, z * 0.0035, s + 28), reg2 = n2(x * 0.011 + 4.4, z * 0.011 - 2.2, s + 36);
-        const bandAmt = ss(0.30, 0.74, fbm2(x * 0.0055, z * 0.0055, s + 37) * 0.5 + 0.5) * mt;
-        // ~23 m-period ledges cut ACROSS the faces. At 400 m the step edge is what reads as rock rather than
-        // felt, and it costs one sin of a value we already have; amplitude raised with the steeper faces.
-        if (bandAmt > 0.01) m -= (4.5 + 8.5 * reg * reg) * Math.sin(m * (0.27 + 0.15 * reg) + (x - z) * 0.011 * reg + reg2 * 5) * bandAmt;
+        // The sin(m) "bedding ledges" used to be cut here. DELETED (wave-5 blocker): a ledge periodic in the
+        // mountain's own HEIGHT is a contour map — under a key light every riser goes dark and every tread
+        // goes light, so the whole ring wore "hard parallel horizontal light/dark stripes... like a stack of
+        // pancakes" in 6 of 9 region shots. Ledge/step read now comes from non-periodic terms only: the
+        // squared-crag teeth here, and the 26 m ridged macro-relief bump + cavity in Terrain's cliff shader.
+        // Do not reintroduce any height-periodic term on the ring (its albedo twin in Terrain.js is gone too).
         h += m * env;
       }
     }
@@ -311,8 +423,9 @@ export function layerTex(layer, R, seed) {
       if (d < wd) { wd = d; wid = hashB(wx + 3, wy + 5, 256); }
     }
   };
-  // leaf litter palette: mostly russet/brown, occasional fresh yellow-green
-  const leafC = (w) => w > 0.86 ? [0.30, 0.25, 0.05] : [mix(0.19, 0.40, pm(w * 7.3, 1)), mix(0.095, 0.185, pm(w * 5.1, 1)), mix(0.028, 0.06, pm(w * 3.7, 1))];
+  // leaf litter palette: desaturated russet-olive duff, occasional dull gold. The old bright red-orange
+  // range tiled as "polka-dot confetti" (wave-1 forest verdict) — value range narrowed, hue pulled brown.
+  const leafC = (w) => w > 0.86 ? [0.17, 0.155, 0.045] : [mix(0.115, 0.21, pm(w * 7.3, 1)), mix(0.085, 0.145, pm(w * 5.1, 1)), mix(0.035, 0.06, pm(w * 3.7, 1))];
   let bumpH = null;                                                             // detail layer: bump height field, normals from its finite differences
   if (layer === 7) { bumpH = new Float32Array(R * R); for (let j = 0, k = 0; j < R; j++) for (let i = 0; i < R; i++) bumpH[k++] = fbm((i + 0.5) / R, (j + 0.5) / R, 9, 5); }
   const enc = (c) => { c = c < 0 ? 0 : c > 1 ? 1 : c; return (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255 + 0.5; };
@@ -326,17 +439,20 @@ export function layerTex(layer, R, seed) {
       const streak = mix(st, st2, ss(0.4, 0.6, n3)), hi = ss(0.55, 0.85, streak) * 0.7, dry = ss(0.62, 0.8, n3) * 0.4, sp = ss(0.75, 0.95, vnoise(u + 1.3, v + 1.3, 128)) * 0.07;
       r = mix(mix(mix(0.09, 0.17, n1), 0.38, hi), 0.30, dry) + sp; g = mix(mix(mix(0.20, 0.33, n1), 0.44, hi), 0.36, dry) + sp; b = mix(mix(mix(0.05, 0.07, n1), 0.13, hi), 0.09, dry) + sp;
       h = n1 * 0.5 + streak * 0.5;
-    } else if (layer === 1) {     // forest floor: humus + two passes of crisp elongated leaf litter + moss + twig grit
+    } else if (layer === 1) {     // forest floor: dark humus + LOW-frequency leaf-litter mottling + teal moss + twig grit.
+      // Was two worley passes at 40-64 cells/tile: ~7 cm leaves that alias into repeating orange dots at any
+      // distance ("polka-dot confetti"). Now 16-26 cells (~15-25 cm drifts) with soft edges = mottling, and
+      // the moss is pulled teal so the floor sits in the Whisperwood palette instead of lawn green.
       const n1 = fbm(u, v, 5, 5);
-      r = mix(0.085, 0.165, n1); g = mix(0.060, 0.115, n1); b = mix(0.035, 0.065, n1);       // humus base
-      worley(u + 0.37, v + 0.61, 40, 64);                                                    // under pass: vertical-ish leaves
+      r = mix(0.070, 0.135, n1); g = mix(0.058, 0.110, n1); b = mix(0.038, 0.068, n1);       // humus base, deeper + cooler
+      worley(u + 0.37, v + 0.61, 16, 26);                                                    // under pass: broad litter drifts
       let lh2 = 0, l1 = 0;
-      if (wid > 0.30) { const c = leafC(wid); lh2 = ss(0.44, 0.36, wd) * 0.8; r = mix(r, c[0] * 0.72, lh2); g = mix(g, c[1] * 0.72, lh2); b = mix(b, c[2] * 0.72, lh2); }
-      worley(u, v, 64, 40);                                                                  // over pass: horizontal-ish leaves, sharp edge
-      if (wid > 0.34) { const c = leafC(wid); l1 = ss(0.40, 0.33, wd); r = mix(r, c[0], l1); g = mix(g, c[1], l1); b = mix(b, c[2], l1); }
-      const moss = ss(0.55, 0.75, fbm(u + 2, v + 2, 4, 3)) * 0.7 * (1 - l1);
-      const grit = (vnoise(u, v, 512) - 0.5) * 0.07;
-      r = mix(r, 0.10, moss) + grit; g = mix(g, 0.23, moss) + grit; b = mix(b, 0.065, moss) + grit * 0.6;
+      if (wid > 0.30) { const c = leafC(wid); lh2 = ss(0.52, 0.34, wd) * 0.7; r = mix(r, c[0] * 0.72, lh2); g = mix(g, c[1] * 0.72, lh2); b = mix(b, c[2] * 0.72, lh2); }
+      worley(u, v, 26, 16);                                                                  // over pass: smaller patches, still soft-edged
+      if (wid > 0.38) { const c = leafC(wid); l1 = ss(0.46, 0.30, wd) * 0.85; r = mix(r, c[0], l1); g = mix(g, c[1], l1); b = mix(b, c[2], l1); }
+      const moss = ss(0.50, 0.72, fbm(u + 2, v + 2, 4, 3)) * 0.75 * (1 - l1);
+      const grit = (vnoise(u, v, 512) - 0.5) * 0.06;
+      r = mix(r, 0.062, moss) + grit; g = mix(g, 0.155, moss) + grit; b = mix(b, 0.105, moss) + grit * 0.6;   // teal-moss, not lawn
       h = n1 * 0.4 + Math.max(l1, lh2 * 0.7) * 0.6 + moss * 0.25;
     } else if (layer === 2) {     // dirt: packed earth, sparse crisp pebbles, fine grit, cracks
       const n1 = fbm(u, v, 6, 5); worley(u, v, 34, 34);
@@ -398,12 +514,52 @@ export function layerTex(layer, R, seed) {
       r = mix(r, 0.085, alg); g = mix(g, 0.158, alg); b = mix(b, 0.045, alg);
       r *= 1 - bub * 0.3; g *= 1 - bub * 0.2; b *= 1 - bub * 0.3;
       h = n1 * 0.6 + alg * 0.25 - bub * 0.4;
-    } else {                      // The Void: near-black stone shot through with violet fracture veins
+    } else if (layer === 11) {    // The Void: near-black stone shot through with violet fracture veins
       const n1 = fbm(u, v, 6, 5), vn = ridge(u + 2.3, v + 2.3, 6, 4);
       const vein = ss(0.87, 1.0, vn), grit = (vnoise(u, v, 512) - 0.5) * 0.04;
       const base = mix(0.030, 0.092, n1);
       r = base * 0.95 + vein * 0.16 + grit; g = base * 0.80 + vein * 0.05 + grit * 0.6; b = base * 1.30 + vein * 0.34 + grit;
       h = n1 * 0.7 - vein * 0.4;
+    } else if (layer === 12) {    // columnar basalt (infernal cliffs/cinder cones): near-black vertical columns
+      const n1 = fbm(u, v, 6, 4);
+      const col = ss(-0.6, 0.9, Math.sin(u * 6.2832 * 16 + fbm(u, v * 0.4, 3, 2) * 3.2));    // column faces + shadowed joints
+      const grit = (vnoise(u, v, 400) - 0.5) * 0.04;
+      const base = mix(0.016, 0.052, n1) * (0.70 + 0.55 * col);
+      r = base + grit; g = base * 1.02 + grit; b = base * 1.08 + grit * 0.8;
+      h = col * 0.5 + n1 * 0.5;
+    } else if (layer === 13) {    // Lost Realm: dark violet flagstone, faint gold inlay tracery in the joints
+      const T = 6, py = v * T, idy = Math.floor(py);
+      const px = u * T + (hash(idy, 5, T) > 0.5 ? 0.5 : 0), idx = Math.floor(px), fx = px - idx, fy = py - idy;
+      const hv = hash(idx, idy, T), m = Math.min(Math.min(fx, 1 - fx), Math.min(fy, 1 - fy));
+      const mortar = ss(0.020, 0.007, m + (fbm(u, v, 36, 2) - 0.5) * 0.014), n1 = fbm(u + hv, v + hv, 7, 4);
+      const gold = ss(0.965, 1.0, ridge(u + 4.1, v + 4.1, 5, 3)) * (hashB(idx, idy, T) > 0.45 ? 1 : 0);
+      const grit = (vnoise(u + 0.6, v + 0.2, 400) - 0.5) * 0.05;
+      const base = mix(0.85, 1.25, n1);
+      r = mix(0.052 * base + grit, 0.028, mortar); g = mix(0.038 * base + grit, 0.020, mortar); b = mix(0.088 * base + grit, 0.042, mortar);
+      r = mix(r, 0.42, gold * (1 - mortar) * 0.8); g = mix(g, 0.30, gold * (1 - mortar) * 0.8); b = mix(b, 0.10, gold * (1 - mortar) * 0.8);
+      h = 1 - mortar * 0.4 + (n1 - 0.5) * 0.2;
+    } else if (layer === 14) {    // sunken gorge bed: rippled sand, warm tan with cool troughs (the cascade streets' floor)
+      const n1 = fbm(u, v, 7, 4), hue = fbm(u + 6, v + 6, 2, 3);
+      const rip = Math.sin((u + fbm(u, v, 3, 2) * 0.25 + v * 0.2) * 6.2832 * 14) * 0.7 + Math.sin((v - u * 0.25) * 6.2832 * 7) * 0.3;
+      const rb = 0.90 + 0.10 * rip;
+      const grit = (vnoise(u, v, 300) - 0.5) * 0.08;
+      r = mix(0.34, 0.52, n1) * mix(0.96, 1.06, hue) * rb + grit; g = mix(0.28, 0.44, n1) * mix(0.94, 1.03, hue) * rb + grit; b = mix(0.17, 0.28, n1) * mix(1.0, 1.10, hue) * rb + grit * 0.7;
+      h = 0.5 + rip * 0.3 + (n1 - 0.5) * 0.4;
+    } else if (layer === 15) {    // frozen-lake ice: pale glacial sheet, dark pressure-crack web, faint blue depth mottle
+      const n1 = fbm(u, v, 4, 4), fr = ridge(u + 2.9, v + 2.9, 7, 3);
+      const crack = ss(0.80, 0.97, fr);                                        // wider band than glacier layer 9 — the cracks must READ from eye height
+      const deep = ss(0.35, 0.70, fbm(u + 5, v + 5, 3, 3)) * 0.20;             // darker teal patches: thick ice over deep water
+      const base = mix(0.56, 0.74, n1) - deep;
+      r = base * 0.82 * (1 - crack * 0.45); g = base * 0.93 * (1 - crack * 0.30); b = base * 1.10 * (1 - crack * 0.12);
+      h = n1 * 0.8 - crack * 0.6;
+    } else {                      // granite detail: fine granular grain for the near-camera cliff octave (no coursing, no bands)
+      const n1 = fbm(u, v, 9, 4);
+      const sp = (vnoise(u, v, 512) - 0.5) * 0.22 + (vnoise(u + 0.4, v + 0.1, 256) - 0.5) * 0.12;   // salt-and-pepper feldspar/mica speckle
+      worley(u + 0.2, v + 0.7, 48, 48);
+      const pit = ss(0.30, 0.18, wd) * 0.16;                                   // sparse pits
+      const base = mix(0.30, 0.52, n1);
+      r = base + sp - pit; g = base * 0.97 + sp - pit; b = base * 0.92 + sp * 0.9 - pit;
+      h = n1 * 0.6 + sp * 1.5 + 0.2;
     }
     out[k] = enc(r); out[k + 1] = enc(g); out[k + 2] = enc(b); out[k + 3] = (h < 0 ? 0 : h > 1 ? 1 : h) * 255;
   }

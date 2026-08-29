@@ -1,0 +1,23 @@
+[
+ { "wait": 24 },
+ { "eval": "__game.god(true); __game.passive(true); 1" },
+ { "hour": 22 },
+ { "eval": "(()=>{const t=__game.game.terrain;const x=-623+22,z=436+22;__game.teleport(x,null,z);__game.look(Math.atan2(22/31.1,22/31.1),-0.02);return JSON.stringify([__game.state().pos||__game.state().position,__game.state().yaw]);})()" },
+ { "wait": 5 },
+ { "shot": "n-hag-30" },
+ { "eval": "(()=>{const x=-623+9,z=436+9;__game.teleport(x,null,z);__game.look(Math.atan2(0.707,0.707),0.30);return 'ok';})()" },
+ { "wait": 2.5 },
+ { "shot": "n-hag-13up" },
+ { "eval": "__game.look(__game.state().yaw, -0.35); 1" },
+ { "wait": 1.5 },
+ { "shot": "n-hag-glyph" },
+ { "eval": "(()=>{const t=__game.game.terrain;let bx=-623+60,bz=436+60;__game.teleport(bx,null,bz);__game.look(Math.atan2(0.707,0.707),-0.16);return 'ok';})()" },
+ { "wait": 3 },
+ { "shot": "n-water-60" },
+ { "eval": "__game.look(__game.state().yaw, -0.45); 1" },
+ { "wait": 1.5 },
+ { "shot": "n-water-down" },
+ { "hour": 13 },
+ { "wait": 3 },
+ { "shot": "d-hag-60" }
+]

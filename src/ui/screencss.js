@@ -867,4 +867,34 @@ export const SCREEN_CSS = `
   #ui .tile,#ui .dslot,#ui .scr .btn{transition:none}
   #ui :is(.stabs,.seg)::before{transition:none}
 }
+
+/* ---------- quest offer card (giver E press — accept/decline before it enters the log) ---------- */
+#ui .qoffer{max-width:720px;margin:8px auto 0}
+#ui .qoffer .qcard{border-left:3px solid var(--gold);padding:18px 22px 20px}
+#ui .qoffer .qname{font-size:22px}
+#ui .opitch{margin:12px 0 0;font:400 14.5px/1.65 var(--serif);color:var(--text);max-width:62ch;font-style:italic}
+#ui .oh{margin:16px 0 0;font:400 10.5px/1 var(--serif);letter-spacing:.24em;text-transform:uppercase;color:var(--textdim)}
+#ui .oh+.qobjs{margin-top:8px}
+#ui .oh+.qreward{margin-top:8px}
+#ui .ochoices{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+#ui .ochip{font:400 11px/1 var(--serif);letter-spacing:.08em;padding:5px 10px;border-radius:20px;
+  border:1px solid var(--r,var(--line));color:var(--r,var(--text));background:rgba(10,8,5,.35)}
+#ui .obtns{margin-top:20px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line);padding-top:14px}
+
+/* ---------- the shop (vendor villagers — src/rpg/shop.js) ---------- */
+#ui .shop{max-width:960px;margin:0 auto}
+#ui .sgreet{margin:6px 0 12px;font:400 13.5px/1.5 var(--serif);font-style:italic;color:var(--textdim);text-align:center}
+#ui .srow{display:flex;flex-direction:column}
+#ui .srow .sbuy{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:-4px;padding:8px 12px;border:1px solid var(--line);border-top:none;border-radius:0 0 9px 9px;
+  background:rgba(10,8,5,.30)}
+#ui .srow.cant .btn[disabled],#ui .grow.cant .btn[disabled]{opacity:.45;cursor:default}
+#ui .gp{display:inline-flex;align-items:center;gap:6px;font:400 13px/1 var(--serif);letter-spacing:.06em;
+  color:var(--gold-hi);font-variant-numeric:lining-nums tabular-nums;white-space:nowrap}
+#ui .sgoods{display:flex;flex-direction:column;gap:7px}
+#ui .grow{display:flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--line);
+  border-radius:9px;background:rgba(10,8,5,.28)}
+#ui .grow .gn{flex:1;min-width:0;font:400 14px/1.3 var(--serif);color:#fdf6e6}
+#ui .grow .gn u{display:block;font-size:11px;color:var(--textdim);text-decoration:none;margin-top:2px}
+#ui .grow.cant .gn{opacity:.6}
 `;

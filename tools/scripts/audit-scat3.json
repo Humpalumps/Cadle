@@ -1,0 +1,11 @@
+[
+ { "wait": 10 },
+ { "eval": "(()=>{const g=__game.game;const sp=document.getElementById('splash');if(sp)sp.style.display='none';return JSON.stringify({running:!!g._running,started:!!g.started,splash:!!sp,paused:!!g.paused})})()" },
+ { "wait": 3 },
+ { "eval": "(()=>{const sp=document.getElementById('splash');if(sp)sp.remove();__game.god(true);return 'ready'})()" },
+ { "hour": 13 },
+ { "eval": "__game.goto('tundra', 120)" }, { "wait": 4 }, { "look": [0.4, -0.75] }, { "wait": 2 }, { "shot": "t-down" },
+ { "eval": "__game.goto('dragon', 130)" }, { "wait": 4 }, { "look": [0.4, -0.75] }, { "wait": 2 }, { "shot": "d-down" },
+ { "perfWindow": { "secs": 3, "label": "dragon" } },
+ { "stats": "fin" }
+]

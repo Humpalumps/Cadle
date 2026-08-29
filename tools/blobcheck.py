@@ -332,4 +332,5 @@ def main():
     print(f'BLOBCHECK PASS ({len(files)} frames: no glowing clusters, no flashes)')
     return 0
 
-sys.exit(main())
+if __name__ == '__main__':          # guard so combatcheck.py can import the mask/cluster machinery
+    sys.exit(main())

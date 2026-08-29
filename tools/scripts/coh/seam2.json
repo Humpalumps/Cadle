@@ -1,0 +1,5 @@
+[
+ {"wait":26},
+ {"eval":"(()=>{const t=window.__game.game.terrain;window.__game.teleport(0,t.heightAt(0,-20)+1.7,-20);window.__game.setHour(13);return 'ok'})()"},
+ {"wait":2},{"look":[0,0.15]},{"shot":"w1280"}
+]

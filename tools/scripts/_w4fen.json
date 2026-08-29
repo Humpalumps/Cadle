@@ -1,0 +1,155 @@
+[
+ {
+  "eval": "(()=>{ if(!window.__errS){ window.__errS=[]; window.addEventListener('error', e=>{ if(window.__errS.length<2) window.__errS.push((e.error&&e.error.stack)||String(e.message)); }); } return 'armed'; })()"
+ },
+ {
+  "wait": 22
+ },
+ {
+  "eval": "__game.god(true); __game.passive(true); 1"
+ },
+ {
+  "hour": 13
+ },
+ {
+  "eval": "(()=>{const W=__game.game.world.water;const C=[-623,436];let b=null;for(let r=10;r<200&&!b;r+=4){for(let a=0;a<6.283;a+=0.10){const x=C[0]+Math.cos(a)*r,z=C[1]+Math.sin(a)*r;if(W.isWater(x,z)){b=[x,z];break;}}}if(!b)return 'none';let px=b[0],pz=b[1];for(let d=3;d<60;d+=1){const x=b[0]+d;if(!W.isWater(x,b[1])){px=x+4;pz=b[1];break;}}__game.teleport(px,null,pz);const dx=b[0]-px,dz=b[1]-pz,l=Math.hypot(dx,dz);__game.look(Math.atan2(-dx/l,-dz/l),-0.16);return JSON.stringify([b,[Math.round(px),Math.round(pz)]]);})()"
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "shot": "fen-day-refl"
+ },
+ {
+  "eval": "__game.look(__game.state().yaw, -0.55); 1"
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "shot": "fen-day-scum"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.scum&&(w.scum.visible=false); 1"
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "fen-noscum"
+ },
+ {
+  "eval": "const w=__game.game.world.water; w.scum&&(w.scum.visible=true); w.debug=4; 1"
+ },
+ {
+  "wait": 0.8
+ },
+ {
+  "shot": "fen-foamdbg"
+ },
+ {
+  "eval": "__game.game.world.water.debug=0; 1"
+ },
+ {
+  "wait": 0.5
+ },
+ {
+  "tp": [
+   -583,
+   null,
+   436
+  ]
+ },
+ {
+  "look": [
+   1.5708,
+   -0.1
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "fen-heart-day"
+ },
+ {
+  "hour": 22
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "shot": "fen-heart-night"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.42
+  ]
+ },
+ {
+  "wait": 1.5
+ },
+ {
+  "shot": "fen-night-water"
+ },
+ {
+  "hour": 13
+ },
+ {
+  "tp": [
+   -90,
+   null,
+   -70
+  ]
+ },
+ {
+  "look": [
+   1.5708,
+   -0.1
+  ]
+ },
+ {
+  "wait": 3.0
+ },
+ {
+  "shot": "vale-lake"
+ },
+ {
+  "look": [
+   1.5708,
+   -0.45
+  ]
+ },
+ {
+  "wait": 1.2
+ },
+ {
+  "shot": "vale-shore"
+ },
+ {
+  "tp": [
+   -250,
+   null,
+   -70
+  ]
+ },
+ {
+  "look": [
+   -1.5708,
+   -0.08
+  ]
+ },
+ {
+  "wait": 2.5
+ },
+ {
+  "shot": "vale-lake-far"
+ },
+ {
+  "stats": "fen"
+ },
+ {
+  "eval": "JSON.stringify(window.__errS||[])"
+ }
+]
