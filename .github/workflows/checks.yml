@@ -44,6 +44,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # `npm install`, not `npm ci`: package-lock.json was generated on Windows and does not carry
+      # the linux sharp binaries, so `npm ci` refuses on the runner. This job is a build smoke
+      # test, not a reproducible release, so resolving platform binaries here is the right trade.
+      - run: npm install --no-audit --no-fund
       - name: Production build ships a real entry on both pages
         run: node tools/buildcheck.mjs
