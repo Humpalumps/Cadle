@@ -102,6 +102,18 @@ export class ParticlePool {
     this.material.uniforms.uMap.value = atlas.texture;
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.frustumCulled = false; this.mesh.renderOrder = renderOrder; this.mesh.matrixAutoUpdate = false; this.mesh.name = additive ? 'vfx-additive' : 'vfx-alpha';
+    // MASK OPT-OUT (PostFX._renderSkyMask contract — see the long note there). `scene.overrideMaterial` is
+    // OPAQUE by construction, so in a mask frame this pool's quads rasterise as SOLID GREEN over their full
+    // extent, alpha and blending ignored — and the pool is frustumCulled = false, so that extent is wherever
+    // the live particles are. Every sky pixel behind a puff of smoke or a spark cloud was therefore
+    // classified as WORLD, and combatcheck then judged the sky. Measured on the 2026-08-29 gate run: the
+    // Lost Realm kill burst reported a 241 px "white core" at rgb (229,226,230) whose crop is a cloud, with
+    // the mask solid green across the whole upper-left of the frame. Same fault the enemy shield opted out
+    // of (Enemy.js). What the gate still sees: any VFX pixel over real geometry keeps its green backing and
+    // is judged exactly as before, and a full-frame wash is still caught by combatcheck's CATASTROPHE test,
+    // which ignores the mask entirely. What it stops seeing is sky behind a transparent overlay — which is
+    // what the decree says it should ignore.
+    this.mesh.userData.maskSkip = true;
     this._range = { start: 0, count: 0 };
     scene.add(this.mesh);
   }

@@ -182,7 +182,7 @@ vec3 transformed; vec3 objectNormal;
   #if RING < 2
   // drifts, not confetti: flowers clump into ~9 m patches, and heads shrink to nothing past ~20 m
   // (a 5 cm bloom at 40 m is a shimmering sub-pixel speck -> the critic's "paper scraps").
-  float fl0 = t00.a * 0.012 * (0.10 + 2.4 * smoothstep(0.45, 0.82, gNoise(rootXZ * 0.11, 23u)));
+  float fl0 = t00.a * 0.005 * (0.02 + 2.4 * smoothstep(0.45, 0.82, gNoise(rootXZ * 0.11, 23u)));   // 0.012 -> 0.005 (and the 0.10 everywhere-floor to 0.02, which only matters OUTSIDE a drift). MEASURED at ~1.65 blooms/m^2 inside a drift, i.e. a pale head every 0.8 m in the near field: with the camera looking down at its own feet that is not a flower meadow, it is litter, and three waves of muting the palette could not fix a COUNT problem. ~0.7/m^2 leaves the drifts reading as drifts and gives each bloom room to be one.
   bool flower = r6 < fl0;            // wild flowers / herbs, only in flower patches
   float ftype = r6 / max(fl0, 1e-4); // 0..1 -> type
   float hs = 1.0 - smoothstep(9.0, 20.0, d);                     // head size fade: flower -> plain blade, no pop
@@ -191,8 +191,18 @@ vec3 transformed; vec3 objectNormal;
   bool flower = false; float ftype = 0.0, hs = 0.0;
   #endif
   #if RING == 0
-  float under = flower ? 0.0 : step(r7, 0.38);   // short wide filler blades: dense understory so bare splat never shows at the feet
-  H *= 1.0 - 0.52 * under; W *= 1.0 + 1.4 * under * (1.0 - 0.6 * forestW - 0.95 * worn);   // 1.4, not 2.1: any wider and these short flat-lit cards read as plastic shards lying in the turf; forest keeps them narrow (the wide flat cards were interpenetrating at the feet)
+  float under = flower ? 0.0 : step(r7, 0.30);   // short wide filler blades: dense understory so bare splat never shows at the feet
+  H *= 1.0 - 0.40 * under; W *= 1.0 + 0.55 * under * (1.0 - 0.6 * forestW - 0.95 * worn);
+  // 0.38/-0.52/+1.4 -> 0.30/-0.40/+0.55 (2026-08-29). This comment has warned twice that these cards
+  // "read as plastic shards lying in the turf" if they get any wider — they were already there. MEASURE:
+  // a normal blade is 0.44 m x 0.022 m, i.e. 20:1, which is what reads as GRASS. At -52% height and
+  // +140% width the filler was 0.21 m x 0.053 m = 4:1, a lozenge — and it was 38% of every blade in the
+  // near ring. A player looking down at their feet therefore saw a field in which two blades in five were
+  // broad flat lozenges lying at random angles: the "green confetti" read, and it is the single loudest
+  // shape in the first frame of the game. 0.26 m x 0.034 m is 8:1 — still visibly the stubby understory
+  // tier, no longer a card. Coverage: area per card is down 12% and the count 21%, against a near ring
+  // that carries ~55 blades/m^2 at q=high, so the splat stays covered; what actually filled the gap was
+  // never these, it was the density.
   #else
   float under = 0.0;
   #endif
@@ -301,7 +311,12 @@ vec3 transformed; vec3 objectNormal;
     // the sun while every blade around it is edge-on. That is the whole reason the flowers photograph as
     // pale paper scraps lying on the field (user 2026-08-28, and the night bursts) rather than as blooms.
     // Hue-preserving and value-only, exactly as the decree words it: saturate the colour, cap the intensity.
-    headCol *= min(1.0, 0.55 / max(max(headCol.r, max(headCol.g, headCol.b)), 1e-4));
+    // 0.55 -> 0.38. Third pass at this: the palette was muted, then the ceiling pinned, and the heads still
+  // photograph as the brightest, highest-contrast shapes in a down-look (tools/out/grass0/shot-down.png).
+  // A blade's albedo ceiling is 0.52 MAX CHANNEL and a blade is edge-on to the sun most of the time; a head
+  // sitting at the same ceiling but tipped skyward therefore lands well above the field whatever its hue.
+  // 0.38 puts a lit bloom inside the field's own value range, which is where a flower in grass actually is.
+  headCol *= min(1.0, 0.38 / max(max(headCol.r, max(headCol.g, headCol.b)), 1e-4));
     vGrassEmissive = vec3(0.0);  // user decree: flowers stay matte — no glowing/sparkling heads (they bloomed into white blobs)
   } else vGrassEmissive = vec3(0.0);
   vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), terrainN, 0.35));
@@ -321,7 +336,13 @@ vec3 transformed; vec3 objectNormal;
   // zero mid-blade — the other half of the black-facet bug. One blade, one facing.
   float fs = dot(fwd.xz, cameraPosition.xz - rootXZ) < 0.0 ? -1.0 : 1.0;
   vec3 bn = normalize(fwd * fs + rgt * (bside * 0.42) + vec3(0.0, 0.35 * v + 0.15, 0.0));  // rounded blade cross-section (wrapped diffuse keeps the away face from going black)
-  bn = normalize(mix(bn, vec3(0.0, 1.0, 0.0), head * 0.5));                               // flower heads face up
+  // flower heads face up — but only halfway as far as they used to (0.5 -> 0.22). A head pointed at the
+  // sky is a FLAT SUN-CATCHER standing in a field of edge-on blades, so it renders several times brighter
+  // than everything around it however low its albedo is capped: that is why the blooms photograph as pale
+  // paper scraps lying on the meadow (user 2026-08-28) even after the palette was muted and the albedo
+  // ceiling pinned at 0.55. This is a LIGHTING fix, which is the direction the blob law wants, and it can
+  // only ever REDUCE a head's outgoing value. The bloom still tips off vertical, it no longer sunbathes.
+  bn = normalize(mix(bn, vec3(0.0, 1.0, 0.0), head * 0.22));
   // near field keeps its own blade normals (the old 0.55 terrain floor flat-lit everything into a smeared sheet)
   objectNormal = normalize(mix(bn, terrainN, min(1.0, 0.26 + 0.62 * farF + flatn * 0.55 + under * 0.4)));
 
@@ -426,7 +447,11 @@ vec3 transformed; vec3 objectNormal;
   vec3 rootC = mix(tipC * 0.62, tcol * 0.8, 0.35);                 // roots melt into the ground tone, never near-black
   vec3 col = mix(rootC, tipC, smoothstep(-0.2, 0.75, v)) * mix(1.0, mix(0.68, 1.14, r4), 1.0 - farF);
   col *= 0.76 + 0.44 * mac2;
-  float vExp = smoothstep(-0.1, 0.55, v);                          // canopy exposure: 0 = buried base, 1 = sunlit top
+  // canopy exposure: 0 = buried base, 1 = sunlit top. Upper bound 0.55 -> 0.82: at 0.55 the top HALF of
+  // every blade sat at full exposure, so the part of the field you actually see was one flat value and the
+  // meadow read as moulded plastic at 1-3 m. Running the ramp nearly the whole blade gives each one a
+  // length-wise gradient. Darkening-only (the term is a multiply <= 1.02), so no cap or gate moves.
+  float vExp = smoothstep(-0.1, 0.82, v);
   col *= 0.62 + 0.40 * vExp;                                       // canopy self-occlusion: the field gets depth instead of reading as flat paper
   col *= 1.0 - 0.34 * forestW;                                     // forest shade floor: darker-only, so midday sun lands on deep teal instead of lawn
   // ...and the exposure drives HUE, not just value: buried bases go deep blue-green shadow, sunlit tops go

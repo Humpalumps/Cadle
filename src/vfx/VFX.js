@@ -687,7 +687,14 @@ const PRESETS = {
     // burst-cvfx-pfire-a-* after both were hue-corrected. The viewmodel mesh owns the first-person read;
     // this burst owns the world read (distance, other angles, reflections), so damp it — and only it —
     // where the two overlap. 0.45 floor: still clearly a flash in first person, no longer a second full stack.
-    const mk0 = 0.45 + 0.55 * Math.min(1, Math.max(0, (v.game.camera.position.distanceTo(p) - 0.4) / 2.2));
+    // 0.45 -> 0.28 at the lens (2026-08-29). The floor is the share of the WORLD burst that still fires
+    // when the barrel is 0.4 m from the eye, and it is set against a viewmodel flash mesh that is NOT in
+    // the stackK budget below — three additive petals + a star + a core, all on the same pixels. The gate
+    // has now flagged this exact frame across four separate fixes (burst-cvfx-pfire-a-0, last measured
+    // 105 px at rgb 254,249,224 inside an otherwise correctly gold flare), each time after the hues were
+    // corrected, which is the signature of a SUM rather than a colour. The viewmodel mesh owns the
+    // first-person read by design, so the lever is this floor: past ~2.6 m nothing changes at all.
+    const mk0 = 0.28 + 0.72 * Math.min(1, Math.max(0, (v.game.camera.position.distanceTo(p) - 0.4) / 2.2));
     // deepen(), not offsetHSL alone. The weapon colours are PALE by authoring (kinetic is 0xffe9c4, HSL
     // lightness 0.88) and `offsetHSL(0, +0.45, -0.07)` cannot deepen a near-white — saturating at L 0.81
     // leaves (1.00, 0.87, 0.62), whose smallest channel is 0.62. At hdr 6 BRUSH_MINCH_CAP then pins that
@@ -844,8 +851,15 @@ const PRESETS = {
     // on the impact pixel and complete each other to white. That is the white core with white star
     // flares inside an otherwise correct gold ring (cb-mask burst-cvfx-pfire-a-3, 139 px at rgb
     // 228,234,233): the quads were budgeted, the swarm that sits on top of them was not.
+    // ...and the CRIT layers were never in this list, though the comment above says to keep it in sync.
+    // A crit adds TWO more hot stars at hdr 3.5-5.0 plus a second ring, on the same pixel, at scale 1.35 —
+    // about a third more summed energy than the budget this line computes, which is why the one frame the
+    // gate photographed as a 2249 px white star (burst-cvfx-pfire-a-7, rgb 246,233,228, inside an
+    // otherwise correct gold ring) was a critical hit. Every other damp here counts hits or distance;
+    // none of them can see a branch that fires extra quads.
     hk *= stackK(sat, ((1.5 + 0.5 * day) + (2.6 + 1.0 * day) + (2.6 + 1.0 * day) + (2.4 + 1.0 * day)
-      + (4.5 + 1.5 * day) * 0.35 + (3 + 1 * day) * 0.6 + (2.6 + 0.9 * day) * 1.5) * hk);
+      + (4.5 + 1.5 * day) * 0.35 + (3 + 1 * day) * 0.6 + (2.6 + 0.9 * day) * 1.5
+      + (crit ? (3.5 + 1.5 * day) * 2 + (2.2 + 0.8 * day) : 0)) * hk);
     // dark aether backing puff (normal blend, un-lit): gives the additive pop contrast against bright noon grass/sky
     b.reset(v.alpha, p).jitter(0.09 * s).spread(3.14).speed(0.3, 0.9).life(0.45, 0.7).size(0.4 * s, 0.6 * s, 2.2).tex(TEX.SMOKE).color(0x120a1e).vary(0.3).alpha(0.78).rot().spin(2).drag(2).fade(0.05, 0.35).burst(5 * k0);
     b.reset(v.add, p).tex(TEX.GLOW).size(0.85 * s, 1.15 * s, 1.5).life(0.3).color(sat, sat).hdr((1.5 + 0.5 * day) * hk, 0.5 * hk).alpha(0.95).fade(0, 0.28).burst(1); // big saturated colored halo = THE element read

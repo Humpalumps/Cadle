@@ -181,7 +181,14 @@ export class Enemies {
   spawn(type, pos, opts = {}) {
     const def = DEFS[type]; if (!def) { console.warn('[enemies] unknown type', type); return null; }
     if (this.list.length >= this.maxAlive) { const far = this._farthestCampEnemy(); if (!far) return null; this._despawnAlive(far); }
+    // pools[] is filled by init(); DEFS is module scope, so the guard above passes for a caller that
+    // arrives before Enemies has inited and this line then threw `Cannot read properties of undefined
+    // (reading 'pop')`. That is exactly what tools/questgate.mjs hit: its readiness check waits on
+    // game.rpg (which is CONSTRUCTED with the systems list, long before it inits) and on weapons slots
+    // (Player, systems index 5), then spawns — while Enemies is index 7. Returning null is what every
+    // other early-out here does, and it turns a harness race into a no-op instead of a page error.
     const pool = this.pools[type];
+    if (!pool) return null;
     let e = pool.pop();
     if (!e) { e = new Enemy(this, type, this.assets[type]); this.game.scene.add(e.root); }
     _v.set(pos.x, pos.y ?? 0, pos.z);

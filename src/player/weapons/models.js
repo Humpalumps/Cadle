@@ -14,6 +14,14 @@ import { gripHand, wrapHand, looseHand } from './hands.js';
 const PI = Math.PI;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 
+// Same discipline as VFX.js's deepen(): the element palette is authored PALE, and a pale colour used as
+// an ADDITIVE layer contributes a high value on ALL THREE channels, so a stack of them sums to neutral
+// white however you cap the peak. Saturating hard and dropping lightness to 0.5 keeps the hue and the
+// peak channel while collapsing the smallest one — which is the only channel that decides whether a
+// stack tone-maps as a colour or as a clip. Used for the muzzle-flash core (see makeMats).
+const _dh = new THREE.Color(), _hsl = { h: 0, s: 0, l: 0 };
+function deepHue(hex) { _dh.setHex(hex).getHSL(_hsl); return _dh.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.6 + 0.35), Math.min(_hsl.l, 0.5)).getHex(); }
+
 // ---------- procedural textures (canvas) ----------
 function canvasTex(w, h, draw, { srgb = false, repeat = [1, 1] } = {}) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -200,18 +208,45 @@ export function makeMaterials(assets = null) {
     // elements to white at night — arc (min 0.50) vents read as white blocks, void (0.44) reticle rings washed out.
     const minCh = Math.min(hex >> 16 & 255, hex >> 8 & 255, hex & 255) / 255;
     mats.glow[el] = std({ color: hex, emissive: hex, emissiveIntensity: Math.min(2.4, 0.85 / Math.max(minCh, 0.01)), roughness: 0.35, metalness: 0 });
-    mats.flash[el] = { petal: new THREE.MeshBasicMaterial({ color: hex, map: T.petal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-                       star: new THREE.MeshBasicMaterial({ color: hex, map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }) };
+    // PETAL + STAR ARE DEEPENED TOO, and this is the layer that was actually clipping. Three petals at
+    // opacity 0.4 plus the star at 0.32 is 1.52 of ADDITIVE colour landing on the same pixels at the
+    // barrel — with the authored pale hex (kinetic 0xffe9c4 = 1.00/0.91/0.77) that sums to 1.52/1.39/1.17,
+    // i.e. two channels clipped and the third close, which is exactly the rgb (254,249,226) the combat
+    // gate has flagged on burst-cvfx-pfire-a-0 through four separate fixes. Deepening does not dim the
+    // flash: the dominant channel is untouched, only the two quiet ones come down, so the same energy
+    // arrives as GOLD instead of as cream-white. Same discipline as VFX.js's deepen() on the world burst.
+    mats.flash[el] = { petal: new THREE.MeshBasicMaterial({ color: deepHue(hex), map: T.petal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+                       star: new THREE.MeshBasicMaterial({ color: deepHue(hex), map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+                       // PER-ELEMENT CORE, DEEPENED (combat gate, burst-cvfx-pfire-a-0: 109 px at rgb 254,249,225
+                       // inside an otherwise correctly gold flare). Two faults in the one shared cream core it
+                       // replaces. (1) HUE: every gun fired a warm-gold core, so a void or arc shot carried a
+                       // gold pinhead. (2) VALUE: 0xffd79a's SMALLEST channel is 0.60, and additive layers sum
+                       // per channel — three petals + star + core + the world muzzle burst all land on the same
+                       // pixels at the barrel, so a min channel that high is what walks the sum to neutral. The
+                       // element hues are authored PALE (kinetic 0xffe9c4 is HSL L 0.88), which is the trap
+                       // VFX.js's deepen() exists for: saturate hard and pull lightness to 0.5 and the smallest
+                       // channel lands near 0.04, so the stack can climb without ever going grey. Peak stays.
+                       core: new THREE.MeshBasicMaterial({ color: deepHue(hex), map: T.star, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }) };
   }
   // The muzzle core is the ONE element the player sees on every single shot, so it is also the one most
   // likely to be caught clipping: pure white at 0.34 additive, stacked with the world muzzle burst and
   // an impact star, is what the combat gate kept flagging as a white core in the pfire bursts. A warm
   // gold core reads as hotter than white after ACES anyway (a hue survives, a clip just goes grey).
-  mats.flashCore = new THREE.MeshBasicMaterial({ color: 0xffd79a, map: T.star, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  mats.flashCore = mats.flash.kinetic.core;   // default before a weapon is equipped; Weapons.js swaps per element
   // Opacity cut hard (petal 0.95 -> 0.4, star 0.75 -> 0.32, core 0.85 -> 0.34). These are ADDITIVE and they overlap,
   // so the three petals plus star plus core were summing well past white in the middle of the reticle before bloom
   // even got to them. The element hue is what should read on a flash; the value is what blinds you.
-  for (const el of Object.keys(ELEMENT_COLORS)) { mats.flash[el].petal.opacity = 0.4; mats.flash[el].star.opacity = 0.32; }
+  // THE VIEWMODEL FLASH IS DRAWN AFTER TONE MAPPING, and that is why four rounds of hue fixes never moved
+  // burst-cvfx-pfire-a-0 off rgb (254,249,226). PostFX adds the overlay RenderPass after finalPass (tone +
+  // grade) and smaaPass, so these additive quads land on an image ACES has already resolved — there is no
+  // curve left to roll their sum back into a hue, they simply clip. Everywhere else in the game the answer
+  // is "saturate the colour, cap the intensity"; here only the second half is available, so the summed
+  // opacity is the whole lever. 3 x 0.4 + 0.32 + 0.26 = 1.78 of additive on the same pixels: with the
+  // deepened gold above that is 1.78 in red and 1.25 in green, i.e. two channels clipped before the
+  // background is even added. 3 x 0.30 + 0.24 + 0.18 = 1.32 (-26%) keeps a bright gold flash and shrinks
+  // the blown centre. The hot core of a muzzle flash is not the bug the decree is about; a flash that
+  // reads WHITE instead of gold is, and that is what the deepened hues above fix.
+  for (const el of Object.keys(ELEMENT_COLORS)) { mats.flash[el].petal.opacity = 0.30; mats.flash[el].star.opacity = 0.24; mats.flash[el].core.opacity = 0.18; }
   mats.all = [mats.metal, mats.metal2, mats.dark, mats.gold, mats.brass, mats.grip, mats.hand, mats.ivory, mats.white, mats.filigree0, mats.filigree1, mats.filigree2, mats.glass, ...Object.values(mats.glow)];
   return mats;
 }

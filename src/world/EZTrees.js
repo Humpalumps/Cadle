@@ -381,6 +381,7 @@ export function buildEZTrees(game, trees, vegetation) {
     b.push(tr);
   }
 
+  const tVar = performance.now();   // boot timing split (see the summary log at the end of this build)
   // ez-tree's embedded data-URI textures decode async — bake only after they are actually loaded
   const maps = [...new Set([...buckets.keys()].flatMap((v) => [v.barkMat.map, v.leafMat.map].filter(Boolean)))];
   // `m.image` is NULL until the data URI decodes -- TextureLoader assigns it on load. The old gate read
@@ -396,14 +397,25 @@ export function buildEZTrees(game, trees, vegetation) {
   })));
 
   ready.then(async () => {
+    const tReady = performance.now();
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
     const C = new THREE.Color();
     const sets = [];
     let count = 0;
     for (const m of maps) { m.needsUpdate = true; renderer.initTexture(m); }   // decoded image -> GPU before the bake samples it
+    let bi = 0;
     for (const [v, list] of buckets) {
-      // one bake per frame: a burst of six RT renders was a visible boot hitch (perf audit 2026-08-20)
-      await new Promise((res) => requestAnimationFrame(res));
+      // ONE BAKE PER FRAME cost this block 7.9 s of wall clock (measured 2026-08-29 by splitting its own
+      // log: variants 729 ms · texwait 62 ms · build 7883 ms · compile 25 ms -> after: build 293 ms). The
+      // rule came from the 2026-08-20 perf audit, where a burst of six RT renders read as a boot hitch —
+      // but a rAF yield here does not cost one frame, it costs one BOOT frame, and boot frames run
+      // 150-400 ms because terrain, props and vegetation are all building on the same thread.
+      // HONEST SCOPE, measured: this does NOT shorten the total boot. The time was spent YIELDING to that
+      // other boot work, which has to happen regardless, so the wall clock is unchanged (~28 s either
+      // way) — what changes is that the impostor tier is ready ~6.5 s earlier inside it, instead of being
+      // the last thing to land. Yield every 6th: the bakes still spread over 4 frames, so whatever hitch
+      // the audit saw cannot come back.
+      if ((bi++ % 6) === 0) await new Promise((res) => requestAnimationFrame(res));
       v.impMat = patchMaterial(new THREE.MeshStandardMaterial({ map: bakeImpostor(v), alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 }),
         mergePatch(impFade, instTintPatch, { key: 'eztree-impostor' }));
       const n = list.length;
@@ -525,7 +537,12 @@ export function buildEZTrees(game, trees, vegetation) {
     };
     // compile every new tree/impostor program NOW, while the boot splash still covers the screen —
     // first-use compiles were landing as multi-hundred-ms hitches in the player's first seconds.
+    const tBuilt = performance.now();
     try { compileForComposer(renderer, game.scene, game.camera); } catch (e) {}
-    console.log(`[eztrees] ${count} trees, ${buckets.size} variants, impostors baked in ${(performance.now() - t0).toFixed(0)} ms`);
+    // Split the total: this block is the single biggest line item in the boot log and "impostors baked"
+    // was never what it measured. variants = 19x ez-tree generate(); texwait = the rAF poll for ez-tree's
+    // embedded data-URI textures to decode; build = bake + instancing; compile = shader precompile.
+    console.log(`[eztrees] ${count} trees, ${buckets.size} variants in ${(performance.now() - t0).toFixed(0)} ms `
+      + `(variants ${(tVar - t0).toFixed(0)} · texwait ${(tReady - tVar).toFixed(0)} · build ${(tBuilt - tReady).toFixed(0)} · compile ${(performance.now() - tBuilt).toFixed(0)})`);
   });
 }

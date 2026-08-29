@@ -51,6 +51,11 @@ try {
   // The weapon slots are built inside Weapons.init(); a flat sleep raced it and the drain step
   // then "passed" against an empty array. Wait for the thing being tested to actually exist.
   await page.waitForFunction(() => (window.__game?.ammo?.() || []).length >= 2, { timeout: 120000 });
+  // ...and for ENEMIES, which is systems index 7 while the two conditions above are satisfied by index 5.
+  // Without this the ammo test spawned into a system whose pools[] did not exist yet and the whole gate
+  // died on a page error at Enemies.spawn (2026-08-29). game.ready is the honest signal that every
+  // system's init() has resolved; the pool check is the belt to its braces.
+  await page.waitForFunction(() => Object.keys(window.__game?.game?.enemies?.pools || {}).length > 0, { timeout: 120000 });
   await wait(2000);
   const errs = await ev(() => (window.__game.errors || []).length);
   if (errs) fail(`${errs} uncaught page error(s) during boot: ` + JSON.stringify(await ev(() => (window.__game.errors || []).slice(0, 3))));

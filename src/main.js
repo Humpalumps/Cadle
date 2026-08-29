@@ -92,7 +92,14 @@ if (menu) {
 // Visibility is restored exactly as found (and note it does not gate compilation at all: three r185 gathers
 // LIGHTS with traverseVisible but MATERIALS with a plain scene.traverse — the chunking buys paint time
 // between calls, nothing more).
-async function warmScene(renderer, scene, camera, perChunk = 6, onProgress = null) {
+// perChunk 6 -> 32 (2026-08-29). MEASURED: `warmScene 368 objects in 11388 ms` was the single biggest
+// line item in the boot, and it is not compile time — 368/6 = 62 chunks, each one paying a rAF yield on a
+// thread where a boot frame is 150-400 ms long because terrain, props and vegetation are building on it.
+// 62 waits, not 62 compiles. The chunking exists only so the loading bar can paint between compiles, and
+// 12 updates across the warm phase is a smooth bar (it is time-driven from localStorage anyway, see
+// Menu.js). Identical programs get linked, in identical order; only the number of yields changes.
+// Same class of bug as the one in EZTrees.js — see the note there.
+async function warmScene(renderer, scene, camera, perChunk = 32, onProgress = null) {
   const objs = [];
   scene.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) objs.push(o); });
   if (!objs.length) return 0;
@@ -298,7 +305,7 @@ if (menu) {
       // set from the composer's `srgb-linear` ones, which is why warming the game's own path never covered
       // it. See Renderer.js. arm() afterwards costs ~10 ms.
       // the warm is a THIRD of the load; it says what it is doing rather than announcing the destination
-      try { const n = await warmScene(game.renderer, game.scene, game.camera, 6, (f) => menu.phase('warm', WARM_LABEL.warm, f));
+      try { const n = await warmScene(game.renderer, game.scene, game.camera, 32, (f) => menu.phase('warm', WARM_LABEL.warm, f));
         if (game.debug) console.info(`[boot] warmScene ${n} objects in ${Math.round(performance.now() - t0)} ms`); }
       catch (e) { console.warn('[boot] warmScene skipped:', e?.message); }
       await new Promise((r) => requestAnimationFrame(r));

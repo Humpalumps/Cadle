@@ -77,7 +77,7 @@ export class Tracers {
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMinW: { value: 0.002 }, uDark: { value: 0 } }]),
       vertexShader: TR_VERT, fragmentShader: TR_FRAG, fog: true, transparent: true, depthWrite: false, blending: THREE.NormalBlending, premultipliedAlpha: true, side: THREE.DoubleSide,
     });
-    this.mesh = new THREE.Mesh(geo, this.material); this.mesh.frustumCulled = false; this.mesh.renderOrder = 12; this.mesh.matrixAutoUpdate = false; this.mesh.name = 'vfx-tracers';
+    this.mesh = new THREE.Mesh(geo, this.material); this.mesh.frustumCulled = false; this.mesh.renderOrder = 12; this.mesh.matrixAutoUpdate = false; this.mesh.name = 'vfx-tracers'; this.mesh.userData.maskSkip = true;   // transparent overlay: see the note in Particles.js
     this._range = { start: 0, count: 0 };
     scene.add(this.mesh);
   }
@@ -243,7 +243,7 @@ export class Sigils {
     });
     this.material.uniforms.uMap.value = texture;
     this.mesh = new THREE.Mesh(geo, this.material);
-    this.mesh.visible = false; this.mesh.renderOrder = 9; this.mesh.frustumCulled = false; this.mesh.matrixAutoUpdate = false; this.mesh.name = 'vfx-sigils';
+    this.mesh.visible = false; this.mesh.renderOrder = 9; this.mesh.frustumCulled = false; this.mesh.matrixAutoUpdate = false; this.mesh.name = 'vfx-sigils'; this.mesh.userData.maskSkip = true;   // transparent overlay: see the note in Particles.js
     scene.add(this.mesh);
     this._c = new THREE.Color();
     for (let i = 0; i < count; i++) this.items.push({ live: false, t: 0, dur: 0, size: 1, spin: 1, hdr: 1, rot: 0, px: 0, py: 0, pz: 0, nx: 0, ny: 1, nz: 0, r: 1, g: 1, b: 1 });

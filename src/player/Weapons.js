@@ -189,6 +189,7 @@ export class Weapons {
     m.muzzle.add(this.flash, this.flashLight);
     const fm = this.mats.flash[w.element] || this.mats.flash.kinetic;
     for (const p of this.flash.userData.petals) p.material = fm.petal; this.flash.userData.star.material = fm.star;
+    this.flash.userData.core.material = fm.core;   // the core is per-element too now: a void shot used to fire a gold pinhead
     this.flashLight.color.setHex(ELEMENT_COLORS[w.element] || 0xffffff);
     this._cd = 0.1; this._queue = 0; this._charge = 0; this._bloom = 0; this._flashT = 0; this._heat = 0; this._rel.on = false; w.reloading = false;
     if (prev && prev !== w) prev.reloading = false;

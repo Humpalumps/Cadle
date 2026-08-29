@@ -22,6 +22,77 @@ HEAD `913ed1c` on branch `claude/session-e5730b`, 31 commits, **deliberately NOT
 
 ## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
+### ★★ 2026-08-29 (late) — TOP-3 PASS: COMBAT BLOBS, NEAR-FIELD GRASS, PERF. WHERE IT LANDED. ★★
+
+The user reviewed the build, took a five-item list, and scoped this pass to items 1-3 with the explicit
+carve-out **"dont worry about the character abilities i want to remove a lot of those (like the grenade)
+so leave them for now"**. Items 4 (greybox landmarks / region materials) and 5 (bestiary identity +
+re-judge) are next and were deliberately not touched.
+
+**Worktree `theme-f8a53a`, branch `claude/game-priorities-review-6f5c06`, dev server 5191.**
+Ports 5173/5179/5181/5185 are other trees — measuring one of them tests the wrong build.
+
+**1. COMBAT WHITE-OUTS — five root causes found, all in code, largest cluster 2249 px -> 132 px.**
+The gate's `combatcheck` was failing on 46 of 356 frames. What it actually was, in order of size:
+  * **The mask was lying.** `PostFX._renderSkyMask` uses `scene.overrideMaterial`, which is OPAQUE, so the
+    VFX particle pools (frustumCulled = false) rasterised as SOLID GREEN over their whole extent and every
+    sky pixel behind a puff of smoke was classified as WORLD. combatcheck then judged the sky. The pools,
+    tracers and sigils now set `userData.maskSkip` — the opt-out the file's own contract already defined
+    for the enemy shield. VFX over real geometry is still judged; only sky behind a transparent overlay is
+    no longer counted, which is what the decree says to ignore.
+  * **The death-dissolve edge went white on PALE elements.** `edgeCol` was rescaled so its SMALLEST channel
+    landed at exactly 1.0 — i.e. at clip. A violet's min channel is 0.05 so it never bound; a frostwolf's
+    is 0.75, so ecol*4 rescaled left all three channels at or above clip and ACES returned a white rind.
+    Now gamma-saturated first (peak unchanged) and capped at 0.55. Tundra kill bursts: 620 px -> gone.
+  * **The crit branch of `impact-enemy` was outside its own stack budget.** Two extra hot stars plus a
+    second ring at scale 1.35, on the same pixel, ~30% more energy than the `stackK` line computed. That
+    was the 2249 px white star on every critical hit (burst-cvfx-pfire-a-7). Now in the sum.
+  * **Tundra snow sat above the bar before anything touched it** — the lit flats rendered at rgb
+    (217,236,239), luminance 231 / spread 22, so the GROUND was already a near-white desaturated surface
+    and no VFX pale-damp could save it. Region tint 0.97/1.00/1.06 -> 0.90/0.97/1.10 (spread 0.09 -> 0.20).
+  * **The viewmodel muzzle flash is drawn AFTER tone mapping** (PostFX adds the overlay RenderPass after
+    finalPass), so its additive quads clip with no curve left to hold the hue — which is why four rounds of
+    colour fixes never moved it. Hues deepened and the summed opacity cut 1.78 -> 1.32. A ~100 px hot core
+    remains and is structurally unavoidable there; the real fix is to draw the flash in the world pass.
+**GATE NOW:** invariants OK · blobcheck+jitter PASS at q=high AND q=low · animcheck 25/25 · collidecheck
+36/36 · pointer lock OK · **combatcheck still FAILS with 8 findings, all <= 132 px** — 2 are the grenade
+(the ability the user is deleting), 1 is the muzzle core above, 5 are small kill-pop cores in lost/tundra.
+
+**2. NEAR-FIELD GRASS — it read as green confetti at the player's feet.** Three causes, all measured:
+  * the `under` filler cards were 38% of every near blade at 4:1 aspect (0.21 m x 0.053 m) — two blades in
+    five were broad flat lozenges. Now 30% at 8:1.
+  * flower heads: ~1.65 blooms/m^2 inside a drift, i.e. a pale scrap every 0.8 m. Now ~0.7/m^2.
+  * a head's normal was blended 50% toward UP, so a bloom sunbathed while every blade around it was
+    edge-on — the reason they photographed as paper litter however low the albedo ceiling went. Now 22%,
+    and the albedo ceiling 0.55 -> 0.38.
+  * canopy-exposure ramp widened (`smoothstep(-0.1, 0.55)` -> `0.82`): the top HALF of every blade used to
+    sit at one flat value, which is what read as moulded plastic at 1-3 m.
+  Before/after: `tools/out/grass0/shot-down.png` vs `tools/out/grass3/shot-down.png`.
+
+**3. PERFORMANCE — partly. Read this before believing any perf claim in here.**
+  * Uncapped q=high, combat route, quiet box: **frame mean 10.84 -> 10.59 ms, gpu 8.60 -> 8.39 ms, spikes
+    44.6/min -> 27.0/min.** Budget is 7 ms. NOT met.
+  * **The spikes are not a gameplay problem.** 17 of the remaining 20 are in the `settle` window right
+    after load; every combat phase (idle/fire/class/super) records ZERO, max ~23 ms = one dropped vsync
+    frame. With vsync on, the game holds a locked 60 fps.
+  * **Boot is ~28 s and did NOT move.** `warmScene 368 objects in ~11 s` is genuine driver link time
+    (~29 ms/program on ANGLE/D3D11) — `renderer.compileAsync` was tried and measured ZERO gain, because
+    three's compileAsync still links synchronously and only polls afterwards; that change was reverted.
+    `World` is ~11 s and builds all ten regions' props at boot. Cutting either means cutting program count
+    or deferring far-region content, both architectural.
+  * The eztrees block went 8.7 s -> 1.9 s (19 sequential rAF yields on a thread whose boot frames are
+    150-400 ms). Honest scope: that time was spent YIELDING to other boot work, so the total boot is
+    unchanged — the impostor tier is simply ready ~6.5 s earlier inside it. Do not quote it as a boot win.
+  * **What closing the last 3.4 ms costs is a fidelity decision and it is the user's** — graphics is
+    pillar 1. Left for them.
+
+**ALSO FIXED, and it had been hiding a real bug:** `tools/questgate.mjs` died on a page error at
+`Enemies.spawn` — its readiness check waited on `game.rpg` (constructed with the systems list, long before
+it inits) and on weapons slots (Player, index 5) while Enemies is index 7, so it spawned into a system
+whose `pools[]` did not exist. `spawn()` now returns null instead of throwing, and the gate waits for the
+pools. **questgate and curvecheck now both pass** — the mechanics gate had been red and unreadable.
+
+
 ### ★★ 2026-08-29 — THE GO-LIVE PLAN. TWO ITEMS, THEN WE SHIP. ★★
 
 The user played the starting area, found "hundreds of problems within 10 mins", and set a new standing

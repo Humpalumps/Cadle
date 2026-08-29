@@ -135,9 +135,22 @@ function creatureOnBeforeCompile(shader) {
       // ecol*4 put every channel of a warm element over clip (up to ~8.8), so through ACES the burn-away
       // read as a white rind. Hue survives ACES iff the SMALLEST channel stays under clip: rescale so the
       // min channel lands at <= 1.0 while the dominant channel keeps the punch (violet stays ~2+ blue).
-      vec3 edgeCol = ecol * (edge * 4.0);
+      // ...and the min-channel rescale below was capping that smallest channel at EXACTLY 1.0, i.e. at clip.
+      // For a saturated element that never binds (a violet's min channel is 0.05 and it blooms violet), but
+      // the frost/arc/stasis hues are authored PALE — a frostwolf's ecol has a min channel near 0.75, so
+      // ecol*4 rescaled to min = 1.0 leaves ALL THREE channels at or above clip and ACES hands back a white
+      // rind. Measured on the combat gate: a tundra kill burst renders 3.0-6.1k px of hard-edged near-white
+      // paper around every dissolve hole (burst-cvfx-tundra-k-3/4/5, rgb ~211,234,237), and by eye the dying
+      // wolves read as torn white card lying on the snow. Two changes, both hue-only:
+      //  - gamma-saturate the edge hue first. Peak channel is UNCHANGED (the ratio to max is what gets the
+      //    power), so a pale cyan's min channel collapses 0.75 -> 0.53 while nothing gets brighter.
+      //  - cap the min channel at 0.55, not 1.0. That is the whole point of a min-channel cap: it is the
+      //    channel that decides whether ACES returns a colour or a clip, and 1.0 was never under clip.
+      // A saturated element is bit-identical: its min channel is already far below both bars.
+      float eMax = max(ecol.r, max(ecol.g, ecol.b));
+      vec3 edgeCol = eMax * pow(ecol / max(eMax, 1e-4), vec3(2.2)) * (edge * 4.0);
       float edgeMin = min(edgeCol.r, min(edgeCol.g, edgeCol.b));
-      if (edgeMin > 1.0) edgeCol /= edgeMin;
+      if (edgeMin > 0.55) edgeCol *= 0.55 / edgeMin;
       totalEmissiveRadiance += edgeCol;
       // ghost hem: the shredding boundary carries a LOW, hue-locked ember. 0.55 not 4.0 — the death dissolve is a
       // one-off event you are meant to look at, the hem is on screen for the creature's whole life.
