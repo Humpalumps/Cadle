@@ -31,3 +31,19 @@ jobs:
         run: node tools/check.mjs
       - name: Game mechanics (xp curve, level bands, quest content, drop rates)
         run: node tools/curvecheck.mjs
+
+  # The only job that looks at what is actually DEPLOYED. It exists because a dev server can serve a
+  # page the bundler cannot see: play/index.html once created its module script at runtime, every
+  # local check passed, and the built site asked the host for /src/main.js — 404, loading bar stuck at
+  # 0% for every visitor on cadle.gg. Needs node_modules, so it installs; nothing else here does.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Production build ships a real entry on both pages
+        run: node tools/buildcheck.mjs
