@@ -22,6 +22,25 @@ HEAD `913ed1c` on branch `claude/session-e5730b`, 31 commits, **deliberately NOT
 
 ## 0. WHERE THE CAMPAIGN IS RIGHT NOW - READ THIS BEFORE ANYTHING ELSE
 
+### 2026-08-29 — MOBILE: THE SITE IS RESPONSIVE, THE GAME IS GATED (worktree `graphics-ff14-quality-audit-7eb837`, branch `claude/cadle-mobile-responsive-309f5f`, dev server **:5181**)
+
+User ask: cadle.gg responsive, its Play button greyed out on mobile with a "not available on mobile"
+message, and `/play` on a phone saying you need a desktop. Shipped:
+- `index.html` — every `a.btn[href^="/play"]` goes grey and inert under `(hover:none) and (pointer:coarse)`
+  and swaps its label to "Desktop only" (a second `<span class="lbl mob">` in the markup, not pseudo-content).
+  The top bar's Play is hidden outright there — "Desktop only" is twice as wide as "Play" and wrapped the
+  bar onto a fourth row. The hero's honesty line now names mobile and is shown on any coarse pointer.
+  The device test is the pointer media query, never a width: a narrow desktop window still plays.
+- `play/index.html` — a head-parse gate sets `window.__nomobile` and the engine's `<script type="module">`
+  is CREATED rather than static, so a phone downloads no engine, no three and no assets. It gets a
+  brand-styled "Desktop only" card instead (`#nomobile`), with a short-viewport rule for landscape.
+  `?auto=1` is never gated — that is the harness, and gating it would blank every tool in `tools/`.
+- Fixed while in there: **the hero's gradient CADLE was invisible at every viewport**, and had been for as
+  long as the split-word cascade has existed. `.split.in .w>span` ended on `filter:blur(0)`; any filter
+  makes the span its own rendering group and Chromium then drops its glyphs from the ancestor's
+  `background-clip:text` mask. End state is `filter:none` now; the entrance is unchanged.
+
+
 ### ★★ 2026-08-29 — THE GO-LIVE PLAN. TWO ITEMS, THEN WE SHIP. ★★
 
 The user played the starting area, found "hundreds of problems within 10 mins", and set a new standing
