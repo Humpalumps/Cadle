@@ -9,9 +9,9 @@
 # diff, with a sentence about why.
 language: en-GB
 tone_instructions: >-
-  Be direct and specific. Lead with the defect and the fix, not with praise. Skip style opinions the
-  repository has already settled (no TypeScript, no framework, plain ES modules, comments explain the
-  why). A finding is worth writing only if it changes the code, the behaviour or a decision.
+  Be direct: lead with the defect and the fix, not praise. Skip settled style debates (plain ES
+  modules, no TypeScript, no framework). Write a finding only if it changes code, behaviour or a
+  decision.
 
 reviews:
   profile: assertive
