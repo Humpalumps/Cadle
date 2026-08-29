@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit — AI review on every pull request. Free for public repositories.
+#
+# The point of this file is that a general-purpose reviewer does not know THIS codebase's traps, and
+# a reviewer that only says general things gets ignored within a week. Everything under
+# path_instructions is a rule that already cost this project a wave, and most of them are also
+# enforced mechanically by tools/invariants.mjs — CodeRabbit catches them one step earlier, in the
+# diff, with a sentence about why.
+language: en-GB
+tone_instructions: >-
+  Be direct and specific. Lead with the defect and the fix, not with praise. Skip style opinions the
+  repository has already settled (no TypeScript, no framework, plain ES modules, comments explain the
+  why). A finding is worth writing only if it changes the code, the behaviour or a decision.
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false      # single maintainer; a blocking review just adds a click
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  # Generated art, captured frames and progress logs are not reviewable text; reviewing them wastes
+  # the run and buries the findings that matter.
+  path_filters:
+    - '!public/assets/**'
+    - '!docs/concepts/**'
+    - '!progress/**'
+    - '!progress.html'
+    - '!tools/out/**'
+    - '!dist/**'
+    - '!package-lock.json'
+
+  path_instructions:
+    - path: 'src/**/*.js'
+      instructions: >-
+        Three.js r185, plain ES modules, WebGL2. Flag: per-frame allocation in update paths (pool
+        instead — this is a 140 fps budget, not a 60 fps one); new rAF loops (systems get
+        update(dt, t) from Game); randomness that is not mulberry32/hash2 from core/Noise.js in
+        world generation, which breaks determinism for the harness; world materials built as raw
+        ShaderMaterial instead of MeshStandardMaterial with onBeforeCompile, which silently drops
+        fog, CSM shadows and env; and any fetch or import of an external URL or CDN — every asset
+        ships in the repo and loads through game.assets.
+
+    - path: 'src/world/{Grass,Vegetation,GroundScatter}.js'
+      instructions: >-
+        GROUND COVER IS NEVER EMISSIVE AND NEVER GLOWS. This bug has shipped five times. A blade is
+        smaller than a pixel at distance, so any value that can reach the bloom threshold flickers
+        frame to frame and bloom smears it into a floating white ball. Reject: raising or removing
+        the absolute emissive ceiling (min(..., vec3(0.22))), the grass tip roughness floor (>= 0.6),
+        or GRASS_LUM_CAP; and reject any *relative* clamp (min(x, col * 0.75)) offered as a fix,
+        because a bright blade colour raises the ceiling with it. Backlit sheen and low-sun rim are
+        legitimate asks — but they belong in reflectedLight.directDiffuse, which respects exposure
+        and cannot bloom, never in emissive.
+
+    - path: 'src/{vfx,enemies,combat,player}/**/*.js'
+      instructions: >-
+        Small bright elements saturate the COLOUR and cap the INTENSITY. A hue that survives tone
+        mapping reads as magic; a value that clips reads as a white ball, and white-out has been the
+        single most reported visual bug here. Flag emissive or additive terms lerping toward white,
+        new intensity multipliers above the documented ceilings, and additive quads without a
+        near-camera coverage fade — a bolt detonating at the lens filled the frame with white.
+
+    - path: 'src/rpg/quests/**/*.js'
+      instructions: >-
+        Quest content is DATA, never code: adding a quest must not mean writing a function. Every
+        enemy and item id a quest names must exist (tools/curvecheck.mjs asserts this in CI). Quests
+        are written, never spoken — flag any playVoice call or /assets/voice/ reference.
+
+    - path: '{index,play/index}.html'
+      instructions: >-
+        The module entry must be one the BUNDLER CAN SEE — a <script type="module"> tag or an inline
+        module with a relative dynamic import. A script element built at runtime with a literal
+        '/src/...' path works on the dev server and ships a page that loads no JavaScript at all;
+        that exact change took the live site down with a 404 on /src/main.js. tools/buildcheck.mjs
+        guards it in CI, but say so in review rather than letting it get that far.
+
+    - path: 'tools/**'
+      instructions: >-
+        Harness and gates. Thresholds here are deliberately strict and are owned by the maintainer:
+        flag any diff that widens a limit, loosens a regex, or skips a check to turn a red build
+        green — the fix belongs in the code under test. New invariants are welcome only when they
+        encode a bug that has shipped more than once.
+
+    - path: '**/*.md'
+      instructions: >-
+        Documentation is the contract other agents and contributors read. Flag instructions that
+        have gone stale against the code they describe, and any absolute local machine path or
+        credential-shaped string — this repository is public.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
