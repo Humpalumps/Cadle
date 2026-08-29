@@ -7,7 +7,7 @@ User decree, 2026-08-28, after ten minutes of play in the starting area produced
 > everything in the starting biome, that includes bones, limbs, coherence, collisions, hitches everything"
 
 This file is the standing charter for that loop. It is re-read at the start of every round. It applies to
-**biome 1, The Vale** — the spawn meadow, Hearthfall hamlet, the Aetheryte plaza, Mirrormere, the Sundered
+**biome 1, The Vale** — the spawn meadow, Hearthfall hamlet, the Waystone plaza, Mirrormere, the Sundered
 Spire ruins, Whisperwood's home edge, the crystal fields and the Hollow Crown — and to everything a player
 meets there in the first ten minutes.
 

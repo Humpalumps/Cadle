@@ -129,7 +129,7 @@ const TEMPLATE = `
 <div id="toasts"></div>
 <div id="notify"><h2></h2><div class="fl"></div><p></p></div>
 <div id="iprompt"><kbd>E</kbd><span class="ipt"></span><span class="ip2" style="display:none">&nbsp;&middot;&nbsp;<kbd class="ipk2"></kbd><span class="ipt2"></span></span></div>
-<div id="death"><h1>Defeated</h1><p>press any key to return to the aetheryte</p></div>
+<div id="death"><h1>Defeated</h1><p>press any key to return to the waystone</p></div>
 <div id="perf"></div>`;
 
 export class HUD {
@@ -276,7 +276,7 @@ export class HUD {
   }
   /** External interaction prompt, bottom-center. `text` null/'' clears it. `opts.key2`/`opts.text2`
    *  add a second bindable action on the SAME prompt — e.g. loot's "[E] Take · [T] Take & Equip" —
-   *  without disturbing every other caller (aetheryte, chests, steles), which just pass `text`.
+   *  without disturbing every other caller (waystone, chests, steles), which just pass `text`.
    *  RPG.js's ctx.hud.prompt adapter only forwards ONE argument (`(t) => hud.prompt(t)`, and that
    *  file belongs to another owner), so a second-key caller reaching through ctx.hud must instead
    *  fold `key2`/`text2` into `text` itself, joined by PROMPT_SEP — parsed back out below. Direct
@@ -883,18 +883,18 @@ export class HUD {
       this.tgtGhost._g = Math.max(thp, (this.tgtGhost._g ?? thp) - dt * 0.7); setX(this.tgtGhost, this.tgtGhost._g);
     } else this.tgtGhost._g = undefined;
 
-    // interaction prompt (external wins; else aetheryte proximity)
+    // interaction prompt (external wins; else waystone proximity)
     this._acc += dt;
     if (this._acc >= 0.25) {
       this._acc = 0;
-      const ae = g.terrain?.POI?.aetheryte;
-      this._proxPrompt = (ae && p.position.distanceToSquared(ae) < 144) ? 'Attune to the Aetheryte' : null;
+      const ae = g.terrain?.POI?.waystone;
+      this._proxPrompt = (ae && p.position.distanceToSquared(ae) < 144) ? 'Attune to the Waystone' : null;
       const txt = this._extPrompt ?? this._proxPrompt;
       if (txt !== this._promptShown) { this._promptShown = txt; this.promptEl.style.opacity = txt ? 1 : 0; if (txt) setT(this.promptTxt, txt); }
       // wallet balance (4 Hz sync — covers the save-loaded value from before the event wiring; the
       // rpg:currency listener handles the instant tick on change)
       if (this.glimNum) setT(this.glimNum, String((g.rpg?.ctx?.rpg?.currencies?.glimmer ?? 0) | 0));
-      // second action row — only the caller that owns _extPrompt (never the aetheryte fallback) may set it
+      // second action row — only the caller that owns _extPrompt (never the waystone fallback) may set it
       const o = this._extPrompt ? this._extPrompt2 : null;
       const k2 = o?.key2 || '';
       if (k2 !== this._k2Shown) {
@@ -906,7 +906,7 @@ export class HUD {
       if (this._perfOn) this._perfText();
     }
     if (this._proxPrompt && !this._extPrompt && g.input.justPressed('KeyE') && !this._attuned) {
-      this._attuned = true; this.toast('Attuned to the Aetheryte', { kind: 'super' }); g.events.emit('ui:click');
+      this._attuned = true; this.toast('Attuned to the Waystone', { kind: 'super' }); g.events.emit('ui:click');
     }
   }
 

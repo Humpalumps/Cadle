@@ -4,9 +4,9 @@
  { "eval": "(()=>{const sp=document.getElementById('splash');if(sp)sp.remove();const g=__game.game;return JSON.stringify({running:!!g._running,enemies:g.enemies.list.length})})()" },
  { "wait": 2 },
 
- { "log": "A. THE FIRST MINUTE — fresh spawn, the HUD a new player sees, then hold W into the Aetheryte" },
+ { "log": "A. THE FIRST MINUTE — fresh spawn, the HUD a new player sees, then hold W into the Waystone" },
  { "shot": "a1-spawn-hud" },
- { "key": "KeyW", "down": true }, { "wait": 12 }, { "shot": "a2-walk-into-aetheryte" }, { "key": "KeyW", "down": false },
+ { "key": "KeyW", "down": true }, { "wait": 12 }, { "shot": "a2-walk-into-waystone" }, { "key": "KeyW", "down": false },
  { "eval": "(()=>{const p=__game.game.player;return JSON.stringify({x:+p.position.x.toFixed(1),z:+p.position.z.toFixed(1)})})()" },
  { "eval": "__game.god(true)" },
 

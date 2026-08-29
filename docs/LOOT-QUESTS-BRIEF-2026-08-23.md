@@ -167,7 +167,7 @@ not a world. The cheapest thing that still reads as a world:
 
 **Wayfinder Steles.** One carved stone at each region's landmark. `E` to read; a parchment scroll
 card opens using the shell `Screens.js` already has. Accept, track, return to the same stele to turn
-in. `Props.js` already builds an aetheryte with plaques and already owns per-region kits, so this is
+in. `Props.js` already builds an waystone with plaques and already owns per-region kits, so this is
 a prop variant, not a new system.
 
 Fallback so content is testable before the art lands: a region with no stele auto-offers its chain
@@ -202,7 +202,7 @@ Quest state persists next to the existing save. `?fresh=1` already clears `cadle
 
 | # | Region | Band | Landmark |
 |---|---|---|---|
-| 1 | The Vale (meadow) | 1–5 | Aetheryte Plaza / Sundered Spire |
+| 1 | The Vale (meadow) | 1–5 | Waystone Plaza / Sundered Spire |
 | 2 | Whisperwood Deep | 5–11 | The Elderheart |
 | 3 | Frostveil Tundra | 11–17 | The Glacier Throne |
 | 4 | Shadowfen | 15–22 | The Hagstone |
@@ -265,7 +265,7 @@ Per the user's decision, the spoken opening quest goes and quests are written fr
 | Add an invariant: no `playVoice` call anywhere under `src/rpg/` | `tools/invariants.mjs` |
 
 The Vale's opening beat is **not** deleted, it is rewritten as the first written quest — an
-aetheryte flare, a zone card, a scroll, a waypoint east. Same staging, no audio.
+waystone flare, a zone card, a scroll, a waypoint east. Same staging, no audio.
 
 `Audio.playVoice` stays (it is ~10 lines and belongs to another owner). Report it as an ask if the
 audio builder wants it gone.

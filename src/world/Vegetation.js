@@ -1066,14 +1066,14 @@ export class Vegetation {
       // DE-ROWED LATTICE. One candidate per 7 m cell jittered by only +-3 m leaves 1 m of dead space on
       // every cell boundary, and the eye reads that residual grid as ORCHARD ROWS the moment density gets
       // high enough to see two cells at once — the wave-2 forest deficiency, and plainly visible around the
-      // Vale plaza too (tools/out/veg3-before/shot-vale-aetheryte-up.png). Full-cell jitter plus a half-cell
+      // Vale plaza too (tools/out/veg3-before/shot-vale-waystone-up.png). Full-cell jitter plus a half-cell
       // stagger on alternate columns turns the square lattice into a hex-ish one: no axis-aligned rows left
       // to see. Same cost, same instance count, same determinism.
       const x = gx + (rng() - 0.5) * 7, z = gz + ((((gx / 7) | 0) & 1) ? 3.5 : 0) + (rng() - 0.5) * 7;
       if (!ok(x, z)) continue;
       const r0 = Math.hypot(x, z);
-      // aetheryte plaza: 22 m, not 14 — a gnarled crown is ~7 m wide, so a legally-placed trunk at 14-16 m
-      // still tangled its canopy through the pedestal + crystal (crit2-vale-c/shot-aetheryte-tree-up).
+      // waystone plaza: 22 m, not 14 — a gnarled crown is ~7 m wide, so a legally-placed trunk at 14-16 m
+      // still tangled its canopy through the pedestal + crystal (crit2-vale-c/shot-waystone-tree-up).
       // Plaza hard floor is r>=12 around (0,-28); trees need plaza + crown + margin.
       if (r0 < 34 || ruinD(x, z) < 58 || arenaD(x, z) < 55 || aethD(x, z) < 22) continue;
       const forest = smoothstep(-170, -215, z) * smoothstep(275, 235, Math.abs(x)) * smoothstep(-470, -420, z);
@@ -1352,7 +1352,7 @@ export class Vegetation {
       this._rockGrp[grp][kind].add(M, C); this.rocks.push({ x, y, z, kind, scale });
       col.add({ type: 'sphere', pos: new THREE.Vector3(x, yb - 0.15 * scale, z), r: rXZ * (kind === 0 ? 0.95 : kind === 2 ? 0.9 : 0.75) });
     }
-    // ---- crystals: east fields + forest + around the aetheryte (no random confetti on open hillsides)
+    // ---- crystals: east fields + forest + around the waystone (no random confetti on open hillsides)
     const addCrystal = (x, z, scale, variant, tint, aspect) => {
       const y = terrain.heightAt(x, z); E.set((rng() - 0.5) * 0.2, rng() * Math.PI * 2, (rng() - 0.5) * 0.2); Qt.setFromEuler(E);
       const ax = aspect ? aspect[0] : 1, ay = aspect ? aspect[1] : 1;
@@ -1408,7 +1408,7 @@ export class Vegetation {
       addCrystal(x, z, 3.4 + rng() * 2.0, 2); heroes++;
     }
     // plaza-ring crystals pushed to >= 10.9 m from plaza centre (0,-28): at 8.8-10.8 m they clipped the
-    // aetheryte plaza skirt (props-B's measured ask; plaza outer edge is ~10.5 m)
+    // waystone plaza skirt (props-B's measured ask; plaza outer edge is ~10.5 m)
     for (const [x, z, s] of [[9.5, -21.5, 0.9], [-8, -35.5, 1.1], [10.5, -35, 0.7], [-10, -20.5, 0.6]]) addCrystal(x, z, s, Math.floor(rng() * 3));
   }
 
@@ -1502,7 +1502,7 @@ export class Vegetation {
     if (cr) probe('crystal', cr.x + 2, cr.z + 2);
     probe('ruins tower wall', 150, 60);
     probe('arena monolith', -14, 260);
-    probe('aetheryte pedestal', 4, -28);
+    probe('waystone pedestal', 4, -28);
     return { pass: tests.length > 0 && tests.every((x) => x.pass), tests };
   }
 

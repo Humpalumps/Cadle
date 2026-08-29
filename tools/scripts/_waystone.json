@@ -1,0 +1,49 @@
+[
+ {
+  "wait": 8
+ },
+ {
+  "eval": "JSON.stringify(Object.keys(__game.game.world.props.landmarks||{}))"
+ },
+ {
+  "tp": [
+   0,
+   null,
+   -14
+  ]
+ },
+ {
+  "look": [
+   0,
+   -0.05
+  ]
+ },
+ {
+  "wait": 2
+ },
+ {
+  "eval": "(document.getElementById('ui')||document.body).innerText.split('\n').filter(l=>/Waystone|Attune|Aetheryte/i.test(l)).join(' | ')"
+ },
+ {
+  "shot": "waystone-near"
+ },
+ {
+  "tp": [
+   0,
+   null,
+   45
+  ]
+ },
+ {
+  "look": [
+   0,
+   0.02
+  ]
+ },
+ {
+  "wait": 2
+ },
+ {
+  "shot": "waystone-far"
+ }
+]

@@ -209,7 +209,7 @@ export class GroundScatter {
       const LMK = this.game.world?.props?.landmarks?.[id];
       if (LMK && Math.hypot(xc - LMK.x, zc - LMK.z) < 14) return;
     } else {                                                           // the Vale's own built ground
-      if (Math.hypot(xc, zc + 28) < 13) return;                        // aetheryte plaza
+      if (Math.hypot(xc, zc + 28) < 13) return;                        // waystone plaza
       if (Math.hypot(xc - 140, zc - 60) < 38) return;                  // Sundered Spire floors
       if (Math.hypot(xc + 60, zc - 260) < 46) return;                  // Hollow Crown arena
     }

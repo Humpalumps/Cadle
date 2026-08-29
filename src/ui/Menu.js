@@ -60,7 +60,7 @@ const STILL = '/assets/ui/menu_vista.jpg';
 const CAM = { dx: 5.5, dz: 11.0, eye: 6.0, yaw: 0.32, pitch: -0.05, fov: 55 };
 /**
  * The menu pins the clock here, and 19.6 is the Vale's best hour: aurora, stars, rose-lit mountain ring,
- * and the aetheryte reading as the brightest thing in frame. It also leaves the left third dark, which is
+ * and the waystone reading as the brightest thing in frame. It also leaves the left third dark, which is
  * where the type goes. Pinning it at all is a bug fix as much as a look: the day cycle is 20 real minutes,
  * so an unattended title screen would otherwise drift into a different sky every few minutes.
  * The clock and everything else the menu borrows is restored exactly as found at hand-off (_teardown).
@@ -682,7 +682,7 @@ export class Menu {
    * The backdrop still is a night capture and the type is laid out against its dark left third; the
    * game boots at hour 15. Measured across the hand-off: mean frame luma 23 for the whole loading
    * screen, then 136 the instant the flash lifts. After a minute of dark adaptation, having been told
-   * you are going to the Aetheryte Plaza, you arrive somewhere that looks like a different place. So
+   * you are going to the Waystone Plaza, you arrive somewhere that looks like a different place. So
    * the world is built at the menu's hour and walked back to its own afterwards (_restoreGame).
    */
   _borrowClock() {

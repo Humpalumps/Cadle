@@ -10,8 +10,8 @@
  {"log":"RUINS: ruins_stone + granite close"},
  {"tp":[140,null,60]},{"look":[1.2,-0.1]},{"wait":2.5},{"shot":"a4-ruins-stone"},
 
- {"log":"AETHERYTE: glyph rings"},
- {"tp":[0,null,-14]},{"look":[0,0.12]},{"wait":2},{"shot":"a5-aetheryte-glyphs"},
+ {"log":"WAYSTONE: glyph rings"},
+ {"tp":[0,null,-14]},{"look":[0,0.12]},{"wait":2},{"shot":"a5-waystone-glyphs"},
 
  {"log":"FOREST: card_fern floor + leaf_card canopy"},
  {"eval":"window.__game.goto('forest',40);'ok'"},{"wait":7},

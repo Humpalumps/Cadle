@@ -383,16 +383,16 @@ with `colourspace: parameter space not set`. Do not merge them.
 | `tex/leaf_card.png` | Vegetation canopy leaf cards | 1024 RGBA alpha cutout, lush painterly cluster |
 | `tex/glyph-ring-1.jpg`, `tex/glyph-ring-2.jpg` | Props rune rings, VFX sigils, abilities rift | pale-gold line art on black — load as additive map (black = transparent with AdditiveBlending). **Preloaded but never consumed — see OPEN ASK (b)** |
 
-Concept art for this batch (`aetheryte.jpg`, `column.jpg`, `handcannon.jpg`, `leaf-card-raw.jpg`) moved
+Concept art for this batch (`waystone.jpg`, `column.jpg`, `handcannon.jpg`, `leaf-card-raw.jpg`) moved
 from `public/assets/concepts/` to **`docs/concepts/`** on 2026-08-29. It is pipeline reference, nothing
 loads it, and `public/` ships verbatim — it was 1.9 MB of concept art downloaded by every player.
 Same rule as `docs/intro-ref/`: art references live in `docs/`, never in `public/`.
 
 ## Models — the only mesh assets are the rigged creature GLBs above; world geometry is 100% procedural.
 
-Three GLBs (`aetheryte` 38k tris / `column` 31k / `handcannon` 57k, 7.9 MB) were generated in the first
+Three GLBs (`waystone` 38k tris / `column` 31k / `handcannon` 57k, 7.9 MB) were generated in the first
 asset batch and **never wired up** — every system had already built the same object procedurally
-(`Props.js` `_buildAetheryte`, `weapons/models.js` `BUILDERS`), so `game.assets.model()` was never called
+(`Props.js` `_buildWaystone`, `weapons/models.js` `BUILDERS`), so `game.assets.model()` was never called
 by anything. They still cost a fetch, a synchronous `GLTFLoader.parse` and 5.4 MB of GPU texture upload on
 every boot: **688 ms, 52% of the whole asset preload phase, for zero draw calls.** Deleted 2026-08-24
 along with `Assets.MODELS`, the model-parse loop and the `model()` accessor.
